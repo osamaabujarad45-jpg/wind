@@ -1,67 +1,132 @@
 #!/bin/bash
 # Install a release tarball from build-release.sh on the production VM. Run as root: sudo bash install-release.sh <tarball> <sha256>
-# 1. One install at a time (lock). The tarball is hashed and unpacked from one private copy.
-# 2. A verified snapshot of the live database, named by time (pre-install-<time>.db), is taken first.
-# 3. The candidate is dry-run as the service user on :4010 against a COPY of that snapshot, so its start-up migrations meet real
-#    data (Sol ops review 21 Nov, HIGH 3), never the live file.
-# 4. The swap keeps the old tree; if the move, the start or readiness fails, the old tree goes back and starts again.
-# 5. The three newest old trees are kept. Rollback by hand: docs/operations/deploy.md.
+# 1. One database operation at a time: install, restore and the backup job all lock the /data directory itself.
+# 2. The tarball is hashed and unpacked from one private copy into /opt/wind-releases/<time>.
+# 3. Dry run: the candidate starts as the service user on :4010 against a COPY of the live data (no push registrations, no
+#    provider keys), so its start-up migrations meet real data (Sol ops review 21 Nov, HIGH 3). The live service keeps serving.
+# 4. Freeze: Caddy stops (no requests reach the API), then the API stops, and both stops are checked. Only then is the rollback
+#    checkpoint /data/backups/pre-install-<time>.db taken, so it holds every acknowledged write and sign-out (Sol recheck of
+#    PR #101, HIGH 2). An uncertain stop changes nothing: the old release is kept.
+# 5. Switch: /opt/windapi is a symlink to the active release, replaced in one rename, so a power loss never leaves it missing.
+#    (A host from before this script still has a real /opt/windapi directory: the first run moves it to the releases folder.)
+# 6. The candidate starts on the live database with Caddy still stopped; Caddy opens only after it answers /api/ready.
+# 7. A failure or signal after the switch points /opt/windapi back. The database is replaced by the checkpoint only if the
+#    candidate was started (it may have migrated or written); the failed file is kept beside it. Caddy opens only once the
+#    previous release is ready again; otherwise everything stays closed and the script says so (exit 2).
+# Rollback by hand and the drills: docs/operations/deploy.md.
 set -euo pipefail
 TAR=${1:?release tarball}; SUM=${2:?expected sha256}
-exec 9>/run/wind-install.lock
-flock -n 9 || { echo "another install is running" >&2; exit 1; }
+RELEASES=/opt/wind-releases; LIVE=/opt/windapi; DATA=/data; DB=/data/wind.db
+exec 8<"$DATA"
+flock -n 8 || { echo "another install, restore or backup is running" >&2; exit 1; }
+STAMP=$(date +%Y%m%d%H%M%S)
+REL="$RELEASES/$STAMP"; SNAP="$DATA/backups/pre-install-$STAMP.db"
 # Root's scratch space is a fresh private directory, never a predictable /tmp path a release could pre-plant (Haiku PR #98 N-1).
 WORK=$(mktemp -d); chmod 700 "$WORK"
-DRY=""; PID=""
-cleanup() {
-  if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; fi
-  [ -z "$DRY" ] || rm -rf "$DRY"
-  rm -rf "$WORK"
+DRY=""; PID=""; PREV=""; CHECKPOINT=""; HALT=""
+PHASE=prepare # prepare -> frozen -> switched -> started -> live
+
+say() { echo "install-release: $*" >&2; }
+ready() { # $1 port: the API answers /api/ready within $2 seconds
+  local i; for i in $(seq 1 "$2"); do
+    curl -fsS -m 3 "http://127.0.0.1:$1/api/ready" > "$WORK/ready.json" 2>/dev/null && return 0; sleep 1
+  done; return 1
 }
-trap cleanup EXIT
+port_free() { [ "$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$1/" || true)" = "000" ]; }
+stopped() { # $1 unit: stopped for certain, not just asked to stop
+  systemctl stop "$1" || return 1
+  ! systemctl is-active --quiet "$1" && [ "$(systemctl show -p MainPID --value "$1")" = "0" ]
+}
+point() { # $1 release directory: /opt/windapi -> $1 in one rename
+  ln -sfn "$1" "$LIVE.next" && mv -T "$LIVE.next" "$LIVE"
+}
+snapshot() { # $1 source, $2 target: a read-only source (never creates a file), VACUUM INTO, checked, as the service user
+  sudo -u wind env SRC="$1" DST="$2" /opt/node/bin/node --disable-warning=ExperimentalWarning -e "
+const { DatabaseSync } = require('node:sqlite');
+const src = new DatabaseSync(process.env.SRC, { readOnly: true });
+src.exec(\"VACUUM INTO '\" + process.env.DST + \"'\"); src.close();
+const copy = new DatabaseSync(process.env.DST, { readOnly: true });
+if (Object.values(copy.prepare('PRAGMA quick_check').get())[0] !== 'ok') throw Error('snapshot failed quick_check');
+for (const t of ['users', 'orders', 'cash_entries', 'security_events']) copy.prepare('SELECT COUNT(*) AS n FROM ' + t).get();
+copy.close();" 8<&-
+}
+fatal() { # the host is in a state a person must look at: nothing is opened to users
+  HALT=1
+  say "MANUAL RECOVERY NEEDED: $*"
+  say "Caddy is stopped. Active release: $(readlink "$LIVE" 2>/dev/null || echo none); previous: ${PREV:-none}; checkpoint: ${CHECKPOINT:-none}"
+}
+reopen_previous() { # the previous release, ready, then Caddy
+  if [ -z "$PREV" ]; then say "first install failed; there is no previous release to start"; systemctl start caddy || true; return; fi
+  systemctl start wind-api || { fatal "the previous release did not start"; return; }
+  ready 4000 60 || { fatal "the previous release did not become ready"; return; }
+  systemctl start caddy || { fatal "the previous release is ready but Caddy did not start"; return; }
+  say "the previous release is live again: $PREV"
+}
+recover() {
+  set +e
+  case "$PHASE" in
+    prepare) [ ! -d "$REL" ] || rm -rf -- "$REL" ;; # nothing live was touched
+    frozen) say "install stopped before the switch; the release and database are unchanged"; rm -rf -- "$REL"; reopen_previous ;;
+    switched|started)
+      if [ "$PHASE" = started ]; then
+        { stopped wind-api && port_free 4000; } || { fatal "the candidate did not stop; the database was not replaced"; return; }
+        # Stage the checkpoint next to the live file first (a full disk fails here, before anything is moved), then two renames.
+        if [ -n "$CHECKPOINT" ]; then
+          install -o wind -g wind -m 600 "$CHECKPOINT" "$DB.rollback-$STAMP" || { fatal "could not stage the checkpoint; the live database is unchanged"; return; }
+        fi
+        for suffix in '' -wal -shm; do
+          [ ! -e "$DB$suffix" ] || mv -f "$DB$suffix" "$DB.failed-$STAMP$suffix" || { fatal "could not move the candidate's database aside"; return; }
+        done
+        if [ -n "$CHECKPOINT" ]; then mv -f "$DB.rollback-$STAMP" "$DB" || { fatal "could not put the checkpoint in place"; return; }; fi
+        say "the database is back at the checkpoint; the candidate's file is $DB.failed-$STAMP"
+      fi
+      # A legacy directory not yet moved is still in place; otherwise the pointer goes back.
+      if [ -n "$PREV" ] && [ -d "$PREV" ]; then point "$PREV" || { fatal "could not point $LIVE back to $PREV"; return; }; fi
+      [ ! -d "$REL" ] || mv -T "$REL" "$REL-failed" # kept for diagnosis
+      reopen_previous ;;
+  esac
+}
+on_exit() {
+  local code=$?
+  trap - EXIT INT TERM HUP
+  if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; fi
+  if [ "$PHASE" != live ] && [ "$code" -ne 0 ]; then recover; [ -z "$HALT" ] || code=2; fi
+  [ -z "$DRY" ] || rm -rf -- "$DRY"
+  rm -rf -- "$WORK"
+  exit "$code"
+}
+trap on_exit EXIT
+trap 'exit 130' INT TERM HUP
+
 # Hash and unpack one private copy, so the file cannot change between the check and the extract (Haiku PR #98 N-7).
 cp -- "$TAR" "$WORK/release.tar.gz"
 echo "$SUM  $WORK/release.tar.gz" | sha256sum -c -
-rm -rf /opt/windapi-new
+mkdir -p "$RELEASES"
 tar -xzf "$WORK/release.tar.gz" -C "$WORK"   # the archive's top-level directory is windapi/
-mv "$WORK/windapi" /opt/windapi-new
-chown -R root:root /opt/windapi-new && chmod 755 /opt/windapi-new/backup.sh
-sudo -u wind test -x /opt/windapi-new/backup.sh || { echo "backup.sh is not executable by wind" >&2; rm -rf /opt/windapi-new; exit 1; }
+mv -T "$WORK/windapi" "$REL"
+chown -R root:root "$REL" && chmod 755 "$REL" "$REL/backup.sh"
+sudo -u wind test -x "$REL/backup.sh" || { say "backup.sh is not executable by wind"; exit 1; }
 
-# The snapshot of the live database for this install (Sol full review 21 Nov, item 5), checked, kept 30 days.
-STAMP=$(date +%Y%m%d%H%M%S)
-SNAP="/data/backups/pre-install-$STAMP.db"
-[ -f /data/wind.db ] || SNAP=""   # a first install has no database to snapshot
-snapshot() { # $1 source, $2 target: VACUUM INTO and quick_check, as the service user
-  sudo -u wind env SRC="$1" DST="$2" /opt/node/bin/node -e "
-const { DatabaseSync } = require('node:sqlite');
-new DatabaseSync(process.env.SRC).exec(\"VACUUM INTO '\" + process.env.DST + \"'\");
-const copy = new DatabaseSync(process.env.DST, { readOnly: true });
-if (Object.values(copy.prepare('PRAGMA quick_check').get())[0] !== 'ok') { console.error('snapshot failed quick_check'); process.exit(1); }
-copy.close();"
-}
+# Dry run on a copy of the live data, while the live release keeps serving.
 DRY=$(mktemp -d); chown wind:wind "$DRY"
-if [ -f /data/wind.db ]; then
-  snapshot /data/wind.db "$SNAP" || { echo "pre-install snapshot failed; the live service is untouched" >&2; rm -rf /opt/windapi-new; exit 1; }
-  find /data/backups -name 'pre-install-*.db' -mtime +30 -delete
-  echo "pre-install snapshot: $SNAP"
-  cp "$SNAP" "$DRY/wind.db" && chown wind:wind "$DRY/wind.db"
+if [ -s "$DB" ]; then
+  snapshot "$DB" "$DRY/wind.db" || { say "could not copy the live data for the dry run; the live service is untouched"; exit 1; }
   # The dry run's background jobs must not reach real people: its copy has no push registrations.
   sudo -u wind env DB="$DRY/wind.db" /opt/node/bin/node -e "
 const { DatabaseSync } = require('node:sqlite');
 const db = new DatabaseSync(process.env.DB);
 db.exec('BEGIN; DELETE FROM push_subscriptions; DELETE FROM native_push_tokens; COMMIT');
-db.close();"
+db.close();" 8<&-
 fi
-
 # The dry run must be the only thing answering on :4010, or the check below would pass against something else.
-if [ "$(curl -s -o /dev/null -m 2 -w '%{http_code}' http://127.0.0.1:4010/ || true)" != "000" ]; then echo "port 4010 is already in use" >&2; rm -rf /opt/windapi-new; exit 1; fi
+port_free 4010 || { say "port 4010 is already in use"; exit 1; }
 set -a; . /etc/wind-api.env; set +a
 # The dry run talks to nothing outside the VM: no Firebase, email or SMS provider keys (Haiku PR #101 M2).
 for v in $(compgen -e | grep -E '^(WIND_FIREBASE|FIREBASE|GOOGLE_|WIND_EMAIL|WIND_SMTP|WIND_SMS|WIND_OTP|WIND_PHONE|CLOUDFLARE)' || true); do unset "$v"; done
-cd /opt/windapi-new
-sudo -u wind -E env NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DRY/wind.db" TZ=Asia/Hebron WEB_ROOT=/opt/windapi-new/web \
-  /opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts > "$WORK/dry.log" 2>&1 &
+cd "$REL"
+# 8<&-: the dry run never holds the database lock (Sol recheck L2).
+sudo -u wind -E env NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DRY/wind.db" TZ=Asia/Hebron WEB_ROOT="$REL/web" \
+  /opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts > "$WORK/dry.log" 2>&1 8<&- &
 PID=$! # sudo relays the kill to node
 cd /
 ok=0; for i in $(seq 1 60); do
@@ -69,35 +134,44 @@ ok=0; for i in $(seq 1 60); do
   curl -fsS -m 3 http://127.0.0.1:4010/api/ready > "$WORK/ready.json" 2>/dev/null && { ok=1; break; }; sleep 1
 done
 kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; PID=""
-[ "$ok" -eq 1 ] || { echo "dry run failed on a copy of the live data; the live service is untouched" >&2; tail -20 "$WORK/dry.log" >&2; rm -rf /opt/windapi-new; exit 1; }
+[ "$ok" -eq 1 ] || { say "dry run failed on a copy of the live data; the live service is untouched"; tail -20 "$WORK/dry.log" >&2; exit 1; }
 echo "dry run on a copy of the live data: $(cat "$WORK/ready.json")"
 
-OLD="/opt/windapi-old-$STAMP"
-rollback() { # the old tree goes back and starts again; the candidate stays aside for diagnosis
-  echo "install failed: putting the previous release back" >&2
-  systemctl stop wind-api 2>/dev/null || true
-  # The candidate may have migrated the live database before failing: the database goes back to this install's snapshot
-  # too, keeping what was there beside it (Haiku PR #101 M1).
-  if [ -n "$SNAP" ] && [ -f "$SNAP" ]; then
-    for suffix in '' -wal -shm; do [ ! -e "/data/wind.db$suffix" ] || mv -f "/data/wind.db$suffix" "/data/wind.db.failed-$STAMP$suffix"; done
-    install -o wind -g wind -m 600 "$SNAP" /data/wind.db
-  fi
-  if [ -d "$OLD" ]; then
-    [ ! -d /opt/windapi ] || mv /opt/windapi "/opt/windapi-failed-$STAMP"
-    mv "$OLD" /opt/windapi
-  fi
-  systemctl start wind-api || true
-  exit 1
-}
-trap 'rollback' INT TERM HUP
-systemctl stop wind-api 2>/dev/null || true
-if [ -d /opt/windapi ] && [ -n "$(ls -A /opt/windapi)" ]; then mv /opt/windapi "$OLD"; else rm -rf /opt/windapi; fi
-mv /opt/windapi-new /opt/windapi || rollback
-systemctl enable --now wind-api >/dev/null || rollback
-ok=0; for i in $(seq 1 30); do curl -fsS -m 3 http://127.0.0.1:4000/api/ready > "$WORK/ready.json" 2>/dev/null && { ok=1; break; }; sleep 1; done
-[ "$ok" -eq 1 ] || { journalctl -u wind-api -n 20 --no-pager >&2; rollback; }
-trap - INT TERM HUP
+# The previous release, whatever form the host has it in.
+if [ -L "$LIVE" ]; then PREV=$(readlink -f "$LIVE"); [ -d "$PREV" ] || PREV="" # a dangling pointer from a failed first install
+elif [ -d "$LIVE" ] && [ -n "$(ls -A "$LIVE")" ]; then PREV="$RELEASES/legacy-$STAMP"
+elif [ -e "$LIVE" ] && [ ! -d "$LIVE" ]; then say "$LIVE is neither a directory nor a symlink"; exit 1
+fi
+
+# Freeze: no requests, then no writer, both checked. From here a failure recovers through on_exit; an uncertain stop or a failed
+# checkpoint changes nothing, and the previous release is reopened only once it answers /api/ready.
+stopped caddy || { systemctl start caddy || true; say "Caddy did not stop; nothing was changed"; exit 1; }
+PHASE=frozen
+{ stopped wind-api && port_free 4000; } || { say "the API did not stop for certain; nothing was changed"; exit 1; }
+if [ -s "$DB" ]; then
+  snapshot "$DB" "$SNAP" || { rm -f -- "$SNAP"; say "the checkpoint failed; nothing was changed"; exit 1; }
+  CHECKPOINT=$SNAP; echo "checkpoint of the stopped database: $SNAP"
+fi
+
+# Switch (a one-time move of a legacy directory first; its window is only while the API is stopped).
+PHASE=switched
+if [ "$PREV" = "$RELEASES/legacy-$STAMP" ]; then mv -T "$LIVE" "$PREV"; elif [ -d "$LIVE" ] && [ ! -L "$LIVE" ]; then rmdir "$LIVE"; fi
+point "$REL"
+PHASE=started # from the start command on, the candidate may write to the live database
+systemctl start wind-api
+ready 4000 60 || { journalctl -u wind-api -n 20 --no-pager >&2; say "the candidate did not become ready"; exit 1; }
+systemctl enable wind-api >/dev/null 2>&1 || true
+systemctl start caddy || { say "the candidate is ready but Caddy did not start"; exit 1; }
+PHASE=live
 echo "live: $(cat "$WORK/ready.json")"
-# Keep the three newest old trees (disk: Sol ops review 21 Nov); pre-install snapshots keep their own 30 days.
-ls -1dt /opt/windapi-old-* 2>/dev/null | tail -n +4 | while read -r tree; do rm -rf -- "$tree"; done
-echo "previous release: $OLD; its database snapshot: $SNAP"
+
+# Keep the active release and the three newest others; checkpoints keep their own 30 days. Listings are empty-safe (Sol recheck L1).
+ACTIVE=$(readlink -f "$LIVE")
+prune() { # $1 directory, $2 name pattern, $3 how many to keep besides the active release
+  find "$1" -mindepth 1 -maxdepth 1 -type d -name "$2" -printf '%T@ %p\n' | sort -rn | cut -d' ' -f2- | { grep -vxF "$ACTIVE" || true; } \
+    | tail -n +"$(( $3 + 1 ))" | while read -r tree; do case "$tree" in "$1"/?*) rm -rf -- "$tree" ;; esac; done
+}
+prune "$RELEASES" '*' 3 || say "could not prune old releases"
+prune /opt 'windapi-old-*' 1 || say "could not prune pre-symlink release trees"
+find "$DATA/backups" -maxdepth 1 -name 'pre-install-*.db' -mtime +30 -delete || say "could not prune old checkpoints"
+echo "previous release: ${PREV:-none}; checkpoint: ${CHECKPOINT:-none}"

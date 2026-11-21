@@ -362,6 +362,10 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     // SHIP-08: a parcel or freight delivery failure may be reattempted twice; a support hold is not a delivery attempt.
     ...(viewer.role === 'admin' && r.status === 'on_hold' && (r.service === 'parcel' || r.service === 'freight') && exceptionReasons.includes(r.exception_reason)
       && { reattemptAllowed: (await orderDeliveryAttempts(r.id)) < 3 }),
+    // Support took the goods from this assignment's captain mid-return (CUSTODY_TAKEN): the captain's return code no longer closes
+    // the order, and only office intake by support remains (Sol recheck of PR #101, HIGH 1).
+    ...((viewer.role === 'admin' || assigned) && r.status === 'returning' && r.service !== 'ride'
+      && { supportHasGoods: !!(await assignmentEvidence(r, 'CUSTODY_TAKEN')) }),
     // DRV-17: support sees a courier block's review on the order it ended.
     ...(viewer.role === 'admin' && ['cancelled', 'returning', 'returned'].includes(r.status) && await blockReviewsAvailable()
       && await (async () => { const b = await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', r.id); return b ? { blockReview: blockReviewView(b) } : {}; })()),
@@ -2939,6 +2943,10 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req 
   // Use a distinct command so an older server refuses an office receipt instead of silently omitting the additional leg.
   const action = typeof body.action === 'string' ? body.action : fail(400, 'invalid_input');
   if (body.handoff !== undefined) fail(400, 'invalid_input'); // typed handbacks use separate commands, including on retry
+  // 'support_takeover': support collects the goods from the captain during the return, before any office or sender closure. It
+  // changes no status; it records custody for the current assignment, so the captain's code can no longer close the order and
+  // the captain is paid the trip so far (Sol recheck of PR #101, HIGH 1: SQLite had no way to record that hand-over).
+  const takeover = action === 'support_takeover';
   const deliveredToOffice = action === 'confirm_office_return';
   const deliveredToSender = action === 'confirm_sender_return';
   const confirmsReturn = action === 'confirm_return' || deliveredToOffice || deliveredToSender;
@@ -2955,10 +2963,10 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req 
   if (action === 'confirm_return' && cashClientFenced(req.headers['x-wind-client'], production)) fail(426, 'client_update_required');
   const officeLeg = deliveredToOffice && carrier === 'captain';
   const handoff = deliveredToOffice ? 'office' : deliveredToSender ? 'sender' : action === 'confirm_return' ? 'unspecified' : undefined;
-  const from = confirmsReturn ? 'returning' : action === 'reattempt' || action === 'return' ? 'on_hold' : null;
+  const from = confirmsReturn || takeover ? 'returning' : action === 'reattempt' || action === 'return' ? 'on_hold' : null;
   const to = confirmsReturn ? 'returned' : action === 'reattempt' ? 'in_transit' : 'returning';
   if (reason.length < 5 || !from) fail(400, 'invalid_input');
-  if (confirmsReturn) needStaff(await staffActor(persistence, user), fail, 'support');
+  if (confirmsReturn || takeover) needStaff(await staffActor(persistence, user), fail, 'support');
   const id = Number(params[0]);
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
@@ -2972,12 +2980,24 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req 
     // Each update re-checks the state it leaves, so two concurrent resolves (a double submit, two admins) decide once:
     // PostgreSQL's BEGIN does not lock the row read above.
     const moved = (changes: number | bigint) => { if (!changes) fail(409, 'cannot_resolve'); };
-    if (body.action === 'reattempt') moved((await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ? AND status = 'on_hold'", Date.now(), id)).changes);
+    const custodyTaken = order.status === 'returning' && !!(await assignmentEvidence(order, 'CUSTODY_TAKEN'));
+    // Once support holds the goods, the captain cannot have brought them to the office.
+    if (custodyTaken && carrier === 'captain') fail(409, 'cannot_resolve');
+    const recordCustody = async () => {
+      if (!custodyTaken) (await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'CUSTODY_TAKEN', ?, ?)",
+        user.id, id, JSON.stringify({ assignmentEpoch: order.assignment_epoch, driverId: order.driver_id, reason }), Date.now()));
+    };
+    if (takeover) {
+      if (custodyTaken) fail(409, 'cannot_resolve'); // already recorded: a double submit decides once
+      // The row write takes PostgreSQL's row lock and re-checks the state, as the other branches do.
+      moved((await run("UPDATE orders SET updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), id)).changes);
+      await recordCustody();
+    }
+    else if (body.action === 'reattempt') moved((await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ? AND status = 'on_hold'", Date.now(), id)).changes);
     else if (confirmsReturn) {
       moved((await run("UPDATE orders SET status = 'returned', commission = 0, completed_at = ?, updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), Date.now(), id)).changes); // DRV-17
       await markNoFare(user.id, id);
-      if (carrier === 'support' && !(await assignmentEvidence(order, 'CUSTODY_TAKEN'))) (await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'CUSTODY_TAKEN', ?, ?)",
-        user.id, id, JSON.stringify({ assignmentEpoch: order.assignment_epoch, driverId: order.driver_id, reason }), Date.now()));
+      if (carrier === 'support') await recordCustody();
       await shop.afterFinish(order, 'returned', user.id, {}, officeLeg);
       await shippingTripPay(order, 'returned', user.id, officeLeg);
       await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed
@@ -2989,7 +3009,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req 
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'EXCEPTION_RESOLVED', ?, ?)`,
       user.id, id, JSON.stringify({ action: confirmsReturn ? 'confirm_return' : action, reason, handoff, ...(carrier && { carrier }) }), Date.now()));
     await queuePush([order.driver_id], 'decided', id); // SPEC-exception-push.md; ponytail: one generic line, the job card shows which decision
-    await queuePush([order.customer_id], to, id);
+    if (!takeover) await queuePush([order.customer_id], to, id); // the sender's order is still returning
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   return (await getOrder(id, user));

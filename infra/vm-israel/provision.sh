@@ -5,6 +5,8 @@
 set -euo pipefail
 HOST=${1:?public host name, e.g. 20.217.202.98.sslip.io}
 BACKUP_ACCOUNT=${2:-}   # private Azure Blob account for the off-host backup copy (deploy.md)
+# Azure's storage account naming rule, checked before the name is written anywhere (Sol recheck L5).
+[ -z "$BACKUP_ACCOUNT" ] || [[ "$BACKUP_ACCOUNT" =~ ^[a-z0-9]{3,24}$ ]] || { echo "invalid storage account name: $BACKUP_ACCOUNT" >&2; exit 1; }
 NODE_VERSION=24.12.0
 export DEBIAN_FRONTEND=noninteractive
 
@@ -36,7 +38,8 @@ if ! command -v caddy >/dev/null; then
 fi
 
 id wind >/dev/null 2>&1 || useradd --system --home /data --shell /usr/sbin/nologin wind
-mkdir -p /data /data/backups /opt/windapi
+# /opt/windapi is install-release.sh's symlink to the active release under /opt/wind-releases; provisioning never creates it.
+mkdir -p /data /data/backups
 chown -R wind:wind /data && chmod 750 /data
 
 # Service environment (root-only file; the unit loads it).
@@ -84,6 +87,9 @@ EOF
 cat > /etc/systemd/system/wind-backup.service <<'EOF'
 [Unit]
 Description=Wind daily database backup
+# The upload needs the network (Sol recheck L6).
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot

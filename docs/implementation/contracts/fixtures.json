@@ -2642,6 +2642,7 @@
         "exceptionReason": "absent",
         "exceptionDetail": null,
         "safetyHold": false,
+        "supportHasGoods": false,
         "safetyReport": null,
         "dispute": null,
         "customerName": "Synthetic customer",
@@ -2763,6 +2764,7 @@
         "exceptionReason": "absent",
         "exceptionDetail": null,
         "safetyHold": false,
+        "supportHasGoods": false,
         "safetyReport": null,
         "dispute": null,
         "customerName": "Synthetic customer",
@@ -2827,6 +2829,7 @@
         "exceptionReason": "absent",
         "exceptionDetail": null,
         "safetyHold": false,
+        "supportHasGoods": false,
         "safetyReport": null,
         "dispute": null,
         "customerName": "Synthetic customer",
@@ -3100,10 +3103,10 @@
             "amountCents": -6000,
             "note": "Trip pay · أجر الرحلة · order 3",
             "status": "confirmed",
+            "source": "trip_pay",
             "reference": null,
             "createdAt": "<server-timestamp>",
-            "decidedAt": null,
-            "source": "trip_pay"
+            "decidedAt": null
           },
           {
             "id": 1,
@@ -4495,6 +4498,14 @@
         "exceptionReason": "absent",
         "exceptionDetail": null,
         "safetyHold": false,
+        "blockReview": {
+          "dueAt": "<server-timestamp>",
+          "tripPayCents": 2000,
+          "decidedAt": null,
+          "cleared": null,
+          "paidCents": null,
+          "blockedBy": 1
+        },
         "safetyReport": null,
         "dispute": null,
         "customerName": "Synthetic customer",
@@ -4509,15 +4520,7 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4,
-        "blockReview": {
-          "dueAt": "<server-timestamp>",
-          "tripPayCents": 2000,
-          "decidedAt": null,
-          "cleared": null,
-          "paidCents": null,
-          "blockedBy": 1
-        }
+        "driverRating": 4
       }
     },
     {

@@ -258,6 +258,33 @@ try {
   await call(`/admin/orders/${supportTook.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'support', reason: 'Support took it from the captain' } });
   assert.deepEqual(tripEntries(await call('/driver/cash', { token: driver.token }), supportTook).map(e => e.amountCents), [-Math.round(supportTook.price * 100)]);
   assert.ok(await persistence.one("SELECT 1 n FROM security_events WHERE order_id = ? AND action = 'CUSTODY_TAKEN'", supportTook.id), 'the transfer is recorded');
+  // Sol recheck of PR #101, HIGH 1: support takes the goods from the captain mid-return and the office receives them later. Between
+  // the two, the captain's valid return code no longer closes the order, the captain cannot be named as the office carrier, and the
+  // captain is paid the trip so far once support closes it.
+  let midReturn = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  midReturn = await call(`/jobs/${midReturn.id}/accept`, { token: driver.token, body: {} });
+  midReturn = await advance(driver.token, await advance(driver.token, midReturn));
+  await call(`/orders/${midReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
+  await call(`/admin/orders/${midReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient unreachable' } });
+  assert.equal((await call(`/orders/${midReturn.id}`, { token: driver.token })).supportHasGoods, false);
+  const tookOver = await call(`/admin/orders/${midReturn.id}/resolve`, { token: admin.token, body: { action: 'support_takeover', reason: 'Support met the captain at the checkpoint' } });
+  assert.deepEqual([tookOver.status, tookOver.supportHasGoods], ['returning', true], 'the order keeps returning, with support holding it');
+  assert.equal((await call(`/orders/${midReturn.id}`, { token: driver.token })).supportHasGoods, true, 'the captain sees support has the goods');
+  assert.equal((await call(`/orders/${midReturn.id}`, { token: customer.token })).supportHasGoods, undefined, 'the sender sees no custody detail');
+  assert.equal((await call(`/admin/orders/${midReturn.id}/resolve`, { token: admin.token, body: { action: 'support_takeover', reason: 'Double submit' }, expect: 409 })).error, 'cannot_resolve');
+  const { returnCode: midCode } = await call(`/orders/${midReturn.id}`, { token: customer.token });
+  assert.equal((await call(`/orders/${midReturn.id}/advance`, { token: driver.token, body: { expectedStatus: 'returning', requestId: randomUUID(), code: midCode }, expect: 409 })).error, 'cannot_advance',
+    'a valid captain code no longer closes the return');
+  assert.equal((await call(`/admin/orders/${midReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'captain', reason: 'Captain brought it' }, expect: 409 })).error, 'cannot_resolve');
+  assert.deepEqual(tripEntries(await call('/driver/cash', { token: driver.token }), midReturn), [], 'nothing is paid before the office closes it');
+  const intake = await call(`/admin/orders/${midReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'support', reason: 'Support brought it to the office' } });
+  assert.equal(intake.status, 'returned');
+  assert.deepEqual(tripEntries(await call('/driver/cash', { token: driver.token }), midReturn).map(e => e.amountCents), [-Math.round(midReturn.price * 100)], 'the trip so far, no return leg');
+  const custody = await persistence.all("SELECT actor_id, detail FROM security_events WHERE order_id = ? AND action = 'CUSTODY_TAKEN'", midReturn.id);
+  assert.equal(custody.length, 1, 'one custody record, from the takeover');
+  assert.deepEqual([custody[0].actor_id, JSON.parse(custody[0].detail).driverId, JSON.parse(custody[0].detail).reason], [admin.user.id, driver.user.id, 'Support met the captain at the checkpoint']);
+  const takeoverAudit = await persistence.all("SELECT detail FROM security_events WHERE order_id = ? AND action = 'EXCEPTION_RESOLVED'", midReturn.id);
+  assert.ok(takeoverAudit.some(r => JSON.parse(r.detail).action === 'support_takeover'), 'the takeover is audited');
 
   await checkCompletedReattempt({ call, persistence, input, driver, customer, admin });
   await checkPickupPay({ call, persistence, input, driver, other, customer, admin, liveWatcherCount });
