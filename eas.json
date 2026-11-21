@@ -4,11 +4,13 @@
   },
   "build": {
     "preview": {
+      "node": "24.12.0",
       "distribution": "internal",
       "environment": "preview",
       "autoIncrement": true
     },
     "production": {
+      "node": "24.12.0",
       "autoIncrement": true,
       "environment": "production"
     },
