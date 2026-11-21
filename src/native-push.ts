@@ -37,6 +37,9 @@ if (Platform.OS !== 'web') {
 // Without `ask`, a device that already granted it just re-registers. One registration runs at a time: sign-in and the session
 // effect can both start one, and two system dialogs must not race (Haiku polish M2).
 let running: Promise<void> = Promise.resolve();
+// At most one system dialog per app session: after one denial Android still allows asking, and sign-in plus the session effect
+// (or every visit to merchant mode) would ask again back to back (Haiku polish r2 N1, N3).
+let askedThisSession = false;
 export function registerNativePush(lang: 'ar' | 'en', ask: false | 'once' | 'always' = false): Promise<void> {
   if (Platform.OS === 'web') return Promise.resolve();
   const next = running.then(() => register(lang, ask));
@@ -49,9 +52,11 @@ async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always'): Prom
     if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('default', { name: lang === 'ar' ? 'ويند' : 'Wind', importance: Notifications.AndroidImportance.HIGH });
     const current = await Notifications.getPermissionsAsync();
     let status = current.status;
-    if (status !== 'granted' && ask && current.canAskAgain && (ask === 'always' || await storage.get('pushAsked') !== '1')) {
-      await storage.set('pushAsked', '1');
+    if (status !== 'granted' && ask && current.canAskAgain && !askedThisSession && (ask === 'always' || await storage.get('pushAsked') !== '1')) {
+      askedThisSession = true;
       status = (await Notifications.requestPermissionsAsync()).status;
+      // A customer's once-per-device ask is spent once answered (Haiku polish r2 N5); captains' asks keep no device flag.
+      if (ask === 'once') await storage.set('pushAsked', '1').catch(() => undefined);
     }
     if (status !== 'granted') return;
     const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;

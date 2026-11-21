@@ -44,9 +44,14 @@ export default function Home() {
   const [open, setOpen] = useState(false);
   // The first-order guide lives on the sheet, which starts closed: with no orders and the guide not hidden, the sheet opens once
   // so a new customer sees it (Haiku polish H2).
-  const [guideHidden, setGuideHidden] = useState<boolean | null>(null);
   const guideKey = `${GUIDE_KEY}.${me?.user.id ?? 0}`; // per account: another account on this phone still sees it
-  useEffect(() => { storage.get(guideKey).then(value => setGuideHidden(value === '1'), () => setGuideHidden(false)); }, [guideKey]);
+  // The flag read belongs to the account it was read for: another account is unknown (hidden) until its own read lands.
+  const [guideRead, setGuideRead] = useState<{ key: string; hidden: boolean } | null>(null);
+  const guideHidden = guideRead?.key === guideKey ? guideRead.hidden : null;
+  const setGuideHidden = (hidden: boolean) => setGuideRead({ key: guideKey, hidden });
+  useEffect(() => {
+    storage.get(guideKey).then(value => setGuideRead({ key: guideKey, hidden: value === '1' }), () => setGuideRead({ key: guideKey, hidden: false }));
+  }, [guideKey]);
   const guideShown = data?.length === 0 && guideHidden === false;
   const guideOpened = useRef(false);
   useEffect(() => { if (guideShown && !guideOpened.current) { guideOpened.current = true; setOpen(true); } }, [guideShown]);
@@ -214,7 +219,7 @@ function FirstOrderGuide({ onStart, onHide }: { onStart: () => void; onHide: () 
         <Txt variant="title" header style={{ flex: 1 }}>{c.guideTitle}</Txt>
         <IconButton icon="close" label={c.guideHide} tone="muted" onPress={onHide} />
       </Row>
-      {steps.map(([icon, text], i) => <View key={icon} accessible accessibilityLabel={`. ${text}`} style={{ flexDirection: row, gap: 10, alignItems: 'center', marginTop: 8 }}>
+      {steps.map(([icon, text], i) => <View key={icon} accessible accessibilityLabel={`${i + 1}. ${text}`} style={{ flexDirection: row, gap: 10, alignItems: 'center', marginTop: 8 }}>
         <View style={styles.guideStep}><Txt variant="label" style={{ color: palette.lime }}>{String(i + 1)}</Txt></View>
         <Ionicons name={icon} size={iconSize.md} color={palette.olive} />
         <Txt variant="caption" style={{ flex: 1, color: palette.ink }}>{text}</Txt>
