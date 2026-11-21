@@ -1,6 +1,6 @@
 // Home, Uber/Careem pattern: one "Where to?" entry, the three services as small tiles, the live order,
 // recent routes to book again, and short cards that explain saving and safety.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { wrapAbove } from '../../text-scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +14,7 @@ import { pickupLocation, rememberedHere, rememberHere } from '../../pickup-locat
 import { SceneMap } from '../../scene-map';
 import { OrderRow, ServiceIcon, tripTitle, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
+import { storage } from '../../storage';
 import { Appear, ErrorText, fill, IconButton, iconSize, ListGroup, Loading, Logo, maxScale, palette, Press, Rail, Row, Section, shadow, Txt, useCopy, useLines, type IconName } from '../../ui';
 
 const book = (params: { service: Service; from?: string; to?: string; pick?: 'to'; when?: 'later'; again?: string }) => router.push({ pathname: '/book', params });
@@ -22,7 +23,8 @@ export default function Home() {
   const { me } = useSession();
   const { c, row, rtl, language } = useCopy();
   // Past the wrap threshold a tile stacks its icon over the label: beside it, a third of the width cut أغراض mid-word (A53, 200%).
-  const stacked = useWindowDimensions().fontScale > wrapAbove;
+  // Four services stack too: a quarter of the row left "Items & …" cut at normal text size (screens, 21 Nov).
+  const fontScale = useWindowDimensions().fontScale;
   const { data, error, reload } = useApi<Order[]>('/orders', 10_000);
   const orders = data ?? [];
   // A newer booked-ahead order hid a live trip or a search running now behind "See all". Stable sort keeps newest first per rank.
@@ -34,11 +36,25 @@ export default function Home() {
   const first = me?.user.name.split(' ')[0] ?? '';
   const greet = new Date().getHours() < 12 ? c.goodMorning : c.goodEvening;
   const enabledServices = me?.capabilities?.enabledServices ?? ['parcel'];
+  const stacked = fontScale > wrapAbove || services.filter(service => enabledServices.includes(service)).length > 3; // the tiles drawn
   const firstService: Service = enabledServices.includes('ride') ? 'ride' : 'parcel'; // "where to" books a trip; shop delivery has its own tile
   const [here, setHere] = useState<(Point & { accuracy?: number | null }) | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationNote, setLocationNote] = useState('');
   const [open, setOpen] = useState(false);
+  // The first-order guide lives on the sheet, which starts closed: with no orders and the guide not hidden, the sheet opens once
+  // so a new customer sees it (Haiku polish H2).
+  const guideKey = `${GUIDE_KEY}.${me?.user.id ?? 0}`; // per account: another account on this phone still sees it
+  // The flag read belongs to the account it was read for: another account is unknown (hidden) until its own read lands.
+  const [guideRead, setGuideRead] = useState<{ key: string; hidden: boolean } | null>(null);
+  const guideHidden = guideRead?.key === guideKey ? guideRead.hidden : null;
+  const setGuideHidden = (hidden: boolean) => setGuideRead({ key: guideKey, hidden });
+  useEffect(() => {
+    storage.get(guideKey).then(value => setGuideRead({ key: guideKey, hidden: value === '1' }), () => setGuideRead({ key: guideKey, hidden: false }));
+  }, [guideKey]);
+  const guideShown = data?.length === 0 && guideHidden === false;
+  const guideOpened = useRef(false);
+  useEffect(() => { if (guideShown && !guideOpened.current) { guideOpened.current = true; setOpen(true); } }, [guideShown]);
   const [peek, setPeek] = useState(0);
   const [topBar, setTopBar] = useState(0); // the greeting row's measured height: the camera keeps clear of it at any text size
   const side = useSideSheet();
@@ -67,6 +83,7 @@ export default function Home() {
 
   const sheet = <>
     <VerifyEmailNudge />
+    {guideShown && <FirstOrderGuide onStart={() => book({ service: firstService })} onHide={() => { setGuideHidden(true); void storage.set(guideKey, '1').catch(() => undefined); }} />}
     <ErrorText>{error && c.updatesPaused}</ErrorText>
     {!data && <Loading failed={!!error} onRetry={reload} />}
 
@@ -179,6 +196,9 @@ const styles = StyleSheet.create({
   now: { alignItems: 'center', gap: 5, minHeight: 40, paddingHorizontal: 12, borderRadius: 20, backgroundColor: palette.card },
   nowText: { fontSize: 13, fontWeight: '700', color: palette.ink },
   // flexGrow, not flex: 1. Inside the Pressable's column, flex: 1 set a zero height basis and held the tile at minHeight, so large text spilled out.
+  guide: { backgroundColor: palette.card, borderRadius: 16, padding: 14, marginBottom: 12 },
+  guideStep: { minWidth: 24, minHeight: 24, paddingHorizontal: 6, borderRadius: 12, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center' },
+  guideCta: { marginTop: 12, minHeight: 48, borderRadius: 24, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
   tile: { flexGrow: 1, alignItems: 'center', gap: 6, borderRadius: 14, backgroundColor: palette.card, minHeight: 48, paddingHorizontal: 8 },
   tileStacked: { flexDirection: 'column', justifyContent: 'center', paddingVertical: 8 },
   recent: { alignItems: 'center', gap: 12, minHeight: 58, paddingHorizontal: 14, paddingVertical: 8 },
@@ -186,3 +206,27 @@ const styles = StyleSheet.create({
   promo: { width: 224, borderRadius: 16, padding: 14, minHeight: 118 },
   wide: { width: 'auto', minHeight: 0, marginTop: 20 },
 });
+
+// First order: how Wind works in three facts (price first, cash to the driver, the handover code), and one button that
+// starts it. Shown until the first order exists or the customer hides it (product audit 21 Nov; Careem/Talabat pattern).
+const GUIDE_KEY = 'wind.firstOrderGuide.hidden';
+function FirstOrderGuide({ onStart, onHide }: { onStart: () => void; onHide: () => void }) {
+  const { c, row } = useCopy();
+  const steps: [IconName, string][] = [['location-outline', c.guideStepPlace], ['pricetag-outline', c.guideStepPrice], ['cash-outline', c.guideStepCash]];
+  return <Appear index={0}>
+    <View style={[styles.guide, shadow]}>
+      <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <Txt variant="title" header style={{ flex: 1 }}>{c.guideTitle}</Txt>
+        <IconButton icon="close" label={c.guideHide} tone="muted" onPress={onHide} />
+      </Row>
+      {steps.map(([icon, text], i) => <View key={icon} accessible accessibilityLabel={`${i + 1}. ${text}`} style={{ flexDirection: row, gap: 10, alignItems: 'center', marginTop: 8 }}>
+        <View style={styles.guideStep}><Txt variant="label" style={{ color: palette.lime }}>{String(i + 1)}</Txt></View>
+        <Ionicons name={icon} size={iconSize.md} color={palette.olive} />
+        <Txt variant="caption" style={{ flex: 1, color: palette.ink }}>{text}</Txt>
+      </View>)}
+      <Press accessibilityLabel={c.guideStart} onPress={onStart} style={[styles.guideCta, { flexDirection: row }]}>
+        <Txt variant="label" style={{ color: palette.onFill }}>{c.guideStart}</Txt>
+      </Press>
+    </View>
+  </Appear>;
+}

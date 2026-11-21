@@ -1,11 +1,12 @@
 // Merchant mode (MER-01, MER-02, MER-04, MER-05): the same account and app, opened from Account. A shop applies here (ACC-06),
 // waits for approval, then works its inbox: new orders say so in words (not a sound alone), with the accept clock.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api, useApi } from '../../api';
 import { cities, hhmm, minuteFromText, shopCategories, statusFlow, type Merchant, type Order, type Point, type ShopCategory } from '../../model';
+import { registerNativePush } from '../../native-push';
 import PinSheet from '../../pin-sheet';
 import { useSession } from '../../session';
 import { useCountdown } from '../../shop-ui';
@@ -14,9 +15,12 @@ import { Badge, Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Li
 type Statement = { balanceAgorot: number; payableAgorot: number; entries: { id: number; orderId: number | null; kind: string; amountAgorot: number; note: string; reference: string | null; createdAt: number }[] };
 
 export default function MerchantHome() {
-  const { c, money, rtl, err } = useCopy();
+  const { c, money, rtl, err, language } = useCopy();
   const mine = useApi<{ merchant: Merchant | null }>('/merchant');
   const merchant = mine.data?.merchant;
+  // A working shop is asked for notifications here: new orders are its work (customers are asked after their first order).
+  const working = !!merchant && merchant.status !== 'pending';
+  useEffect(() => { if (working) void registerNativePush(language, 'always'); }, [working, language]);
   const inbox = useApi<{ merchant: Merchant; orders: Order[] }>(merchant && merchant.status !== 'pending' ? '/merchant/orders' : null, 10_000);
   const statement = useApi<Statement>(merchant && merchant.status !== 'pending' ? '/merchant/statement' : null);
   const [busy, setBusy] = useState(false);

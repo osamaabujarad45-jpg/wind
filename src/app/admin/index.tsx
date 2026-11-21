@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { cubicBezier, useReducedMotion } from '../../motion';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
 import { useApi } from '../../api';
 import { OfficeShelf } from '../../office-ui';
 import { PushRow } from '../../parts';
+import { NativePushRow } from '../../native-push-row';
 import { pushSupported } from '../../push';
 import { isolate, ltr, type Order, type OrderStatus } from '../../model';
 import { Appear, Badge, Card, ErrorText, Header, ListGroup, Loading, palette, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
@@ -32,7 +33,7 @@ export default function Dashboard() {
   return <Screen onRefresh={reload}>
     <Header title={c.dashboard} />
     <Txt style={{ marginTop: -12, marginBottom: 14 }}>{c.helloAdmin /* never the account name: a seeded Arabic name read "Hi إدارة ويند" in English (design review D-26) */}</Txt>
-    {pushSupported() && <ListGroup><PushRow /></ListGroup>}
+    {pushSupported() ? <ListGroup><PushRow /></ListGroup> : Platform.OS !== 'web' && <ListGroup><NativePushRow /></ListGroup>}{/* phones: the system permission (Haiku polish r2 N2) */}
     <ErrorText>{error && err(error)}</ErrorText>
     {!data ? <Loading failed={!!error} onRetry={reload} /> : <>
       {data.backupStale && <View accessibilityLiveRegion="polite"><Card tone="clay">
