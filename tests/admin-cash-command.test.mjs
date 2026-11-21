@@ -394,6 +394,14 @@ assert.equal((screen.match(/disabled=\{busy \|\| recovering\} reason=\{c\.wait_b
 // Haiku r21 N21-1: a new action keeps every captain's drained line; refresh never clears the failure channel.
 assert.match(screen, /setBusy\(true\); setFailure\(drained\); setMessage\(drained\);/);
 assert.match(screen, /onRefresh=\{\(\) => \{ setMessage\(\[\]\); reloadPending\(\);/);
+// Haiku r22 F1-F4: every new-action reset keeps drained lines in both channels: submit and resolve, both Mark presses,
+// and the three form openers; the live list wins over the captured name; the harness keeps an unloaded list unloaded.
+assert.equal((screen.match(/setBusy\(true\); setFailure\(drained\); setMessage\(drained\);/g) ?? []).length, 2);
+assert.equal((screen.match(/onPress=\{\(\) => \{ setMessage\(drained\); setFailure\(drained\); setResolving\(/g) ?? []).length, 2);
+assert.equal((screen.match(/onPress=\{\(\) => \{ setMessage\(drained\); setFailure\(drained\); setOpen\(/g) ?? []).length, 3);
+assert.doesNotMatch(screen, /set(Message|Failure)\(\[\]\)(?!; reloadPending)/);
+assert.match(screen, /data\?\.find\(candidate => candidate\.driverId === notice\.driverId\) \?\? \(notice\.name/);
+assert.match(readFileSync(new URL('./admin-review.test.mjs', import.meta.url), 'utf8'), /path in data \? data\[path\] : \[\]/);
 for (const language of ['ar', 'en']) assert.equal(copy[language].err_cash_command_pending, undefined, `${language}: the resend instruction is gone (Haiku r19 N19-4, r20 N20-6)`);
 // Sol R18-L1: a marked refusal is checked, not resent.
 assert.match(screen, /title=\{open\.origin && \(open\.origin\.refused \|\| ambiguousLegacy\(open\.origin\)\) \? c\.cashCheckRecord : c\.cashRetrySame\}/);

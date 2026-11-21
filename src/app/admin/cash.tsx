@@ -255,10 +255,10 @@ export default function AdminCash() {
             {!open.uncertain && <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setOpen(null)} />}
           </View> : <Row gap={8} style={{ marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
             <Button title={c.cashRecord} size="sm" icon="cash-outline" disabled={blocked || row.owedCents - row.pendingCents <= 0} reason={blocked ? blockedReason : c.cash_none_owed}
-              onPress={() => { setMessage(drained); setOpen({ id: row.driverId, kind: 'remittance', amount: String((row.owedCents - row.pendingCents) / 100), note: '', requestId: newRequestId() }); }} />
+              onPress={() => { setMessage(drained); setFailure(drained); setOpen({ id: row.driverId, kind: 'remittance', amount: String((row.owedCents - row.pendingCents) / 100), note: '', requestId: newRequestId() }); }} />
             {row.owedCents < 0 && <Button title={c.cashPayDriver} size="sm" icon="wallet-outline" variant="soft" disabled={blocked || row.pendingCents > 0} reason={blocked ? blockedReason : c.err_remittance_pending}
-              onPress={() => { setMessage(drained); setOpen({ id: row.driverId, kind: 'payout', amount: String(-row.owedCents / 100), note: c.cashPayoutNote, requestId: newRequestId() }); }} />}
-            <Button title={c.cashAdjust} size="sm" variant="outline" disabled={blocked} reason={blockedReason} onPress={() => { setMessage(drained); setOpen({ id: row.driverId, kind: 'adjustment', amount: '', note: '', requestId: newRequestId() }); }} />
+              onPress={() => { setMessage(drained); setFailure(drained); setOpen({ id: row.driverId, kind: 'payout', amount: String(-row.owedCents / 100), note: c.cashPayoutNote, requestId: newRequestId() }); }} />}
+            <Button title={c.cashAdjust} size="sm" variant="outline" disabled={blocked} reason={blockedReason} onPress={() => { setMessage(drained); setFailure(drained); setOpen({ id: row.driverId, kind: 'adjustment', amount: '', note: '', requestId: newRequestId() }); }} />
           </Row>}
         </Card>
       </Appear>)}

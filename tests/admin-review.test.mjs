@@ -570,6 +570,9 @@ for (const language of ['ar', 'en']) {
   store.set(cashCommand.cashCommandKey(1), JSON.stringify(marked));
   const view = screen('cash', language, { data, me: cashAdmin, effects: true, store });
   view.render(); await flush();
+  // Haiku r22 F4: while the captain is on the list, the live name wins over the one captured at settlement.
+  data['/admin/cash'] = cashData['/admin/cash'].map(row => row.driverId === 8 ? { ...row, name: 'Renamed' } : row);
+  assert.ok(shows(view.render(), `${model.isolate('Renamed')} · ${model.ltr('0599000103')} · 3: `), `${language}: the live name is shown`);
   data['/admin/cash'] = cashData['/admin/cash'].filter(row => row.driverId !== 8); // captain 8 left the list
   assert.ok(shows(view.render(), `${model.isolate('Other')} · ${model.ltr('0599000103')} · 3: cash_command_settled`), `${language}: the captured name stays`);
 }
@@ -614,6 +617,7 @@ for (const language of ['ar', 'en']) {
   for (const title of [c.cashMarkConfirmed, c.cashMarkDisputed])
     assert.equal(button(tree, title)[0].disabled, false, `${language}: ${title} is available after the recovery`);
   await tap(view, c.cashMarkConfirmed);
+  assert.ok(shows(view.render(), 'R-71'), `${language}: a Mark press keeps the drained receipt (Haiku r22 F2/F3)`);
   field(view.render(), c.cashResolutionReason).onChangeText('Cash counted at the office');
   await tap(view, c.cashResolveSave);
   view.dialogs.at(-1).yes(); await flush();
