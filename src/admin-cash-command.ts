@@ -147,7 +147,8 @@ export function cashCommandBody({ kind, driverId, amountCents, note, requestId }
 }
 
 /** Only a refusal of the request itself proves nothing was recorded under this id: the server replays a saved entry
- *  before it checks the balance. 401/403/408/429 and 5xx say nothing about an earlier attempt. */
+ *  before it checks the balance. 401/408/429 and 5xx say nothing about an earlier attempt; a 403 is settled by the receipt
+ *  in `sendCashCommand`. */
 export const refusedForGood = (error: unknown) => [400, 404, 409].includes(status(error));
 /** A refusal the server gave even though the reply arrived after the session changed: the request is settled for good,
  *  and this admin's own slot must say so (Sol R16-M1). A 409 still needs a receipt, which needs that admin's session. */

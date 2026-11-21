@@ -685,6 +685,9 @@ async function captainPay(orderId: number, driverId: number, cents: number, sour
     return;
   }
   const note = source === 'trip_pay' ? `DRV-17 trip pay order ${orderId}` : `DRV-18 pickup pay order ${orderId}`;
+  // The captain row before the entry and its ledger account, as every cash decision locks it: the deferred foreign-key check
+  // at commit could otherwise wait on a captain confirmation that waits on this account insert (Haiku r24 L3a).
+  await lockCashDriver(driverId);
   const id = Number((await run(`INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at, source, order_id)
     VALUES (?, 'adjustment', ?, ?, 'confirmed', ?, ?, ?, ?)`, driverId, -cents, note, actorId, Date.now(), source, orderId)).lastInsertRowid);
   await postCashJournal(id);
@@ -3586,8 +3589,9 @@ async function recordCash(user: User, body: Row, kind: 'remittance' | 'adjustmen
   // its fresh writes get the update screen it already shows. Same-id replay above still answers it.
   if (cashClientFenced(client, production)) fail(426, 'client_update_required');
   // A current cashier always names its request. Without an id a retried lost reply would write a second handover or charge
-  // outside the unique index (Sol R25-M4), so a fresh entry from a build that says who it is, or any production write, needs
-  // one. Scripts and tests elsewhere send no build. A payout keeps its own refusal below.
+  // outside the unique index (Sol R25-M4), so a fresh entry from a build that says who it is needs one. In production a write
+  // with no build is already fenced above; `production` stays here as defence if that fence changes (Haiku r24 L6). Scripts and
+  // tests elsewhere send no build. A payout keeps its own refusal below.
   if (requestId === null && !payout && (production || client !== undefined)) fail(400, 'invalid_request_id');
   // After replay, so a saved entry still answers its own request id (Haiku r7 N-1): every new adjustment, payout included, names its reason.
   if (kind === 'adjustment' && note.length < 5) fail(400, 'invalid_input');
