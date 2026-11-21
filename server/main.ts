@@ -362,6 +362,10 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     // SHIP-08: a parcel or freight delivery failure may be reattempted twice; a support hold is not a delivery attempt.
     ...(viewer.role === 'admin' && r.status === 'on_hold' && (r.service === 'parcel' || r.service === 'freight') && exceptionReasons.includes(r.exception_reason)
       && { reattemptAllowed: (await orderDeliveryAttempts(r.id)) < 3 }),
+    // Support took the goods from this assignment's captain mid-return (CUSTODY_TAKEN): the captain's return code no longer closes
+    // the order, and only office intake by support remains (Sol recheck of PR #101, HIGH 1).
+    ...((viewer.role === 'admin' || assigned) && r.status === 'returning' && r.service !== 'ride'
+      && { supportHasGoods: !!(await assignmentEvidence(r, 'CUSTODY_TAKEN')) }),
     // DRV-17: support sees a courier block's review on the order it ended.
     ...(viewer.role === 'admin' && ['cancelled', 'returning', 'returned'].includes(r.status) && await blockReviewsAvailable()
       && await (async () => { const b = await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', r.id); return b ? { blockReview: blockReviewView(b) } : {}; })()),
@@ -2859,6 +2863,11 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
   const now = Date.now();
   await rideLifecycle.guardAdvance(r, user.id, next, body.boardingCode !== undefined ? body.boardingCode : body.code, body.expectedPinRevision);
   if (next === 'completed' || next === 'returned') {
+    // Support holds the goods once it took them from this assignment's captain, or once that captain was blocked holding them: the
+    // captain's old return code no longer closes the order as a sender handback (Sol full review 21 Nov, item 3).
+    if (next === 'returned' && (await assignmentEvidence(r, 'CUSTODY_TAKEN')
+      || (await all("SELECT detail, created_at FROM security_events WHERE order_id = ? AND action = 'COURIER_BLOCKED'", r.id)).some(event => custodyBlockFrom(r, event) !== null)))
+      fail(409, 'cannot_advance');
     // Delivery needs the recipient's handover code; a return needs the sender's return code.
     const expected = next === 'completed' ? r.handover_code : r.return_code;
     if (((await one('SELECT failures FROM proof_attempts WHERE order_id = ?', r.id))?.failures ?? 0) >= 5) fail(409, 'proof_locked');
@@ -2928,26 +2937,36 @@ route('POST', '/api/orders/:id/exception', async ({ user, params, body }) => {
   return (await driverCommand(user, Number(params[0]), body, reportException));
 });
 
-route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) => {
+route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req }) => {
   need(user, 'admin');
   const reason = text(body.reason, 500);
   // Use a distinct command so an older server refuses an office receipt instead of silently omitting the additional leg.
   const action = typeof body.action === 'string' ? body.action : fail(400, 'invalid_input');
   if (body.handoff !== undefined) fail(400, 'invalid_input'); // typed handbacks use separate commands, including on retry
+  // 'support_takeover': support collects the goods from the captain during the return, before any office or sender closure. It
+  // changes no status; it records custody for the current assignment, so the captain's code can no longer close the order and
+  // the captain is paid the trip so far (Sol recheck of PR #101, HIGH 1: SQLite had no way to record that hand-over).
+  const takeover = action === 'support_takeover';
   const deliveredToOffice = action === 'confirm_office_return';
   const deliveredToSender = action === 'confirm_sender_return';
   const confirmsReturn = action === 'confirm_return' || deliveredToOffice || deliveredToSender;
   // Who carried the goods to the office decides the captain's office leg; it is recorded, never assumed (Kimi, Haiku review of
   // the Sol lead commits). A markerless confirm_return from this release on is neither office nor sender: it keeps its one-leg
   // price, and office intake needs the typed command (historical rows without a handoff keep their old meaning).
+  // 'support': support collected the goods from the captain before the office, so the captain's pay stops at the trip so far
+  // (DRV-17); SQLite has no other way to record that transfer (Sol full review 21 Nov, item 2).
   const carrier = deliveredToOffice ? body.carrier : undefined;
-  if (deliveredToOffice ? carrier !== 'captain' && carrier !== 'staff' : body.carrier !== undefined) fail(400, 'invalid_input');
+  if (deliveredToOffice ? carrier !== 'captain' && carrier !== 'staff' && carrier !== 'support' : body.carrier !== undefined) fail(400, 'invalid_input');
+  // A plain confirmation is priced as a sender handback and cannot be told apart from an office one. An installed build older
+  // than this release gets the update screen for it in production, as for cash writes, instead of a price it cannot correct
+  // (Sol full review 21 Nov, item 1). Scripts and tests elsewhere send no build.
+  if (action === 'confirm_return' && cashClientFenced(req.headers['x-wind-client'], production)) fail(426, 'client_update_required');
   const officeLeg = deliveredToOffice && carrier === 'captain';
   const handoff = deliveredToOffice ? 'office' : deliveredToSender ? 'sender' : action === 'confirm_return' ? 'unspecified' : undefined;
-  const from = confirmsReturn ? 'returning' : action === 'reattempt' || action === 'return' ? 'on_hold' : null;
+  const from = confirmsReturn || takeover ? 'returning' : action === 'reattempt' || action === 'return' ? 'on_hold' : null;
   const to = confirmsReturn ? 'returned' : action === 'reattempt' ? 'in_transit' : 'returning';
   if (reason.length < 5 || !from) fail(400, 'invalid_input');
-  if (confirmsReturn) needStaff(await staffActor(persistence, user), fail, 'support');
+  if (confirmsReturn || takeover) needStaff(await staffActor(persistence, user), fail, 'support');
   const id = Number(params[0]);
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
@@ -2961,10 +2980,24 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
     // Each update re-checks the state it leaves, so two concurrent resolves (a double submit, two admins) decide once:
     // PostgreSQL's BEGIN does not lock the row read above.
     const moved = (changes: number | bigint) => { if (!changes) fail(409, 'cannot_resolve'); };
-    if (body.action === 'reattempt') moved((await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ? AND status = 'on_hold'", Date.now(), id)).changes);
+    const custodyTaken = order.status === 'returning' && !!(await assignmentEvidence(order, 'CUSTODY_TAKEN'));
+    // Once support holds the goods, neither the captain nor a staff pickup after the captain's return leg brought them in.
+    if (custodyTaken && (carrier === 'captain' || carrier === 'staff')) fail(409, 'cannot_resolve');
+    const recordCustody = async () => {
+      if (!custodyTaken) (await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'CUSTODY_TAKEN', ?, ?)",
+        user.id, id, JSON.stringify({ assignmentEpoch: order.assignment_epoch, driverId: order.driver_id, reason }), Date.now()));
+    };
+    if (takeover) {
+      if (custodyTaken) fail(409, 'cannot_resolve'); // already recorded: a double submit decides once
+      // The row write takes PostgreSQL's row lock and re-checks the state, as the other branches do.
+      moved((await run("UPDATE orders SET updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), id)).changes);
+      await recordCustody();
+    }
+    else if (body.action === 'reattempt') moved((await run("UPDATE orders SET status = 'in_transit', updated_at = ? WHERE id = ? AND status = 'on_hold'", Date.now(), id)).changes);
     else if (confirmsReturn) {
       moved((await run("UPDATE orders SET status = 'returned', commission = 0, completed_at = ?, updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), Date.now(), id)).changes); // DRV-17
       await markNoFare(user.id, id);
+      if (carrier === 'support') await recordCustody();
       await shop.afterFinish(order, 'returned', user.id, {}, officeLeg);
       await shippingTripPay(order, 'returned', user.id, officeLeg);
       await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed
@@ -2976,7 +3009,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'EXCEPTION_RESOLVED', ?, ?)`,
       user.id, id, JSON.stringify({ action: confirmsReturn ? 'confirm_return' : action, reason, handoff, ...(carrier && { carrier }) }), Date.now()));
     await queuePush([order.driver_id], 'decided', id); // SPEC-exception-push.md; ponytail: one generic line, the job card shows which decision
-    await queuePush([order.customer_id], to, id);
+    if (!takeover) await queuePush([order.customer_id], to, id); // the sender's order is still returning
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   return (await getOrder(id, user));
@@ -3786,7 +3819,9 @@ const editUser: Handler = async ({ user, params, body }) => {
       // captain row (its advance would wait on that row: a deadlock, Sol R2-H1); the admin retries and the scan above takes it.
       if (persistence.backend === 'postgres' && (await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id)).some(r => !prelocked.includes(Number(r.id)))) fail(409, 'order_changed');
       carrying = (await all(`SELECT id, status, service, customer_id, driver_id, price, discount, recommended_price, assignment_epoch, assigned_at FROM orders WHERE driver_id = ? AND status IN (${activeSql})${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, target.id)); // a goods COD waits (ADM-12)
-      if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
+      // Orders whose goods support already took (CUSTODY_TAKEN) strand nothing: they need no recovery choice (Sol recheck 3).
+      for (const o of carrying) o.supportHolds = o.status === 'returning' && !!(await assignmentEvidence(o, 'CUSTODY_TAKEN'));
+      if (carrying.some(o => !o.supportHolds) && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
     (await run(`UPDATE users SET name = ?, phone = ?, email = ?, status = ?, role = ?, vehicle = ?, plate = ?,
       phone_verified_at = ?, email_verified_at = ?, approved_at = ? WHERE id = ?`,
@@ -3808,6 +3843,8 @@ const editUser: Handler = async ({ user, params, body }) => {
     if (auditFields.length) (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'USER_UPDATED', ?, ?)`,
       user.id, JSON.stringify({ targetId: target.id, fields: auditFields, identityChanged, roleChanged }), now));
     for (const o of carrying) {
+      // Support already took the goods from this captain mid-return (supportHolds, above): nothing is stranded with the captain, so
+      // the block is not a custody block and the order closes as support's takeover (Sol second recheck of PR #101).
       const handedOver = o.service === 'shop' && (await one("SELECT 1 FROM shop_orders WHERE order_id = ? AND merchant_state = 'handed_over'", o.id));
       o.requeued = (o.status === 'assigned' || o.status === 'at_pickup') && !handedOver;
       if (o.requeued) { // not collected yet: back to the pool, as a release would
@@ -3827,6 +3864,7 @@ const editUser: Handler = async ({ user, params, body }) => {
         await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ORDER_CANCELLED_BY_ADMIN', ?, ?)",
           user.id, o.id, JSON.stringify({ reason: 'courier_block' }), now);
       }
+      else if (o.supportHolds) { /* support holds the goods: the order stays returning for office intake */ }
       else { // in custody: support recovers it and confirms the return to the sender
         // DRV-17: a shop captain's trip so far (one delivery fee) waits on the block review; the return leg is support's. A captain
         // blocked while already returning gets the same review (Sol R2-H3): the return leg was not finished.
@@ -3838,7 +3876,7 @@ const editUser: Handler = async ({ user, params, body }) => {
         }
       }
       (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'COURIER_BLOCKED', ?, ?)`,
-        user.id, o.id, JSON.stringify({ driverId: target.id, from: o.status, assignmentEpoch: o.assignment_epoch, custody: !o.requeued && o.service !== 'ride' }), now));
+        user.id, o.id, JSON.stringify({ driverId: target.id, from: o.status, assignmentEpoch: o.assignment_epoch, custody: !o.requeued && o.service !== 'ride' && !o.supportHolds }), now));
     }
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
@@ -3951,8 +3989,10 @@ route('POST', '/api/admin/users/:id/approve', async ({ user, params, body }) => 
     // this route to clear a block, so without this check a blocked driver holding parcels came
     // back to 'active' in one call, bypassing the carrying_parcels guard in editUser.
     if (target.role === 'driver' && target.status === 'blocked') {
-      const carrying = await all(`SELECT id, status FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id);
-      if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
+      const carrying = await all(`SELECT id, status, driver_id, assignment_epoch FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id);
+      const stranded = [];
+      for (const o of carrying) if (!(o.status === 'returning' && await assignmentEvidence(o, 'CUSTODY_TAKEN'))) stranded.push(o);
+      if (stranded.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
     (await run("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?", Date.now(), target.id));
     // This route also unblocks customers: the row says what changed, not that a driver was approved.

@@ -255,7 +255,13 @@ try {
   const { version } = await ledgerDb.one('SELECT version FROM orders WHERE id = ?', recovered.id);
   await call(`/admin/eligibility/orders/${recovered.id}/recovery`, { token: admin.token,
     body: { action: 'return', expectedVersion: version, reason: 'Support collected the parcel', evidenceRef: 'synthetic:return' } });
-  await call(`/admin/orders/${recovered.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'staff', reason: 'Received from support' } });
+  // Sol full review 21 Nov, item 3: support holds the goods now, so the captain's old return code no longer closes the order.
+  const staleCode = (await call(`/orders/${recovered.id}`, { token: customer.token })).returnCode;
+  assert.equal((await call(`/orders/${recovered.id}/advance`, { token: driver.token,
+    body: { requestId: randomUUID(), expectedStatus: 'returning', code: staleCode }, expect: 409 })).error, 'cannot_advance');
+  // Sol second recheck of PR #101: after a takeover neither the captain nor a staff pickup after the return leg carried it.
+  assert.equal((await call(`/admin/orders/${recovered.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'staff', reason: 'Received from staff' }, expect: 409 })).error, 'cannot_resolve');
+  await call(`/admin/orders/${recovered.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'support', reason: 'Received from support' } });
   cash = await call('/driver/cash', { token: driver.token });
   assert.deepEqual(tripEntries(cash, recovered).map(e => e.amountCents), [-Math.round(recovered.price * 100)]);
 

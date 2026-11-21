@@ -269,6 +269,22 @@ try {
   assert.deepEqual(await call(retainedReviewPath, { token: reviewer.token, body: close }), closed);
   assert.equal((await stats()).blockReviewsOverdue, overdue - 1);
   assert.equal(db.prepare("SELECT id FROM cash_entries WHERE driver_id = ? AND source = 'trip_pay'").get(departed.user.id), undefined);
+  // Sol second recheck of PR #101: support took the goods from this captain mid-return, then the captain is blocked. The captain
+  // no longer carries them: no custody block review, no status change, and office intake pays the trip so far as usual.
+  const held = await call('/auth/register', { body: { phone: '0599300011', name: 'Held', password: 'secret1', role: 'driver', vehicle: 'car' } });
+  await call(`/admin/users/${held.user.id}/approve`, { token: admin.token, body: {} });
+  let supportHeld = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  supportHeld = await call(`/jobs/${supportHeld.id}/accept`, { token: held.token, body: {} });
+  supportHeld = await advance(held.token, await advance(held.token, supportHeld));
+  await call(`/orders/${supportHeld.id}/exception`, { token: held.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
+  await call(`/admin/orders/${supportHeld.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient unreachable' } });
+  await call(`/admin/orders/${supportHeld.id}/resolve`, { token: admin.token, body: { action: 'support_takeover', reason: 'Support met the captain' } });
+  await call(`/admin/users/${held.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked' } }); // nothing to recover
+  assert.equal(db.prepare('SELECT order_id FROM courier_block_reviews WHERE order_id = ?').get(supportHeld.id), undefined, 'support held the goods: no custody block review');
+  assert.equal(JSON.parse(db.prepare("SELECT detail FROM security_events WHERE order_id = ? AND action = 'COURIER_BLOCKED'").get(supportHeld.id).detail).custody, false);
+  const intake = await call(`/admin/orders/${supportHeld.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'support', reason: 'Support brought it to the office' } });
+  assert.equal(intake.status, 'returned');
+  assert.equal(db.prepare("SELECT amount_cents FROM cash_entries WHERE source = 'trip_pay' AND order_id = ?").get(supportHeld.id)?.amount_cents, -2000, 'the trip so far');
   console.log('courier-block: parcels recover through custody and boarded rides end unpaid');
 } finally {
   await shutdown();

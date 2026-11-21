@@ -149,6 +149,7 @@ const suites = [
   "native-push-sqlite.mjs",
   "backup.test.mjs",
   "deploy-script.test.mjs",
+  "israel-scripts.test.mjs",
   "dispatch-ranking.test.mjs",
   "dispatch-sqlite.mjs",
   "ride-lifecycle-sqlite.mjs",
