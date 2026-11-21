@@ -25,10 +25,11 @@ export function NativePushRow() {
     if (state !== 'off') { void Linking.openSettings().catch(() => undefined); return; }
     setBusy(true);
     try {
-      await registerNativePush(language, 'always');
+      await registerNativePush(language, 'tap');
       const next = await nativePushState();
       setState(next);
-      AccessibilityInfo.announceForAccessibility(next === 'on' ? c.pushEnabled : c.pushDeniedHelpNative);
+      // Off after a dismissed dialog is not Blocked: only a blocked state points to the settings (Haiku polish r3 R3-1).
+      AccessibilityInfo.announceForAccessibility(next === 'on' ? c.pushEnabled : next === 'denied' ? c.pushDeniedHelpNative : c.pushDisabled);
     } finally { setBusy(false); }
   }
   return <>

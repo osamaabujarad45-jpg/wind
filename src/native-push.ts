@@ -40,19 +40,20 @@ let running: Promise<void> = Promise.resolve();
 // At most one system dialog per app session: after one denial Android still allows asking, and sign-in plus the session effect
 // (or every visit to merchant mode) would ask again back to back (Haiku polish r2 N1, N3).
 let askedThisSession = false;
-export function registerNativePush(lang: 'ar' | 'en', ask: false | 'once' | 'always' = false): Promise<void> {
+export function registerNativePush(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap' = false): Promise<void> {
   if (Platform.OS === 'web') return Promise.resolve();
   const next = running.then(() => register(lang, ask));
   running = next.catch(() => undefined);
   return next;
 }
-async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always'): Promise<void> {
+async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap'): Promise<void> {
   try {
     // The channel must exist before Android 13 can ask for permission; high importance gives a heads-up. server/push.ts names it.
     if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('default', { name: lang === 'ar' ? 'ويند' : 'Wind', importance: Notifications.AndroidImportance.HIGH });
     const current = await Notifications.getPermissionsAsync();
     let status = current.status;
-    if (status !== 'granted' && ask && current.canAskAgain && !askedThisSession && (ask === 'always' || await storage.get('pushAsked') !== '1')) {
+    // The person's own tap on the notifications row ('tap') always asks while the OS allows it (Haiku polish r3 R3-1).
+    if (status !== 'granted' && ask && current.canAskAgain && (ask === 'tap' || !askedThisSession) && (ask !== 'once' || await storage.get('pushAsked') !== '1')) {
       askedThisSession = true;
       status = (await Notifications.requestPermissionsAsync()).status;
       // A customer's once-per-device ask is spent once answered (Haiku polish r2 N5); captains' asks keep no device flag.
