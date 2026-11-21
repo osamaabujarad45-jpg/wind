@@ -36,7 +36,7 @@ try {
   const newWork=await f.book();await f.assess(newWork,tiny);
   assert.equal((await call(`/jobs/${newWork.id}/accept`,{token:driver.token,body:{},expect:409})).error,'driver_ineligible');
   assert.equal((await db.one('SELECT status FROM orders WHERE id=?',winner.id)).status,'in_transit');
-  const recover=async(action)=>{const version=(await db.one('SELECT version FROM orders WHERE id=?',winner.id)).version;return await f.post(`/orders/${winner.id}/recovery`,{action,expectedVersion:version});};
+  const recover=async(action)=>{const version=(await db.one('SELECT version FROM orders WHERE id=?',winner.id)).version;return await f.post(`/orders/${winner.id}/recovery`,{action,...(action==='confirm_return'&&{carrier:'captain'}),expectedVersion:version});};
   await recover('hold');assert.equal((await db.one('SELECT failures FROM proof_attempts WHERE order_id=?',winner.id)).failures,2);
   await recover('return');const returning=await db.one('SELECT * FROM orders WHERE id=?',winner.id);
   assert.equal(returning.driver_id,snapshot.driver_id);assert.equal(returning.price,snapshot.price);assert.ok(returning.return_code);
@@ -63,7 +63,8 @@ try {
   await call(`/orders/${officeReturn.id}/exception`,{token:loserDriver.token,body:{requestId:randomUUID(),expectedStatus:'in_transit',reason:'absent'}});
   const returningToOffice=await call(`/admin/orders/${officeReturn.id}/resolve`,{token:admin.token,body:{action:'return',reason:'Captain carrying return to office'}});
   const {version}=await db.one('SELECT version FROM orders WHERE id=?',officeReturn.id);
-  await f.post(`/orders/${officeReturn.id}/recovery`,{action:'confirm_return',expectedVersion:version});
+  await f.post(`/orders/${officeReturn.id}/recovery`,{action:'confirm_return',expectedVersion:version},400); // the carrier is named
+  await f.post(`/orders/${officeReturn.id}/recovery`,{action:'confirm_return',carrier:'captain',expectedVersion:version});
   assert.deepEqual(await db.all('SELECT amount_cents, recorded_by FROM cash_entries WHERE note=?',`DRV-17 trip pay order ${officeReturn.id}`),
     [{amount_cents:-3*Math.round(returningToOffice.price*100),recorded_by:admin.user.id}], 'office receipt pays the delivery, return and office legs');
 

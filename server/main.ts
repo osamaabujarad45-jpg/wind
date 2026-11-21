@@ -579,12 +579,13 @@ const route = (method: string, path: string, handler: Handler, isPublic = false)
   routes.push([method, new RegExp(`^${path.replace(/:\w+/g, '(\\d+)')}$`), handler, isPublic]);
 
 export const eligibility = new Eligibility(persistence, fail); // exported for the admin-assign test seam
-registerEligibilityRoutes(route, eligibility, async (order, action, actorId) => {
+registerEligibilityRoutes(route, eligibility, async (order, action, actorId, officeLeg = false) => {
   if (action === 'confirm_return') {
-    // DRV-17: eligibility closes the return at the office. A custody transfer or block overrides captain return-leg pay.
+    // DRV-17: eligibility closes the return at the office; the office leg only when the captain carried it (recorded carrier).
+    // A custody transfer or block overrides captain return-leg pay.
     const row = await one('SELECT * FROM orders WHERE id = ?', order.id);
-    if (row?.service === 'shop') await shop.afterFinish(row, 'returned', actorId, {}, true);
-    else if (row) await shippingTripPay(row, 'returned', actorId, true);
+    if (row?.service === 'shop') await shop.afterFinish(row, 'returned', actorId, {}, officeLeg);
+    else if (row) await shippingTripPay(row, 'returned', actorId, officeLeg);
     await postOrderJournals(order.id);
   }
   await queuePush([order.driver_id], 'decided', order.id);

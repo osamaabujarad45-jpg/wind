@@ -374,7 +374,7 @@ export class Eligibility {
   }
 }
 
-export function registerEligibilityRoutes(route: Register, e: Eligibility, custodyDecided: (order: { id: number; driver_id: number; customer_id: number }, action: 'hold'|'return'|'confirm_return', actorId: number) => Promise<void>) {
+export function registerEligibilityRoutes(route: Register, e: Eligibility, custodyDecided: (order: { id: number; driver_id: number; customer_id: number }, action: 'hold'|'return'|'confirm_return', actorId: number, officeLeg?: boolean) => Promise<void>) {
   const db=e.db, fail=e.fail;
   const admin=(user: Actor)=>{ if (user.role!=='admin') fail(403,'forbidden'); };
   const driver=(user: Actor)=>{ if (user.role!=='driver') fail(403,'forbidden'); };
@@ -578,12 +578,15 @@ export function registerEligibilityRoutes(route: Register, e: Eligibility, custo
     await e.audit(user.id,'order_measured',id,reason,ref); return await db.one('SELECT order_id,revision,grams,cm3,pieces,seats FROM order_requirements WHERE order_id=?',id);
   }));
   route('POST','/api/admin/eligibility/orders/:id/recovery',mutation(async({user,body,params})=>{
-    admin(user); e.fields(body,['action','reason','evidenceRef','expectedVersion']);
+    admin(user); e.fields(body,['action','reason','evidenceRef','expectedVersion','carrier']);
     const id=e.int(Number(params[0]),1),order=await db.one('SELECT * FROM orders WHERE id=? FOR UPDATE',id)??fail(404,'not_found'); await e.lockPolicy();
     if (e.int(body.expectedVersion,1)!==order.version) fail(409,'VERSION_CONFLICT');
     const reason=e.reason(body),ref=e.ref(body),action=e.choice(body.action,['hold','return','confirm_return']);
     if (order.service === 'ride' || !['in_transit','on_hold','returning'].includes(order.status)) fail(409,'custody_required');
     if (action === 'return' || action === 'confirm_return') needStaff(await staffActor(db, user), fail, 'support');
+    // Closing at the office names who brought the goods, as the support resolve does: only a captain carrier earns the office leg.
+    const carrier = action === 'confirm_return' ? body.carrier : undefined;
+    if (action === 'confirm_return' ? carrier !== 'captain' && carrier !== 'staff' : body.carrier !== undefined) fail(400,'invalid_input');
     if (action==='hold') {
       if (order.status!=='in_transit') fail(409,'cannot_resolve');
       await db.run("UPDATE orders SET status='on_hold',exception_reason='support',updated_at=? WHERE id=?",Date.now(),id);
@@ -601,9 +604,9 @@ export function registerEligibilityRoutes(route: Register, e: Eligibility, custo
       await db.run("UPDATE orders SET status='returned',commission=0,completed_at=?,updated_at=? WHERE id=?",Date.now(),Date.now(),id); // DRV-17
       await db.run("INSERT INTO security_events(actor_id,order_id,action,created_at) VALUES(?,?,'RETURN_NO_FARE',?)",user.id,id,Date.now()); // main.ts markNoFare
       await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'EXCEPTION_RESOLVED',?,?)",
-        user.id,id,JSON.stringify({action,reason,handoff:'office'}),Date.now());
+        user.id,id,JSON.stringify({action,reason,handoff:'office',carrier}),Date.now());
     }
     await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'ELIGIBILITY_CUSTODY_RECOVERY',?,?)",user.id,id,JSON.stringify({action,reason,evidenceRef:ref}),Date.now());
-    await e.audit(user.id,`custody_${action}`,id,reason,ref); const after=await db.one('SELECT id,status,driver_id,version FROM orders WHERE id=?',id); if(after?.status!==order.status) await custodyDecided({id,driver_id:Number(order.driver_id),customer_id:Number(order.customer_id)},action as 'hold'|'return'|'confirm_return',user.id); return after;
+    await e.audit(user.id,`custody_${action}`,id,reason,ref); const after=await db.one('SELECT id,status,driver_id,version FROM orders WHERE id=?',id); if(after?.status!==order.status) await custodyDecided({id,driver_id:Number(order.driver_id),customer_id:Number(order.customer_id)},action as 'hold'|'return'|'confirm_return',user.id,carrier === 'captain'); return after;
   }));
 }
