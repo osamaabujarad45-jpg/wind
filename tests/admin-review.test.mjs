@@ -28,7 +28,7 @@ for (const language of ['ar', 'en']) {
 function screen(file, language, { data = {}, me = {}, store = new Map(), effects = false, receipt = null, delayPayroll = false } = {}) {
   const slots = [], calls = [], dialogs = [];
   let cursor = 0, serverSettings = me.settings ? { ...me.settings } : null;
-  let loseNext = false, holding = false, releaseHeld = null;
+  let loseNext = false, forbidNext = false, holding = false, releaseHeld = null;
   const react = {
     useState(initial) {
       const index = cursor++;
@@ -64,6 +64,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
       if (lost) throw new Error('network');
       return payroll ? payrollView(serverSettings) : { ...serverSettings };
     }
+    if (forbidNext && !path.startsWith('/admin/cash/commands/')) { forbidNext = false; throw Object.assign(new ApiError('forbidden'), { status: 403 }); }
     if (path.startsWith('/admin/cash/commands/')) { if (lost) throw new Error('network'); return { entry: typeof receipt === 'function' ? await receipt(path.split('/').pop()) : receipt }; }
     if (lost) throw new Error('network');
     return { reference: 'REF-1' };
@@ -107,6 +108,8 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
     server: () => serverSettings,
     // The next call (a write or a read) commits or answers on the server, then its reply is lost.
     loseNextCall() { loseNext = true; },
+    // The next write is refused with 403 (this admin lost finance duty) before anything is written.
+    forbidNextWrite() { forbidNext = true; },
     // The next settings write commits but waits; the returned function lets its reply through.
     holdNextSettingsWrite() { holding = true; return () => releaseHeld(); },
     // Another admin saves a different setting while this form is open.
@@ -476,8 +479,8 @@ for (const language of ['ar', 'en']) {
 }
 console.log('Admin cash entry survives a restart and is settled only by its command receipt');
 
-// Sol R25-M2: a recovered handover is read with its status at the check. One the driver already confirmed says so, one the
-// driver disputed asks for a check with the driver, and neither promises it waits under Handovers.
+// Sol R25-M2, R26-L1: a recovered handover is read with its status at the check, without saying who decided it; a disputed one
+// asks for a check with the driver and the office.
 for (const language of ['ar', 'en']) for (const status of ['pending', 'confirmed', 'disputed']) {
   const c = copy[language];
   const store = new Map();
@@ -532,6 +535,33 @@ for (const language of ['ar', 'en']) {
   assert.ok(!shows(tree, prefix + 'network'), `${language}: a refresh does not bring the failure back`);
 }
 console.log('Admin cash Retry that records after a failed attempt keeps one line for the entry');
+// Sol R27-M1: a lost reply, then the cashier loses finance duty: the Retry gets 403 and no receipt yet. The entry stays saved and
+// named, the cashier reads the finance-duty instruction, and once the first write's receipt appears the same Retry settles it.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map(), key = cashCommand.cashCommandKey(1);
+  let found = null;
+  const view = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: () => found });
+  view.render(); await flush();
+  await tap(view, c.cashRecord);
+  view.loseNextCall();
+  await tap(view, c.cashRecord);
+  view.dialogs.at(-1).yes(); await flush();
+  const x = JSON.parse(store.get(key));
+  view.forbidNextWrite();
+  await tap(view, c.cashRetrySame); await flush();
+  const prefix = `${model.isolate('Driver')} · ${model.ltr('0599000102')} · ${x.amountCents / 100}: `;
+  let tree = view.render();
+  assert.ok(shows(tree, prefix + c.cashFinanceRequired), `${language}: the named line says finance duty is needed`);
+  assert.ok(shows(tree, c.cashUncertain) && store.size === 1, `${language}: the entry stays saved and open`);
+  found = { id: 81, kind: 'remittance', reference: 'R-000081', amountCents: x.amountCents, note: x.note, status: 'pending' };
+  view.forbidNextWrite();
+  await tap(view, c.cashRetrySame); await flush();
+  tree = view.render();
+  assert.ok(shows(tree, prefix + fill(c.cashRecorded, { r: model.ltr('R-000081') })) && !shows(tree, c.cashFinanceRequired), `${language}: the receipt settles it`);
+  assert.equal(store.size, 0, `${language}: cleared only once the receipt is found`);
+}
+console.log('Admin cash Retry without finance duty keeps the entry and settles by its receipt');
 
 // Sol R21-M1, Haiku r19 N19-1: another tab settled entry X and saved entry Y for another captain, whose reply was lost. This
 // tab's Retry on X (in place after a lost reply, or restored after a restart) settles X by its receipt, then drains Y: both

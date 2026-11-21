@@ -417,10 +417,10 @@ assert.match(screen, /const note = \(notice: Notice\) => \{ setFailure\(drop\(no
 // a restored entry's check named and kept (L5).
 assert.match(screen, /line\.requestId !== notice\.requestId\), notice\]/);
 assert.match(screen, /\[lines\(failure\), error && err\(error\)\]\.filter\(Boolean\)/);
-assert.match(screen, /notice\.entry \? receiptText\(notice\.entry\) : err\(notice\.error\)/);
+assert.match(screen, /notice\.entry \? receiptText\(notice\.entry\) : cashErr\(notice\.error\)/);
 // Sol R25-L1: an in-place uncertain form's verdict is named too.
 assert.match(screen, /const named = !!\(open\.origin \|\| open\.uncertain\);/);
-assert.match(screen, /fail\(named \? about\(outcome\.command, \{ error: outcome\.error \}\) : err\(outcome\.error\)\)/);
+assert.match(screen, /fail\(named \? about\(outcome\.command, \{ error: outcome\.error \}\) : cashErr\(outcome\.error\)\)/);
 assert.match(screen, /if \(\(open\.uncertain \|\| kept\) && outcome\.state !== 'unconfirmed'/);
 // Haiku r20 N20-4 / r21 N21-6: a resolution adds its notice, and no handover is resolved while a recovery may add one.
 assert.match(screen, /note\(c\.cashResolved\);/);
@@ -457,3 +457,16 @@ for (const language of ['ar', 'en']) for (const key of ['cashMarkConfirmed', 'ca
 // A forced sign-out never clears the account's slot: session.tsx forgets only token-scoped records.
 assert.doesNotMatch(readFileSync(new URL('../src/session.tsx', import.meta.url), 'utf8'), /adminCash/);
 console.log('PASS: admin cash commands survive a lost reply, a restart and a sign-out, settled only by a command receipt or a definite refusal');
+
+// Sol R27-L3: the receipt wording itself, independent of the screen: point in time, no actor, no promised list, and the
+// dispute instruction; a 403 explains finance duty and the same-receipt retry.
+for (const key of ['cashRecorded', 'cashRecordedConfirmed', 'cashRecordedDisputed']) {
+  assert.match(copy.en[key], /When checked/, `en.${key} is point in time`);
+  assert.match(copy.ar[key], /عند التحقق/, `ar.${key} is point in time`);
+  assert.doesNotMatch(copy.en[key], /driver confirm|by the driver|Handovers waiting/, `en.${key} names no actor or list`);
+  assert.doesNotMatch(copy.ar[key], /أكّده السائق|بانتظار السائق/, `ar.${key} names no actor or list`);
+}
+assert.match(copy.en.cashRecordedDisputed, /driver and the office/);
+assert.match(copy.ar.cashRecordedDisputed, /السائق والمكتب/);
+assert.match(copy.en.cashFinanceRequired, /finance duty[\s\S]*same receipt/);
+assert.match(copy.ar.cashFinanceRequired, /صلاحية المالية[\s\S]*الإيصال نفسه/);

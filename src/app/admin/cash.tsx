@@ -42,7 +42,7 @@ export default function AdminCash() {
   // replays that entry instead of booking it twice; an edit makes it a new entry with a new id.
   const [open, setOpen] = useState<Form | null>(null);
   const [recovering, setRecovering] = useState(true); // no new entry until a saved one has been looked up
-  const [resolving, setResolving] = useState<{ id: number; decision: 'confirm' | 'dispute'; reason: string; evidenceRef: string; who: string } | null>(null);
+  const [resolving, setResolving] = useState<{ id: number; decision: 'confirm' | 'dispute'; reason: string; evidenceRef: string; entry: PendingEntry } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Notice[]>([]);
   const [failure, setFailure] = useState<Notice[]>([]);
@@ -51,8 +51,8 @@ export default function AdminCash() {
   // replaced or merged, so no captain's receipt or instruction is lost to the next one (Sol R21-M1, R21-M2, Haiku r19 N19-2,
   // r20 N20-3). The reset rules (Sol R22-L1, Haiku r21 N21-1, N21-3): a new action (submit, resolve, a Mark press, opening a
   // form) clears the lines about the previous action and keeps every captain's drained line, so a "check this balance"
-  // instruction stays until the screen closes. Pull-to-refresh clears the message channel (receipts and the closed-form note)
-  // and never the failure channel.
+  // instruction stays until the screen closes. Pull-to-refresh clears only the unkeyed lines (the closed-form note): a keyed
+  // receipt or instruction stays, as the refreshed lists may not show it (Sol R26-L3).
   const drained = (shown: Notice[]) => shown.filter(notice => typeof notice !== 'string');
   // An entry settled again (a marked record met by the next entry) replaces its own earlier line, never doubles it (Opus R24-L1).
   const add = (notice: Notice) => (shown: Notice[]) => [...shown.filter(line => typeof line === 'string' || typeof notice === 'string' || line.requestId !== notice.requestId), notice];
@@ -68,7 +68,7 @@ export default function AdminCash() {
     // account number, so every line names whose balance to check (Sol R22-M1, R22-M2).
     const row = data?.find(candidate => candidate.driverId === notice.driverId) ?? (notice.name && notice.phone ? notice as { name: string; phone: string } : undefined);
     const who = row ? `${isolate(row.name)} · ${ltr(row.phone)}` : `#${notice.driverId}`;
-    return `${rtl ? '\u200f' : '\u200e'}${who} · ${money(notice.amountCents / 100)}: ${notice.entry ? receiptText(notice.entry) : err(notice.error)}`;
+    return `${rtl ? '\u200f' : '\u200e'}${who} · ${money(notice.amountCents / 100)}: ${notice.entry ? receiptText(notice.entry) : cashErr(notice.error)}`;
   }).join('\n');
   // Shekels in the form, exact integer agorot on the wire (no float rounding: a third decimal is refused, not rounded).
   const cents = minorFromText;
@@ -85,11 +85,14 @@ export default function AdminCash() {
     return null;
   };
 
-  // A handover is read with its status at that moment: a recovered one may already be confirmed, or disputed and needing
-  // the office (Sol R25-M2). Only a pending one promises where it waits.
+  // A handover is read with its status when checked, whoever decided it (driver or office), and nothing promises where it will be
+  // listed: a disputed one asks for a check with the driver and the office (Sol R25-M2, R26-L1).
   const receiptText = (entry: CashEntry) => !entry.reference ? c.cashAdjustRecorded
     : fill(entry.reference.startsWith('P-') ? c.cashPayoutRecorded : entry.status === 'confirmed' ? c.cashRecordedConfirmed
       : entry.status === 'disputed' ? c.cashRecordedDisputed : c.cashRecorded, { r: ltr(entry.reference) }); // R-/P- read left to right in Arabic (Haiku r23 F4)
+  // A 403 means this account lacks finance duty. A Retry keeps its saved receipt number (the first send may still land), so the
+  // cashier learns the one safe way out instead of a bare refusal (Sol R27-M1).
+  const cashErr = (e: unknown) => (e as { status?: number } | null)?.status === 403 ? c.cashFinanceRequired : err(e);
   const recorded = (entry: CashEntry) => note(receiptText(entry));
   // An entry settled by a drain names its captain and amount: it may not be the one the cashier just asked about (Sol R21-M1).
   const rows = useRef(data);
@@ -184,7 +187,7 @@ export default function AdminCash() {
       // captain and stays like a drained one (Opus R24-L5, Sol R25-L1). A fresh form's verdict is about the form in hand.
       const named = !!(open.origin || open.uncertain);
       if (outcome.state === 'recorded') { haptic.success(); if (named) note(about(outcome.command, { entry: outcome.entry })); else recorded(outcome.entry); }
-      else if (outcome.state !== 'empty') fail(named ? about(outcome.command, { error: outcome.error }) : err(outcome.error));
+      else if (outcome.state !== 'empty') fail(named ? about(outcome.command, { error: outcome.error }) : cashErr(outcome.error));
       reload(); reloadPending();
       // An uncertain form's settlement (restored or in place), or a refusal whose record stays in the slot, drains the slots
       // before the next entry: the other slot may hold a command another tab saved meanwhile, and a marked refusal is settled
@@ -220,7 +223,7 @@ export default function AdminCash() {
   const blocked = busy || recovering || !!open?.uncertain || storageFailed;
   const blockedReason = storageFailed ? (lockless ? c.err_cash_browser_unsupported : c.err_cash_storage_failed) : open?.uncertain ? c.cashSettleFirst : c.wait_busy;
 
-  // The Mark card keeps the handover it was opened for (name, phone, amount, reference), captured at the press: the waiting list is
+  // The Mark card keeps the handover it was opened for (name, phone, amount, reference), kept from the press and formatted in the current language: the waiting list is
   // bounded and polled, so a still-pending entry can drop out of it. The server's compare-and-set decides, and the confirmation
   // names the decision and whose handover it is (Haiku r23 F6, Sol R26-L2).
   const markWho = (entry: PendingEntry) => `${rtl ? '\u200f' : '\u200e'}${isolate(entry.userName)} · ${ltr(entry.userPhone)} · ${money(entry.amountCents / 100)}${entry.reference ? ` · ${ltr(entry.reference)}` : ''}`;
@@ -284,13 +287,13 @@ export default function AdminCash() {
         {/* Which decision, for whom and how much: a dispute and a confirmation must not look alike. */}
         <Txt variant="title">{resolving.decision === 'confirm' ? c.cashMarkConfirmed : c.cashMarkDisputed}</Txt>
         {/* captured at the Mark press; the screen's direction leads and the name is isolated (A53 walk) */}
-        <Txt variant="caption" style={{ marginBottom: 8 }}>{resolving.who}</Txt>
+        <Txt variant="caption" style={{ marginBottom: 8 }}>{markWho(resolving.entry)}</Txt>
         <Field label={c.cashResolutionReason} value={resolving.reason} maxLength={500} disabled={busy} onChangeText={reason => setResolving({ ...resolving, reason })} />
         <Field label={c.cashEvidence} value={resolving.evidenceRef} maxLength={200} disabled={busy} onChangeText={evidenceRef => setResolving({ ...resolving, evidenceRef })} />
         <Row gap={8} style={{ marginTop: 10 }}>
           <Button title={c.cashResolveSave} icon="checkmark-done-outline" loading={busy} disabled={busy || resolving.reason.trim().length < 5}
             reason={busy ? c.wait_busy : c.reason_min5}
-            onPress={() => confirm(`${c.cashResolveConfirm}\n${resolving.decision === 'confirm' ? c.cashMarkConfirmed : c.cashMarkDisputed}\n${resolving.who}`, () => void resolveEntry(), c.cashResolveSave, c.cancel)} />
+            onPress={() => confirm(`${c.cashResolveConfirm}\n${resolving.decision === 'confirm' ? c.cashMarkConfirmed : c.cashMarkDisputed}\n${markWho(resolving.entry)}`, () => void resolveEntry(), c.cashResolveSave, c.cancel)} />
           <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setResolving(null)} />
         </Row>
       </Card>}
@@ -312,9 +315,9 @@ export default function AdminCash() {
             {/* Actions, not statuses: the entry is still waiting until one of these is saved. */}
             <Row gap={8} style={{ marginTop: 10, flexWrap: 'wrap' }}>
               <Button title={c.cashMarkConfirmed} size="sm" variant="soft" disabled={busy || recovering} reason={c.wait_busy}
-                onPress={() => { setMessage(drained); setFailure(drained); setResolving({ id: entry.id, decision: 'confirm', reason: '', evidenceRef: '', who: markWho(entry) }); }} />
+                onPress={() => { setMessage(drained); setFailure(drained); setResolving({ id: entry.id, decision: 'confirm', reason: '', evidenceRef: '', entry }); }} />
               <Button title={c.cashMarkDisputed} size="sm" variant="outline" disabled={busy || recovering} reason={c.wait_busy}
-                onPress={() => { setMessage(drained); setFailure(drained); setResolving({ id: entry.id, decision: 'dispute', reason: '', evidenceRef: '', who: markWho(entry) }); }} />
+                onPress={() => { setMessage(drained); setFailure(drained); setResolving({ id: entry.id, decision: 'dispute', reason: '', evidenceRef: '', entry }); }} />
             </Row>
           </Card>
         </Appear>)}

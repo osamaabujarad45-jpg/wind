@@ -185,8 +185,9 @@ export function sendCashCommand(io: CashIO, command: CashCommand, retry = false,
     } catch (error) {
       if (servedRefusal(error)) return finalRefusal(io, command, error);
       // A 403 (this admin lacks finance duty, or lost it) is refused before any write; but a same-id resend after the duty was
-      // removed may still have an entry from its first send. Its receipt decides, as for an unexplained 409, so the form never
-      // stays locked as "may be recorded" with nothing booked (Haiku r23 F1).
+      // removed may still have an entry from its first send. Its receipt decides, as for an unexplained 409: a first send with no
+      // receipt is refused (Haiku r23 F1); a Retry with none stays unconfirmed with its key (Sol R26-M1), and the screen says
+      // finance duty is needed to send the same receipt again (Sol R27-M1).
       const forbidden = status(error) === 403;
       if (!refusedForGood(error) && !forbidden) return { state: 'unconfirmed', command, error };
       // The server said this id holds another request: that is the answer, whatever a receipt shows (Sol R10-L1).
