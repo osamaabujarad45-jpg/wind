@@ -569,6 +569,7 @@ export default function OrderScreen() {
           // Who brought the goods decides the captain's office leg: recorded by the button, never assumed.
           ['confirm_office_return', 'captain', c.confirmOfficeReturnCaptain, c.confirmOfficeReturnHint],
           ['confirm_office_return', 'staff', c.confirmOfficeReturnStaff, c.confirmOfficeReturnStaffHint],
+          ['confirm_office_return', 'support', c.confirmOfficeReturnSupport, c.confirmOfficeReturnSupportHint],
         ] as const).map(([action, carrier, title, hint]) => <Button key={`${action}-${carrier ?? ''}`} title={title} variant="outline" icon="checkmark-done-outline"
           loading={busy === `${action}-${carrier ?? ''}`} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(hint, () => act(`${action}-${carrier ?? ''}`, `/admin/orders/${order.id}/resolve`,

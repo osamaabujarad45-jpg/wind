@@ -2859,6 +2859,11 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
   const now = Date.now();
   await rideLifecycle.guardAdvance(r, user.id, next, body.boardingCode !== undefined ? body.boardingCode : body.code, body.expectedPinRevision);
   if (next === 'completed' || next === 'returned') {
+    // Support holds the goods once it took them from this assignment's captain, or once that captain was blocked holding them: the
+    // captain's old return code no longer closes the order as a sender handback (Sol full review 21 Nov, item 3).
+    if (next === 'returned' && (await assignmentEvidence(r, 'CUSTODY_TAKEN')
+      || (await all("SELECT detail, created_at FROM security_events WHERE order_id = ? AND action = 'COURIER_BLOCKED'", r.id)).some(event => custodyBlockFrom(r, event) !== null)))
+      fail(409, 'cannot_advance');
     // Delivery needs the recipient's handover code; a return needs the sender's return code.
     const expected = next === 'completed' ? r.handover_code : r.return_code;
     if (((await one('SELECT failures FROM proof_attempts WHERE order_id = ?', r.id))?.failures ?? 0) >= 5) fail(409, 'proof_locked');
@@ -2928,7 +2933,7 @@ route('POST', '/api/orders/:id/exception', async ({ user, params, body }) => {
   return (await driverCommand(user, Number(params[0]), body, reportException));
 });
 
-route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) => {
+route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req }) => {
   need(user, 'admin');
   const reason = text(body.reason, 500);
   // Use a distinct command so an older server refuses an office receipt instead of silently omitting the additional leg.
@@ -2940,8 +2945,14 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
   // Who carried the goods to the office decides the captain's office leg; it is recorded, never assumed (Kimi, Haiku review of
   // the Sol lead commits). A markerless confirm_return from this release on is neither office nor sender: it keeps its one-leg
   // price, and office intake needs the typed command (historical rows without a handoff keep their old meaning).
+  // 'support': support collected the goods from the captain before the office, so the captain's pay stops at the trip so far
+  // (DRV-17); SQLite has no other way to record that transfer (Sol full review 21 Nov, item 2).
   const carrier = deliveredToOffice ? body.carrier : undefined;
-  if (deliveredToOffice ? carrier !== 'captain' && carrier !== 'staff' : body.carrier !== undefined) fail(400, 'invalid_input');
+  if (deliveredToOffice ? carrier !== 'captain' && carrier !== 'staff' && carrier !== 'support' : body.carrier !== undefined) fail(400, 'invalid_input');
+  // A plain confirmation is priced as a sender handback and cannot be told apart from an office one. An installed build older
+  // than this release gets the update screen for it in production, as for cash writes, instead of a price it cannot correct
+  // (Sol full review 21 Nov, item 1). Scripts and tests elsewhere send no build.
+  if (action === 'confirm_return' && cashClientFenced(req.headers['x-wind-client'], production)) fail(426, 'client_update_required');
   const officeLeg = deliveredToOffice && carrier === 'captain';
   const handoff = deliveredToOffice ? 'office' : deliveredToSender ? 'sender' : action === 'confirm_return' ? 'unspecified' : undefined;
   const from = confirmsReturn ? 'returning' : action === 'reattempt' || action === 'return' ? 'on_hold' : null;
@@ -2965,6 +2976,8 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
     else if (confirmsReturn) {
       moved((await run("UPDATE orders SET status = 'returned', commission = 0, completed_at = ?, updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), Date.now(), id)).changes); // DRV-17
       await markNoFare(user.id, id);
+      if (carrier === 'support' && !(await assignmentEvidence(order, 'CUSTODY_TAKEN'))) (await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'CUSTODY_TAKEN', ?, ?)",
+        user.id, id, JSON.stringify({ assignmentEpoch: order.assignment_epoch, driverId: order.driver_id, reason }), Date.now()));
       await shop.afterFinish(order, 'returned', user.id, {}, officeLeg);
       await shippingTripPay(order, 'returned', user.id, officeLeg);
       await postOrderJournals(id); // the cash screen counts this order, as it does a return the courier confirmed

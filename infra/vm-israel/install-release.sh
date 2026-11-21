@@ -29,8 +29,24 @@ kill "$PID" 2>/dev/null || true; sleep 1; rm -rf "$DRY"
 [ "$ok" -eq 1 ] || { echo "dry run failed; the live service is untouched" >&2; tail -20 "$WORK/dry.log" >&2; rm -rf /opt/windapi-new; exit 1; }
 echo "dry run: $(cat "$WORK/ready.json")"
 
+# Each install keeps its own verified snapshot of the live database, named by time, so a second install the same day cannot
+# overwrite the copy that undoes the first one's start-up rebuilds (Sol full review 21 Nov, item 5). The daily backups rotate
+# separately; these are pruned after 30 days.
+STAMP=$(date +%Y%m%d%H%M%S)
+SNAP="/data/backups/pre-install-$STAMP.db"
+if [ -f /data/wind.db ]; then
+  sudo -u wind env SNAP="$SNAP" /opt/node/bin/node -e "
+const { DatabaseSync } = require('node:sqlite');
+new DatabaseSync('/data/wind.db').exec(\"VACUUM INTO '\" + process.env.SNAP + \"'\");
+const copy = new DatabaseSync(process.env.SNAP, { readOnly: true });
+if (Object.values(copy.prepare('PRAGMA quick_check').get())[0] !== 'ok') { console.error('snapshot failed quick_check'); process.exit(1); }
+copy.close();" || { echo "pre-install snapshot failed; the live service is untouched" >&2; rm -rf /opt/windapi-new; exit 1; }
+  find /data/backups -name 'pre-install-*.db' -mtime +30 -delete
+  echo "pre-install snapshot: $SNAP"
+fi
+
 systemctl stop wind-api 2>/dev/null || true
-if [ -d /opt/windapi ] && [ -n "$(ls -A /opt/windapi)" ]; then mv /opt/windapi "/opt/windapi-old-$(date +%Y%m%d%H%M%S)"; else rm -rf /opt/windapi; fi
+if [ -d /opt/windapi ] && [ -n "$(ls -A /opt/windapi)" ]; then mv /opt/windapi "/opt/windapi-old-$STAMP"; else rm -rf /opt/windapi; fi
 mv /opt/windapi-new /opt/windapi
 systemctl enable --now wind-api >/dev/null
 ok=0; for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4000/api/ready > "$WORK/ready.json" 2>/dev/null && { ok=1; break; }; sleep 1; done

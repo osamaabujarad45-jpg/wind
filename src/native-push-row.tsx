@@ -1,6 +1,6 @@
 // Notifications on this phone (Account). The web row (PushRow) covers browsers; on Android and iOS the system owns the
 // permission, so this row shows it and gives the one way back from Blocked: the app's system settings (Haiku polish H1).
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, AppState, Linking, Platform } from 'react-native';
 import { nativePushState, registerNativePush } from './native-push';
 import { ListRow, Txt, useCopy } from './ui';
@@ -11,8 +11,16 @@ export function NativePushRow() {
   const { c, language } = useCopy();
   const [state, setState] = useState<State | null>(null);
   const [busy, setBusy] = useState(false);
-  const read = useCallback(() => { void nativePushState().then(setState); }, []);
-  // Back from the system settings, the row reads the new answer.
+  // Back from the system settings, the row reads the new answer; a permission granted there registers this session's device
+  // at once, so the first order alert is not missed (Sol full review 21 Nov, item 4).
+  const last = useRef<State | null>(null);
+  const read = useCallback(() => {
+    void nativePushState().then(next => {
+      if (next === 'on' && last.current !== null && last.current !== 'on') void registerNativePush(language);
+      last.current = next;
+      setState(next);
+    });
+  }, [language]);
   useEffect(() => {
     read();
     const sub = AppState.addEventListener('change', next => { if (next === 'active') read(); });
@@ -25,11 +33,13 @@ export function NativePushRow() {
     if (state !== 'off') { void Linking.openSettings().catch(() => undefined); return; }
     setBusy(true);
     try {
-      await registerNativePush(language, 'tap');
+      const registered = await registerNativePush(language, 'tap');
       const next = await nativePushState();
+      last.current = next;
       setState(next);
-      // Off after a dismissed dialog is not Blocked: only a blocked state points to the settings (Haiku polish r3 R3-1).
-      AccessibilityInfo.announceForAccessibility(next === 'on' ? c.pushEnabled : next === 'denied' ? c.pushDeniedHelpNative : c.pushDisabled);
+      // Off after a dismissed dialog is not Blocked: only a blocked state points to the settings (Haiku polish r3 R3-1). Alerts are
+      // announced as reaching this device only once it is registered (Sol full review 21 Nov, item 4).
+      AccessibilityInfo.announceForAccessibility(next === 'on' ? (registered ? c.pushEnabled : c.pushOn) : next === 'denied' ? c.pushDeniedHelpNative : c.pushDisabled);
     } finally { setBusy(false); }
   }
   return <>

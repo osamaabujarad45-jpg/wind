@@ -236,11 +236,28 @@ try {
   staffReturn = await advance(driver.token, await advance(driver.token, staffReturn));
   await call(`/orders/${staffReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
   await call(`/admin/orders/${staffReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient unreachable' } });
+  // Sol full review 21 Nov, item 1: a plain confirmation from a build older than this release gets the update screen, before any
+  // change, as cash writes do (production fences a missing build too; tests elsewhere send none).
+  const oldBuildConfirm = await fetch(`${base}/admin/orders/${staffReturn.id}/resolve`, { method: 'POST',
+    headers: { Authorization: `Bearer ${admin.token}`, 'Content-Type': 'application/json', 'X-Wind-Client': '10104' },
+    body: JSON.stringify({ action: 'confirm_return', reason: 'Office received it' }) });
+  assert.deepEqual([oldBuildConfirm.status, (await oldBuildConfirm.json()).error], [426, 'client_update_required']);
+  assert.equal((await call(`/orders/${staffReturn.id}`, { token: admin.token })).status, 'returning');
   await call(`/admin/orders/${staffReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'staff', reason: 'Staff brought it to the office' } });
   const staffPay = 2 * Math.round(staffReturn.price * 100); // one attempt and the return leg, no office leg
   const carriers = await persistence.all("SELECT order_id, detail FROM security_events WHERE action = 'EXCEPTION_RESOLVED' AND order_id IN (?, ?) ORDER BY id", supportReturn.id, staffReturn.id);
   assert.deepEqual(carriers.map(r => JSON.parse(r.detail)).filter(d => d.handoff === 'office').map(d => d.carrier), ['captain', 'staff'], 'the audit records who carried the goods');
   assert.deepEqual(tripEntries(await call('/driver/cash', { token: driver.token }), staffReturn).map(e => e.amountCents), [-staffPay]);
+  // Sol full review 21 Nov, item 2: support took the goods from the captain before the return, on SQLite. The captain is paid the
+  // trip so far (one fare for one attempt), with no return leg, and the transfer is recorded as custody taken for this assignment.
+  let supportTook = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  supportTook = await call(`/jobs/${supportTook.id}/accept`, { token: driver.token, body: {} });
+  supportTook = await advance(driver.token, await advance(driver.token, supportTook));
+  await call(`/orders/${supportTook.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
+  await call(`/admin/orders/${supportTook.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Support collects it' } });
+  await call(`/admin/orders/${supportTook.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'support', reason: 'Support took it from the captain' } });
+  assert.deepEqual(tripEntries(await call('/driver/cash', { token: driver.token }), supportTook).map(e => e.amountCents), [-Math.round(supportTook.price * 100)]);
+  assert.ok(await persistence.one("SELECT 1 n FROM security_events WHERE order_id = ? AND action = 'CUSTODY_TAKEN'", supportTook.id), 'the transfer is recorded');
 
   await checkCompletedReattempt({ call, persistence, input, driver, customer, admin });
   await checkPickupPay({ call, persistence, input, driver, other, customer, admin, liveWatcherCount });
