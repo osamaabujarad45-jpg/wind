@@ -15,7 +15,7 @@ const ACTIONS: Record<OfficeAction, string> = { received: 'OFFICE_RECEIVED', col
 const CLOSING = ['OFFICE_COLLECTED', 'OFFICE_DONATED', 'OFFICE_DESTROYED'];
 export type OfficeState = { receivedAt: number; perishable: boolean; until: number; closed: null | { action: Exclude<OfficeAction, 'received'>; at: number } };
 
-const parse = (detail: unknown): Row => { try { return typeof detail === 'string' ? JSON.parse(detail) : (detail as Row) ?? {}; } catch { return {}; } };
+const parse = (detail: unknown): Row => { try { return (typeof detail === 'string' ? JSON.parse(detail) : detail as Row) ?? {}; } catch { return {}; } };
 
 /** The office record of one returned order, or null when it never reached the office. Read from the append-only events. */
 export async function officeState(db: Persistence, orderId: number): Promise<OfficeState | null> {
@@ -90,6 +90,14 @@ async function viaOffice(db: Persistence, orderId: number) {
     const detail = parse(r.detail);
     return r.action === 'EXCEPTION_RESOLVED' && detail.action === 'confirm_return' && (detail.handoff === 'office' || detail.handoff === undefined);
   });
+}
+
+/** Shipped eligibility builds recorded the return without a separate CUSTODY_TAKEN event. */
+export async function legacySupportCollected(db: Persistence, order: Row) {
+  if (db.backend !== 'postgres') return false;
+  const events = await db.all(`SELECT detail FROM security_events WHERE order_id = ? AND action = 'ELIGIBILITY_CUSTODY_RECOVERY'
+    AND created_at >= ?`, order.id, order.assigned_at ?? 0);
+  return events.some(event => parse(event.detail).action === 'return');
 }
 
 async function notifyOffice(db: Persistence, push: Deps['push'], order: Row) {

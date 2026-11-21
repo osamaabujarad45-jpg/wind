@@ -49,7 +49,7 @@ import { cashClientFenced, clientUpdateRequired, registerRuntimeRoutes } from '.
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
 import { registerCommandReceiptRoutes } from './domain/command-receipts.ts';
 import { registerCustodyRoutes } from './domain/custody.ts';
-import { registerOfficeRoutes, remindOffice } from './domain/office.ts';
+import { legacySupportCollected, registerOfficeRoutes, remindOffice } from './domain/office.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
 import { bookingPriority, checkPriorityCutoff, priorityIdentity } from './domain/priority.ts';
@@ -719,7 +719,7 @@ async function shippingTripPay(o: Row, status: 'completed' | 'returned', actorId
     return Number(detail.driverId) === o.driver_id && custodyStatuses.includes(detail.from)
       && (detail.assignmentEpoch == null || detail.assignmentEpoch === o.assignment_epoch);
   })) return;
-  const supportCollected = await assignmentEvidence(o, 'CUSTODY_TAKEN');
+  const supportCollected = await assignmentEvidence(o, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, o);
   const trips = Math.max(1, attempts);
   const returnLegs = supportCollected ? 0 : deliveredToOffice ? 2 : 1;
   await captainPay(o.id, o.driver_id, (trips + returnLegs) * fareCents(o), 'trip_pay', actorId);
@@ -2935,7 +2935,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
   need(user, 'admin');
   const reason = text(body.reason, 500);
   // Use a distinct command so an older server refuses an office receipt instead of silently omitting the additional leg.
-  const action = String(body.action);
+  const action = typeof body.action === 'string' ? body.action : fail(400, 'invalid_input');
   const deliveredToOffice = action === 'confirm_office_return';
   const confirmsReturn = action === 'confirm_return' || deliveredToOffice;
   if (body.handoff !== undefined && (action !== 'confirm_return' || body.handoff !== 'sender')) fail(400, 'invalid_input');

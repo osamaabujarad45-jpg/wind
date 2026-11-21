@@ -263,10 +263,12 @@ try {
   const recoveryVersion = (await ledgerDb.one('SELECT version FROM orders WHERE id = ?', codeAfterRecovery.id)).version;
   await call(`/admin/eligibility/orders/${codeAfterRecovery.id}/recovery`, { token: admin.token,
     body: { action: 'return', expectedVersion: recoveryVersion, reason: 'Support collected the parcel', evidenceRef: 'synthetic:return' } });
+  // Pre-release recovery wrote ELIGIBILITY_CUSTODY_RECOVERY without a CUSTODY_TAKEN event.
+  await ledgerDb.atomic({ purpose: 'test' }, () => ledgerDb.run("DELETE FROM security_events WHERE order_id = ? AND action = 'CUSTODY_TAKEN'", codeAfterRecovery.id));
   const recoveryCode = (await call(`/orders/${codeAfterRecovery.id}`, { token: customer.token })).returnCode;
   await advance(driver.token, { ...codeAfterRecovery, status: 'returning' }, { code: recoveryCode });
   assert.equal((await ledgerDb.one("SELECT amount_cents FROM cash_entries WHERE order_id = ? AND source = 'trip_pay'", codeAfterRecovery.id)).amount_cents,
-    -Math.round(codeAfterRecovery.price * 100), 'a code closure uses the same custody transfer evidence');
+    -Math.round(codeAfterRecovery.price * 100), 'a code closure also recognizes custody transferred by a legacy release');
 
   // A courier block also uses one leg, and only a clearing second-admin review posts the pay.
   const blockedParcel = await deliver(false);

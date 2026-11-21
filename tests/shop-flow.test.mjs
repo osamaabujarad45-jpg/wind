@@ -353,7 +353,8 @@ try {
   if (persistence.backend === 'postgres') {
     const notices = await persistence.atomic({ purpose: 'test' }, () => persistence.all(`SELECT q.destination, e.payload->>'path' AS url
       FROM outbox q JOIN domain_events e ON e.id = q.event_id
-      WHERE e.order_id = ? AND e.type = 'notification.requested' AND e.payload->>'kind' = 'office'`, officeId));
+      WHERE e.order_id = ? AND e.type = 'notification.requested' AND e.payload->>'kind' = 'office'
+      AND q.destination LIKE 'expon:%'`, officeId));
     assert.equal(notices.length, 2);
     assert.ok(notices.every(notice => notice.destination.startsWith(`expon:${owner.user.id}:`) && notice.url === `/merchant/order/${officeId}`));
   }

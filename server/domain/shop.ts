@@ -11,6 +11,7 @@
 import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { needStaff, staffActor } from './ops.ts';
+import { legacySupportCollected } from './office.ts';
 import {
   adminShopCancels, goodsCapFor, handoverExceptions, isCity, lineAgorot, merchantRejects, shopCategories, shopExceptionReasons, shopPolicies,
   varianceAllowed, doorCashMaxCents, latinDigits,
@@ -900,7 +901,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     })) return;
     // Support recovered the goods from the captain: the trip so far (one fee), no return leg.
     const recovered = history.some(e => e.action === 'CUSTODY_TAKEN'
-      && said(e).assignmentEpoch === r.assignment_epoch && said(e).driverId === r.driver_id);
+      && said(e).assignmentEpoch === r.assignment_epoch && said(e).driverId === r.driver_id) || await legacySupportCollected(db, r);
     const pay = (recovered ? 1 : deliveredToOffice ? 3 : 2) * Number(s.delivery_fee_agorot);
     if (pay && r.driver_id) {
       await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay,
