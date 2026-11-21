@@ -20,7 +20,7 @@ set -a; . /etc/wind-api.env; set +a
 cd /opt/windapi-new
 sudo -u wind -E env NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DRY/wind.db" TZ=Asia/Hebron WEB_ROOT=/opt/windapi-new/web \
   /opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts > "$WORK/dry.log" 2>&1 &
-PID=$!
+PID=$! # sudo relays the kill to node
 cd /
 ok=0; for i in $(seq 1 40); do curl -fsS http://127.0.0.1:4010/api/ready > "$WORK/ready.json" 2>/dev/null && { ok=1; break; }; sleep 1; done
 kill "$PID" 2>/dev/null || true; sleep 1; rm -rf "$DRY"

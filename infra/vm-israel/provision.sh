@@ -12,13 +12,16 @@ apt-get install -y -q curl ca-certificates debian-keyring debian-archive-keyring
 
 # Node 24 (same major as the gate), checked against the published checksum.
 if [ ! -x /opt/node/bin/node ] || [ "$(/opt/node/bin/node -v)" != "v$NODE_VERSION" ]; then
-  cd /tmp
+  # A private root-owned directory, never predictable /tmp names (Haiku PR #98 N-4).
+  DL=$(mktemp -d); trap 'rm -rf "$DL"' EXIT
+  cd "$DL"
   curl -fsSLO "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz"
   curl -fsSLO "https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt"
   grep " node-v$NODE_VERSION-linux-x64.tar.xz\$" SHASUMS256.txt | sha256sum -c -
   rm -rf /opt/node-new && mkdir -p /opt/node-new
   tar -xJf "node-v$NODE_VERSION-linux-x64.tar.xz" -C /opt/node-new --strip-components=1
   rm -rf /opt/node && mv /opt/node-new /opt/node
+  cd /
 fi
 /opt/node/bin/node -v
 

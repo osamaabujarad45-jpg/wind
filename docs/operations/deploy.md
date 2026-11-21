@@ -47,7 +47,7 @@ its data is backed up and those installs are rebuilt.
   3. Check with `node scripts/check-deployment.mjs --origin https://20.217.202.98.sslip.io`.
 - **Rollback:**
   - The 21 November install was repeated with install-release.sh, so `/opt/windapi-old-20261121122330` is the same release; an earlier tree does not exist on this host, so fix forward from it.
-  - Later releases keep the SQLite schema additive (`user_version` stays 3), so the previous tree reads the current database.
+  - Releases keep SQLite `user_version` 3, so the previous tree reads the current database. On its first start, a release may also run one-time, idempotent table rebuilds in `server/db/sqlite-schema.ts` (widened constraints) and settle stale pending subscriptions. Take a backup (`sudo systemctl start wind-backup`) before an install.
   1. Freeze cash writes and return decisions, as the release notes below say, and close every open Cash tab.
   2. Check that `/opt/windapi-old-<time>` exists (`ls -d /opt/windapi-old-*`).
   3. `sudo systemctl stop wind-api`.
