@@ -311,6 +311,7 @@ try {
   const takeover = await ledgerDb.pool.connect();
   let takenRaceAdvance;
   try {
+    await takeover.query("SET lock_timeout='5s'");
     await takeover.query('BEGIN');
     const row = (await takeover.query('SELECT assignment_epoch, driver_id FROM orders WHERE id = $1 FOR UPDATE', [takenRace.id])).rows[0];
     await takeover.query("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES ($1, $2, 'CUSTODY_TAKEN', $3, $4)",
@@ -326,12 +327,15 @@ try {
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     await takeover.query('COMMIT');
-  } catch (error) { await takeover.query('ROLLBACK').catch(() => {}); throw error; } finally { takeover.release(); }
+  } catch (error) { await takeover.query('ROLLBACK').catch(() => {}); throw error; } finally {
+    takeover.release();
+    ledgerDb.pool.options.lock_timeout = 500; // production's wait again, whatever happened above
+  }
   const takenRaceReply = await takenRaceAdvance;
   assert.deepEqual([takenRaceReply.status, (await takenRaceReply.json()).error], [409, 'cannot_advance'], 'the takeover that committed first wins');
   assert.equal((await ledgerDb.one('SELECT status FROM orders WHERE id = ?', takenRace.id)).status, 'returning');
   await call(`/admin/orders/${takenRace.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'support', reason: 'Support brought it in' } });
-  ledgerDb.pool.options.lock_timeout = 500; await ledgerDb.pool.query("SET lock_timeout='500ms'"); // production's wait again
+  await ledgerDb.pool.query("SET lock_timeout='500ms'");
 
   // A courier block also uses one leg, and only a clearing second-admin review posts the pay.
   const blockedParcel = await deliver(false);
