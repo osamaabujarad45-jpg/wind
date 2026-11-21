@@ -11,7 +11,7 @@
 import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { needStaff, staffActor } from './ops.ts';
-import { legacySupportCollected } from './office.ts';
+import { legacySupportCollected, officeState } from './office.ts';
 import {
   adminShopCancels, goodsCapFor, handoverExceptions, isCity, lineAgorot, merchantRejects, shopCategories, shopExceptionReasons, shopPolicies,
   varianceAllowed, doorCashMaxCents, latinDigits,
@@ -302,6 +302,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
       change: role === 'driver' ? null : change, cancelReason: s.cancel_reason ?? null, handoverException: s.handover_exception ?? null,
       handoverOverdue: role === 'admin' && !!s.handover_exception && await handoverOverdue(r.id), // DLV-13: support decides now
       ...(role === 'admin' && s.handover_exception ? { handoverExceptionAt: await openExceptionAt(r.id) } : {}), // the episode a decision binds to
+      ...(role === 'merchant' && r.status === 'returned' ? { office: await officeState(db, r.id) } : {}),
       packages: s.packing ? JSON.parse(s.packing) : null,
       pickupCode: role === 'merchant' || role === 'admin' ? s.pickup_code : null,
       returnCode: (role === 'merchant' || role === 'admin') && r.status === 'returning' ? r.return_code ?? null : null,
@@ -1010,12 +1011,14 @@ export function registerShop(route: Register, deps: ShopDeps) {
   // DLV-23: an operator cancels only with one of the allowed reasons, at the allowed stage, with a note.
   route('POST', '/api/admin/orders/:id/shop/cancel', async ({ user, params, body }) => inTx(async () => {
     const { r, s } = await adminOrder(user, Number(params[0]));
-    const reason = body.reason as ShopCancelReason;
+    // Old servers reject this command because a generic cancellation requires an explicit reason.
+    const handover = body.action === 'cancel_handover_exception' && body.reason === undefined;
+    const reason = handover ? 'handover_exception_unresolved' : body.reason as ShopCancelReason;
     if (reason === 'below_minimum' || reason === 'accept_expired') fail(409, 'reason_reserved');
     if (!adminShopCancels.includes(reason)) fail(400, 'invalid_input');
+    if (reason === 'handover_exception_unresolved' && !handover) fail(400, 'invalid_input');
     const note = text(body.note, 500);
     if (note.length < 5) fail(400, 'invalid_input');
-    const handover = reason === 'handover_exception_unresolved';
     if (handover) needStaff(await staffActor(db, user as never), fail, 'support', 'dispatcher');
     if (r.status === 'cancelled') return getOrder(r.id, user);
     if (s.merchant_state === 'handed_over' || !['requested', 'searching', 'assigned', 'at_pickup'].includes(r.status)) fail(409, 'use_hold'); // after collection it is a hold, never a cancel

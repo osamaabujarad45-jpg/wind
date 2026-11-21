@@ -44,7 +44,7 @@ const pushWords: Record<string, { ar: string; en: string }> = {
   message: { ar: 'رسالة جديدة بخصوص طلبك.', en: 'New message about your order.' },
   on_hold: { ar: 'طلبك متوقف مؤقتاً. افتح ويند للتفاصيل.', en: 'Your order is on hold. Open Wind for details.' },
   returning: { ar: 'يعود طلبك إلى المرسل. جهّز رمز الإرجاع.', en: 'Your order is coming back. Have the return code ready.' },
-  returned: { ar: 'أُعيد الطلب إلى المرسل.', en: 'The order was returned to the sender.' },
+  returned: { ar: 'اكتمل إرجاع الطلب.', en: 'The return is complete.' },
   decided: { ar: 'صدر قرار بخصوص طلبك. افتح ويند.', en: 'A decision was made on your job. Open Wind.' },
   approved: { ar: 'تمت الموافقة على حسابك. يمكنك استلام الطلبات الآن.', en: 'Your account is approved. You can take jobs now.' },
   attention: { ar: 'أمر يحتاج إلى مراجعتك. افتح ويند.', en: 'Something needs your review. Open Wind.' },

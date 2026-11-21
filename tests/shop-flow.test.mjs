@@ -203,7 +203,7 @@ try {
   assert.equal(order.status, 'at_pickup');
   await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } } }, 409, 'exception_open');
   // Inside the owner-set 10 minutes the shop fixes it: support can neither cancel for it nor remove a line, and it is not on the stuck list.
-  await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { reason: 'handover_exception_unresolved', note: 'Synthetic early decision' } }, 409, 'cancel_refused');
+  await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { action: 'cancel_handover_exception', note: 'Synthetic early decision' } }, 409, 'cancel_refused');
   await err(`/admin/orders/${order.id}/shop/lines/${breadLine}/remove`, { token: admin.token, body: {} }, 409, 'handover_not_overdue');
   assert.ok(!(await call('/admin/shop/attention', { token: admin.token })).orders.some(o => o.id === order.id));
   await shopSweep(Date.now() + 9 * 60_000);
@@ -216,7 +216,9 @@ try {
   await shopSweep();
   assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_HANDOVER_ESCALATED'", order.id)).n), 1, 'one escalation per exception');
   const stuck = (await call('/admin/shop/attention', { token: admin.token })).orders.find(o => o.id === order.id);
-  const staleCancel = { reason: 'handover_exception_unresolved', note: 'Synthetic stale decision' };
+  const staleCancel = { action: 'cancel_handover_exception', note: 'Synthetic stale decision' };
+  await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { reason: 'handover_exception_unresolved',
+    exceptionAt: stuck.shop.handoverExceptionAt, note: staleCancel.note } }, 400, 'invalid_input');
   await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: staleCancel }, 400, 'invalid_input');
   await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { ...staleCancel, exceptionAt: stuck.shop.handoverExceptionAt - 1 } }, 409, 'exception_changed');
   if (persistence.backend === 'postgres') {
@@ -323,7 +325,7 @@ try {
   try {
     const episode = (await call(`/orders/${toCancel.id}`, { token: admin.token })).shop.handoverExceptionAt;
     const cancelled = await call(`/admin/orders/${toCancel.id}/shop/cancel`, { token: admin.token,
-      body: { reason: 'handover_exception_unresolved', exceptionAt: episode, note: 'Synthetic handover could not be resolved' } });
+      body: { action: 'cancel_handover_exception', exceptionAt: episode, note: 'Synthetic handover could not be resolved' } });
     assert.equal(cancelled.shop.cancelReason, 'handover_exception_unresolved');
     const event = await one("SELECT detail FROM security_events WHERE order_id = ? AND action = 'SHOP_CANCELLED'", toCancel.id);
     assert.equal(JSON.parse(event.detail).exceptionAt, episode);
@@ -346,9 +348,20 @@ try {
   if (persistence.backend === 'postgres') {
     for (const account of [owner, customer]) await call('/push/native/register', { token: account.token,
       body: { expoPushToken: `ExpoPushToken[synthetic-office-${account.user.id}]`, deviceId: randomUUID(), platform: 'android' } });
+    const duty = role => persistence.atomic({ purpose: 'test' }, () => persistence.run('UPDATE users SET staff_role = ? WHERE id = ?', role, admin.user.id));
+    await duty('finance');
+    try {
+      assert.equal((await call(officePath, { token: admin.token })).canManage, false);
+      await err(officePath, { token: admin.token, body: { action: 'received', note: 'Shop order on shelf A' } }, 403, 'forbidden');
+    } finally { await duty(null); }
   }
   const kept = await call(officePath, { token: admin.token, body: { action: 'received', perishable: true, note: 'Shop order on shelf A' } });
   assert.equal(kept.office.until - kept.office.receivedAt, 24 * 3_600_000);
+  const ownerOrder = await call(`/orders/${officeId}`, { token: owner.token });
+  assert.equal(ownerOrder.shop.office.until, kept.office.until);
+  assert.equal(ownerOrder.shop.office.closed, null);
+  assert.ok(!JSON.stringify(ownerOrder.shop.office).includes('shelf A'), 'the shop sees the deadline without the office note');
+  assert.equal((await call(`/orders/${officeId}`, { token: customer.token })).shop.office, undefined);
   assert.equal(await remindOfficeJobs(kept.office.receivedAt + 24 * 3_600_000), 1);
   if (persistence.backend === 'postgres') {
     const notices = await persistence.atomic({ purpose: 'test' }, () => persistence.all(`SELECT q.destination, e.payload->>'path' AS url

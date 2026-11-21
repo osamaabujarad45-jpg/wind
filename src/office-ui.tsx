@@ -20,7 +20,7 @@ type Office = { receivedAt: number; perishable: boolean; until: number; closed: 
 export function OfficePanel({ orderId, shop }: { orderId: number; shop: boolean }) {
   const { c, err } = useCopy();
   const { time } = useFormat();
-  const { data, error, reload, setData } = useApi<{ office: Office | null; canReceive?: boolean }>(`/admin/orders/${orderId}/office`);
+  const { data, error, reload, setData } = useApi<{ office: Office | null; canReceive?: boolean; canManage?: boolean }>(`/admin/orders/${orderId}/office`);
   const [note, setNote] = useState('');
   const [perishable, setPerishable] = useState(false);
   const [busy, setBusy] = useState('');
@@ -28,7 +28,7 @@ export function OfficePanel({ orderId, shop }: { orderId: number; shop: boolean 
   const now = useMinute();
   if (!data) return <Loading failed={!!error} onRetry={reload} />;
   const office = data.office;
-  if (!office && data.canReceive === false) return null;
+  if (!office && (data.canReceive === false || data.canManage === false)) return null;
   async function act(action: 'received' | 'collected' | 'donated' | 'destroyed') {
     setBusy(action); setFailure('');
     try {
@@ -50,13 +50,15 @@ export function OfficePanel({ orderId, shop }: { orderId: number; shop: boolean 
       : <View style={{ gap: 6 }}>
         <Txt>{fill(c.officeKept, { from: time(office.receivedAt), t: time(office.until) })}</Txt>
         {office.perishable && <Txt variant="caption">{c.officePerishableKept}</Txt>}
-        <Field label={c.officeNote} value={note} onChangeText={setNote} maxLength={300} disabled={!!busy} />
-        <Button title={shop ? c.officeShopCollected : c.officeCollected} icon="person-outline" variant="soft" loading={busy === 'collected'} disabled={!!busy} onPress={() => act('collected')} />
-        {/* Donating or destroying someone's goods waits for the hold to end and always says why. */}
-        {(['donated', 'destroyed'] as const).map(a => <Button key={a} title={c[`officeEnd_${a}`]} variant={a === 'destroyed' ? 'ghost' : 'outline'} size="sm"
-          loading={busy === a} disabled={!!busy || now < office.until || !noted}
-          reason={now < office.until ? fill(c.officeHoldRunning, { t: time(office.until) }) : c.officeNoteNeeded}
-          onPress={() => confirm(c[`officeConfirm_${a}`], () => act(a), c[`officeEnd_${a}`], c.no)} />)}
+        {data.canManage !== false && <>
+          <Field label={c.officeNote} value={note} onChangeText={setNote} maxLength={300} disabled={!!busy} />
+          <Button title={shop ? c.officeShopCollected : c.officeCollected} icon="person-outline" variant="soft" loading={busy === 'collected'} disabled={!!busy} onPress={() => act('collected')} />
+          {/* Donating or destroying someone's goods waits for the hold to end and always says why. */}
+          {(['donated', 'destroyed'] as const).map(a => <Button key={a} title={c[`officeEnd_${a}`]} variant={a === 'destroyed' ? 'ghost' : 'outline'} size="sm"
+            loading={busy === a} disabled={!!busy || now < office.until || !noted}
+            reason={now < office.until ? fill(c.officeHoldRunning, { t: time(office.until) }) : c.officeNoteNeeded}
+            onPress={() => confirm(c[`officeConfirm_${a}`], () => act(a), c[`officeEnd_${a}`], c.no)} />)}
+        </>}
       </View>}
     <ErrorText>{failure}</ErrorText>
   </Card>;

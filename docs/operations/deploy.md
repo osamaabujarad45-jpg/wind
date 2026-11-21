@@ -101,6 +101,10 @@ Production moved to a VM on a separate student subscription. The 15 November sec
     cancellation after assignment and every failed pickup goes to support review. Validated distance informs the suggested
     credit, capped at the booked fare. A support or finance decision grants or denies the credit. The office records
     disbursements with the Pay driver action after pending handovers are resolved.
+  - Return and shop handover decisions use the web bundle served by this release. Support records an office handback with
+    `confirm_office_return` and enters the holding details on the returned order. The extra office leg is paid when the
+    captain carried the goods. A verified handback at the return endpoint uses `confirm_sender_return`. For an overdue shop
+    handover, `cancel_handover_exception` carries the timestamp of the open exception. An older API refuses these commands.
   - Goods COD writes stay off unless `WIND_GOODS_COD=on` (G-COD), whatever the database schema allows.
   - Command replay: a reply scrubbed by this release replays as a re-read under current authorization. An earlier
     tree reading the same database returns the scrubbed marker as it is; the client then re-reads the order.

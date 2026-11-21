@@ -1,5 +1,6 @@
 import type { User } from '../../src/model.ts';
 import type { Persistence } from '../db/persistence.ts';
+import { needStaff, staffActor, staffRoleOf } from './ops.ts';
 type Row = Record<string, any>;
 type Register = (method: string, path: string, handler: (ctx: { user: User; params: string[]; body: Row }) => Promise<unknown>) => unknown;
 type Deps = {
@@ -45,6 +46,7 @@ export function registerOfficeRoutes(route: Register, deps: Deps) {
     if (action !== 'collected' && note.trim().length < 5) deps.fail(400, 'invalid_input');
     await deps.db.exec('BEGIN IMMEDIATE');
     try {
+      needStaff(await staffActor(deps.db, user), deps.fail, 'support');
       const order = await deps.db.one(`SELECT id, customer_id, service, status FROM orders WHERE id = ?${deps.db.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id); // one ending per order
       if (!order) deps.fail(404, 'not_found');
       if (order!.status !== 'returned' || !['parcel', 'freight', 'shop'].includes(String(order!.service))) deps.fail(409, 'office_unavailable');
@@ -68,7 +70,9 @@ export function registerOfficeRoutes(route: Register, deps: Deps) {
     if (!Number.isSafeInteger(id) || id < 1) deps.fail(400, 'invalid_input');
     const order = await deps.db.one('SELECT status, service FROM orders WHERE id = ?', id);
     const canReceive = order?.status === 'returned' && ['parcel', 'freight', 'shop'].includes(order.service) && await viaOffice(deps.db, id);
-    return { orderId: id, office: await officeState(deps.db, id), canReceive };
+    const actor = await staffActor(deps.db, user);
+    const canManage = ['platform_admin', 'support'].includes(staffRoleOf(actor) ?? '');
+    return { orderId: id, office: await officeState(deps.db, id), canReceive, canManage };
   });
 
   // The office shelf: everything received and not yet ended, the ones past their hold first.
@@ -85,10 +89,12 @@ export function registerOfficeRoutes(route: Register, deps: Deps) {
 
 /** Explicit office or legacy support confirmation. Older clients used the same command for both handbacks. */
 async function viaOffice(db: Persistence, orderId: number) {
-  const rows = await db.all(`SELECT action, detail FROM security_events WHERE order_id = ? AND action IN ('EXCEPTION_RESOLVED','RETURN_COMPLETED')`, orderId);
+  const rows = await db.all(`SELECT action, detail FROM security_events WHERE order_id = ?
+    AND action IN ('EXCEPTION_RESOLVED','ELIGIBILITY_CUSTODY_RECOVERY','RETURN_COMPLETED')`, orderId);
   return !rows.some(r => r.action === 'RETURN_COMPLETED') && rows.some(r => {
     const detail = parse(r.detail);
-    return r.action === 'EXCEPTION_RESOLVED' && detail.action === 'confirm_return' && (detail.handoff === 'office' || detail.handoff === undefined);
+    return detail.action === 'confirm_return' && (r.action === 'ELIGIBILITY_CUSTODY_RECOVERY'
+      || r.action === 'EXCEPTION_RESOLVED' && (detail.handoff === 'office' || detail.handoff === undefined));
   });
 }
 

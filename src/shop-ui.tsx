@@ -74,7 +74,7 @@ export function ShopLines({ order, totalsOnly = false }: { order: Order; totalsO
       <Money label={c.shopGoods} value={money(s.goodsAgorot / 100)} />
       <Money label={c.shopDeliveryFeeLine} value={money(s.deliveryFeeAgorot / 100)} />
       {s.serviceFeeAgorot > 0 && <Money label={c.shopServiceFee} value={money(s.serviceFeeAgorot / 100)} />}
-      <Money label={c.shopCashAtDoor} value={money(s.cashAgorot / 100)} strong />
+      <Money label={c.shopCashAtDoor} value={money(order.status === 'returned' ? 0 : s.cashAgorot / 100)} strong />
       {s.state !== 'handed_over' && order.status !== 'completed' && <Txt variant="caption">{fill(c.shopAgreedLimit, { r: money(s.goodsCapAgorot / 100) })}</Txt>}
     </View>
   </>;
@@ -264,8 +264,10 @@ export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o
         items={cancels.map(k => ({ key: k, label: c[`adminCancel_${k}`] }))} />
       <Button title={c.adminShopCancel} variant="danger" size="sm" disabled={!!busy || !noteOk || !cancelReason}
         reason={busy ? c.wait_busy : !cancelReason ? c.adminShopCancelWhy : c.adminNoteNeeded} loading={busy === 'cancel'}
-        onPress={() => cancelReason && act('cancel', `/admin/orders/${order.id}/shop/cancel`,
-          { reason: cancelReason, note: note.trim(), exceptionAt: cancelReason === 'handover_exception_unresolved' ? cancel?.exceptionAt : undefined })} />
+        onPress={() => cancelReason && act('cancel', `/admin/orders/${order.id}/shop/cancel`, {
+          ...(cancelReason === 'handover_exception_unresolved'
+            ? { action: 'cancel_handover_exception', exceptionAt: cancel?.exceptionAt } : { reason: cancelReason }), note: note.trim(),
+        })} />
       <Button title={c.adminShopResetPickup} variant="outline" size="sm" disabled={!noteOk} loading={busy === 'reset'}
         onPress={() => act('reset', `/admin/orders/${order.id}/shop/reset-pickup`, { reason: note.trim() })} />
       {/* DLV-13: past the shop's minutes, support removes the line at fault (DLV-06 re-runs) or cancels above. */}

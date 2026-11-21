@@ -1,7 +1,7 @@
 // Wind Web Push (SPEC-web-push.md). The payload is { kind, order, url, lang }: no names, places or message text.
 const words = {
   ar: { title: 'ويند', assigned: 'قبل سائق طلبك', at_pickup: 'وصل السائق إلى نقطة الاستلام', in_transit: 'طلبك في الطريق',
-    completed: 'تم التسليم', returned: 'أُعيد الطلب إلى المرسل', message: 'رسالة جديدة بخصوص الطلب', job: 'طلب جديد متاح لك',
+    completed: 'تم التسليم', returned: 'اكتمل إرجاع الطلب', office: 'المرتجع في مكتب ويند. افتح الطلب لمعرفة مدة الحفظ.', message: 'رسالة جديدة بخصوص الطلب', job: 'طلب جديد متاح لك',
     released: 'اعتذر السائق؛ نبحث لك عن سائق آخر', cancelled: 'أُلغي الطلب',
     offer: 'عرض سائق سعراً لطلبك', offer_accepted: 'قُبل سعرك: توجّه إلى الاستلام',
     on_hold: 'تعذّر التسليم؛ سيتصل بك الدعم', returning: 'سيُعاد الطلب إلى المرسل؛ افتح التطبيق لرمز الإرجاع', decided: 'قرر الدعم في مشكلة التسليم',
@@ -10,7 +10,7 @@ const words = {
     destination_request: 'طلب الزبون تغيير الوجهة: افتح الطلب للموافقة أو الرفض', destination_accepted: 'وافق السائق على تغيير الوجهة', destination_declined: 'رفض السائق تغيير الوجهة',
     admin_assigned: 'أسندت إليك الإدارة طلباً: افتح الطلب', admin_unassigned: 'نُقل أحد طلباتك إلى سائق آخر: راجع قائمة طلباتك', dispatch_assigned: 'عيّنت الإدارة سائقاً لطلبك' },
   en: { title: 'Wind', assigned: 'A driver accepted your order', at_pickup: 'Your driver is at pickup', in_transit: 'Your order is on its way',
-    completed: 'Delivered', returned: 'Returned to the sender', message: 'New message about your order', job: 'A new job is available',
+    completed: 'Delivered', returned: 'The return is complete', office: 'The return is at the Wind office. Open the order for the holding deadline.', message: 'New message about your order', job: 'A new job is available',
     released: 'Your driver dropped out; finding another', cancelled: 'The order was cancelled',
     offer: 'A driver offered a price', offer_accepted: 'Your price was accepted: go to pickup',
     on_hold: 'Delivery problem: support will contact you', returning: 'Your order is being returned: open the app for the return code', decided: 'Support decided on a delivery problem',

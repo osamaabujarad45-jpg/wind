@@ -2937,9 +2937,9 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
   // Use a distinct command so an older server refuses an office receipt instead of silently omitting the additional leg.
   const action = typeof body.action === 'string' ? body.action : fail(400, 'invalid_input');
   const deliveredToOffice = action === 'confirm_office_return';
-  const confirmsReturn = action === 'confirm_return' || deliveredToOffice;
-  if (body.handoff !== undefined && (action !== 'confirm_return' || body.handoff !== 'sender')) fail(400, 'invalid_input');
-  const handoff = deliveredToOffice ? 'office' : body.handoff;
+  const deliveredToSender = action === 'confirm_sender_return';
+  const confirmsReturn = action === 'confirm_return' || deliveredToOffice || deliveredToSender;
+  const handoff = deliveredToOffice ? 'office' : deliveredToSender ? 'sender' : undefined;
   const from = confirmsReturn ? 'returning' : action === 'reattempt' || action === 'return' ? 'on_hold' : null;
   const to = confirmsReturn ? 'returned' : action === 'reattempt' ? 'in_transit' : 'returning';
   if (reason.length < 5 || !from) fail(400, 'invalid_input');

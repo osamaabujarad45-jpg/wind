@@ -465,6 +465,7 @@ export type ShopView = {
   lines: ShopLine[]; change: ShopChange | null; cancelReason: ShopCancelReason | null; handoverException: HandoverException | null;
   handoverOverdue?: boolean; // DLV-13, admin view: the exception is past the owner-set minutes
   handoverExceptionAt?: number | null; // admin view: the open exception episode a support decision binds to
+  office?: { until: number; closed: null | { action: 'collected' | 'donated' | 'destroyed'; at: number } } | null; // owning shop only
   packages: { no: number; sealed: boolean; lineIds: number[] }[] | null;
   pickupCode: string | null; // the merchant and support only (§2.1a)
   returnCode: string | null; // the merchant, while the goods come back (DLV-21)

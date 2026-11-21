@@ -54,7 +54,7 @@ export function registerCustodyRoutes(route: Register, deps: Deps) {
     }
     if (o!.status === 'completed' && o!.completed_at) steps.push({ at: Number(o!.completed_at), kind: 'delivered', by: 'driver' });
     // A return can also close through custody recovery, with no RETURN_COMPLETED event.
-    if (o!.status === 'returned' && o!.completed_at && !steps.some(s => s.kind === 'returned'))
+    if (o!.status === 'returned' && o!.completed_at && !steps.some(s => s.kind === 'returned' || s.kind === 'decided' && s.reason === 'confirm_return'))
       steps.push({ at: Number(o!.completed_at), kind: 'returned', by: 'support' });
     steps.sort((a, b) => a.at - b.at);
     // A retry after a failed delivery is a new attempt, not a silent status rewrite (the first try is attempt 1). Only a

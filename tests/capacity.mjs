@@ -46,6 +46,8 @@ try {
   assert.equal(await db.one('SELECT 1 FROM ledger_journals WHERE business_ref=?',`order:${winner.id}:commission`),undefined,'the cash screen and the ledger agree on this return');
   assert.deepEqual(await db.all('SELECT amount_cents, recorded_by FROM cash_entries WHERE note=?', `DRV-17 trip pay order ${winner.id}`),
     [{amount_cents:-Math.round(Number(snapshot.price)*100),recorded_by:admin.user.id}], 'eligibility close pays only the trip so far');
+  // Old eligibility closures only wrote ELIGIBILITY_CUSTODY_RECOVERY, never EXCEPTION_RESOLVED.
+  await db.run("DELETE FROM security_events WHERE order_id = ? AND action = 'EXCEPTION_RESOLVED'", winner.id);
   const received = await call(`/admin/orders/${winner.id}/office`, { token: admin.token, body: { action: 'received', note: 'Received at Wind office' } });
   assert.equal(received.orderId, winner.id);
   assert.ok(received.office.until > received.office.receivedAt, 'eligibility confirmation opens SHIP-19 intake');

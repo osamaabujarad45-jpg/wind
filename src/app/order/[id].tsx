@@ -148,6 +148,7 @@ export default function OrderScreen() {
   // Header chip and map label: the same words as EtaLine (arrival first, then the shared short wording).
   const etaChip = ([lo, hi]: [number, number]) => arrivingNow(lo, alerts.length > 0) ? (toPickup ? c.arrivingPickup : c.arrivingDropoff) : etaShort(c, [lo, hi], alerts.length > 0);
   const cancelled = order.status === 'cancelled';
+  const returned = order.status === 'returned';
   const from = city(order.pickupCity), to = city(order.dropoffCity);
   const pickup = order.pickupPoint ?? from, dropoff = order.dropoffPoint ?? to;
   // A held or returning item is still past pickup; the bar does not move backwards.
@@ -490,10 +491,11 @@ export default function OrderScreen() {
           <Detail label={c.issued} value={time(order.createdAt)} />
           {/* a cancelled order was never charged and pays the driver nothing (earnings count finished jobs only) */}
           {/* A shop order's total is the goods plus both fees, collected at the door (its fee lines are in the shop card). */}
-          <Detail label={order.discount > 0 || cancelled ? c.fare : c.total} value={money(order.shop ? order.shop.cashAgorot / 100 : order.price)} strong={!order.discount && !cancelled} />
+          <Detail label={order.discount > 0 || cancelled || returned ? c.fare : c.total} value={money(order.shop ? order.shop.cashAgorot / 100 : order.price)} strong={!order.discount && !cancelled && !returned} />
           {order.discount > 0 && <Detail label={c.promoDiscount} value={money(-order.discount)} />}
-          {order.discount > 0 && !isAdmin && !cancelled && <Detail label={isDriver ? c.cashToCollect : c.youPayCash} value={money(order.price - order.discount)} strong />}
-          {isDriver && !cancelled && <Detail label={c.youEarn} value={money(order.price - (order.commission ?? commissionOn(order.price, rate)))} strong />}
+          {order.discount > 0 && !isAdmin && !cancelled && !returned && <Detail label={isDriver ? c.cashToCollect : c.youPayCash} value={money(order.price - order.discount)} strong />}
+          {isCustomer && returned && !order.shop && <Detail label={c.youPayCash} value={money(0)} strong />}
+          {isDriver && !cancelled && !returned && <Detail label={c.youEarn} value={money(order.price - (order.commission ?? commissionOn(order.price, rate)))} strong />}
           {isAdmin && order.commission != null && <Detail label={c.commission} value={money(order.commission)} />}
           {order.collected && (isAdmin || isDriver) && <Detail label={c.doorCollectedShort} value={money(order.collected.cents / 100)} />}
           {order.collected?.reason && (isAdmin || isDriver) && <Detail label={c.doorReasonShort} value={c[`variance_${order.collected.reason}`]} />}
@@ -551,12 +553,12 @@ export default function OrderScreen() {
         onChangeText={reason => setDecision({ id, reason })} />
       <View style={{ gap: 8 }}>
         {([
-          ['confirm_return', c.confirmReturn, c.confirmReturnHint],
+          ['confirm_sender_return', c.confirmReturn, c.confirmReturnHint],
           ['confirm_office_return', c.custodyDecision_confirm_return, c.confirmOfficeReturnHint],
         ] as const).map(([action, title, hint]) => <Button key={action} title={title} variant="outline" icon="checkmark-done-outline"
           loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(hint, () => act(action, `/admin/orders/${order.id}/resolve`,
-            { action, reason: decisionReason.trim(), ...(action === 'confirm_return' && { handoff: 'sender' }) },
+            { action, reason: decisionReason.trim() },
             () => setDecision({ id, reason: '' })), title, c.no)} />)}
       </View>
     </Card>}

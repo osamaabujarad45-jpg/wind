@@ -84,7 +84,7 @@ try {
   assert.deepEqual(decided.map(s => s.attempt ?? null), [2, 3, null]);
   const startReturn = await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Three delivery attempts completed' } });
   assert.equal(startReturn.status, 'returning');
-  await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', handoff: 'sender', reason: 'Support verified receipt' } });
+  await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'confirm_sender_return', reason: 'Support verified receipt' } });
   const senderReturn = await call(`/orders/${retried.id}/custody`, { token: customer.token });
   assert.ok(senderReturn.steps.some(step => step.kind === 'returned' && step.by === 'support'));
   assert.ok(!senderReturn.steps.some(step => step.kind === 'decided' && step.reason === 'confirm_return'));
@@ -107,6 +107,9 @@ try {
   }
   let kept = await backAtOffice();
   assert.equal(kept.status, 'returned');
+  const officeChain = await call(`/orders/${kept.id}/custody`, { token: customer.token });
+  assert.ok(officeChain.steps.some(step => step.kind === 'decided' && step.reason === 'confirm_return'));
+  assert.ok(!officeChain.steps.some(step => step.kind === 'returned'), 'the office decision is the return receipt');
   assert.equal((await call(`/admin/orders/${kept.id}/office`, { token: admin.token })).canReceive, true);
   await call(`/admin/orders/${kept.id}/office`, { token: customer.token, body: { action: 'received', note: 'Shelf A' }, expect: 403 });
   await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'collected' }, expect: 409 }); // not received yet

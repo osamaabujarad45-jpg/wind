@@ -6,12 +6,14 @@ import { View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { api, useApi } from '../../../api';
 import { isolate, merchantRejects, type MerchantItem, type Order, type ShopLine } from '../../../model';
+import { useFormat } from '../../../parts';
 import { qtyLabel, ShopLines, useCountdown } from '../../../shop-ui';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, Header, Loading, palette, Row, Screen, Section, Stepper, Txt, useCopy } from '../../../ui';
 
 export default function MerchantOrder() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { c, language, money, rtl, err } = useCopy();
+  const { time } = useFormat();
   const { data: order, error, reload, setData } = useApi<Order>(`/orders/${Number(id)}`, 10_000);
   const catalogue = useApi<{ items: MerchantItem[] }>('/merchant/catalogue');
   const [prep, setPrep] = useState(20);
@@ -39,9 +41,15 @@ export default function MerchantOrder() {
   const packingOk = packing.length > 0 && (packing.some(p => p.sealed) || live.every(l => packing.some(p => !p.sealed && p.lineIds.includes(l.id))));
   const readyReason = s.change ? c.err_change_pending : missingWeight.length ? fill(c.merchantWeighFirst, { items: missingWeight.map(name).join('، ') }) : !packingOk ? c.err_packing_required : '';
   const step = order.status === 'cancelled' ? (s.cancelReason ? c[`shopCancel_${s.cancelReason}`] : c.cancelled)
-    : order.status === 'returning' ? c.merchantReturning : s.state ? c[`merchantState_${s.state}`] : c.merchantStateNew;
+    : order.status === 'returning' ? c.merchantReturning : order.status === 'returned' ? c.returned : s.state ? c[`merchantState_${s.state}`] : c.merchantStateNew;
   return <Screen onRefresh={reload}>
     <Header title={code} back subtitle={step} />
+    {s.office && <Card>
+      <Section title={c.officeTitle} />
+      <Txt>{s.office.closed
+        ? fill(s.office.closed.action === 'collected' ? c.officeShopCollectedAt : c[`officeClosed_${s.office.closed.action}`], { t: time(s.office.closed.at) })
+        : fill(c.officeUntil, { t: time(s.office.until) })}</Txt>
+    </Card>}
     {!s.state && order.status === 'requested' && <Card tone="clay">
       <Txt variant="label">{c.merchantStateNew}</Txt>
       <Txt>{clock.left === 0 ? c.shopAcceptExpired : fill(c.shopAcceptTimer, { t: clock.text })}</Txt>
