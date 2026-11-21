@@ -29,13 +29,21 @@ if (Platform.OS !== 'web') {
 // Native push registration (Expo Push). Best-effort by design: any failure —
 // permission denied, Expo Go, missing EAS credentials, server gate closed —
 // leaves the existing polling path untouched and never blocks sign-in.
-export async function registerNativePush(lang: 'ar' | 'en'): Promise<void> {
+// `ask` shows the system dialog when permission is still undecided. A customer is asked only once they have placed an order
+// (they then have a reason: "your driver accepted"); a cold ask at sign-in that gets denied is final on Android 13+
+// (product audit, 21 Nov). Without `ask`, a device that already granted it just re-registers.
+export async function registerNativePush(lang: 'ar' | 'en', ask = false): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
     // The channel must exist before Android 13 can ask for permission; high importance gives a heads-up. server/push.ts names it.
     if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('default', { name: lang === 'ar' ? 'ويند' : 'Wind', importance: Notifications.AndroidImportance.HIGH });
-    let status = (await Notifications.getPermissionsAsync()).status;
-    if (status !== 'granted') status = (await Notifications.requestPermissionsAsync()).status;
+    const current = await Notifications.getPermissionsAsync();
+    let status = current.status;
+    // Asked once per device: an answered dialog is not shown again on every order (Account's notification row stays the way back).
+    if (status !== 'granted' && ask && current.canAskAgain && await storage.get('pushAsked') !== '1') {
+      await storage.set('pushAsked', '1');
+      status = (await Notifications.requestPermissionsAsync()).status;
+    }
     if (status !== 'granted') return;
     const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
     const expoPushToken = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;

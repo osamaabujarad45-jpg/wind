@@ -219,12 +219,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // Approvals, plan activations and tariff changes happen on the server: pick them up on foreground and every minute.
   // Quiet on purpose: a network blip mid-form must not swap the app for the offline screen.
   const signedIn = !!me;
+  // Captains and staff are asked at once: job alerts are their work. Customers are asked after an order, merchants in merchant mode.
+  const askAtSignIn = !!me && me.user.role !== 'customer';
   useEffect(() => {
     if (!signedIn) return;
     const stopDiagnostics = startDiagnosticDelivery();
     // T37: a relaunch into an existing session re-authorizes this device's push destination against the
     // current session (registering is idempotent; failures keep the polling fallback).
-    void registerNativePush(language);
+    void registerNativePush(language, askAtSignIn);
     // Updater form: a reply landing after sign-out must not bring the session back.
     const quiet = () => {
       const revision = apiSessionRevision();
@@ -241,7 +243,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const timer = setInterval(quiet, 60_000);
     const sub = AppState.addEventListener('change', state => { if (state === 'active') quiet(); });
     return () => { stopDiagnostics(); clearInterval(timer); sub.remove(); };
-  }, [signedIn, language]);
+  }, [signedIn, language, askAtSignIn]);
 
   const value: Session = {
     ready, offline, offlineSummary, me, language, refresh, forget: ended, onboarded,
@@ -259,7 +261,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       configureRecoveryActor(data.user);
       accountLoaded.current = true;
       setOffline(false);
-      void registerNativePush(language);
+      void registerNativePush(language, data.user.role !== 'customer');
     },
     signOut: async () => {
       takeAuthNotice(); // a normal sign-out never shows a leftover session-ended message

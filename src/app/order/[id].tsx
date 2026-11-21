@@ -31,6 +31,7 @@ import RouteMap from '../../route-map';
 import { RouteCheckpoints, useRoad } from '../../road';
 import { CustodyChain } from '../../custody';
 import { OfficePanel } from '../../office-ui';
+import { registerNativePush } from '../../native-push';
 import { useSession } from '../../session';
 import {
   Appear, Avatar, Badge, BoundedFooter, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, iconSize, Loading, maxScale, palette, Press, Pulse, Radar, Row, Screen, shadow, statusTone, Txt, useCopy,
@@ -119,6 +120,7 @@ export default function OrderScreen() {
     reload, next => { setData(next); work.update(next); }, () => { setAdvanceLocked(null); advanceAttempt.current = null; problemAttempt.current = null; });
   const [decision, setDecision] = useState({ id, reason: '' });
   const [dispute, setDispute] = useState({ id, reason: '' });
+  const [reportOpen, setReportOpen] = useState(false);
   const [sharedUrl, setSharedUrl] = useState<{ id: string; url: string } | null>(null);
   const [moving, setMoving] = useState<number | null>(null); // a scheduled parcel's new time while the customer picks it
   const [now, setNow] = useState(Date.now);
@@ -138,6 +140,11 @@ export default function OrderScreen() {
     const timer = setInterval(() => setNow(Date.now()), 5_000); // location age and arrival clock stay current
     return () => clearInterval(timer);
   }, []));
+
+  // A customer is asked for notifications here, with an order on its way: every route to a first order (booking, a recovered
+  // booking, order again, shop checkout) lands on this screen, and "your driver accepted" is then the reason (product audit, 21 Nov).
+  const customerLive = me?.user.role === 'customer' && !!order && (order.status === 'searching' || activeStatuses.includes(order.status));
+  useEffect(() => { if (customerLive) void registerNativePush(language, true); }, [customerLive, language]);
 
   if (!order || !me) return <Screen><Header title={/^\d+$/.test(id) ? orderCode(Number(id)) : c.orders} back /><ErrorText>{error && err(error)}</ErrorText><Loading failed={!!error} onRetry={reload} /></Screen>;
 
@@ -279,6 +286,7 @@ export default function OrderScreen() {
   const age = location?.ageSeconds ?? 0;
   const later = bookedAhead(order, now) ? order.scheduledFor! : 0; // booked ahead: the time
   const finding = order.status === 'searching' && !later;
+  const searchMinutes = finding ? Math.max(0, Math.floor((now - Math.max(order.createdAt, order.scheduledFor ?? 0)) / 60_000)) : 0;
   // Help with this order, one tap from the top on every state (it opened only from the foot of a long page): the help page
   // prefills the support message with the order number (product audit, 21 Nov).
   const helpButton = <IconButton icon="help-circle-outline" label={c.helpWithOrder} tone="muted" onPress={() => router.push({ pathname: '/help', params: { order: orderCode(order.id) } })} />;
@@ -454,7 +462,7 @@ export default function OrderScreen() {
       <Card>
         <Person title={isAdmin ? c.driver : c.yourDriver} name={order.driverName} phone={order.driverPhone}
           sub={[order.driverVehicle && c[order.driverVehicle], order.driverRating != null && `★ ${order.driverRating}`].filter(Boolean).join(' · ') || undefined}
-          plate={order.driverPlate ?? undefined} />
+          plate={order.driverPlate ?? undefined} approved={isCustomer} />
       </Card>
     </Appear> : null}
 
@@ -672,7 +680,10 @@ export default function OrderScreen() {
         <Txt variant="caption" style={{ marginTop: 4 }}>{order.dispute.resolution ?? order.dispute.reason}</Txt>
         {order.dispute.credit && <Txt variant="label" selectable style={{ marginTop: 6 }}>{fill(c.disputeCredit, { r: money(order.dispute.credit.amount), code: order.dispute.credit.code })}</Txt>}
       </Card>}
-      {canDispute && !order.dispute && <Card>
+      {/* Behind one button until asked for: an open, empty complaint box under a good delivery read as a warning (product audit, 21 Nov).
+          A started draft keeps it open. */}
+      {canDispute && !order.dispute && !reportOpen && !disputeReason && <Button title={c.disputeTitle} variant="outline" size="sm" icon="flag-outline" onPress={() => setReportOpen(true)} />}
+      {canDispute && !order.dispute && (reportOpen || !!disputeReason) && <Card>
         <Txt variant="title">{c.disputeTitle}</Txt>
         <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.disputeHint}</Txt>
         <Field label={c.disputeReason} value={disputeReason} multiline maxLength={1000} disabled={!!busy}
@@ -730,6 +741,13 @@ export default function OrderScreen() {
       <Txt variant="title" center style={{ marginTop: 4 }}>{c.findingTitle}</Txt>
       {/* Addressed to the sender; a driver or admin viewing the same order reads the title only. */}
       {isCustomer && <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{order.dispatch?.state === 'exhausted' ? c.dispatchExhausted : order.scheduledFor && now > order.scheduledFor ? c.scheduledMissed : c.findingBody}</Txt>}
+      {/* How long it has been, and past five minutes a way to reach support: a silent wait with a small pilot fleet reads as broken
+          and ends in a cancel (Uber and inDrive show both; product audit, 21 Nov). Counted from the booked time once it passed. */}
+      {isCustomer && searchMinutes >= 1 && order.dispatch?.state !== 'exhausted' && <Txt center variant="micro" style={{ marginTop: 4 }}>{fill(c.searchingFor, { n: searchMinutes })}</Txt>}
+      {isCustomer && searchMinutes >= 5 && order.dispatch?.state !== 'exhausted' && <View style={{ marginTop: 10, alignSelf: 'stretch', gap: 6 }}>
+        <Txt center variant="caption">{c.stillLooking}</Txt>
+        <Button title={c.helpWithOrder} variant="soft" size="sm" icon="chatbubble-ellipses-outline" onPress={() => router.push({ pathname: '/help', params: { order: orderCode(order.id) } })} />
+      </View>}
       {isCustomer && order.dispatch?.state === 'exhausted' && <View style={{ marginTop: 12 }}>
         <Button title={c.dispatchRetry} variant="soft" disabled={!!busy} loading={busy === 'dispatch-retry'}
           onPress={() => act('dispatch-retry', `/orders/${order.id}/dispatch/retry`)} />
@@ -753,7 +771,7 @@ export default function OrderScreen() {
           </Row>}
           {isCustomer && order.driverName && <Person title={c.yourDriver} name={order.driverName} phone={order.driverPhone}
           sub={[order.driverVehicle && c[order.driverVehicle], order.driverRating != null && `★ ${order.driverRating}`].filter(Boolean).join(' · ') || undefined}
-          plate={order.driverPlate ?? undefined} />}
+          plate={order.driverPlate ?? undefined} approved />}
           {mine && !!order.contact && <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />}
         </>}
       </View>}
@@ -969,7 +987,7 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
   </Card>;
 }
 
-function Person({ title, name, sub, plate, phone }: { title: string; name: string; sub?: string; plate?: string; phone?: string | null }) {
+function Person({ title, name, sub, plate, phone, approved }: { title: string; name: string; sub?: string; plate?: string; phone?: string | null; approved?: boolean }) {
   const { c } = useCopy();
   return <Row gap={12}>
     <Avatar name={name} size={44} />
@@ -979,6 +997,11 @@ function Person({ title, name, sub, plate, phone }: { title: string; name: strin
       {!!sub && <Txt variant="caption">{sub}</Txt>}
       {/* the plate is what you match at the kerb: its own bold line, not buried in the caption */}
       {!!plate && <Txt variant="label" style={{ marginTop: 2, letterSpacing: 1 }}>{plate}</Txt>}
+      {/* Only an approved captain can take an order (pending accounts are refused by the server), so this states a real gate. */}
+      {approved && <Row gap={4} style={{ marginTop: 4 }}>
+        <Ionicons name="shield-checkmark" size={14} color={palette.olive} />
+        <Txt variant="micro" style={{ color: palette.olive }}>{c.driverApproved}</Txt>
+      </Row>}
     </View>
     {phone && <IconButton icon="call" tone="forest" label={`${c.call} ${name}`} onPress={() => Linking.openURL(`tel:${phone}`)} />}
   </Row>;

@@ -185,6 +185,7 @@ try {
   for (let i = 0; i < 3; i++) delivered = await call(`/orders/${deliveryId}/advance`, { token: driver.token,
     body: { requestId: randomUUID(), expectedStatus: delivered.status, ...(i === 2 && { code: (await call(`/orders/${deliveryId}`, { token: customer.token })).handoverCode }) } });
   await customerPage.reload();
+  await button(customerPage, c.disputeTitle).click(); // the report form opens on request
   await field(customerPage, c.disputeReason).fill('Synthetic readiness issue with delivery');
   await button(customerPage, c.disputeSend).click();
   await customerPage.getByText(c.disputeOpen, { exact: true }).waitFor();
