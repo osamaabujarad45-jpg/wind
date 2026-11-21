@@ -365,7 +365,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     // Support took the goods from this assignment's captain mid-return (CUSTODY_TAKEN): the captain's return code no longer closes
     // the order, and only office intake by support remains (Sol recheck of PR #101, HIGH 1).
     ...((viewer.role === 'admin' || assigned) && r.status === 'returning' && r.service !== 'ride'
-      && { supportHasGoods: !!(await assignmentEvidence(r, 'CUSTODY_TAKEN')) }),
+      && { supportHasGoods: !!(await assignmentEvidence(r, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, r)) }), // legacy: PostgreSQL only
     // DRV-17: support sees a courier block's review on the order it ended.
     ...(viewer.role === 'admin' && ['cancelled', 'returning', 'returned'].includes(r.status) && await blockReviewsAvailable()
       && await (async () => { const b = await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', r.id); return b ? { blockReview: blockReviewView(b) } : {}; })()),
