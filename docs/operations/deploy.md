@@ -28,13 +28,13 @@ its data is backed up and those installs are rebuilt.
   - NSG `wind-nsg`: 80 and 443 from the Internet; 22 only from the operator's address (rule `ssh-admin`). Change the rule
     when that address changes.
   - SSH: `ssh -i ~/.ssh/wind-vm-prod-1121 windadmin@20.217.202.98`.
-- **Runtime:** `sudo bash infra/vm-israel/provision.sh <host>` (idempotent).
+- **Runtime:** `sudo bash infra/vm-israel/provision.sh <host> <backup-account>` (idempotent; the Caddyfile is validated before it replaces the working one).
   - Node 24.12.0 (checksum-verified) in `/opt/node`.
   - Caddy terminates TLS.
   - `wind-api.service` runs `/opt/windapi` as the unprivileged user `wind` (not root), on 127.0.0.1:4000. It has
     `ProtectSystem=strict` and write access only to `/data`.
   - `/etc/wind-api.env` (0600) holds the same keys as the student host, with `WIND_PUSH_SUBJECT` set to the new address.
-  - `wind-backup.timer` runs `backup.sh` (`infra/vm-israel/backup.sh`) daily at 00:00 UTC into `/data/backups` (14 days). It checks each snapshot with `PRAGMA quick_check` and then touches `/data/backups/last-ok`, the marker the API watches: admins are warned once a day when it is older than 26 hours. On this host the marker means a verified local snapshot; an off-host copy is still open.
+  - `wind-backup.timer` runs `backup.sh` (`infra/vm-israel/backup.sh`) daily at 00:00 UTC as `wind`, with the API's confinement. It writes a local snapshot to `/data/backups` (14 days), checks it with `PRAGMA quick_check`, and uploads it to private Azure Blob storage: account `windbakur0a1i9b`, container `wind-backups`, same resource group. Shared keys and public access are off. The VM's managed identity has Storage Blob Data Contributor on that container only. A lifecycle rule deletes blobs after 30 days. Only after the upload succeeds does it touch `/data/backups/last-ok`, the marker the API watches; admins are warned once a day when it is older than 26 hours. `/etc/wind-backup.env` names the account; it holds no secret.
 - **Release:** `infra/vm-israel/build-release.sh` runs in the Docker sandbox on a synced checkout of master. It does the
   production web export for `WIND_API_HOST` (default: this address), the runtime dependency closure, and the deploy.md assembly.
   It refuses any secret or database file, dry-runs the packaged API on :4010 and writes a tarball with its SHA-256.
@@ -42,8 +42,8 @@ its data is backed up and those installs are rebuilt.
   2. Run `sudo bash install-release.sh /tmp/wind-release.tar.gz <sha256>`. It:
      - checks the hash;
      - unpacks the archive's `windapi/` directory to `/opt/windapi-new`;
-     - dry-runs it as `wind` on :4010 with a throwaway database (a failure leaves the live service untouched);
-     - moves the current tree to `/opt/windapi-old-<time>`, moves the new one in, and starts the service.
+     - takes a checked snapshot of the live database, `/data/backups/pre-install-<time>.db` (kept 30 days), and dry-runs the candidate as `wind` on :4010 against a copy of it, with push registrations removed so nobody is notified. A failure leaves the live service untouched.
+     - moves the current tree to `/opt/windapi-old-<time>` (same `<time>` as the snapshot), moves the new one in and starts it. If the move, the start or readiness fails, the previous tree goes back and starts again, and the candidate is kept as `/opt/windapi-failed-<time>`. One install runs at a time. The three newest old trees are kept.
   3. Check with `node scripts/check-deployment.mjs --origin https://20.217.202.98.sslip.io`.
 - **Rollback:**
   - `/opt/windapi-old-20261121125020` holds master `8df0f778` (PR #97); `/opt/windapi` is `078da0a2` (PR #99), installed with install-release.sh on 21 November.
@@ -54,7 +54,7 @@ its data is backed up and those installs are rebuilt.
   4. `sudo mv /opt/windapi /opt/windapi-bad-<time>` and `sudo mv /opt/windapi-old-<time> /opt/windapi`.
   5. `sudo systemctl start wind-api`, then run the deployment check.
   - `/data/wind.db` stays.
-  - To restore a backup instead: stop the service and copy `/data/backups/wind-<date>.db` over `/data/wind.db`, as user `wind`. Remove `wind.db-wal` and `wind.db-shm` first. Then start the service.
+  - To restore a backup instead: `sudo bash infra/vm-israel/restore.sh <file>`. The file is a daily `wind-<date>.db`, a `pre-install-<time>.db`, or a blob fetched from the container (`curl` with a managed-identity token, as in `backup.sh`). It checks a staged copy (integrity, foreign keys, Wind tables) and removes every session and push registration from it, so access revoked after the snapshot cannot return. It keeps the replaced database and its sidecars as `wind.db.before-restore-<time>`, swaps, and puts the old one back if the start fails. Stop Caddy first if blocks or deletions made after the snapshot must be re-applied before users return.
 - **First admin or a lost admin:** create a new account with `enroll` (it refuses a phone that already has an account): run as below, with `enroll 05XXXXXXXX admin <NameWithoutSpaces> --phone-verified` and the password on standard input (`printf '%s' '<password>' | ssh … `), then sign in with it at once. Do not `verify-phone` and `promote` a row someone else may have created by self-service signup: an existing or ambiguous row is an account-recovery case (delete it with `delete-account` after checking with its owner, then enroll). The 21 November admin was enrolled this way.
 - **Admin commands** run as the service user with its environment, so the files stay owned by `wind`:
   `sudo bash -c 'set -a; . /etc/wind-api.env; set +a; cd /opt/windapi && sudo -E -u wind env NODE_ENV=production DB_PATH=/data/wind.db /opt/node/bin/node server/main.ts verify-phone 05XXXXXXXX --phone-verified'`
