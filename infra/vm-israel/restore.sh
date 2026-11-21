@@ -15,6 +15,7 @@
 #   a failed restore never lifts an earlier hold. Apply them again (docs/operations/deploy.md), then:
 #   sudo rm /etc/wind-ingress-hold && sudo systemctl start caddy
 set -euo pipefail
+cd / # the service user's commands never start in a directory it cannot read
 COPY=${1:?backup file}; OPEN=${2:-}
 [ -z "$OPEN" ] || [ "$OPEN" = --open ] || { echo "usage: restore.sh <file> [--open]" >&2; exit 1; }
 DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold
@@ -26,7 +27,7 @@ case "$(systemctl show -p ExecStartPre --value wind-api 2>/dev/null)" in *wind-d
 exec 8<"$DATA"
 flock -n 8 || { echo "another install, restore or backup is running" >&2; exit 1; }
 KEPT="$DATA/wind.db.before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
-WORK=$(sudo -u wind mktemp -d "$DATA/restore.XXXXXX")   # wind's own, on the live file's filesystem: the final move is a rename
+WORK=$(sudo -u wind mktemp -d "$DATA/restore.XXXXXX" 8<&-)   # wind's own, on the live file's filesystem: the final move is a rename
 PHASE=prepare # prepare -> frozen -> swapped -> live
 HALT=""; NEWINO=""; TIMER_STOPPED=""; RERUN=""
 FAILED="$DATA/wind.db.restore-failed-$(date -u +%Y%m%dT%H%M%SZ)" # a replacement the API failed on, kept for diagnosis
@@ -87,7 +88,9 @@ on_exit() {
   local code=$?
   trap - EXIT; trap '' INT TERM HUP # recovery itself is not interrupted halfway
   if [ "$PHASE" != live ] && [ "$code" -ne 0 ]; then recover; [ -z "$HALT" ] || code=2; fi
-  [ -z "$TIMER_STOPPED" ] || systemctl start wind-backup.timer >/dev/null 2>&1 || say "could not restart wind-backup.timer"
+  # Not during manual recovery: the timer is persistent and would back up the half-recovered state at once (Haiku F2).
+  if [ -n "$TIMER_STOPPED" ] && [ -n "$HALT" ]; then say "wind-backup.timer stays stopped until recovery: sudo systemctl start wind-backup.timer"
+  elif [ -n "$TIMER_STOPPED" ]; then systemctl start wind-backup.timer >/dev/null 2>&1 || say "could not restart wind-backup.timer"; fi
   # Not during manual recovery: a fresh backup would clear the stale-backup warning (Haiku N3).
   [ -z "$RERUN" ] || [ -n "$HALT" ] || systemctl start --no-block wind-backup.service >/dev/null 2>&1 || say "could not rerun the stopped backup"
   [ -n "$HALT" ] || as_wind rm -rf -- "$WORK" # kept for diagnosis when a person must look
@@ -96,8 +99,11 @@ on_exit() {
 trap on_exit EXIT
 trap 'exit 130' INT TERM HUP
 
-# Root reads the operator's file; wind writes the staged copy (Haiku N1).
-as_wind sh -c 'umask 077; cat > "$1"' sh "$WORK/wind.db" < "$COPY"
+# The service user reads the backup by its path and writes the staged copy: root never opens a path wind could have planted as
+# a symlink (a backup in wind's /data/backups; Haiku N1, F1). A file wind cannot read is refused: put it where wind can first,
+# e.g. sudo install -o wind -g wind -m 600 <file> /data/backups/.
+as_wind sh -c 'umask 077; cat -- "$1" > "$2"' sh "$COPY" "$WORK/wind.db" \
+  || { say "the service user cannot read $COPY: sudo install -o wind -g wind -m 600 $COPY /data/backups/ and restore that"; exit 1; }
 sudo -u wind env DB="$WORK/wind.db" /opt/node/bin/node --disable-warning=ExperimentalWarning -e "
   const { DatabaseSync } = require('node:sqlite');
   const db = new DatabaseSync(process.env.DB);
@@ -133,5 +139,7 @@ if [ "$OPEN" = --open ]; then
   rm -f -- "$HOLD"; sync
   systemctl start caddy || { say "restored $COPY, but Caddy did not start ($(state)); what was there is at $KEPT"; exit 1; }
   say "restored $COPY and reopened; what was there is at $KEPT"
-else printf 'restored %s at %s: re-apply later blocks, deletions, demotions and password resets, then remove this file and start Caddy\n' "$COPY" "$(date -u +%FT%TZ)" > "$HOLD"
+else [ -z "$PREHOLD" ] || say "the earlier hold is kept below this restore's note: $(cat "$HOLD" 2>/dev/null)" # Haiku F3
+  { printf 'restored %s at %s: re-apply later blocks, deletions, demotions and password resets, then remove this file and start Caddy\n' "$COPY" "$(date -u +%FT%TZ)"
+    [ -z "$PREHOLD" ] || cat "$HOLD" 2>/dev/null; } > "$HOLD.new" && mv -f "$HOLD.new" "$HOLD"
   say "restored $COPY; what was there is at $KEPT. The ingress hold stays (also across reboots): reapply later blocks and deletions, then: sudo rm $HOLD && sudo systemctl start caddy"; fi

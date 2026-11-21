@@ -220,13 +220,18 @@ ${r.err}`);
   // Static guard: in install and restore every write, copy or rename of a /data path ($DB, $KEPT, $WORK, $SNAP, the marker)
   // goes through as_wind; root never acts through a path wind controls.
   // (install's own $WORK is a root-private directory under /tmp, so it is not one of them.)
-  for (const [name, write] of [['install-release.sh', /(^|[;{|&]\s*)(mv|cp|touch|chmod|chown|install|rm|ln)\s.*\$(DB|SNAP|DATA)\b/],
-    ['restore.sh', /(^|[;{|&]\s*)(mv|cp|touch|chmod|chown|install|rm|ln)\s.*\$(DB|KEPT|WORK|FAILED|DATA)\b/]]) {
+  // Each command segment is checked on its own, so an as_wind elsewhere on the line exempts nothing (Haiku F4).
+  for (const [name, write] of [['install-release.sh', /^(mv|cp|cat|touch|chmod|chown|install|rm|ln|find)\s.*\$(DB|SNAP|DATA)\b/],
+    ['restore.sh', /^(mv|cp|cat|touch|chmod|chown|install|rm|ln|find)\s.*\$(DB|KEPT|WORK|FAILED|DATA|COPY)\b|<\s*"?\$COPY/]]) {
     const lines = readFileSync(new URL(`../infra/vm-israel/${name}`, import.meta.url), 'utf8').split('\n');
-    const rootWrites = lines.filter(l => write.test(l) && !/as_wind\s+(mv|cp|touch|rm|sh)/.test(l));
+    const segments = lines.filter(l => !/^\s*#/.test(l)).flatMap(l => l.replace(/'[^']*'/g, "''").replace(/\s#\s.*$/, '').split(/;|&&|\|\||\bthen\b|\bdo\b|\belse\b|[{(!]/).map(s => s.trim()));
+    const rootWrites = segments.filter(s => write.test(s));
     assert.deepEqual(rootWrites, [], `${name}: root writes under /data`);
   }
-  assert.ok(/sudo -u wind touch -- \/data\/\.wind-db-expected/.test(readFileSync(new URL('../infra/vm-israel/provision.sh', import.meta.url), 'utf8')));
+  const provisionText = readFileSync(new URL('../infra/vm-israel/provision.sh', import.meta.url), 'utf8');
+  assert.ok(/sudo -u wind touch -- \/data\/\.wind-db-expected/.test(provisionText));
+  // The strings the preflight looks for are the ones provision.sh puts in the two units.
+  assert.ok(/ExecStartPre=.*\/etc\/wind-ingress-hold/.test(provisionText) && /ExecStartPre=.*\/data\/\.wind-db-expected/.test(provisionText));
 
   // 2d. An install refuses to start while another operation's hold is in place.
   writeFileSync(hold, 'restore awaiting reconciliation\n');

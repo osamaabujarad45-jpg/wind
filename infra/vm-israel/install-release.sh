@@ -19,6 +19,7 @@
 #    opens only once the previous release is ready again; otherwise everything stays closed and the script says so (exit 2).
 # Rollback by hand and the drills: docs/operations/deploy.md.
 set -euo pipefail
+cd / # the service user's commands never start in a directory it cannot read
 TAR=${1:?release tarball}; SUM=${2:?expected sha256}
 RELEASES=/opt/wind-releases; LIVE=/opt/windapi; DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold
 exec 8<"$DATA"
@@ -98,7 +99,7 @@ recover() {
     prepare) [ ! -d "$REL" ] || rm -rf -- "$REL" ;; # nothing live was touched
     frozen) say "install stopped before the switch; the release and database are unchanged"; rm -rf -- "$REL"
       # A first install had no API behind Caddy before it started either: Caddy goes back to how it was (Haiku L4).
-      if [ -z "$PREV" ]; then rm -f -- "$HOLD"; systemctl start caddy || true; else reopen_previous; fi ;;
+      if [ -z "$PREV" ]; then rm -f -- "$HOLD"; systemctl start caddy || say "Caddy did not start: sudo systemctl start caddy"; else reopen_previous; fi ;;
     switched|started)
       if [ "$PHASE" = started ]; then
         { stopped wind-api && port_free 4000; } || { fatal "the candidate did not stop; the database was not replaced"; return; }
@@ -126,7 +127,9 @@ on_exit() {
   trap - EXIT; trap '' INT TERM HUP # recovery itself is not interrupted halfway
   if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; fi
   if [ "$PHASE" != live ] && [ "$code" -ne 0 ]; then recover; [ -z "$HALT" ] || code=2; fi
-  [ -z "$TIMER_STOPPED" ] || systemctl start wind-backup.timer >/dev/null 2>&1 || say "could not restart wind-backup.timer"
+  # Not during manual recovery: the timer is persistent and would back up the half-recovered state at once (Haiku F2).
+  if [ -n "$TIMER_STOPPED" ] && [ -n "$HALT" ]; then say "wind-backup.timer stays stopped until recovery: sudo systemctl start wind-backup.timer"
+  elif [ -n "$TIMER_STOPPED" ]; then systemctl start wind-backup.timer >/dev/null 2>&1 || say "could not restart wind-backup.timer"; fi
   # A backup this script stopped runs again (the timer's stamp says it already ran today); it waits for the lock released below.
   [ -z "$RERUN" ] || [ -n "$HALT" ] || systemctl start --no-block wind-backup.service >/dev/null 2>&1 || say "could not rerun the stopped backup"
   [ -z "$DRY" ] || rm -rf -- "$DRY"
@@ -142,6 +145,7 @@ echo "$SUM  $WORK/release.tar.gz" | sha256sum -c -
 mkdir -p "$RELEASES"
 tar -xzf "$WORK/release.tar.gz" -C "$WORK"   # the archive's top-level directory is windapi/
 mv -T "$WORK/windapi" "$REL"
+[ -f "$REL/backup.sh" ] && [ ! -L "$REL/backup.sh" ] || { say "backup.sh in the release is not a regular file"; exit 1; }
 chown -R root:root "$REL" && chmod 755 "$REL" "$REL/backup.sh"
 sudo -u wind test -x "$REL/backup.sh" || { say "backup.sh is not executable by wind"; exit 1; }
 
@@ -223,5 +227,5 @@ prune() { # $1 directory, $2 name pattern, $3 how many to keep besides the activ
 }
 prune "$RELEASES" '*' 3 || say "could not prune old releases"
 prune /opt 'windapi-old-*' 1 || say "could not prune pre-symlink release trees"
-find "$DATA/backups" -maxdepth 1 -name 'pre-install-*.db' -mtime +30 -delete || say "could not prune old checkpoints"
+as_wind find "$DATA/backups" -maxdepth 1 -name 'pre-install-*.db' -mtime +30 -delete || say "could not prune old checkpoints" # Haiku F5
 echo "previous release: ${PREV:-none}; checkpoint: ${CHECKPOINT:-none}"
