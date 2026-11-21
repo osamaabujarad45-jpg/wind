@@ -100,16 +100,11 @@ trap on_exit EXIT
 trap 'exit 130' INT TERM HUP
 
 # The service user reads the backup by its path and writes the staged copy: root never opens a path wind could have planted as
-# a symlink (a backup in wind's /data/backups; Haiku N1, F1). A file wind cannot read is refused. Outside /data the operator can
-# stage it with root reading only that file and wind writing the copy; under /data nobody suggests root read it, because an
-# unreadable file there is exactly what a planted symlink looks like (Haiku W1, W2).
-if ! as_wind sh -c 'umask 077; cat -- "$1" > "$2"' sh "$COPY" "$WORK/wind.db"; then
-  case "$COPY" in
-    "$DATA"/*) say "could not stage $COPY (unreadable by the service user, or no space). Root does not read files under $DATA: restore a regular file kept outside it." ;;
-    *) say "could not stage $COPY (unreadable by the service user, or no space). Stage it with: sudo cat -- $COPY | sudo -u wind sh -c 'umask 077; cat > \"\$1\"' sh $DATA/backups/<name>.db, then restore that file." ;;
-  esac
-  exit 1
-fi
+# a symlink (a backup in wind's /data/backups; Haiku N1, F1). A file wind cannot read is refused, and the script prints no
+# command for root to read it: any path it printed could lead through a link wind planted (Haiku W1, W2, confirmation 5 F1, F2).
+# docs/operations/deploy.md says how an operator stages a file it has checked.
+as_wind sh -c 'umask 077; cat -- "$1" > "$2"' sh "$COPY" "$WORK/wind.db" \
+  || { say "could not stage $COPY: the service user cannot read it, or there is no space. See docs/operations/deploy.md (restore)."; exit 1; }
 sudo -u wind env DB="$WORK/wind.db" /opt/node/bin/node --disable-warning=ExperimentalWarning -e "
   const { DatabaseSync } = require('node:sqlite');
   const db = new DatabaseSync(process.env.DB);

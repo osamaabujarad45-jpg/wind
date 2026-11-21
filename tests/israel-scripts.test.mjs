@@ -362,13 +362,13 @@ ${r.err}`);
   r = run(restore, [unreadable], { FAKE_WIND_UNREADABLE: '.unreadable' });
   assert.equal(r.status, 1, r.err);
   assert.match(r.err, /could not stage/);
-  assert.match(r.err, /Stage it with: sudo cat -- \S+x\.unreadable/, 'outside /data the staging command names the file');
+  assert.ok(!/sudo cat/.test(r.err), 'no root read is ever printed (it could lead through a planted link)');
   assert.ok(!r.calls.some(c => /systemctl stop/.test(c)), 'nothing was stopped');
   // Under /data an unreadable file may be a planted link: root is never told to read it (Haiku W2).
   const planted = join(data, 'backups', 'planted.unreadable'); writeFileSync(planted, 'x');
   r = run(restore, [planted], { FAKE_WIND_UNREADABLE: '.unreadable' });
   assert.equal(r.status, 1, r.err);
-  assert.match(r.err, /Root does not read files under/);
+  assert.match(r.err, /could not stage/);
   assert.ok(!/sudo cat/.test(r.err), 'no root read is suggested');
   rmSync(planted);
   // install-release.sh resolves a relative tarball the same way (Haiku C1).
