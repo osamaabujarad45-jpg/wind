@@ -64,12 +64,13 @@ fatal() { # the host is in a state a person must look at; with the hold present 
 drain_backup() { # the timer paused, then no backup running or queued: a pre-lock release's backup takes no lock (Sol recheck 3)
   # A running backup is stopped, not waited for: a lock-aware one would wait on this script's lock (Sonnet L5), and stopping
   # one is safe (its staging file is cleaned up, last-ok moves only after an upload).
+  TIMER_STOPPED=1 # armed first: a signal during the stop still restarts the timer (Sol recheck 5)
   systemctl stop wind-backup.timer || return 1
-  TIMER_STOPPED=1
   systemctl stop wind-backup.service || return 1
-  local i s; for i in $(seq 1 30); do # a oneshot is "activating" while its script runs, so is-active is not enough
+  local i s jobs; for i in $(seq 1 30); do # a oneshot is "activating" while its script runs, so is-active is not enough
     s=$(systemctl show -p ActiveState --value wind-backup.service 2>/dev/null || echo unknown)
-    case "$s" in inactive|failed) [ -z "$(systemctl list-jobs --no-legend wind-backup.service 2>/dev/null)" ] && return 0 ;; esac
+    jobs=$(systemctl list-jobs --no-legend wind-backup.service 2>/dev/null) || { sleep 1; continue; } # unknown is not empty
+    case "$s" in inactive|failed) [ -z "$jobs" ] && return 0 ;; esac
     sleep 1
   done; return 1
 }
@@ -104,7 +105,7 @@ recover() {
         say "the database is back at the checkpoint; the candidate's file is $DB.failed-$STAMP"
       fi
       # A legacy directory not yet moved is still in place; otherwise the pointer goes back.
-      if [ -n "$PREV" ] && [ -d "$PREV" ]; then point "$PREV" || { fatal "could not point $LIVE back to $PREV"; return; }; fi
+      if [ -n "$PREV" ] && [ -d "$PREV" ]; then point "$PREV" || { fatal "could not point $LIVE back to $PREV"; return; }; sync; fi
       [ ! -d "$REL" ] || mv -T "$REL" "$REL-failed" # kept for diagnosis
       reopen_previous ;;
   esac
@@ -192,10 +193,12 @@ systemctl start wind-api
 ready 4000 60 || { journalctl -u wind-api -n 20 --no-pager >&2; say "the candidate did not become ready"; exit 1; }
 # Commit: from here the candidate is the release and its database is the database. A signal or a Caddy failure after this line
 # never rolls anything back, because Caddy may already have let requests through (Sol second recheck of PR #101).
+trap '' INT TERM HUP # the commit tail (lift the hold, start Caddy) always completes (Sonnet L2, Sol recheck 5)
 PHASE=live
-trap '' INT TERM HUP # the commit tail (lift the hold, start Caddy) always completes (Sonnet L2)
+# A first-ever install that created the database marks it too: from now on the API never starts on a fresh empty file.
+[ ! -s "$DB" ] || { touch "$DATA/.wind-db-expected"; chown wind:wind "$DATA/.wind-db-expected"; }
 systemctl enable wind-api >/dev/null 2>&1 || true
-rm -f -- "$HOLD"
+rm -f -- "$HOLD"; sync
 systemctl start caddy || { say "the new release is live and ready, but Caddy did not start ($(state)): sudo systemctl start caddy"; exit 1; }
 echo "live: $(cat "$WORK/ready.json")"
 
