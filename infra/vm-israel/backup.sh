@@ -15,7 +15,7 @@ DIR=/data/backups; DB=/data/wind.db
 ACCOUNT=${WIND_BACKUP_ACCOUNT:-}; CONTAINER=${WIND_BACKUP_CONTAINER:-wind-backups}
 # Azure's own naming rules, checked before either name is put in a URL (Sol recheck L5).
 [ -z "$ACCOUNT" ] || [[ "$ACCOUNT" =~ ^[a-z0-9]{3,24}$ ]] || { echo "invalid WIND_BACKUP_ACCOUNT" >&2; exit 1; }
-[[ "$CONTAINER" =~ ^[a-z0-9]([a-z0-9]|-[a-z0-9]){2,62}$ ]] || { echo "invalid WIND_BACKUP_CONTAINER" >&2; exit 1; }
+[ "${#CONTAINER}" -ge 3 ] && [ "${#CONTAINER}" -le 63 ] && [[ "$CONTAINER" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || { echo "invalid WIND_BACKUP_CONTAINER" >&2; exit 1; }
 exec 8</data
 flock -w 900 8 || { echo "the database lock was held for 15 minutes (install or restore); no backup taken" >&2; exit 1; }
 [ -s "$DB" ] || { echo "no database at $DB (missing or empty); the existing backups and last-ok are unchanged" >&2; exit 1; }

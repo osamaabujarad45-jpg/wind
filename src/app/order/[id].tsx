@@ -571,9 +571,9 @@ export default function OrderScreen() {
           ['confirm_office_return', 'captain', c.confirmOfficeReturnCaptain, c.confirmOfficeReturnHint],
           ['confirm_office_return', 'staff', c.confirmOfficeReturnStaff, c.confirmOfficeReturnStaffHint],
           ['confirm_office_return', 'support', c.confirmOfficeReturnSupport, c.confirmOfficeReturnSupportHint],
-          // Support collected the goods mid-return: recorded when they change hands, before any closure (Sol recheck of PR #101).
+          // Support collected the goods mid-return: recorded when they change hands, before any closure (Sol recheck of PR 101).
           ['support_takeover', undefined, c.supportTakeover, c.supportTakeoverHint],
-        ] as const).filter(([action, carrier]) => !order.supportHasGoods || (action !== 'support_takeover' && carrier !== 'captain')).map(([action, carrier, title, hint]) => <Button key={`${action}-${carrier ?? ''}`} title={title} variant="outline" icon={action === 'support_takeover' ? 'hand-left-outline' : 'checkmark-done-outline'}
+        ] as const).filter(([action, carrier]) => !order.supportHasGoods || (action !== 'support_takeover' && carrier !== 'captain' && carrier !== 'staff')).map(([action, carrier, title, hint]) => <Button key={`${action}-${carrier ?? ''}`} title={title} variant="outline" icon={action === 'support_takeover' ? 'hand-left-outline' : 'checkmark-done-outline'}
           loading={busy === `${action}-${carrier ?? ''}`} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(hint, () => act(`${action}-${carrier ?? ''}`, `/admin/orders/${order.id}/resolve`,
             { action, ...(carrier && { carrier }), reason: decisionReason.trim() },

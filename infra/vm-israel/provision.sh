@@ -129,6 +129,13 @@ chmod 644 "$CADDY_NEW"
 caddy validate --adapter caddyfile --config "$CADDY_NEW" >/dev/null || { echo "invalid Caddyfile; the current one is kept" >&2; rm -f "$CADDY_NEW"; exit 1; }
 mv -f "$CADDY_NEW" /etc/caddy/Caddyfile
 
+# The ingress hold (install-release.sh, restore.sh): while /etc/wind-ingress-hold exists Caddy does not start, at boot too.
+mkdir -p /etc/systemd/system/caddy.service.d
+cat > /etc/systemd/system/caddy.service.d/wind-hold.conf <<'EOF'
+[Service]
+ExecStartPre=/bin/sh -c 'if [ -e /etc/wind-ingress-hold ]; then echo "Wind ingress hold: $(cat /etc/wind-ingress-hold)" >&2; exit 1; fi'
+EOF
+
 systemctl daemon-reload
 systemctl enable --now caddy >/dev/null
 systemctl reload caddy

@@ -7,24 +7,29 @@
 # 4. Freeze: Caddy stops (no requests reach the API), then the API stops, and both stops are checked. Only then is the rollback
 #    checkpoint /data/backups/pre-install-<time>.db taken, so it holds every acknowledged write and sign-out (Sol recheck of
 #    PR #101, HIGH 2). An uncertain stop changes nothing: the old release is kept.
-# 5. Switch: /opt/windapi is a symlink to the active release, replaced in one rename, so a power loss never leaves it missing.
-#    (A host from before this script still has a real /opt/windapi directory: the first run moves it to the releases folder.)
-# 6. The candidate starts on the live database with Caddy still stopped; Caddy opens only after it answers /api/ready.
-# 7. A failure or signal after the switch points /opt/windapi back. The database is replaced by the checkpoint only if the
-#    candidate was started (it may have migrated or written); the failed file is kept beside it. Caddy opens only once the
-#    previous release is ready again; otherwise everything stays closed and the script says so (exit 2).
+#    The freeze also writes the ingress hold /etc/wind-ingress-hold: Caddy refuses to start while it exists (provision.sh adds
+#    that check to the Caddy unit), so a power loss or kill at any later point reboots closed, not into a half-done install.
+#    An install refuses to start while a hold from elsewhere (a restore awaiting reconciliation) is in place.
+# 5. Switch: /opt/windapi is a symlink to the active release, replaced in one rename. (A host from before this script still
+#    has a real /opt/windapi directory: the first run moves it to the releases folder, under the hold.)
+# 6. The candidate starts on the live database with Caddy still stopped. Once it answers /api/ready the install COMMITS: from
+#    then on nothing is rolled back (requests may be acknowledged), the hold is removed and Caddy starts.
+# 7. A failure or signal before the commit points /opt/windapi back. The database is replaced by the checkpoint only if the
+#    candidate was started (it may have migrated or written); the failed file is kept beside it. The hold is lifted and Caddy
+#    opens only once the previous release is ready again; otherwise everything stays closed and the script says so (exit 2).
 # Rollback by hand and the drills: docs/operations/deploy.md.
 set -euo pipefail
 TAR=${1:?release tarball}; SUM=${2:?expected sha256}
-RELEASES=/opt/wind-releases; LIVE=/opt/windapi; DATA=/data; DB=/data/wind.db
+RELEASES=/opt/wind-releases; LIVE=/opt/windapi; DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold
 exec 8<"$DATA"
 flock -n 8 || { echo "another install, restore or backup is running" >&2; exit 1; }
+[ ! -e "$HOLD" ] || { echo "an ingress hold is in place ($(cat "$HOLD")): finish that first, then remove $HOLD" >&2; exit 1; }
 STAMP=$(date +%Y%m%d%H%M%S)
 REL="$RELEASES/$STAMP"; SNAP="$DATA/backups/pre-install-$STAMP.db"
 # Root's scratch space is a fresh private directory, never a predictable /tmp path a release could pre-plant (Haiku PR #98 N-1).
 WORK=$(mktemp -d); chmod 700 "$WORK"
 DRY=""; PID=""; PREV=""; CHECKPOINT=""; HALT=""
-PHASE=prepare # prepare -> frozen -> switched -> started -> live
+PHASE=prepare # prepare -> frozen -> switched -> started -> live (committed)
 
 say() { echo "install-release: $*" >&2; }
 ready() { # $1 port: the API answers /api/ready within $2 seconds
@@ -50,15 +55,16 @@ if (Object.values(copy.prepare('PRAGMA quick_check').get())[0] !== 'ok') throw E
 for (const t of ['users', 'orders', 'cash_entries', 'security_events']) copy.prepare('SELECT COUNT(*) AS n FROM ' + t).get();
 copy.close();" 8<&-
 }
-fatal() { # the host is in a state a person must look at: nothing is opened to users
+fatal() { # the host is in a state a person must look at: the hold stays, so nothing opens to users, even after a reboot
   HALT=1
   say "MANUAL RECOVERY NEEDED: $*"
-  say "Caddy is stopped. Active release: $(readlink "$LIVE" 2>/dev/null || echo none); previous: ${PREV:-none}; checkpoint: ${CHECKPOINT:-none}"
+  say "Caddy: $(systemctl is-active caddy 2>/dev/null || true); hold: $HOLD stays. Active release: $(readlink "$LIVE" 2>/dev/null || echo none); previous: ${PREV:-none}; checkpoint: ${CHECKPOINT:-none}"
 }
-reopen_previous() { # the previous release, ready, then Caddy
-  if [ -z "$PREV" ]; then say "first install failed; there is no previous release to start"; systemctl start caddy || true; return; fi
+reopen_previous() { # the previous release, ready, then the hold is lifted and Caddy starts
+  if [ -z "$PREV" ]; then fatal "first install failed; there is no previous release to start"; return; fi
   systemctl start wind-api || { fatal "the previous release did not start"; return; }
   ready 4000 60 || { fatal "the previous release did not become ready"; return; }
+  rm -f -- "$HOLD"
   systemctl start caddy || { fatal "the previous release is ready but Caddy did not start"; return; }
   say "the previous release is live again: $PREV"
 }
@@ -66,7 +72,8 @@ recover() {
   set +e
   case "$PHASE" in
     prepare) [ ! -d "$REL" ] || rm -rf -- "$REL" ;; # nothing live was touched
-    frozen) say "install stopped before the switch; the release and database are unchanged"; rm -rf -- "$REL"; reopen_previous ;;
+    frozen) say "install stopped before the switch; the release and database are unchanged"; rm -rf -- "$REL"
+      if [ -z "$PREV" ]; then rm -f -- "$HOLD"; systemctl start caddy || true; else reopen_previous; fi ;; # nothing to reopen
     switched|started)
       if [ "$PHASE" = started ]; then
         { stopped wind-api && port_free 4000; } || { fatal "the candidate did not stop; the database was not replaced"; return; }
@@ -88,7 +95,7 @@ recover() {
 }
 on_exit() {
   local code=$?
-  trap - EXIT INT TERM HUP
+  trap - EXIT; trap '' INT TERM HUP # recovery itself is not interrupted halfway
   if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; fi
   if [ "$PHASE" != live ] && [ "$code" -ne 0 ]; then recover; [ -z "$HALT" ] || code=2; fi
   [ -z "$DRY" ] || rm -rf -- "$DRY"
@@ -147,6 +154,10 @@ fi
 # checkpoint changes nothing, and the previous release is reopened only once it answers /api/ready.
 stopped caddy || { systemctl start caddy || true; say "Caddy did not stop; nothing was changed"; exit 1; }
 PHASE=frozen
+printf 'install %s in progress (%s)\n' "$STAMP" "$(date -u +%FT%TZ)" > "$HOLD"
+# A backup job from a release before the shared lock does not take it: let a running one finish first (Sol second recheck).
+for _ in $(seq 1 900); do systemctl is-active --quiet wind-backup.service || break; sleep 1; done
+! systemctl is-active --quiet wind-backup.service || { say "a backup is still running; nothing was changed"; exit 1; }
 { stopped wind-api && port_free 4000; } || { say "the API did not stop for certain; nothing was changed"; exit 1; }
 if [ -s "$DB" ]; then
   snapshot "$DB" "$SNAP" || { rm -f -- "$SNAP"; say "the checkpoint failed; nothing was changed"; exit 1; }
@@ -160,15 +171,18 @@ point "$REL"
 PHASE=started # from the start command on, the candidate may write to the live database
 systemctl start wind-api
 ready 4000 60 || { journalctl -u wind-api -n 20 --no-pager >&2; say "the candidate did not become ready"; exit 1; }
-systemctl enable wind-api >/dev/null 2>&1 || true
-systemctl start caddy || { say "the candidate is ready but Caddy did not start"; exit 1; }
+# Commit: from here the candidate is the release and its database is the database. A signal or a Caddy failure after this line
+# never rolls anything back, because Caddy may already have let requests through (Sol second recheck of PR #101).
 PHASE=live
+systemctl enable wind-api >/dev/null 2>&1 || true
+rm -f -- "$HOLD"
+systemctl start caddy || { say "the new release is live and ready, but Caddy did not start: sudo systemctl start caddy"; exit 1; }
 echo "live: $(cat "$WORK/ready.json")"
 
-# Keep the active release and the three newest others; checkpoints keep their own 30 days. Listings are empty-safe (Sol recheck L1).
+# Keep the active release, the previous one and the three newest others; checkpoints keep their own 30 days. Listings are empty-safe (Sol recheck L1).
 ACTIVE=$(readlink -f "$LIVE")
 prune() { # $1 directory, $2 name pattern, $3 how many to keep besides the active release
-  find "$1" -mindepth 1 -maxdepth 1 -type d -name "$2" -printf '%T@ %p\n' | sort -rn | cut -d' ' -f2- | { grep -vxF "$ACTIVE" || true; } \
+  find "$1" -mindepth 1 -maxdepth 1 -type d -name "$2" -printf '%T@ %p\n' | sort -rn | cut -d' ' -f2- | { grep -vxF -e "$ACTIVE" -e "${PREV:-$ACTIVE}" || true; } \
     | tail -n +"$(( $3 + 1 ))" | while read -r tree; do case "$tree" in "$1"/?*) rm -rf -- "$tree" ;; esac; done
 }
 prune "$RELEASES" '*' 3 || say "could not prune old releases"

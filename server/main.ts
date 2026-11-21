@@ -2981,8 +2981,8 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req 
     // PostgreSQL's BEGIN does not lock the row read above.
     const moved = (changes: number | bigint) => { if (!changes) fail(409, 'cannot_resolve'); };
     const custodyTaken = order.status === 'returning' && !!(await assignmentEvidence(order, 'CUSTODY_TAKEN'));
-    // Once support holds the goods, the captain cannot have brought them to the office.
-    if (custodyTaken && carrier === 'captain') fail(409, 'cannot_resolve');
+    // Once support holds the goods, neither the captain nor a staff pickup after the captain's return leg brought them in.
+    if (custodyTaken && (carrier === 'captain' || carrier === 'staff')) fail(409, 'cannot_resolve');
     const recordCustody = async () => {
       if (!custodyTaken) (await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'CUSTODY_TAKEN', ?, ?)",
         user.id, id, JSON.stringify({ assignmentEpoch: order.assignment_epoch, driverId: order.driver_id, reason }), Date.now()));
@@ -3841,6 +3841,9 @@ const editUser: Handler = async ({ user, params, body }) => {
     if (auditFields.length) (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'USER_UPDATED', ?, ?)`,
       user.id, JSON.stringify({ targetId: target.id, fields: auditFields, identityChanged, roleChanged }), now));
     for (const o of carrying) {
+      // Support already took the goods from this captain mid-return (CUSTODY_TAKEN): nothing is stranded with the captain, so the
+      // block is not a custody block and the order closes as support's takeover (Sol second recheck of PR #101).
+      o.supportHolds = o.status === 'returning' && !!(await assignmentEvidence(o, 'CUSTODY_TAKEN'));
       const handedOver = o.service === 'shop' && (await one("SELECT 1 FROM shop_orders WHERE order_id = ? AND merchant_state = 'handed_over'", o.id));
       o.requeued = (o.status === 'assigned' || o.status === 'at_pickup') && !handedOver;
       if (o.requeued) { // not collected yet: back to the pool, as a release would
@@ -3860,6 +3863,7 @@ const editUser: Handler = async ({ user, params, body }) => {
         await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ORDER_CANCELLED_BY_ADMIN', ?, ?)",
           user.id, o.id, JSON.stringify({ reason: 'courier_block' }), now);
       }
+      else if (o.supportHolds) { /* support holds the goods: the order stays returning for office intake */ }
       else { // in custody: support recovers it and confirms the return to the sender
         // DRV-17: a shop captain's trip so far (one delivery fee) waits on the block review; the return leg is support's. A captain
         // blocked while already returning gets the same review (Sol R2-H3): the return leg was not finished.
@@ -3871,7 +3875,7 @@ const editUser: Handler = async ({ user, params, body }) => {
         }
       }
       (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'COURIER_BLOCKED', ?, ?)`,
-        user.id, o.id, JSON.stringify({ driverId: target.id, from: o.status, assignmentEpoch: o.assignment_epoch, custody: !o.requeued && o.service !== 'ride' }), now));
+        user.id, o.id, JSON.stringify({ driverId: target.id, from: o.status, assignmentEpoch: o.assignment_epoch, custody: !o.requeued && o.service !== 'ride' && !o.supportHolds }), now));
     }
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }

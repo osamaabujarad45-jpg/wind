@@ -275,7 +275,8 @@ try {
   const { returnCode: midCode } = await call(`/orders/${midReturn.id}`, { token: customer.token });
   assert.equal((await call(`/orders/${midReturn.id}/advance`, { token: driver.token, body: { expectedStatus: 'returning', requestId: randomUUID(), code: midCode }, expect: 409 })).error, 'cannot_advance',
     'a valid captain code no longer closes the return');
-  assert.equal((await call(`/admin/orders/${midReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'captain', reason: 'Captain brought it' }, expect: 409 })).error, 'cannot_resolve');
+  for (const carrier of ['captain', 'staff']) // neither carried it after support took it
+    assert.equal((await call(`/admin/orders/${midReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier, reason: 'Wrong carrier' }, expect: 409 })).error, 'cannot_resolve');
   assert.deepEqual(tripEntries(await call('/driver/cash', { token: driver.token }), midReturn), [], 'nothing is paid before the office closes it');
   const intake = await call(`/admin/orders/${midReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'support', reason: 'Support brought it to the office' } });
   assert.equal(intake.status, 'returned');
