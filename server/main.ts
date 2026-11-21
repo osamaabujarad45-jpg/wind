@@ -3819,7 +3819,9 @@ const editUser: Handler = async ({ user, params, body }) => {
       // captain row (its advance would wait on that row: a deadlock, Sol R2-H1); the admin retries and the scan above takes it.
       if (persistence.backend === 'postgres' && (await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id)).some(r => !prelocked.includes(Number(r.id)))) fail(409, 'order_changed');
       carrying = (await all(`SELECT id, status, service, customer_id, driver_id, price, discount, recommended_price, assignment_epoch, assigned_at FROM orders WHERE driver_id = ? AND status IN (${activeSql})${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, target.id)); // a goods COD waits (ADM-12)
-      if (carrying.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
+      // Orders whose goods support already took (CUSTODY_TAKEN) strand nothing: they need no recovery choice (Sol recheck 3).
+      for (const o of carrying) o.supportHolds = o.status === 'returning' && !!(await assignmentEvidence(o, 'CUSTODY_TAKEN'));
+      if (carrying.some(o => !o.supportHolds) && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
     (await run(`UPDATE users SET name = ?, phone = ?, email = ?, status = ?, role = ?, vehicle = ?, plate = ?,
       phone_verified_at = ?, email_verified_at = ?, approved_at = ? WHERE id = ?`,
@@ -3841,9 +3843,8 @@ const editUser: Handler = async ({ user, params, body }) => {
     if (auditFields.length) (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'USER_UPDATED', ?, ?)`,
       user.id, JSON.stringify({ targetId: target.id, fields: auditFields, identityChanged, roleChanged }), now));
     for (const o of carrying) {
-      // Support already took the goods from this captain mid-return (CUSTODY_TAKEN): nothing is stranded with the captain, so the
-      // block is not a custody block and the order closes as support's takeover (Sol second recheck of PR #101).
-      o.supportHolds = o.status === 'returning' && !!(await assignmentEvidence(o, 'CUSTODY_TAKEN'));
+      // Support already took the goods from this captain mid-return (supportHolds, above): nothing is stranded with the captain, so
+      // the block is not a custody block and the order closes as support's takeover (Sol second recheck of PR #101).
       const handedOver = o.service === 'shop' && (await one("SELECT 1 FROM shop_orders WHERE order_id = ? AND merchant_state = 'handed_over'", o.id));
       o.requeued = (o.status === 'assigned' || o.status === 'at_pickup') && !handedOver;
       if (o.requeued) { // not collected yet: back to the pool, as a release would

@@ -36,14 +36,17 @@ case "$1" in
   start) shift; for u; do
       # provision.sh's Caddy drop-in: no start while the ingress hold exists.
       if [ "$u" = caddy ] && [ -e "$HOLD" ]; then echo "hold: $(cat "$HOLD")" >&2; exit 1; fi
+      if [ "$u" = caddy ] && [ -n "$FAKE_CADDY_FAIL" ]; then exit 1; fi
+      # provision.sh's API check: a host that had a database never starts on a fresh one.
+      if [ "$u" = wind-api ] && [ -e "$(dirname "$DB")/.wind-db-expected" ] && [ ! -s "$DB" ]; then exit 1; fi
       if [ "$u" = wind-api ] && [ -e "$LIVE/STARTFAIL" ]; then exit 1; fi
       if [ "$u" = wind-api ] && [ -e "$LIVE/MIGRATE" ]; then "$NODE" "$HELPER" write "$DB" migrated; fi
       echo active > "$STATE/$u"
       # A signal delivered while Caddy starts (the install's commit boundary).
       if [ "$u" = caddy ] && [ -n "$FAKE_TERM_ON_CADDY_START" ]; then kill -TERM "$PPID"; fi
       done ;;
-  is-active) [ "$(st "$3")" = active ] ;;
-  show) if [ "$(st "$5")" = active ]; then echo 4242; else echo 0; fi ;;
+  is-active) for a; do u=$a; done; s=$(st "$u"); case "$*" in *--quiet*) ;; *) echo "$s" ;; esac; [ "$s" = active ] ;;
+  show) if [ "$3" = ActiveState ]; then st "$5"; elif [ "$(st "$5")" = active ]; then echo 4242; else echo 0; fi ;;
   *) exit 0 ;;
 esac`);
 // Port checks (-w) answer 200 or 000; readiness on :4000 needs the API active, a good release and an unpoisoned database.
@@ -131,7 +134,7 @@ try {
   let first = active();
   assert.ok(!existsSync(hold), 'the ingress hold is lifted at the commit');
   assert.ok(readdirSync(releases).some(n => n.startsWith('legacy-')), 'the legacy tree is kept as a release');
-  const stops = r.calls.filter(c => /systemctl (stop|start)/.test(c));
+  const stops = r.calls.filter(c => /systemctl (stop|start) (caddy|wind-api)$/.test(c));
   assert.deepEqual(stops, ['systemctl stop caddy', 'systemctl stop wind-api', 'systemctl start wind-api', 'systemctl start caddy'], 'Caddy closes first and opens last');
   const checkpoint = readdirSync(join(data, 'backups')).find(n => n.startsWith('pre-install-'));
   assert.deepEqual(notes(join(data, 'backups', checkpoint)), ['first', 'acknowledged-at-stop'], 'the checkpoint holds the write acknowledged while stopping');
@@ -172,6 +175,24 @@ try {
   assert.equal(failedFiles(), failedBefore, 'nothing is rolled back');
   assert.deepEqual([unit('caddy'), existsSync(hold)], ['active', false]);
   first = active(); rmSync(join(first, 'MIGRATE')); // its later starts write nothing more
+
+  // 2e. Caddy fails after the commit: the ready release stays, and the message gives the real Caddy and hold state.
+  setUnits();
+  r = run(install, release(), { FAKE_CADDY_FAIL: '1' });
+  assert.equal(r.status, 1, r.err);
+  assert.notEqual(active(), first, 'committed');
+  assert.match(r.err, /Caddy did not start \(Caddy: inactive; hold \S+: absent\)/);
+  first = active();
+  assert.ok(r.calls.includes('systemctl stop wind-backup.timer') && r.calls.at(-1) === 'systemctl start wind-backup.timer', 'the backup timer is paused and restarted');
+
+  // 2f. A oneshot backup still running ("activating", which is-active does not report) is waited for, never overlapped.
+  setUnits(); writeFileSync(join(state, 'wind-backup.service'), 'activating\n');
+  r = run(install, release());
+  assert.equal(r.status, 1, r.err);
+  assert.match(r.err, /backup is still running/);
+  assert.equal(active(), first);
+  assert.deepEqual([unit('caddy'), unit('wind-api'), existsSync(hold)], ['active', 'active', false]);
+  rmSync(join(state, 'wind-backup.service'));
 
   // 2d. An install refuses to start while another operation's hold is in place.
   writeFileSync(hold, 'restore awaiting reconciliation\n');
@@ -249,10 +270,12 @@ try {
   r = run(backup, [], { WIND_BACKUP_ACCOUNT: 'windbak' });
   assert.equal(r.status, 0, r.err);
   assert.ok(existsSync(marker), 'the marker is written after the upload');
-  rmSync(marker);
+  writeFileSync(marker, 'old'); const beforePut = statSync(marker).mtimeMs - 5000;
+  { const t = new Date(beforePut); spawnSync('touch', ['-d', t.toISOString(), marker]); }
+  const putAt = statSync(marker).mtimeMs;
   r = run(backup, [], { WIND_BACKUP_ACCOUNT: 'windbak', FAKE_PUT_FAIL: '1' });
   assert.equal(r.status, 22);
-  assert.ok(!existsSync(marker), 'a failed upload writes no marker');
+  assert.equal(statSync(marker).mtimeMs, putAt, 'a failed upload leaves the existing marker as it was');
   assert.equal(run(backup, [], { WIND_BACKUP_ACCOUNT: 'bad/name' }).status, 1, 'an invalid account name is refused');
 
   // 8. Restore: the copy loses every session, Caddy stays closed afterwards, and the replaced file is kept.
@@ -272,6 +295,8 @@ try {
   r = run(restore, [copy, '--open']);
   assert.equal(r.status, 0, r.err);
   assert.deepEqual([unit('caddy'), existsSync(hold)], ['active', false], '--open lifts the hold');
+
+  assert.ok(existsSync(join(data, '.wind-db-expected')), 'after a restore the API refuses to start without a database');
 
   // 9. A copy the API cannot run on: the previous database comes back and Caddy reopens only once it is ready.
   setUnits(); freshDb(db);

@@ -41,6 +41,7 @@ id wind >/dev/null 2>&1 || useradd --system --home /data --shell /usr/sbin/nolog
 # /opt/windapi is install-release.sh's symlink to the active release under /opt/wind-releases; provisioning never creates it.
 mkdir -p /data /data/backups
 chown -R wind:wind /data && chmod 750 /data
+[ ! -s /data/wind.db ] || install -o wind -g wind -m 600 /dev/null /data/.wind-db-expected
 
 # Service environment (root-only file; the unit loads it).
 if [ ! -f /etc/wind-api.env ]; then
@@ -71,6 +72,9 @@ Group=wind
 WorkingDirectory=/opt/windapi
 Environment=NODE_ENV=production PORT=4000 HOST=127.0.0.1 DB_PATH=/data/wind.db TZ=Asia/Hebron
 EnvironmentFile=/etc/wind-api.env
+# A host that has had a database never starts on a fresh empty one: after a crash between renames the API stays down until the
+# database is put back (install-release.sh and restore.sh write the marker; Sol recheck 3 of PR #101).
+ExecStartPre=/bin/sh -c 'if [ -e /data/.wind-db-expected ] && [ ! -s /data/wind.db ]; then echo "Wind: /data/wind.db is missing; restore it (docs/operations/deploy.md)" >&2; exit 1; fi'
 ExecStart=/opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts
 Restart=always
 RestartSec=3

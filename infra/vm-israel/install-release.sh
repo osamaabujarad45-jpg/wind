@@ -28,7 +28,7 @@ STAMP=$(date +%Y%m%d%H%M%S)
 REL="$RELEASES/$STAMP"; SNAP="$DATA/backups/pre-install-$STAMP.db"
 # Root's scratch space is a fresh private directory, never a predictable /tmp path a release could pre-plant (Haiku PR #98 N-1).
 WORK=$(mktemp -d); chmod 700 "$WORK"
-DRY=""; PID=""; PREV=""; CHECKPOINT=""; HALT=""
+DRY=""; PID=""; PREV=""; CHECKPOINT=""; HALT=""; TIMER_STOPPED=""
 PHASE=prepare # prepare -> frozen -> switched -> started -> live (committed)
 
 say() { echo "install-release: $*" >&2; }
@@ -55,11 +55,22 @@ if (Object.values(copy.prepare('PRAGMA quick_check').get())[0] !== 'ok') throw E
 for (const t of ['users', 'orders', 'cash_entries', 'security_events']) copy.prepare('SELECT COUNT(*) AS n FROM ' + t).get();
 copy.close();" 8<&-
 }
-fatal() { # the host is in a state a person must look at: the hold stays, so nothing opens to users, even after a reboot
+state() { echo "Caddy: $(systemctl is-active caddy 2>/dev/null || true); hold $HOLD: $([ -e "$HOLD" ] && echo present || echo absent)"; }
+fatal() { # the host is in a state a person must look at; with the hold present nothing opens to users, even after a reboot
   HALT=1
   say "MANUAL RECOVERY NEEDED: $*"
-  say "Caddy: $(systemctl is-active caddy 2>/dev/null || true); hold: $HOLD stays. Active release: $(readlink "$LIVE" 2>/dev/null || echo none); previous: ${PREV:-none}; checkpoint: ${CHECKPOINT:-none}"
+  say "$(state). Active release: $(readlink "$LIVE" 2>/dev/null || echo none); previous: ${PREV:-none}; checkpoint: ${CHECKPOINT:-none}"
 }
+drain_backup() { # the timer paused, then no backup running or queued: a pre-lock release's backup takes no lock (Sol recheck 3)
+  systemctl stop wind-backup.timer || return 1
+  TIMER_STOPPED=1
+  local i s; for i in $(seq 1 900); do # a oneshot is "activating" while its script runs, so is-active is not enough
+    s=$(systemctl show -p ActiveState --value wind-backup.service 2>/dev/null || echo unknown)
+    case "$s" in inactive|failed) [ -z "$(systemctl list-jobs --no-legend wind-backup.service 2>/dev/null)" ] && return 0 ;; esac
+    sleep 1
+  done; return 1
+}
+
 reopen_previous() { # the previous release, ready, then the hold is lifted and Caddy starts
   if [ -z "$PREV" ]; then fatal "first install failed; there is no previous release to start"; return; fi
   systemctl start wind-api || { fatal "the previous release did not start"; return; }
@@ -85,6 +96,7 @@ recover() {
           [ ! -e "$DB$suffix" ] || mv -f "$DB$suffix" "$DB.failed-$STAMP$suffix" || { fatal "could not move the candidate's database aside"; return; }
         done
         if [ -n "$CHECKPOINT" ]; then mv -f "$DB.rollback-$STAMP" "$DB" || { fatal "could not put the checkpoint in place"; return; }; fi
+        sync
         say "the database is back at the checkpoint; the candidate's file is $DB.failed-$STAMP"
       fi
       # A legacy directory not yet moved is still in place; otherwise the pointer goes back.
@@ -98,6 +110,7 @@ on_exit() {
   trap - EXIT; trap '' INT TERM HUP # recovery itself is not interrupted halfway
   if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; fi
   if [ "$PHASE" != live ] && [ "$code" -ne 0 ]; then recover; [ -z "$HALT" ] || code=2; fi
+  [ -z "$TIMER_STOPPED" ] || systemctl start wind-backup.timer >/dev/null 2>&1 || say "could not restart wind-backup.timer"
   [ -z "$DRY" ] || rm -rf -- "$DRY"
   rm -rf -- "$WORK"
   exit "$code"
@@ -155,19 +168,21 @@ fi
 stopped caddy || { systemctl start caddy || true; say "Caddy did not stop; nothing was changed"; exit 1; }
 PHASE=frozen
 printf 'install %s in progress (%s)\n' "$STAMP" "$(date -u +%FT%TZ)" > "$HOLD"
-# A backup job from a release before the shared lock does not take it: let a running one finish first (Sol second recheck).
-for _ in $(seq 1 900); do systemctl is-active --quiet wind-backup.service || break; sleep 1; done
-! systemctl is-active --quiet wind-backup.service || { say "a backup is still running; nothing was changed"; exit 1; }
+sync # the hold is on disk before anything moves, so a power loss reboots closed
+drain_backup || { say "a backup is still running or queued; nothing was changed"; exit 1; }
 { stopped wind-api && port_free 4000; } || { say "the API did not stop for certain; nothing was changed"; exit 1; }
 if [ -s "$DB" ]; then
   snapshot "$DB" "$SNAP" || { rm -f -- "$SNAP"; say "the checkpoint failed; nothing was changed"; exit 1; }
   CHECKPOINT=$SNAP; echo "checkpoint of the stopped database: $SNAP"
+  # From now on the API refuses to start without a database instead of creating an empty one (provision.sh unit check).
+  touch "$DATA/.wind-db-expected"; chown wind:wind "$DATA/.wind-db-expected"
 fi
 
 # Switch (a one-time move of a legacy directory first; its window is only while the API is stopped).
 PHASE=switched
 if [ "$PREV" = "$RELEASES/legacy-$STAMP" ]; then mv -T "$LIVE" "$PREV"; elif [ -d "$LIVE" ] && [ ! -L "$LIVE" ]; then rmdir "$LIVE"; fi
 point "$REL"
+sync
 PHASE=started # from the start command on, the candidate may write to the live database
 systemctl start wind-api
 ready 4000 60 || { journalctl -u wind-api -n 20 --no-pager >&2; say "the candidate did not become ready"; exit 1; }
@@ -176,7 +191,7 @@ ready 4000 60 || { journalctl -u wind-api -n 20 --no-pager >&2; say "the candida
 PHASE=live
 systemctl enable wind-api >/dev/null 2>&1 || true
 rm -f -- "$HOLD"
-systemctl start caddy || { say "the new release is live and ready, but Caddy did not start: sudo systemctl start caddy"; exit 1; }
+systemctl start caddy || { say "the new release is live and ready, but Caddy did not start ($(state)): sudo systemctl start caddy"; exit 1; }
 echo "live: $(cat "$WORK/ready.json")"
 
 # Keep the active release, the previous one and the three newest others; checkpoints keep their own 30 days. Listings are empty-safe (Sol recheck L1).

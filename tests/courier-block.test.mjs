@@ -279,7 +279,7 @@ try {
   await call(`/orders/${supportHeld.id}/exception`, { token: held.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'access_blocked' } });
   await call(`/admin/orders/${supportHeld.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient unreachable' } });
   await call(`/admin/orders/${supportHeld.id}/resolve`, { token: admin.token, body: { action: 'support_takeover', reason: 'Support met the captain' } });
-  await call(`/admin/users/${held.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked', recovery: 'return' } });
+  await call(`/admin/users/${held.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked' } }); // nothing to recover
   assert.equal(db.prepare('SELECT order_id FROM courier_block_reviews WHERE order_id = ?').get(supportHeld.id), undefined, 'support held the goods: no custody block review');
   assert.equal(JSON.parse(db.prepare("SELECT detail FROM security_events WHERE order_id = ? AND action = 'COURIER_BLOCKED'").get(supportHeld.id).detail).custody, false);
   const intake = await call(`/admin/orders/${supportHeld.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'support', reason: 'Support brought it to the office' } });

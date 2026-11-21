@@ -23,12 +23,23 @@ flock -n 8 || { echo "another install, restore or backup is running" >&2; exit 1
 KEPT="$DATA/wind.db.before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
 WORK=$(mktemp -d "$DATA/restore.XXXXXX")   # same filesystem as the live file, so the final move is a rename
 PHASE=prepare # prepare -> frozen -> swapped -> live
-HALT=""; NEWINO=""
+HALT=""; NEWINO=""; TIMER_STOPPED=""
 PREHOLD=""; [ ! -e "$HOLD" ] || PREHOLD=1 # an earlier restore still awaiting reconciliation keeps its hold
 say() { echo "restore: $*" >&2; }
 ready() { local i; for i in $(seq 1 60); do curl -fsS -m 3 http://127.0.0.1:4000/api/ready >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
 stopped() { systemctl stop "$1" || return 1; ! systemctl is-active --quiet "$1" && [ "$(systemctl show -p MainPID --value "$1")" = "0" ]; }
-fatal() { HALT=1; say "MANUAL RECOVERY NEEDED: $*"; say "Caddy: $(systemctl is-active caddy 2>/dev/null || true); hold: $HOLD stays. The database that was live is at $KEPT (if it was moved)."; }
+state() { echo "Caddy: $(systemctl is-active caddy 2>/dev/null || true); hold $HOLD: $([ -e "$HOLD" ] && echo present || echo absent)"; }
+fatal() { HALT=1; say "MANUAL RECOVERY NEEDED: $*"; say "$(state). The database that was live is at $KEPT (if it was moved)."; }
+drain_backup() { # the timer paused, then no backup running or queued: a pre-lock release's backup takes no lock (Sol recheck 3)
+  systemctl stop wind-backup.timer || return 1
+  TIMER_STOPPED=1
+  local i s; for i in $(seq 1 900); do # a oneshot is "activating" while its script runs, so is-active is not enough
+    s=$(systemctl show -p ActiveState --value wind-backup.service 2>/dev/null || echo unknown)
+    case "$s" in inactive|failed) [ -z "$(systemctl list-jobs --no-legend wind-backup.service 2>/dev/null)" ] && return 0 ;; esac
+    sleep 1
+  done; return 1
+}
+
 reopen() { # the database that was live, ready, then Caddy unless an earlier hold is still owed its reconciliation
   systemctl start wind-api || { fatal "the API did not start on the previous database"; return; }
   ready || { fatal "the API did not become ready on the previous database"; return; }
@@ -53,13 +64,14 @@ recover() {
       for suffix in '' -wal -shm; do # only what was moved comes back; a file still in place stays
         [ ! -e "$KEPT$suffix" ] || [ -e "$DB$suffix" ] || mv -f "$KEPT$suffix" "$DB$suffix" || { fatal "could not put the previous database back"; return; }
       done
-      reopen ;;
+      sync; reopen ;;
   esac
 }
 on_exit() {
   local code=$?
   trap - EXIT; trap '' INT TERM HUP # recovery itself is not interrupted halfway
   if [ "$PHASE" != live ] && [ "$code" -ne 0 ]; then recover; [ -z "$HALT" ] || code=2; fi
+  [ -z "$TIMER_STOPPED" ] || systemctl start wind-backup.timer >/dev/null 2>&1 || say "could not restart wind-backup.timer"
   [ -n "$HALT" ] || rm -rf -- "$WORK" # kept for diagnosis when a person must look
   exit "$code"
 }
@@ -83,15 +95,16 @@ sudo -u wind env DB="$WORK/wind.db" /opt/node/bin/node --disable-warning=Experim
 stopped caddy || { systemctl start caddy || true; say "Caddy did not stop; nothing was changed"; exit 1; }
 PHASE=frozen
 [ -n "$PREHOLD" ] || printf 'restore of %s in progress (%s)\n' "$COPY" "$(date -u +%FT%TZ)" > "$HOLD"
-for _ in $(seq 1 900); do systemctl is-active --quiet wind-backup.service || break; sleep 1; done # an old-release backup takes no lock
-! systemctl is-active --quiet wind-backup.service || { say "a backup is still running; nothing was changed"; exit 1; }
+sync # the hold is on disk before anything moves, so a power loss reboots closed
+drain_backup || { say "a backup is still running or queued; nothing was changed"; exit 1; }
 stopped wind-api || { say "the API did not stop for certain; nothing was changed"; exit 1; }
 PHASE=swapped # from the first move on, recovery puts the previous files back
 for suffix in '' -wal -shm; do # a stale journal must not replay over the restored file
   [ ! -e "$DB$suffix" ] || mv -f "$DB$suffix" "$KEPT$suffix"
 done
 NEWINO=$(stat -c %i "$WORK/wind.db") # the rename keeps the inode: recovery tells the replacement from the original by it
-mv "$WORK/wind.db" "$DB"; chown wind:wind "$DB"; chmod 600 "$DB"
+mv "$WORK/wind.db" "$DB"; chown wind:wind "$DB"; chmod 600 "$DB"; sync
+touch "$DATA/.wind-db-expected"; chown wind:wind "$DATA/.wind-db-expected" # the API never starts on a fresh empty file instead
 systemctl start wind-api
 ready || { journalctl -u wind-api -n 20 --no-pager >&2; say "the API did not become ready on the restored database"; exit 1; }
 PHASE=live
