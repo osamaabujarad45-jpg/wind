@@ -5,26 +5,32 @@
 set -euo pipefail
 TAR=${1:?release tarball}; SUM=${2:?expected sha256}
 echo "$SUM  $TAR" | sha256sum -c -
-rm -rf /opt/windapi-new /tmp/wind-stage && mkdir -p /tmp/wind-stage
-tar -xzf "$TAR" -C /tmp/wind-stage   # the archive's top-level directory is windapi/
-mv /tmp/wind-stage/windapi /opt/windapi-new
+# Root's scratch space is a fresh private directory, never a predictable /tmp path a release could pre-plant (Haiku PR #98 N-1).
+WORK=$(mktemp -d); chmod 700 "$WORK"; trap 'rm -rf "$WORK"' EXIT
+rm -rf /opt/windapi-new
+tar -xzf "$TAR" -C "$WORK"   # the archive's top-level directory is windapi/
+mv "$WORK/windapi" /opt/windapi-new
 chown -R root:root /opt/windapi-new && chmod 755 /opt/windapi-new/backup.sh
+sudo -u wind test -x /opt/windapi-new/backup.sh || { echo "backup.sh is not executable by wind" >&2; exit 1; }
 
-DRY=$(mktemp -d /tmp/wind-dry-XXXX); chown wind:wind "$DRY"
+# The dry run must be the only thing answering on :4010, or the check below would pass against something else.
+if curl -fsS -m 2 http://127.0.0.1:4010/api/ready >/dev/null 2>&1; then echo "port 4010 is already in use" >&2; exit 1; fi
+DRY=$(mktemp -d); chown wind:wind "$DRY"
 set -a; . /etc/wind-api.env; set +a
+cd /opt/windapi-new
 sudo -u wind -E env NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DRY/wind.db" TZ=Asia/Hebron WEB_ROOT=/opt/windapi-new/web \
-  bash -c 'cd /opt/windapi-new && exec /opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts' \
-  > /tmp/wind-dry.log 2>&1 &
+  /opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts > "$WORK/dry.log" 2>&1 &
 PID=$!
-ok=0; for i in $(seq 1 40); do curl -fsS http://127.0.0.1:4010/api/ready >/tmp/wind-ready.json 2>/dev/null && { ok=1; break; }; sleep 1; done
+cd /
+ok=0; for i in $(seq 1 40); do curl -fsS http://127.0.0.1:4010/api/ready > "$WORK/ready.json" 2>/dev/null && { ok=1; break; }; sleep 1; done
 kill "$PID" 2>/dev/null || true; sleep 1; rm -rf "$DRY"
-[ "$ok" -eq 1 ] || { echo "dry run failed; the live service is untouched" >&2; tail -20 /tmp/wind-dry.log >&2; rm -rf /opt/windapi-new; exit 1; }
-echo "dry run: $(cat /tmp/wind-ready.json)"
+[ "$ok" -eq 1 ] || { echo "dry run failed; the live service is untouched" >&2; tail -20 "$WORK/dry.log" >&2; rm -rf /opt/windapi-new; exit 1; }
+echo "dry run: $(cat "$WORK/ready.json")"
 
 systemctl stop wind-api 2>/dev/null || true
-if [ -d /opt/windapi ] && [ -n "$(ls -A /opt/windapi)" ]; then mv /opt/windapi "/opt/windapi-old-$(date +%Y%m%d%H%M)"; else rm -rf /opt/windapi; fi
+if [ -d /opt/windapi ] && [ -n "$(ls -A /opt/windapi)" ]; then mv /opt/windapi "/opt/windapi-old-$(date +%Y%m%d%H%M%S)"; else rm -rf /opt/windapi; fi
 mv /opt/windapi-new /opt/windapi
 systemctl enable --now wind-api >/dev/null
-ok=0; for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4000/api/ready >/tmp/wind-ready.json 2>/dev/null && { ok=1; break; }; sleep 1; done
+ok=0; for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4000/api/ready > "$WORK/ready.json" 2>/dev/null && { ok=1; break; }; sleep 1; done
 [ "$ok" -eq 1 ] || { echo "the new release did not become ready: roll back (deploy.md)" >&2; journalctl -u wind-api -n 20 --no-pager >&2; exit 1; }
-echo "live: $(cat /tmp/wind-ready.json)"
+echo "live: $(cat "$WORK/ready.json")"

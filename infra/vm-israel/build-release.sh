@@ -29,9 +29,14 @@ if [ -n "$(find "$T" \( -name '.env' -o -name '.env.*' -o -name '*.db' -o -name 
   echo "secret or database file in release tree" >&2; exit 1; fi
 # The packaged API must start on its own: a throwaway database on a spare port, parcel only, as production runs.
 DB=$(mktemp /tmp/wind-release-db-XXXXXX); rm -f "$DB"
-( cd "$T" && NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DB" WEB_ROOT="$T/web" TZ=Asia/Hebron WIND_ENABLED_SERVICES=parcel \
+# Only the dry run may answer on :4010, and $! is the node process itself, not a subshell (Haiku PR #98 L-4).
+if curl -fsS -m 2 http://127.0.0.1:4010/api/ready >/dev/null 2>&1; then echo "port 4010 is already in use" >&2; exit 1; fi
+cd "$T"
+NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DB" WEB_ROOT="$T/web" TZ=Asia/Hebron WIND_ENABLED_SERVICES=parcel \
   WIND_DRIVER_PRESENCE=off WIND_IDENTITY_MODE=self-service SUPPORT_CONTACT=+972597127547 WIND_TRUST_PROXY=1 WIND_PUSH_SUBJECT=https://$API_HOST \
-  node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts >/tmp/wind-release-dry.log 2>&1 & echo $! >/tmp/wind-release-dry.pid )
+  node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts >/tmp/wind-release-dry.log 2>&1 &
+echo $! >/tmp/wind-release-dry.pid
+cd "$WS"
 ok=0; for i in $(seq 1 40); do if curl -fsS http://127.0.0.1:4010/api/ready >/tmp/wind-release-ready.json 2>/dev/null; then ok=1; break; fi; sleep 1; done
 web=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4010/ || true)
 kill "$(cat /tmp/wind-release-dry.pid)" 2>/dev/null || true; sleep 1; rm -f "$DB" "$DB"-wal "$DB"-shm

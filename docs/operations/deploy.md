@@ -28,7 +28,7 @@ its data is backed up and those installs are rebuilt.
   - NSG `wind-nsg`: 80 and 443 from the Internet; 22 only from the operator's address (rule `ssh-admin`). Change the rule
     when that address changes.
   - SSH: `ssh -i ~/.ssh/wind-vm-prod-1121 windadmin@20.217.202.98`.
-- **Runtime:** `infra/vm-israel/provision.sh <host>` (idempotent).
+- **Runtime:** `sudo bash infra/vm-israel/provision.sh <host>` (idempotent).
   - Node 24.12.0 (checksum-verified) in `/opt/node`.
   - Caddy terminates TLS.
   - `wind-api.service` runs `/opt/windapi` as the unprivileged user `wind` (not root), on 127.0.0.1:4000. It has
@@ -46,10 +46,13 @@ its data is backed up and those installs are rebuilt.
      - moves the current tree to `/opt/windapi-old-<time>`, moves the new one in, and starts the service.
   3. Check with `node scripts/check-deployment.mjs --origin https://20.217.202.98.sslip.io`.
 - **Rollback:**
-  1. Freeze cash writes and return decisions, as the release notes below say.
-  2. `sudo systemctl stop wind-api`.
-  3. `sudo mv /opt/windapi /opt/windapi-bad-<time>` and `sudo mv /opt/windapi-old-<time> /opt/windapi`.
-  4. `sudo systemctl start wind-api`, then run the deployment check.
+  - The 21 November install was repeated with install-release.sh, so `/opt/windapi-old-20261121122330` is the same release; an earlier tree does not exist on this host, so fix forward from it.
+  - Later releases keep the SQLite schema additive (`user_version` stays 3), so the previous tree reads the current database.
+  1. Freeze cash writes and return decisions, as the release notes below say, and close every open Cash tab.
+  2. Check that `/opt/windapi-old-<time>` exists (`ls -d /opt/windapi-old-*`).
+  3. `sudo systemctl stop wind-api`.
+  4. `sudo mv /opt/windapi /opt/windapi-bad-<time>` and `sudo mv /opt/windapi-old-<time> /opt/windapi`.
+  5. `sudo systemctl start wind-api`, then run the deployment check.
   - `/data/wind.db` stays.
   - To restore a backup instead: stop the service and copy `/data/backups/wind-<date>.db` over `/data/wind.db`, as user `wind`. Remove `wind.db-wal` and `wind.db-shm` first. Then start the service.
 - **Admin commands** run as the service user with its environment, so the files stay owned by `wind`:
@@ -61,6 +64,7 @@ its data is backed up and those installs are rebuilt.
   - Back up `/data/wind.db` from the student host once its account can be signed in again.
   - Rebuild the APKs for this address (needs a new EAS token).
   - Then retire `4.223.118.16.sslip.io` (add it to `scripts/retired-api-hosts.json`).
+
 ## Production host from 16 November 2026 (student Azure subscription)
 
 The 15 November subscription (`7bd97ddb…`, host `windapp-ps.swedencentral.cloudapp.azure.com`) went into the
