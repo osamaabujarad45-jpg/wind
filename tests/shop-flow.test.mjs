@@ -341,6 +341,10 @@ try {
   }
   const officeOrder = await shopInTransit();
   const officeId = officeOrder.id;
+  // Old pre-pickup blocks recorded a pool release in the same audit format as a custody block.
+  await persistence.atomic({ purpose: 'test' }, () => persistence.run(
+    "INSERT INTO security_events(actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'COURIER_BLOCKED', ?, ?)",
+    admin.user.id, officeId, JSON.stringify({ driverId: captain.user.id, from: 'assigned' }), Date.now()));
   await call(`/orders/${officeId}/exception`, { token: captain.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent',
     seals: [{ no: 1, intact: true }] } });
   const resolveReturn = `/admin/orders/${officeId}/resolve`;

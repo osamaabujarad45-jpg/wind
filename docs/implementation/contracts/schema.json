@@ -222,7 +222,7 @@
       "type": "table",
       "name": "courier_block_reviews",
       "tableName": "courier_block_reviews",
-      "sql": "CREATE TABLE courier_block_reviews (\n  order_id INTEGER PRIMARY KEY REFERENCES orders(id),\n  driver_id INTEGER NOT NULL REFERENCES users(id),\n  blocked_by INTEGER NOT NULL REFERENCES users(id),\n  service TEXT NOT NULL CHECK (service IN ('parcel','freight')),\n  from_status TEXT NOT NULL,\n  trip_pay_cents INTEGER NOT NULL CHECK (trip_pay_cents >= 0),\n  blocked_at INTEGER NOT NULL,\n  due_at INTEGER NOT NULL,\n  decided_at INTEGER,\n  decided_by INTEGER REFERENCES users(id),\n  cleared INTEGER CHECK (cleared IN (0,1)),\n  paid_cents INTEGER CHECK (paid_cents >= 0),\n  note TEXT NOT NULL DEFAULT '',\n  CHECK ((decided_at IS NULL) = (decided_by IS NULL) AND (decided_at IS NULL) = (cleared IS NULL)),\n  CHECK (decided_by IS NULL OR decided_by <> blocked_by)\n)"
+      "sql": "CREATE TABLE courier_block_reviews (\n  order_id INTEGER PRIMARY KEY REFERENCES orders(id),\n  driver_id INTEGER NOT NULL REFERENCES users(id),\n  blocked_by INTEGER NOT NULL REFERENCES users(id),\n  service TEXT NOT NULL CHECK (service IN ('parcel','freight','shop')),\n  from_status TEXT NOT NULL,\n  trip_pay_cents INTEGER NOT NULL CHECK (trip_pay_cents >= 0),\n  blocked_at INTEGER NOT NULL,\n  due_at INTEGER NOT NULL,\n  decided_at INTEGER,\n  decided_by INTEGER REFERENCES users(id),\n  cleared INTEGER CHECK (cleared IN (0,1)),\n  paid_cents INTEGER CHECK (paid_cents >= 0),\n  note TEXT NOT NULL DEFAULT '',\n  CHECK ((decided_at IS NULL) = (decided_by IS NULL) AND (decided_at IS NULL) = (cleared IS NULL)),\n  CHECK (decided_by IS NULL OR decided_by <> blocked_by)\n)"
     },
     {
       "type": "table",

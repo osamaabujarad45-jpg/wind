@@ -333,7 +333,8 @@ for (const column of [
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS cash_entries_source_order ON cash_entries(source, order_id) WHERE order_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS security_events_order_action ON security_events(order_id, action);
-CREATE TABLE IF NOT EXISTS courier_block_reviews (
+`);
+const createBlockReviews = `CREATE TABLE IF NOT EXISTS courier_block_reviews (
   order_id INTEGER PRIMARY KEY REFERENCES orders(id),
   driver_id INTEGER NOT NULL REFERENCES users(id),
   blocked_by INTEGER NOT NULL REFERENCES users(id),
@@ -349,9 +350,22 @@ CREATE TABLE IF NOT EXISTS courier_block_reviews (
   note TEXT NOT NULL DEFAULT '',
   CHECK ((decided_at IS NULL) = (decided_by IS NULL) AND (decided_at IS NULL) = (cleared IS NULL)),
   CHECK (decided_by IS NULL OR decided_by <> blocked_by)
-);
-CREATE INDEX IF NOT EXISTS courier_block_reviews_open ON courier_block_reviews(due_at) WHERE decided_at IS NULL;
-`);
+);`;
+db.exec('BEGIN IMMEDIATE');
+try {
+  const existing = db.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'courier_block_reviews'").get();
+  const widening = existing && !String(existing.sql).includes("'shop'");
+  if (widening) db.exec('ALTER TABLE courier_block_reviews RENAME TO legacy_courier_block_reviews');
+  db.exec(createBlockReviews);
+  if (widening) db.exec(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status,
+    trip_pay_cents, blocked_at, due_at, decided_at, decided_by, cleared, paid_cents, note)
+    SELECT order_id, driver_id, blocked_by, service, from_status,
+      trip_pay_cents, blocked_at, due_at, decided_at, decided_by, cleared, paid_cents, note
+    FROM legacy_courier_block_reviews;
+    DROP TABLE legacy_courier_block_reviews;`);
+  db.exec('CREATE INDEX IF NOT EXISTS courier_block_reviews_open ON courier_block_reviews(due_at) WHERE decided_at IS NULL');
+  db.exec('COMMIT');
+} catch (error) { db.exec('ROLLBACK'); throw error; }
 // Native push on this runtime, additive (user_version stays 3). As on PostgreSQL, ending a session drops its token.
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS sessions_token_user ON sessions(token_hash, user_id);
 CREATE TABLE IF NOT EXISTS native_push_tokens (

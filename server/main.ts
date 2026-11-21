@@ -15,7 +15,7 @@ import { Presence, registerPresenceRoutes } from './domain/presence.ts';
 import { Dispatch, registerDispatchRoutes, straightLineEta } from './domain/dispatch.ts';
 import { etaProjection, journeyOrder, offerFailure } from './domain/journey.ts';
 import { RideLifecycle, registerRideLifecycleRoutes } from './domain/ride-lifecycle.ts';
-import { registerBlockReviewRoutes } from './domain/block-review.ts';
+import { custodyBlockFrom, registerBlockReviewRoutes } from './domain/block-review.ts';
 import { registerPickupPayRoutes } from './domain/pickup-pay-review.ts';
 import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, saveDeclaredScope, scopeAvailable, scopePayloadHash } from './domain/resource-scope.ts';
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
@@ -712,13 +712,9 @@ async function shippingTripPay(o: Row, status: 'completed' | 'returned', actorId
     await captainPay(o.id, o.driver_id, attempts * fareCents(o), 'trip_pay', actorId);
     return;
   }
-  const history = await all("SELECT detail FROM security_events WHERE order_id = ? AND action = 'COURIER_BLOCKED'", o.id);
+  const history = await all("SELECT detail, created_at FROM security_events WHERE order_id = ? AND action = 'COURIER_BLOCKED'", o.id);
   // A custody block is paid only by a clearing review.
-  if (history.some(event => {
-    const detail = auditDetail(event);
-    return Number(detail.driverId) === o.driver_id && custodyStatuses.includes(detail.from)
-      && (detail.assignmentEpoch == null || detail.assignmentEpoch === o.assignment_epoch);
-  })) return;
+  if (history.some(event => custodyBlockFrom(o, event) !== null)) return;
   const supportCollected = await assignmentEvidence(o, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, o);
   const trips = Math.max(1, attempts);
   const returnLegs = supportCollected ? 0 : deliveredToOffice ? 2 : 1;
@@ -3854,7 +3850,6 @@ const blockReviewsAvailable = async () => persistence.backend === 'sqlite'
  * ponytail: 24 h steps, so a daylight-saving change in between moves the deadline by its hour. */
 const hebronWeekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Hebron', weekday: 'short' });
 const twoWorkingDays = (at: number) => { let t = at; for (let n = 0; n < 2;) { t += DAY; if (!['Fri', 'Sat'].includes(hebronWeekday.format(t))) n++; } return t; };
-const custodyStatuses = ['in_transit', 'on_hold', 'returning'];
 async function createDeliveryBlockReview(order: Row, driverId: number, blockerId: number, from: string, blockedAt: number, dueAt = twoWorkingDays(blockedAt)) {
   const pay = order.service === 'shop'
     ? Number(((await one('SELECT delivery_fee_agorot FROM shop_orders WHERE order_id = ?', order.id)) ?? fail(409, 'shop_state')).delivery_fee_agorot)
@@ -3875,17 +3870,15 @@ export const recoverBlockReviews = () => persistence.scope(async () => {
   const recoveredAt = Date.now();
   const dueAt = twoWorkingDays(recoveredAt); // from the recovery, not the original block (R5-L2)
   for (const order of missing) {
-    const detail = auditDetail(order);
-    const inCustody = custodyStatuses.includes(detail.from) || (order.service === 'shop' && detail.from === 'at_pickup');
-    if (Number(detail.driverId) !== order.driver_id || !inCustody || detail.custody === false || order.created_at < (order.assigned_at ?? 0)
-      || (detail.assignmentEpoch != null && detail.assignmentEpoch !== order.assignment_epoch)) continue;
+    const from = custodyBlockFrom(order, { detail: order.detail, created_at: order.created_at });
+    if (!from) continue;
     const context = { orderId: order.id, driverId: order.driver_id };
     try {
       await persistence.exec('BEGIN IMMEDIATE');
       if (!(await settleableDriver(order.driver_id))) logServerError('block_review_driver_departed', undefined, context);
       else if (order.service !== 'shop' || !(await one("SELECT 1 FROM shop_ledger WHERE order_id = ? AND kind = 'trip_pay'", order.id))) {
         // blocked_at stays the original audit time. The recovered marker commits with the review.
-        const inserted = await createDeliveryBlockReview(order, order.driver_id, order.actor_id, detail.from, order.created_at, dueAt);
+        const inserted = await createDeliveryBlockReview(order, order.driver_id, order.actor_id, from, order.created_at, dueAt);
         if (inserted) await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'BLOCK_REVIEW_RECOVERED', ?, ?)`,
           order.actor_id, order.id, JSON.stringify({ driverId: order.driver_id, dueAt, recoveredAt }), recoveredAt);
       }

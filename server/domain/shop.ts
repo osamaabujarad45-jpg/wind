@@ -11,6 +11,7 @@
 import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { needStaff, staffActor } from './ops.ts';
+import { custodyBlockFrom } from './block-review.ts';
 import { legacySupportCollected, officeState } from './office.ts';
 import {
   adminShopCancels, goodsCapFor, handoverExceptions, isCity, lineAgorot, merchantRejects, shopCategories, shopExceptionReasons, shopPolicies,
@@ -892,14 +893,9 @@ export function registerShop(route: Register, deps: ShopDeps) {
     await db.run('UPDATE orders SET commission = 0 WHERE id = ?', r.id);
     // Pay follows how custody entered the return, whichever route closes it (Sol R2-H3), from the order's own audit:
     // DRV-17: the captain holding it was blocked: the trip so far is paid only by a cleared block review (none on a schema without one).
-    const history = await db.all("SELECT action, detail FROM security_events WHERE order_id = ? AND action IN ('COURIER_BLOCKED', 'CUSTODY_TAKEN')", r.id);
+    const history = await db.all("SELECT action, detail, created_at FROM security_events WHERE order_id = ? AND action IN ('COURIER_BLOCKED', 'CUSTODY_TAKEN')", r.id);
     const said = (row: Row) => { try { return JSON.parse(String(row.detail ?? '{}')); } catch { return {}; } };
-    if (history.some(e => {
-      if (e.action !== 'COURIER_BLOCKED') return false;
-      const detail = said(e);
-      return Number(detail.driverId) === r.driver_id && detail.custody !== false
-        && (detail.assignmentEpoch == null || detail.assignmentEpoch === r.assignment_epoch);
-    })) return;
+    if (history.some(e => e.action === 'COURIER_BLOCKED' && custodyBlockFrom(r, e) !== null)) return;
     // Support recovered the goods from the captain: the trip so far (one fee), no return leg.
     const recovered = history.some(e => e.action === 'CUSTODY_TAKEN'
       && said(e).assignmentEpoch === r.assignment_epoch && said(e).driverId === r.driver_id) || await legacySupportCollected(db, r);
