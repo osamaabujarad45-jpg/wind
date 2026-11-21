@@ -555,6 +555,8 @@ for (const language of ['ar', 'en']) for (const restored of [false, true]) {
   await tap(view, c.cashRetrySame); await flush();
   const tree = view.render();
   assert.ok(shows(tree, 'R-201') && shows(tree, 'R-202'), `${language}/${restored}: both receipts stay on screen`);
+  // Haiku r23 F3, Sol R25-L1: X's own receipt names its captain too, restored or in place.
+  assert.ok(shows(tree, `${model.isolate('Driver')} · ${model.ltr('0599000102')} · ${x.amountCents / 100}: `), `${language}/${restored}: X's receipt names its captain`);
   assert.ok(shows(tree, `${model.isolate('Other')} · ${model.ltr('0599000103')} · 3: `), `${language}/${restored}: the drained receipt names its captain and amount`);
   assert.equal(view.calls.filter(call => call.path === '/admin/cash/remittance').length, posts, `${language}/${restored}: nothing is posted again`);
   assert.equal(store.size, 0, `${language}/${restored}: both slots are settled`);
@@ -674,6 +676,7 @@ for (const language of ['ar', 'en']) {
   assert.ok(shows(view.render(), 'R-71'), `${language}: a Mark press keeps the drained receipt (Haiku r22 F2/F3)`);
   field(view.render(), c.cashResolutionReason).onChangeText('Cash counted at the office');
   await tap(view, c.cashResolveSave);
+  assert.ok(view.dialogs.at(-1).message.includes(`${model.isolate('Driver')} · 1`), `${language}: the confirmation names the captain and amount (Haiku r23 F6)`);
   view.dialogs.at(-1).yes(); await flush();
   const sent = view.calls.at(-1);
   assert.deepEqual([sent.path, sent.body.decision], ['/admin/cash/5/resolve', 'confirm'], `${language}: the resolution is sent`);
@@ -681,3 +684,20 @@ for (const language of ['ar', 'en']) {
   assert.ok(shows(tree, 'R-71') && shows(tree, c.cashResolved), `${language}: the resolution notice is added beside the receipt`);
 }
 console.log('Admin cash handover marking waits for the recovery');
+
+// Haiku r23 F6: the driver answered the handover while its card was open, so it left the waiting list: Save waits and says
+// it was already answered.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const entry = { id: 6, amountCents: 100, createdAt: 0, userName: 'Driver', userPhone: '0599000102', userStatus: 'active', reference: null };
+  const data = { ...cashData, '/admin/cash/pending': [entry] };
+  const view = screen('cash', language, { data, me: cashAdmin, effects: true });
+  view.render(); await flush();
+  await tap(view, c.cashMarkConfirmed);
+  field(view.render(), c.cashResolutionReason).onChangeText('Cash counted at the office');
+  assert.equal(button(view.render(), c.cashResolveSave)[0].disabled, false, `${language}: Save is ready while the handover waits`);
+  data['/admin/cash/pending'] = []; // the next poll: the driver confirmed it
+  const save = button(view.render(), c.cashResolveSave)[0];
+  assert.deepEqual([save.disabled, save.reason], [true, c.err_already_decided], `${language}: Save waits and says why`);
+}
+console.log('Admin cash resolution waits when the handover was answered meanwhile');

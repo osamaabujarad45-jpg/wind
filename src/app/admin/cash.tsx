@@ -220,6 +220,10 @@ export default function AdminCash() {
   const blocked = busy || recovering || !!open?.uncertain || storageFailed;
   const blockedReason = storageFailed ? (lockless ? c.err_cash_browser_unsupported : c.err_cash_storage_failed) : open?.uncertain ? c.cashSettleFirst : c.wait_busy;
 
+  // A handover the driver answered while its card was open leaves the waiting list: Save then waits and says why, and the
+  // confirmation names whose handover and how much it decides (Haiku r23 F6).
+  const resolvingTarget = resolving ? pending?.find(entry => entry.id === resolving.id) : undefined;
+  const resolvingWho = resolvingTarget ? `${isolate(resolvingTarget.userName)} · ${money(resolvingTarget.amountCents / 100)}` : '';
   return <Screen onRefresh={() => { setMessage([]); reloadPending(); return reload(); }} scrollRef={list}>
     <Header title={c.cashTab} />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.cashOwedHint}</Txt>
@@ -285,8 +289,9 @@ export default function AdminCash() {
         <Field label={c.cashResolutionReason} value={resolving.reason} maxLength={500} disabled={busy} onChangeText={reason => setResolving({ ...resolving, reason })} />
         <Field label={c.cashEvidence} value={resolving.evidenceRef} maxLength={200} disabled={busy} onChangeText={evidenceRef => setResolving({ ...resolving, evidenceRef })} />
         <Row gap={8} style={{ marginTop: 10 }}>
-          <Button title={c.cashResolveSave} icon="checkmark-done-outline" loading={busy} disabled={busy || resolving.reason.trim().length < 5}
-            reason={busy ? c.wait_busy : c.reason_min5} onPress={() => confirm(c.cashResolveConfirm, () => void resolveEntry(), c.cashResolveSave, c.cancel)} />
+          <Button title={c.cashResolveSave} icon="checkmark-done-outline" loading={busy} disabled={busy || !resolvingTarget || resolving.reason.trim().length < 5}
+            reason={busy ? c.wait_busy : !resolvingTarget ? c.err_already_decided : c.reason_min5}
+            onPress={() => confirm(`${c.cashResolveConfirm}\n${resolvingWho}`, () => void resolveEntry(), c.cashResolveSave, c.cancel)} />
           <Button title={c.cancel} variant="ghost" size="sm" disabled={busy} reason={c.wait_busy} onPress={() => setResolving(null)} />
         </Row>
       </Card>}
