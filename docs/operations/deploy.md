@@ -46,8 +46,8 @@ its data is backed up and those installs are rebuilt.
      - moves the current tree to `/opt/windapi-old-<time>`, moves the new one in, and starts the service.
   3. Check with `node scripts/check-deployment.mjs --origin https://20.217.202.98.sslip.io`.
 - **Rollback:**
-  - The 21 November install was repeated with install-release.sh, so `/opt/windapi-old-20261121122330` is the same release; an earlier tree does not exist on this host, so fix forward from it.
-  - Releases keep SQLite `user_version` 3, so the previous tree reads the current database. On its first start, a release may also run one-time, idempotent table rebuilds in `server/db/sqlite-schema.ts` (widened constraints) and settle stale pending subscriptions. Take a backup (`sudo systemctl start wind-backup`) before an install.
+  - `/opt/windapi-old-20261121125020` holds master `8df0f778` (PR #97); `/opt/windapi` is `078da0a2` (PR #99), installed with install-release.sh on 21 November.
+  - Releases keep SQLite `user_version` 3, so the previous tree can open the database. A database created by the current schema is not rebuilt. An older database may be rebuilt once, on first start (`security_events`, `users`, `courier_block_reviews`; `server/db/sqlite-schema.ts`): drivers with no recognized vehicle become `pending`, and the `users` rebuild drops any column it does not list. Duplicate pending subscriptions are rejected on each start. Rolling back to the previous tree does not undo these changes; to return to the data from before an install, restore the backup taken before it (`sudo systemctl start wind-backup` before every install).
   1. Freeze cash writes and return decisions, as the release notes below say, and close every open Cash tab.
   2. Check that `/opt/windapi-old-<time>` exists (`ls -d /opt/windapi-old-*`).
   3. `sudo systemctl stop wind-api`.
@@ -58,7 +58,7 @@ its data is backed up and those installs are rebuilt.
 - **Admin commands** run as the service user with its environment, so the files stay owned by `wind`:
   `sudo bash -c 'set -a; . /etc/wind-api.env; set +a; cd /opt/windapi && sudo -E -u wind env NODE_ENV=production DB_PATH=/data/wind.db /opt/node/bin/node server/main.ts verify-phone 05XXXXXXXX --phone-verified'`
   Then run the same with `promote 05XXXXXXXX`.
-- **21 November release:** master `8df0f778` (PR #97). Deployment check 10/10. The first backup was written. The database
+- **21 November releases:** master `8df0f778` (PR #97), then `078da0a2` (PR #99, customer polish). Deployment check 10/10 on each. The first backup was written. The database
   is fresh: users register again, then an admin is made with the admin commands above.
 - **Open:**
   - Back up `/data/wind.db` from the student host once its account can be signed in again.

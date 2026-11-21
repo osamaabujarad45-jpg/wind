@@ -30,7 +30,7 @@ if [ -n "$(find "$T" \( -name '.env' -o -name '.env.*' -o -name '*.db' -o -name 
 # The packaged API must start on its own: a throwaway database on a spare port, parcel only, as production runs.
 DB=$(mktemp /tmp/wind-release-db-XXXXXX); rm -f "$DB"
 # Only the dry run may answer on :4010, and $! is the node process itself, not a subshell (Haiku PR #98 L-4).
-if curl -fsS -m 2 http://127.0.0.1:4010/api/ready >/dev/null 2>&1; then echo "port 4010 is already in use" >&2; exit 1; fi
+if [ "$(curl -s -o /dev/null -m 2 -w '%{http_code}' http://127.0.0.1:4010/ || true)" != "000" ]; then echo "port 4010 is already in use" >&2; exit 1; fi # any answer, even 503
 cd "$T"
 NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DB" WEB_ROOT="$T/web" TZ=Asia/Hebron WIND_ENABLED_SERVICES=parcel \
   WIND_DRIVER_PRESENCE=off WIND_IDENTITY_MODE=self-service SUPPORT_CONTACT=+972597127547 WIND_TRUST_PROXY=1 WIND_PUSH_SUBJECT=https://$API_HOST \
