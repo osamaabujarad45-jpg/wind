@@ -2,6 +2,8 @@
 import { createECDH, createHmac, createCipheriv, randomBytes, sign, type KeyObject } from 'node:crypto';
 
 export const b64url = (b: Buffer) => b.toString('base64url');
+// An older active service worker uses its generic fallback for this kind instead of claiming sender handback.
+export const webPushKind = (kind: string) => kind === 'returned' ? 'return_complete' : kind;
 const hmac = (key: Buffer, data: Buffer) => createHmac('sha256', key).update(data).digest();
 
 /** Encrypt one push message for a subscription (single record, RFC 8291 §3–4). Salt and sender key are injectable for the RFC test vector. */

@@ -217,6 +217,8 @@ try {
   assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_HANDOVER_ESCALATED'", order.id)).n), 1, 'one escalation per exception');
   const stuck = (await call('/admin/shop/attention', { token: admin.token })).orders.find(o => o.id === order.id);
   const staleCancel = { action: 'cancel_handover_exception', note: 'Synthetic stale decision' };
+  await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { ...staleCancel, reason: 'operational',
+    exceptionAt: stuck.shop.handoverExceptionAt } }, 400, 'invalid_input');
   await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { reason: 'handover_exception_unresolved',
     exceptionAt: stuck.shop.handoverExceptionAt, note: staleCancel.note } }, 400, 'invalid_input');
   await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: staleCancel }, 400, 'invalid_input');

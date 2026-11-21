@@ -84,6 +84,8 @@ try {
   assert.deepEqual(decided.map(s => s.attempt ?? null), [2, 3, null]);
   const startReturn = await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Three delivery attempts completed' } });
   assert.equal(startReturn.status, 'returning');
+  await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, expect: 400,
+    body: { action: 'confirm_return', handoff: 'sender', reason: 'Support verified receipt' } });
   await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'confirm_sender_return', reason: 'Support verified receipt' } });
   const senderReturn = await call(`/orders/${retried.id}/custody`, { token: customer.token });
   assert.ok(senderReturn.steps.some(step => step.kind === 'returned' && step.by === 'support'));

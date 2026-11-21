@@ -2,7 +2,7 @@ import { createPrivateKey, generateKeyPairSync, randomInt, randomUUID } from 'no
 import { setTimeout as delay } from 'node:timers/promises';
 import { Persistence, type Row } from './db/persistence.ts';
 import { runtimePersistence } from './db/runtime.ts';
-import { encrypt, isDeviceNotRegistered, pushEndpoint, sendExpoPush, vapid } from './push.ts';
+import { encrypt, isDeviceNotRegistered, pushEndpoint, sendExpoPush, vapid, webPushKind } from './push.ts';
 import { durableProtocolAvailable, subscriptionKey } from './domain/events.ts';
 import { nativeSuppression, PUSH_KINDS, URGENT_KINDS } from './domain/native-push.ts';
 import { pushSubject } from './push.ts';
@@ -150,7 +150,7 @@ export class DurableWorker {
       if (isExpo && target && (target as { invalidToken?: boolean }).invalidToken) { await this.db.run('DELETE FROM native_push_tokens WHERE token_hash=?',(target as { token: Row }).token.token_hash); await this.finish(work,'obsolete','invalid_token'); return true; }
       if (!target) { await this.finish(work,'obsolete','expired_or_revoked'); return true; }
       const p=work.payload;
-      const message=JSON.stringify({ kind:p.kind,order:p.order,url:p.path ?? (p.kind==='job'?'/driver':`/order/${p.order}`),
+      const message=JSON.stringify({ kind:isExpo?p.kind:webPushKind(p.kind),order:p.order,url:p.path ?? (p.kind==='job'?'/driver':`/order/${p.order}`),
         lang:(((target as { token?: Row }).token ?? (target as { subscription: Row }).subscription).lang as string),eventId:work.event_id });
       if (isExpo) {
         if (this.options.expoTransport) await this.options.expoTransport((target as { token: Row }).token,message,target.remaining);

@@ -1012,7 +1012,8 @@ export function registerShop(route: Register, deps: ShopDeps) {
   route('POST', '/api/admin/orders/:id/shop/cancel', async ({ user, params, body }) => inTx(async () => {
     const { r, s } = await adminOrder(user, Number(params[0]));
     // Old servers reject this command because a generic cancellation requires an explicit reason.
-    const handover = body.action === 'cancel_handover_exception' && body.reason === undefined;
+    const handover = body.action === 'cancel_handover_exception';
+    if (body.action !== undefined && (!handover || body.reason !== undefined)) fail(400, 'invalid_input');
     const reason = handover ? 'handover_exception_unresolved' : body.reason as ShopCancelReason;
     if (reason === 'below_minimum' || reason === 'accept_expired') fail(409, 'reason_reserved');
     if (!adminShopCancels.includes(reason)) fail(400, 'invalid_input');

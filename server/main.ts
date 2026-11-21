@@ -67,7 +67,7 @@ import {
 import { BOOKING_COMMAND_TTL_MS } from '../src/booking.ts';
 import { createOpencode, registerOpencodeRoutes } from './domain/opencode.ts';
 import { backtracks, nearLine } from '../src/map-math.ts';
-import { b64url, encrypt, isDeviceNotRegistered, pushEndpoint, sendExpoPush, vapid, pushSubject } from './push.ts';
+import { b64url, encrypt, isDeviceNotRegistered, pushEndpoint, sendExpoPush, vapid, pushSubject, webPushKind } from './push.ts';
 
 const DAY = 86_400_000;
 const RELEASE_BEFORE = 30 * 60_000; // scheduled orders reach drivers this long before pickup
@@ -1517,7 +1517,7 @@ async function sendPush(userIds: number[], kind: PushKind, order: number, path?:
   const ids = userIds.map(() => '?').join(',');
   const urgent = URGENT_KINDS.includes(kind), ttl = kind === 'job' ? 300 : kind === 'offer' ? OFFER_TTL / 1000 : 3600;
   for (const s of (await all(`SELECT * FROM push_subscriptions WHERE user_id IN (${ids})`, ...userIds)))
-    void persistence.detached(() => capped(() => deliver(s, JSON.stringify({ kind, order, url, lang: s.lang }), urgent ? 'high' : 'normal', ttl)));
+    void persistence.detached(() => capped(() => deliver(s, JSON.stringify({ kind: webPushKind(kind), order, url, lang: s.lang }), urgent ? 'high' : 'normal', ttl)));
   // Ending a session removes its token (foreign key), and blocking an account ends its sessions, so each row here is live.
   for (const t of (await all(`SELECT * FROM native_push_tokens WHERE user_id IN (${ids})`, ...userIds)))
     if (!nativeSuppression(t.prefs_json, kind, t.disabled_at))
@@ -2936,6 +2936,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body }) =>
   const reason = text(body.reason, 500);
   // Use a distinct command so an older server refuses an office receipt instead of silently omitting the additional leg.
   const action = typeof body.action === 'string' ? body.action : fail(400, 'invalid_input');
+  if (body.handoff !== undefined) fail(400, 'invalid_input'); // typed handbacks use separate commands, including on retry
   const deliveredToOffice = action === 'confirm_office_return';
   const deliveredToSender = action === 'confirm_sender_return';
   const confirmsReturn = action === 'confirm_return' || deliveredToOffice || deliveredToSender;

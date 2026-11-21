@@ -29,7 +29,8 @@ self.addEventListener('push', event => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { /* unreadable payload: show the generic line */ }
   const t = words[data.lang === 'en' ? 'en' : 'ar'];
-  const body = `${t[data.kind] ?? t.message}${data.order && data.kind !== 'job' ? ` · ${code(data.order)}` : ''}`;
+  const kind = data.kind === 'return_complete' ? 'returned' : data.kind;
+  const body = `${t[kind] ?? t.message}${data.order && kind !== 'job' ? ` · ${code(data.order)}` : ''}`;
   event.waitUntil(self.registration.showNotification(t.title, {
     body, lang: data.lang === 'en' ? 'en' : 'ar', dir: data.lang === 'en' ? 'ltr' : 'rtl',
     icon: '/icons/icon-192.png', badge: '/icons/icon-192.png',

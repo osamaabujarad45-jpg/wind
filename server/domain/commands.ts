@@ -18,12 +18,14 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
   // envelope fields: refuse the envelope before anything is stored rather than record an invalid_input (review 19 Nov).
   if (/^\/api\/orders\/\d+\/(?:arrive|ride\/no-show|ride\/grace-extension)$/.test(path)) fail(400, 'unsupported_command');
   // Staff-duty decisions replay on their own record under the current duty check, never from a saved receipt (Sol R3-M2).
-  if (/^\/api\/admin\/orders\/\d+\/(?:block-review|pickup-pay-review|shop\/lines\/\d+\/remove)$/.test(path)) fail(400, 'unsupported_command');
+  if (/^\/api\/admin\/orders\/\d+\/(?:block-review|pickup-pay-review|office|shop\/lines\/\d+\/remove)$/.test(path)) fail(400, 'unsupported_command');
   const { commandId, clientRecordedAt: _recorded, payload: nested, ...fields } = body;
   if (nested !== undefined && (!nested || typeof nested !== 'object' || Array.isArray(nested))) fail(400, 'invalid_input');
   const input = nested === undefined ? fields : { ...nested, ...fields };
   if ((path === '/api/admin/cash/adjustment' && (input.source === 'payout' || input.intent === 'payout')) ||
-    (/^\/api\/admin\/(?:orders\/\d+\/resolve|eligibility\/orders\/\d+\/recovery)$/.test(path) && input.action === 'confirm_return'))
+    (/^\/api\/admin\/(?:orders\/\d+\/resolve|eligibility\/orders\/\d+\/recovery)$/.test(path)
+      && ['confirm_return', 'confirm_office_return', 'confirm_sender_return'].includes(input.action))
+    || (/^\/api\/admin\/orders\/\d+\/shop\/cancel$/.test(path) && input.action === 'cancel_handover_exception'))
     fail(400, 'unsupported_command');
   const hash = createHash('sha256').update(JSON.stringify(canonical({ path, method, input: priorityIdentity(input) }))).digest('hex');
   await db.one('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', `${user.id}:${commandId}`);

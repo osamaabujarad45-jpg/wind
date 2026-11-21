@@ -31,8 +31,12 @@ try {
   const commandId=randomUUID();
   const booked=await call('/orders',{token:customer.token,body:{commandId,payload:input}});
   assert.equal(booked.status,'searching');
-  for(const action of ['block-review','shop/lines/1/remove']) {
-    const refused=await call(`/admin/orders/${booked.id}/${action}`,{token:admin.token,body:{commandId:randomUUID()},expect:400});
+  for(const [path,payload] of [
+    ['block-review',{}],['shop/lines/1/remove',{}],['office',{action:'received'}],
+    ['resolve',{action:'confirm_office_return'}],['resolve',{action:'confirm_sender_return'}],
+    ['shop/cancel',{action:'cancel_handover_exception'}],
+  ]) {
+    const refused=await call(`/admin/orders/${booked.id}/${path}`,{token:admin.token,body:{commandId:randomUUID(),payload},expect:400});
     assert.equal(refused.error,'unsupported_command');
   }
   await db.run("UPDATE settings SET value=90 WHERE key='parcelSmall'");

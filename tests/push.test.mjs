@@ -1,9 +1,11 @@
 // Web Push crypto (SPEC-web-push.md): RFC 8291 Appendix A vector, VAPID signature, endpoint allowlist.
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, verify } from 'node:crypto';
-import { encrypt, pushEndpoint, vapid } from '../server/push.ts';
+import { encrypt, pushEndpoint, vapid, webPushKind } from '../server/push.ts';
 process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid'; // T37: web push requires a configured operator subject
 
+assert.equal(webPushKind('returned'), 'return_complete', 'an old web worker falls back to generic return copy');
+assert.equal(webPushKind('office'), 'office');
 const b = s => Buffer.from(s.replace(/\s/g, ''), 'base64url');
 const body = encrypt(b('V2hlbiBJIGdyb3cgdXAsIEkgd2FudCB0byBiZSBhIHdhdGVybWVsb24'),
   b('BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4'), b('BTBZMqHH6r4Tts7J_aSIgg'),
