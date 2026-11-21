@@ -29,6 +29,7 @@ async function register(phone, name, extra = {}) {
 try {
   const admin = await register('0599000101', 'Admin');
   await promote('0599000101');
+  admin.token = (await call('/auth/login', { body: { phone: '0599000101', password: 'secret123' } })).token;
   const customer = await register('0599000102', 'Lina');
   const customer2 = await register('0599000103', 'Omar');
   const driver = await register('0599000104', 'Sami', { role: 'driver', vehicle: 'car' });
@@ -134,7 +135,40 @@ try {
   assert.equal((await call('/orders', { token: customer.token, body: { ...ride, quoteId: unpinnedRide.quoteId, pickupPoint: { latitude: 31.86, longitude: 35.03 }, dropoffPoint: { latitude: 31.95, longitude: 35.40 }, requestId: randomUUID() }, expect: 409 })).error, 'itinerary_changed');
   const load = { service: 'freight', pickupCity: 'ramallah', dropoffCity: 'bireh', option: 'small', shared: false, loadingHelp: false, pickupNote: 'Yard', dropoffNote: 'Shop', contact: '0599000102', detail: 'Boxes' };
   const unpinnedLoad = await call('/price', { token: customer.token, body: load });
+  const declaredScope = { itemCount: 1, lengthMm: 400, widthMm: 400, heightMm: 400, massGrams: 1000, crewCount: 1,
+    loadingAfter: Date.now(), loadingBefore: Date.now() + 3600_000, equipment: [], accessConstraints: [] };
+  const noPin = await call('/price', { token: customer.token, body: { ...load, declaredScope }, expect: 400 });
+  assert.equal(noPin.error, 'freight_pins_required');
   assert.equal((await call('/orders', { token: customer.token, body: { ...load, quoteId: unpinnedLoad.quoteId, dropoffPoint: { latitude: 31.95, longitude: 35.40 }, requestId: randomUUID() }, expect: 409 })).error, 'itinerary_changed');
+  const planned = { ...ride, scheduledFor: Date.now() + 2 * 60 * 60_000 };
+  const plannedQuote = await call('/price', { token: customer.token, body: planned });
+  const plannedRide = await call('/orders', { token: customer.token, body: { ...planned, quoteId: plannedQuote.quoteId, requestId: randomUUID() } });
+  const rideDrafts = await Promise.all([1, 2].map(async () => ({
+    ...ride, quoteId: (await call('/price', { token: customer.token, body: ride })).quoteId, requestId: randomUUID(),
+  })));
+  const rideResults = await Promise.all(rideDrafts.map(async body => {
+    const response = await fetch(base() + '/orders', { method: 'POST', headers: {
+      'Content-Type': 'application/json', Authorization: 'Bearer ' + customer.token,
+    }, body: JSON.stringify(body) });
+    return { status: response.status, body: await response.json() };
+  }));
+  assert.deepEqual(rideResults.map(result => result.status).sort(), [200, 409], 'two ride requests for one customer cannot both commit');
+  const winner = rideResults.findIndex(result => result.status === 200);
+  const rideOrder = rideResults[winner].body;
+  assert.equal(rideResults[1 - winner].body.error, 'ride_already_active');
+  const rideReplay = await call('/orders', { token: customer.token, body: rideDrafts[winner] });
+  assert.equal(rideReplay.id, rideOrder.id);
+  const secondDriver = await register('0599000111', 'Mona', { role: 'driver', vehicle: 'car' });
+  await call(`/admin/users/${secondDriver.user.id}/approve`, { token: admin.token, body: {} });
+  await call(`/jobs/${rideOrder.id}/accept`, { token: driver.token, body: {} });
+  await persistence.run('UPDATE orders SET scheduled_for=? WHERE id=?', Date.now() + 60_000, plannedRide.id);
+  const overlapping = await call(`/jobs/${plannedRide.id}/accept`, { token: secondDriver.token, body: {}, expect: 409 });
+  assert.equal(overlapping.error, 'rider_ride_active', 'a released planned ride cannot be assigned while the rider has another active ride');
+  await call(`/orders/${rideOrder.id}/cancel`, { token: customer.token, body: {} });
+  assert.equal((await call(`/jobs/${plannedRide.id}/accept`, { token: secondDriver.token, body: {} })).status, 'assigned');
+  await call(`/orders/${plannedRide.id}/cancel`, { token: customer.token, body: {} });
+  const replacementRide = await call('/orders', { token: customer.token, body: rideDrafts[1 - winner] });
+  await call(`/orders/${replacementRide.id}/cancel`, { token: customer.token, body: {} });
   // A flat-fare parcel may still add its pins at booking (the price does not depend on them).
   const unpinnedParcel = await call('/price', { token: customer.token, body: orderInput });
   const pinnedParcel = await call('/orders', { token: customer.token, body: { ...orderInput, quoteId: unpinnedParcel.quoteId, pickupPoint: { latitude: 31.905, longitude: 35.205 }, requestId: randomUUID() } });
@@ -204,11 +238,21 @@ try {
   assert.ok(Number((await persistence.one('SELECT COUNT(*) n FROM command_results WHERE actor_id = ?', leaver.user.id)).n) >= 1, 'the durable booking stored its reply');
   await assert.rejects(persistence.run('UPDATE quotes SET price_minor = price_minor + 1 WHERE id = ?', leaverQuote.quoteId), /immutable/);
   await assert.rejects(persistence.run("UPDATE quotes SET contact = '0599999999' WHERE id = ?", leaverQuote.quoteId), /immutable/); // only the scrub value passes
+  const acceptance = { commandId: randomUUID(), expectedVersion: Number((await persistence.one('SELECT version FROM orders WHERE id=?', leaverOrder.id)).version) };
+  const whoAccepted = await call(`/jobs/${leaverOrder.id}/accept`, { token: driver.token, body: acceptance });
+  assert.equal(whoAccepted.pickupNote, orderInput.pickupNote);
+  await persistence.run('INSERT INTO command_results(actor_id,command_id,payload_hash,http_status,response,created_at) VALUES (?,?,?,?,?,?)',
+    admin.user.id, randomUUID(), 'synthetic-legacy-command', 200, '{"pickupCity": unreadable legacy response}', Date.now());
   await call(`/orders/${leaverOrder.id}/cancel`, { token: leaver.token, body: {} });
   await call('/me/delete', { token: leaver.token, body: { password: 'secret123' } });
   const scrubbed = await persistence.one('SELECT contact, pickup_note, dropoff_note, detail, pickup_lat, itinerary_hash, price_minor FROM quotes WHERE id = ?', leaverQuote.quoteId);
   assert.deepEqual({ ...scrubbed, price_minor: Number(scrubbed.price_minor) }, { contact: '', pickup_note: '', dropoff_note: '', detail: '', pickup_lat: null, itinerary_hash: '', price_minor: leaverQuote.priceMinor });
   assert.equal(Number((await persistence.one('SELECT COUNT(*) n FROM command_results WHERE actor_id = ?', leaver.user.id)).n), 0);
+  const cleanReplay = await call(`/jobs/${leaverOrder.id}/accept`, { token: driver.token, body: acceptance });
+  assert.equal(cleanReplay.id, leaverOrder.id);
+  assert.equal(cleanReplay.service, 'parcel');
+  assert.equal(cleanReplay.pickupNote, '', 'another actor replays an authorized order with personal fields removed');
+  await assert.rejects(persistence.run("UPDATE quotes SET priority = 'same_day' WHERE id = ?", leaverQuote.quoteId), /immutable/);
   // A quote an in-flight booking held during deletion is skipped (SKIP LOCKED) and caught by the maintenance sweep.
   const straggler = await register('0599000110', 'Straggler');
   const stragglerQuote = await call('/price', { token: straggler.token, body: { ...orderInput, contact: '0599000110' } });

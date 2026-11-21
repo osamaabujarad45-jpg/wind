@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { configureRuntime, effectiveRuntime, mapReadyMs, resetRuntime, runtimeValues } from '../src/runtime-config.ts';
 import { readFileSync } from 'node:fs';
 import { CLIENT_BUILD } from '../src/api-client.ts';
-import { capabilityState, clientConfiguration, clientUpdateRequired } from '../server/domain/runtime-readiness.ts';
+import { capabilityState, clientConfiguration, cashClientFenced, clientUpdateRequired } from '../server/domain/runtime-readiness.ts';
 const now = Date.now(), config = clientConfiguration({}, now);
 assert.equal(configureRuntime(config, now).values.orderRefreshMs, 4000);
 assert.throws(() => runtimeValues({ enabledServices: ['ride'] }), /invalid_runtime_configuration/);
@@ -31,6 +31,15 @@ assert.equal(clientUpdateRequired('10014', { WIND_MIN_CLIENT_BUILD: '10014' }), 
 for (const [sent, min] of [['junk', '10014'], ['1', 'junk'], ['1', '-5']]) assert.equal(clientUpdateRequired(sent, { WIND_MIN_CLIENT_BUILD: min }), false);
 for (const sent of ['', '0']) assert.equal(clientUpdateRequired(sent, { WIND_MIN_CLIENT_BUILD: '10014' }), true, 'an empty or zero build is gated');
 assert.equal(clientUpdateRequired('10012, 10014', { WIND_MIN_CLIENT_BUILD: '10014' }), true, 'a repeated header cannot slip past with a later value');
+// Cashier protocol (Sol R10-H2, Haiku r9 M2): older or header-less cashier bundles cannot write cash in production.
+assert.equal(cashClientFenced('10104', false), true);
+assert.equal(cashClientFenced(String(CLIENT_BUILD), true), false, 'this build writes');
+assert.equal(cashClientFenced(undefined, true), true, 'production: a build from before the forced-upgrade gate sends no build');
+assert.equal(cashClientFenced(undefined, false), false, 'outside production: scripts and tests');
+assert.equal(cashClientFenced('10104, 10105', true), true, 'a repeated header cannot slip past with a later value');
+assert.equal(cashClientFenced('junk', true), true);
+assert.equal(cashClientFenced('0x2791', true), true, 'digits only (Haiku r10 N2)');
+assert.equal(cashClientFenced('1e5', true), true);
 // Every map renderer reads its ready deadline from the setting, and the WebView page gets it through its config fragment.
 resetRuntime(); assert.equal(mapReadyMs(), 20_000);
 configureRuntime({ ...clientConfiguration({}, Date.now()), values: { ...clientConfiguration({}, Date.now()).values, mapReadyTimeoutMs: 9_000 } });

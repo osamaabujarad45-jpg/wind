@@ -43,16 +43,18 @@ export function registerCustodyRoutes(route: Register, deps: Deps) {
       let detail: Record<string, unknown> = {};
       try { detail = typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail ?? {}; } catch { /* an unreadable row still shows its step */ }
       const action = String(e.action);
+      const kind = action === 'EXCEPTION_RESOLVED' && detail.action === 'confirm_return' && detail.handoff !== 'office'
+        ? 'returned' : fromEvent[action];
       const reason = (action === 'PICKUP_FAILED' || action === 'DELIVERY_EXCEPTION') && failureCodes.has(String(detail.reason)) ? String(detail.reason)
-        : action === 'EXCEPTION_RESOLVED' && decisionCodes.has(String(detail.action)) ? String(detail.action) : undefined;
+        : kind === 'decided' && decisionCodes.has(String(detail.action)) ? String(detail.action) : undefined;
       const blocked = action === 'COURIER_BLOCKED' && Number.isSafeInteger(Number(detail.driverId))
         ? (await deps.db.one('SELECT name FROM users WHERE id = ?', Number(detail.driverId)))?.name : undefined;
       const until = e.action === 'OFFICE_RECEIVED' ? Number(e.created_at) + (detail.perishable ? OFFICE_HOLD.perishable : OFFICE_HOLD.other) : undefined;
-      steps.push({ at: Number(e.created_at), kind: fromEvent[String(e.action)], by: e.role === 'admin' ? 'support' : 'driver', ...(reason && { reason }), ...(until && { until }), ...(blocked && { driver: String(blocked) }) });
+      steps.push({ at: Number(e.created_at), kind, by: e.role === 'admin' ? 'support' : 'driver', ...(reason && { reason }), ...(until && { until }), ...(blocked && { driver: String(blocked) }) });
     }
     if (o!.status === 'completed' && o!.completed_at) steps.push({ at: Number(o!.completed_at), kind: 'delivered', by: 'driver' });
-    // A return closed by the driver's code is logged as RETURN_COMPLETED; one closed by support (confirm_return) only as its decision.
-    if (o!.status === 'returned' && o!.completed_at && !steps.some(s => s.kind === 'returned'))
+    // A return can also close through custody recovery, with no RETURN_COMPLETED event.
+    if (o!.status === 'returned' && o!.completed_at && !steps.some(s => s.kind === 'returned' || s.kind === 'decided' && s.reason === 'confirm_return'))
       steps.push({ at: Number(o!.completed_at), kind: 'returned', by: 'support' });
     steps.sort((a, b) => a.at - b.at);
     // A retry after a failed delivery is a new attempt, not a silent status rewrite (the first try is attempt 1). Only a

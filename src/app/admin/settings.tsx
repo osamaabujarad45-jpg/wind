@@ -1,33 +1,64 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { api, useApi } from '../../api';
-import { fractionSettings, invalidSetting, typedNumber, type Settings } from '../../model';
+import { fractionSettings, invalidSetting, typedNumber, type Settings, defaultSettings } from '../../model';
 import { PasswordCard, useFormat } from '../../parts';
-import { useSession, type Me } from '../../session';
-import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, palette, Row, Screen, Txt, useCopy } from '../../ui';
+import { useSession } from '../../session';
+import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
 import { router } from 'expo-router';
 
-const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits'; keys: (keyof Settings)[] }[] = [
-  { title: 'pricing', keys: ['parcelPrice', 'parcelLarge', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp', 'perMinute', 'nightExtra'] },
+const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits' | 'shopTimers'; keys: (keyof Settings)[] }[] = [
+  { title: 'pricing', keys: ['parcelPrice', 'parcelLarge', 'pickupPayPerKm', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp', 'perMinute', 'nightExtra'] },
   // sharedDiscount is not offered: pooling is off, so a shared fare never happens (the server refuses shared bookings).
   { title: 'discounts', keys: ['plusDiscount', 'commission', 'proCommission'] },
   { title: 'plans', keys: ['plusPrice', 'proPrice'] },
   { title: 'cashLimits', keys: ['driverCashCap', 'orderCashCeiling'] },
+  // ADM-06: shown only while the shop line is on.
+  { title: 'shopTimers', keys: ['shopAgreeLimit', 'shopAcceptMinutes', 'shopConsentMinutes', 'shopNoCaptainMinutes', 'shopDispatchLeadMinutes', 'shopHandoverMinutes'] },
 ];
+const unitless = (key: keyof Settings) => key.endsWith('Minutes'); // the label names the unit
 
 const toText = (settings: Settings) => Object.fromEntries(Object.entries(settings).map(([k, v]) => [k, String(v)]));
 
+type SettingsResponse = { settings: Omit<Settings, 'pickupPayPerKm'>; pickupPayPerKm: number };
+const payrollSettings = ({ settings, pickupPayPerKm }: SettingsResponse): Settings => ({ ...settings, pickupPayPerKm });
+
 export default function AdminSettings() {
+  const { c } = useCopy();
+  const { me } = useSession();
+  const { data, error, reload } = useApi<SettingsResponse>('/me?payroll=1');
+  // The form opens at once from the session's settings. Payroll arrives as a separate field older builds never see;
+  // it fills untouched inputs in place, so a slow response cannot wipe what the admin already typed (R3-12).
+  if (!data && !me?.settings) return <Screen><Header title={c.settings} /><Loading failed={!!error} onRetry={reload} /></Screen>;
+  return <AdminSettingsForm initial={{ ...defaultSettings, ...(me?.settings ?? {}) }} payroll={data ?? null} />;
+}
+
+function AdminSettingsForm({ initial, payroll }: { initial: Settings; payroll: SettingsResponse | null }) {
   const { me, refresh, signOut, language, setLanguage } = useSession();
   const { c, err } = useCopy();
-  const [values, setValues] = useState(() => toText(me!.settings));
+  const [values, setValues] = useState(() => toText(initial));
   // Keys this admin has typed into since the server last confirmed the form. Only these are reviewed and sent:
   // comparing text against the mount value would miss a reversal (12 → 10 looks unedited when 10 was loaded).
   const [touched, setTouched] = useState<Partial<Record<keyof Settings, true>>>({});
   // What the server last confirmed. A failed save clears it: a lost reply may hide a committed write,
   // so the next comparison reads /me first instead of trusting an old copy.
-  const [baseline, setBaseline] = useState<Settings | null>(me!.settings);
+  const [baseline, setBaseline] = useState<Settings | null>(initial);
   const [busy, setBusy] = useState(false);
+  const payrollApplied = useRef(false);
+  const touchedRef = useRef(touched);
+  // payrollSettings() is a new object every render; apply the first payload once, and only onto keys not yet typed.
+  useEffect(() => {
+    if (!payroll || payrollApplied.current) return;
+    payrollApplied.current = true;
+    const next = payrollSettings(payroll);
+    const typed = touchedRef.current;
+    setValues(current => {
+      const merged = toText(next);
+      for (const key of Object.keys(typed) as (keyof Settings)[]) merged[key] = current[key];
+      return merged;
+    });
+    setBaseline(current => current ? next : current); // a failed save left this unknown: do not invent a baseline
+  }, [payroll]);
   const inFlight = useRef(false); // a confirm built before this render must not send a second write
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -44,10 +75,12 @@ export default function AdminSettings() {
     setMessage('');
     try {
       // The reply is the server's settings after this write: it becomes the comparison baseline.
-      const saved = await api<Settings>('/admin/settings', { ...patch, expected }, 'POST');
+      const saved = payrollSettings(await api<SettingsResponse>('/admin/settings?payroll=1', { ...patch, expected }, 'POST'));
+      payrollApplied.current = true; // The save response supersedes the initial payroll request.
       setBaseline(saved);
       setValues(toText(saved));
       setTouched({});
+      touchedRef.current = {};
       await refresh();
       haptic.success();
       setBad('');
@@ -68,7 +101,7 @@ export default function AdminSettings() {
     if (baseline) return baseline;
     setBusy(true);
     try {
-      const settings = (await api<Me>('/me')).settings;
+      const settings = payrollSettings(await api<SettingsResponse>('/me?payroll=1'));
       setBaseline(settings);
       return settings;
     } finally { setBusy(false); }
@@ -80,7 +113,7 @@ export default function AdminSettings() {
     setMessage('');
     // Catch it on the screen that can name the field, instead of letting the server
     // store a 0 or a mistyped 2000 that only shows up on the next customer's quote.
-    const numbers = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, typedNumber(v)]));
+    const numbers = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, v.trim() ? typedNumber(v) : NaN]));
     const invalid = invalidSetting(numbers);
     if (invalid) {
       haptic.error();
@@ -95,7 +128,7 @@ export default function AdminSettings() {
     const keys = (Object.keys(numbers) as (keyof Settings)[]).filter(key => touched[key] && numbers[key] !== before[key]);
     if (!keys.length) { setMessage(c.saved); return; }
     // Shown the way the field shows it (percent for rates, ₪ for money), so the review reads like the form.
-    const shown = (key: keyof Settings, value: number) => fractionSettings.includes(key) ? `${Math.round(value * 100)}%` : `${value} ₪`;
+    const shown = (key: keyof Settings, value: number) => fractionSettings.includes(key) ? `${Math.round(value * 100)}%` : unitless(key) ? String(value) : `${value} ₪`;
     const changes = keys.map(key => `${c[`set_${key}`]}: ${shown(key, before[key])} → ${shown(key, numbers[key])}`);
     const patch = Object.fromEntries(keys.map(key => [key, numbers[key]]));
     const expected = Object.fromEntries(keys.map(key => [key, before[key]]));
@@ -104,13 +137,13 @@ export default function AdminSettings() {
 
   return <Screen>
     <Header title={c.settings} right={<IconButton icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />} />
-    {groups.map(group => <Card key={group.title}>
+    {groups.filter(group => group.title !== 'shopTimers' || me?.capabilities?.enabledServices?.includes('shop')).map(group => <Card key={group.title}>
       <Txt variant="h2" style={{ marginBottom: 4 }}>{c[group.title]}</Txt>
       {group.title === 'discounts' && <Txt variant="caption" style={{ marginBottom: 10 }}>{c.percentNote}</Txt>}
       {group.keys.map(key => <Field key={key} keyboardType="decimal-pad" disabled={busy}
-        label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(typedNumber(values[key]) * 100) || 0}%)` : ' ₪'}`}
+        label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(typedNumber(values[key]) * 100) || 0}%)` : unitless(key) ? '' : ' ₪'}`}
         error={bad === key ? fill(c.set_invalid, { field: c[`set_${key}`] }) : undefined}
-        value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); setTouched(t => ({ ...t, [key]: true })); setMessage(''); if (bad === key) setBad(''); }} />)}
+        value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); touchedRef.current = { ...touchedRef.current, [key]: true }; setTouched(touchedRef.current); setMessage(''); if (bad === key) setBad(''); }} />)}
     </Card>)}
     <Promos />
     <ErrorText>{error}</ErrorText>

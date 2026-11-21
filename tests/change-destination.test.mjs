@@ -36,6 +36,7 @@ const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus'
 try {
   const admin = await call('/auth/register', { body: { phone: '0599300011', name: 'Admin', password: 'secret1' } });
   await promote('0599300011');
+  admin.token = (await call('/auth/login', { body: { phone: '0599300011', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599300012', name: 'Customer', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0599300013', name: 'Driver', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const other = await call('/auth/register', { body: { phone: '0599300014', name: 'Other', password: 'secret1', role: 'driver', vehicle: 'car' } });

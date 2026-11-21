@@ -133,6 +133,7 @@ export const defaultSettings = {
   parcelPrice: 20, parcelLarge: 10, // standard parcel, any distance (SPEC-parcel-standard.md)
   rideBase: 15, ridePerKm: 1.1,
   freightBase: 70, freightPerKm: 2.5, freightLarge: 50, loadingHelp: 30,
+  pickupPayPerKm: 1, // DRV-18: pre-pickup shipping pay per km, capped at the booked fare
   sharedDiscount: 0.4, plusDiscount: 0.15,
   commission: 0.15, proCommission: 0.05,
   plusPrice: 29, proPrice: 99,
@@ -145,8 +146,9 @@ export const defaultSettings = {
   orderCashCeiling: 500,
   // Shop delivery (SRS §7, ADM-06). The agreed limit is how far the weighed goods may pass the estimate without asking (DLV-04);
   // the timers are minutes: merchant accept (DLV-07), customer consent (DLV-06), wait for a captain after ready (DLV-12),
-  // and the captain's drive to the shop that dispatch starts ahead of ready (DLV-12).
-  shopAgreeLimit: 0.1, shopAcceptMinutes: 5, shopConsentMinutes: 5, shopNoCaptainMinutes: 10, shopDispatchLeadMinutes: 15,
+  // the captain's drive to the shop that dispatch starts ahead of ready (DLV-12), and how long a handover exception may stay
+  // open before support decides (DLV-13).
+  shopAgreeLimit: 0.1, shopAcceptMinutes: 5, shopConsentMinutes: 5, shopNoCaptainMinutes: 10, shopDispatchLeadMinutes: 15, shopHandoverMinutes: 10,
 };
 export type Settings = typeof defaultSettings;
 /** ADM-12: true when an order's highest reachable door cash (₪) is above the per-order ceiling. */
@@ -159,21 +161,21 @@ export const fractionSettings: (keyof Settings)[] = ['sharedDiscount', 'plusDisc
 // fat-fingered 2000 quoted every parcel at 2000. Fractions are capped below 1 because
 // 100% commission or discount is never a real tariff.
 export const settingCeilings: Record<keyof Settings, number> = {
-  parcelPrice: 500, parcelLarge: 500, rideBase: 500, ridePerKm: 100, freightBase: 5000, freightPerKm: 100,
+  parcelPrice: 500, parcelLarge: 500, rideBase: 500, ridePerKm: 100, freightBase: 5000, freightPerKm: 100, pickupPayPerKm: 10,
   freightLarge: 2000, loadingHelp: 1000, perMinute: 100, nightExtra: 1,
   sharedDiscount: 1, plusDiscount: 1, commission: 0.5, proCommission: 0.5,
   plusPrice: 1000, proPrice: 2000, driverCashCap: 5000,
-  shopAgreeLimit: 0.5, shopAcceptMinutes: 60, shopConsentMinutes: 60, shopNoCaptainMinutes: 240, shopDispatchLeadMinutes: 120,
+  shopAgreeLimit: 0.5, shopAcceptMinutes: 60, shopConsentMinutes: 60, shopNoCaptainMinutes: 240, shopDispatchLeadMinutes: 120, shopHandoverMinutes: 120,
   orderCashCeiling: 10000, // the goods-COD hard bound (COD_LIMIT_MINOR, server/domain/payments.ts) stays above it
 };
-// Returns the offending key, or null when every value is storable. `Number.isFinite`
-// rejects the NaN an empty or non-numeric field produces; `<= 0` rejects the 0 that a
-// blank field becomes (no setting has a meaningful zero: free delivery and zero commission
-// are not supported states, and minorUnits(0) throws).
+/** DRV-18: pickup pay for a distance at the recorded rate (₪/km), capped at the booked fare. The server pays it and the
+ *  review card shows it before the grant (Sol R8-L1), so both use this one formula. */
+export const pickupPayCents = (fareCents: number, km: number, rate: number) => Math.min(fareCents, Math.round(km * rate * 100));
+// A zero pickup pay rate disables DRV-18 pay. All other settings require a positive value.
 export function invalidSetting(values: Record<string, number>): keyof Settings | null {
   for (const [key, value] of Object.entries(values)) {
     const ceiling = settingCeilings[key as keyof Settings];
-    if (ceiling === undefined || !Number.isFinite(value) || value <= 0 || value > ceiling) return key as keyof Settings;
+    if (ceiling === undefined || !Number.isFinite(value) || value < 0 || (value === 0 && key !== 'pickupPayPerKm') || value > ceiling) return key as keyof Settings;
   }
   return null;
 }
@@ -209,6 +211,13 @@ export type Order = {
   status: OrderStatus; handoverCode: string | null; rating: number | null;
   collected?: { cents: number; reason: VarianceReason | null }; // door cash: the driver on the order and admins only
   returnCode: string | null; exceptionReason: ExceptionReason | typeof pickupRefusal | null; exceptionDetail: PickupRefusalDetail | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null; discount: number;
+  reattemptAllowed?: boolean; // SHIP-08, admin view of a held parcel or freight order
+  pickupPayReview?: { reason: ExceptionReason | typeof pickupRefusal | 'support_cancelled' | 'customer_cancelled' | 'partner_cancelled';
+    rate: number; drivenKm: number | null; originKm?: number | null; currentKm?: number | null; suggestedCents?: number | null;
+    originFixAt?: number | null; currentFixAt?: number | null;
+    driverId: number; assignmentEpoch: number; decision: { granted: boolean; km: number; reason: string; paidCents: number; decidedBy: number; decidedAt: number } | null };
+  assignmentEpoch?: number; // negotiated live tracking
+  blockReview?: { dueAt: number; tripPayCents: number; decidedAt: number | null; cleared: boolean | null; paidCents: number | null; blockedBy: number }; // DRV-17, admin only
   safetyHold: boolean; safetyReport: { status: 'open' | 'resolved'; kind: SafetyKind; resolution: string | null } | null;
   createdAt: number; updatedAt: number;
   assignedAt?: number | null; pickedUpAt?: number | null; completedAt?: number | null; // status timeline
@@ -226,7 +235,7 @@ export type Order = {
   customerStats?: { rating: number | null; trips: number }; // drivers only; rating from 3 ratings (SPEC-customer-rating.md)
   dispatch?: { roundId: string; state: string; closeReason: string | null; offersIssued: number; deadlineAt: number; startedAt: number;
     myOffer?: { id: string; offerId: string; expiresAt: number; issuedAt: number; leaseNonce: string | null; pickupEtaSeconds: number; idleSeconds: number; idleCreditSeconds: number; rankScore: number; etaEstimated: boolean } | null } | null; // WP10 additive
-  ride?: { arrivedAt: number | null; graceUntil: number | null; arrivalSource: string | null; boardingRequired: boolean; boardingLocked: boolean; boardingCode?: string } | null; // WP11 additive
+  ride?: { arrivedAt: number | null; graceUntil: number | null; arrivalSource: string | null; boardingRequired: boolean; boardingLocked: boolean; boardingCode?: string; graceExtended?: boolean } | null; // WP11 additive; graceExtended: RIDE-06 (absent before PG migration 38)
   measuredScope?: { requirementsRevision: number; grams: number; cm3: number; pieces: number; seats: number } | null;
   declaredScope?: { orderId: number; service: string; revision: number; itemCount: number | null; lengthMm: number | null; widthMm: number | null; heightMm: number | null;
     massGrams: number | null; volumeCm3: number | null; declaredValueMinor: number | null; equipment: string[]; crewCount: number | null;
@@ -454,6 +463,9 @@ export type ShopView = {
   /** What the captain collects at the door now: goods so far plus both fees. */
   cashAgorot: number;
   lines: ShopLine[]; change: ShopChange | null; cancelReason: ShopCancelReason | null; handoverException: HandoverException | null;
+  handoverOverdue?: boolean; // DLV-13, admin view: the exception is past the owner-set minutes
+  handoverExceptionAt?: number | null; // admin view: the open exception episode a support decision binds to
+  office?: { until: number; closed: null | { action: 'collected' | 'donated' | 'destroyed'; at: number } } | null; // owning shop only
   packages: { no: number; sealed: boolean; lineIds: number[] }[] | null;
   pickupCode: string | null; // the merchant and support only (§2.1a)
   returnCode: string | null; // the merchant, while the goods come back (DLV-21)

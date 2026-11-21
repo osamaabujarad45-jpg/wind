@@ -40,10 +40,24 @@ export function clientConfiguration(env: NodeJS.ProcessEnv = process.env, now = 
 
 /** Forced-upgrade gate: a client that reports a build below WIND_MIN_CLIENT_BUILD gets 426 and shows the update screen. */
 export function clientUpdateRequired(sent: string | string[] | undefined, env: NodeJS.ProcessEnv = process.env) {
-  // ponytail: no header passes (installs up to 1.0.13, scripts, public pages); only builds that send it can be gated.
+  // ponytail: no header passes (builds before the forced-upgrade gate, scripts, public pages); only builds that send it can
+  // be gated here. Production cash writes have their own gate below (cashClientFenced).
   // A repeated header arrives joined ("10012, 10013"); the first value is what the client sent. Empty or 0 is below any minimum.
   const min = Number(env.WIND_MIN_CLIENT_BUILD || 0), build = Number(typeof sent === 'string' ? sent.split(',')[0].trim() : NaN);
   return Number.isSafeInteger(min) && min > 0 && Number.isSafeInteger(build) && build < min;
+}
+
+/** Cashier protocol (Sol R10-H2, Haiku r9 M2): from client build 10105 a pending cash command lives in its own slot and
+ *  every positive adjustment says payout or charge. A fresh cash write from an older bundle, or in production from a
+ *  bundle that sends no build header at all (builds before the forced-upgrade gate), is refused with 426. Outside
+ *  production a request without the header is a script or a test, not a cashier. Digits only (Haiku r10 N2). */
+export const cashProtocolBuild = 10105;
+export function cashClientFenced(sent: string | string[] | undefined, production: boolean) {
+  // An omitted header is a pre-gate bundle (production) or a script or test (elsewhere). An explicitly empty one is fenced
+  // by this cash gate in every environment; the global gate fences nothing unless WIND_MIN_CLIENT_BUILD is set (Sol R17-L5).
+  if (sent === undefined) return production;
+  const first = (Array.isArray(sent) ? sent[0] : sent).split(',')[0].trim();
+  return !(/^\d{1,9}$/.test(first) && Number(first) >= cashProtocolBuild);
 }
 
 /** Additive operator detail; bare legacy /ready remains a storage probe, not a feature activation claim. */

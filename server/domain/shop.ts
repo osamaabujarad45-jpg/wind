@@ -10,6 +10,9 @@
 // PostgreSQL, off-host backup and a restore drill are in place.
 import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
+import { needStaff, staffActor } from './ops.ts';
+import { custodyBlockFrom } from './block-review.ts';
+import { legacySupportCollected, officeState } from './office.ts';
 import {
   adminShopCancels, goodsCapFor, handoverExceptions, isCity, lineAgorot, merchantRejects, shopCategories, shopExceptionReasons, shopPolicies,
   varianceAllowed, doorCashMaxCents, latinDigits,
@@ -105,6 +108,19 @@ export function registerShop(route: Register, deps: ShopDeps) {
   const audit = (actor: number, order: number | null, action: string, detail: unknown = {}) =>
     db.run('INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?)', actor, order, action, JSON.stringify(detail), Date.now());
   const ceilingAgorot = async () => Math.round((await settings()).orderCashCeiling * 100);
+  /** DLV-13: when the open handover exception was raised (its newest exception check). */
+  const exceptionSince = `(SELECT MAX(c.created_at) FROM shop_handover_checks c WHERE c.order_id = o.id AND c.result = 'exception')`;
+  /** DLV-13: an open handover exception older than the owner-set minutes is the operator's to decide. */
+  /** The open exception's identity: when its newest exception check was recorded (null when none is open). */
+  async function openExceptionAt(orderId: number) {
+    const row = await db.one(`SELECT ${exceptionSince} AS since FROM orders o JOIN shop_orders s ON s.order_id = o.id
+      WHERE o.id = ? AND o.status = 'at_pickup' AND s.handover_exception IS NOT NULL`, orderId);
+    return row?.since == null ? null : Number(row.since);
+  }
+  async function handoverOverdue(orderId: number, now = Date.now()) {
+    const since = await openExceptionAt(orderId);
+    return since != null && since <= now - (await settings()).shopHandoverMinutes * MINUTE;
+  }
 
   // ---------- merchants ----------
   const merchantOf = async (userId: number) => db.one('SELECT * FROM merchants WHERE owner_user_id = ?', userId);
@@ -285,6 +301,9 @@ export function registerShop(route: Register, deps: ShopDeps) {
       // The captain sees what to collect and how many packages, not the basket's names until they hold it.
       lines: role === 'driver' && viewer.id !== r.driver_id ? [] : lines,
       change: role === 'driver' ? null : change, cancelReason: s.cancel_reason ?? null, handoverException: s.handover_exception ?? null,
+      handoverOverdue: role === 'admin' && !!s.handover_exception && await handoverOverdue(r.id), // DLV-13: support decides now
+      ...(role === 'admin' && s.handover_exception ? { handoverExceptionAt: await openExceptionAt(r.id) } : {}), // the episode a decision binds to
+      ...(role === 'merchant' && r.status === 'returned' ? { office: await officeState(db, r.id) } : {}),
       packages: s.packing ? JSON.parse(s.packing) : null,
       pickupCode: role === 'merchant' || role === 'admin' ? s.pickup_code : null,
       returnCode: (role === 'merchant' || role === 'admin') && r.status === 'returning' ? r.return_code ?? null : null,
@@ -408,12 +427,12 @@ export function registerShop(route: Register, deps: ShopDeps) {
   }));
 
   /** Cancels with one typed reason (§2.1) and tells everyone on the order. Ledger effects follow DLV-23 in `postCancel`. */
-  async function cancelWith(r: Row, s: Row, reason: ShopCancelReason, actor: number, note = '') {
+  async function cancelWith(r: Row, s: Row, reason: ShopCancelReason, actor: number, note = '', exceptionAt?: number) {
     const now = Date.now();
     if (!(await db.run("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status = ?", now, r.id, r.status)).changes) fail(409, 'order_changed');
     await db.run('UPDATE shop_orders SET cancel_reason = ? WHERE order_id = ?', reason, r.id);
     await db.run("UPDATE shop_changes SET status = 'expired', decided_at = ? WHERE order_id = ? AND status = 'pending'", now, r.id);
-    await audit(actor, r.id, 'SHOP_CANCELLED', { reason, note });
+    await audit(actor, r.id, 'SHOP_CANCELLED', { reason, note, exceptionAt });
     await postCancel(r, s, reason, actor);
     const owner = (await db.one('SELECT owner_user_id FROM merchants WHERE id = ?', s.merchant_id))!.owner_user_id;
     await push([r.customer_id, r.driver_id ?? null], 'cancelled', r.id);
@@ -564,6 +583,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     if (!merchantRejects.includes(body.reason)) fail(400, 'invalid_input');
     if (r.status === 'cancelled' && s.cancel_reason === body.reason) return getOrder(r.id, user);
     if (r.status !== 'requested' || s.merchant_state) fail(409, 'cannot_reject');
+    if (Number(s.accept_deadline) <= Date.now()) fail(409, 'accept_expired'); // past the window the sweep records the timeout (Sol R3-L4)
     await cancelWith(r, s, body.reason, user.id);
     return getOrder(r.id, user);
   }));
@@ -579,10 +599,35 @@ export function registerShop(route: Register, deps: ShopDeps) {
   // MER-03 + DLV-04/05/06: a weight, a substitution or a removal, evaluated in the SRS order.
   route('POST', '/api/merchant/orders/:id/lines/:line', async ({ user, params, body }) => inTx(async () => {
     const { m, r, s } = await merchantOrder(user, Number(params[0]));
+    return changeLine(user, m, r, s, Number(params[1]), body);
+  }));
+  // DLV-13: a handover exception left unresolved past the owner-set minutes: the operator removes the line, and DLV-06
+  // evaluates the removal like any merchant change (a drop below the minimum cancels with below_minimum).
+  // The decision binds to the exception episode the operator saw (exceptionAt) and keeps their reason (Sol R2-M3); support or
+  // dispatch duty decides it on duty-scoped PostgreSQL (Sol R2-H7, ADM-10).
+  route('POST', '/api/admin/orders/:id/shop/lines/:line/remove', async ({ user, params, body }) => inTx(async () => {
+    const { r, s } = await adminOrder(user, Number(params[0]));
+    needStaff(await staffActor(db, user as never), fail, 'support', 'dispatcher');
+    const lineId = Number(params[1]);
+    const episode = Number.isSafeInteger(body.exceptionAt) ? body.exceptionAt as number : null;
+    // A retry of a removal that already happened for this episode and line replays the current order.
+    if (episode != null && await db.one("SELECT 1 FROM security_events WHERE order_id = ? AND action = 'SHOP_LINE_REMOVED_BY_SUPPORT' AND detail LIKE ?",
+      r.id, `{"exceptionAt":${episode},"lineId":${lineId},%`)) return getOrder(r.id, user);
+    if (!(await handoverOverdue(r.id))) fail(409, 'handover_not_overdue');
+    if (episode == null || typeof body.note !== 'string' || body.note.trim().length < 5 || body.note.length > 500) fail(400, 'invalid_input');
+    if (await openExceptionAt(r.id) !== episode) fail(409, 'exception_changed');
+    const m = (await db.one('SELECT * FROM merchants WHERE id = ?', s.merchant_id))!;
+    const order = await changeLine(user, m, r, s, lineId, { remove: true });
+    await audit(user.id, r.id, 'SHOP_LINE_REMOVED_BY_SUPPORT', { exceptionAt: episode, lineId, note: (body.note as string).trim() });
+    await push([m.owner_user_id], 'shop_update', r.id, `/merchant/order/${r.id}`);
+    await push([r.customer_id], 'shop_update', r.id);
+    return order;
+  }));
+  async function changeLine(user: User, m: Row, r: Row, s: Row, lineId: number, body: Row) {
     if (s.merchant_state !== 'preparing' || !['requested', 'searching', 'assigned', 'at_pickup'].includes(r.status)) fail(409, 'shop_state');
     if (await db.one("SELECT 1 FROM shop_changes WHERE order_id = ? AND status = 'pending'", r.id)) fail(409, 'change_pending');
     const lines = await linesOf(r.id);
-    const line = lines.find(l => l.id === Number(params[1]) && !l.removed) ?? fail(404, 'not_found');
+    const line = lines.find(l => l.id === lineId && !l.removed) ?? fail(404, 'not_found');
     let p: Row;
     if (body.remove === true) p = { kind: 'removal', nameAr: line.nameAr, nameEn: line.nameEn, fromAgorot: line.finalAgorot ?? line.estimateAgorot, toAgorot: 0 };
     else if (body.weightGrams !== undefined) {
@@ -619,7 +664,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     await db.run('UPDATE orders SET updated_at = ? WHERE id = ?', now, r.id);
     await audit(user.id, r.id, 'SHOP_LINE_CHANGED', { lineId: line.id, kind: p!.kind, goods: goodsAfter });
     return getOrder(r.id, user);
-  }));
+  }
   // MER-03: ready needs every weighed line's final price and the packing record (packages, sealed or open, items in open bags).
   route('POST', '/api/merchant/orders/:id/ready', async ({ user, params, body }) => inTx(async () => {
     const { r, s } = await merchantOrder(user, Number(params[0]));
@@ -719,6 +764,18 @@ export function registerShop(route: Register, deps: ShopDeps) {
         await push(await adminIds(), 'attention', Number(row.id), '/admin/orders');
         return 1;
       });
+    // DLV-13: a handover exception unresolved past the owner-set minutes goes to support once per exception. Never an automatic cancel.
+    const handoverMs = (await settings()).shopHandoverMinutes * MINUTE;
+    const escalated = `EXISTS (SELECT 1 FROM security_events e WHERE e.order_id = o.id AND e.action = 'SHOP_HANDOVER_ESCALATED' AND e.created_at >= ${exceptionSince})`;
+    for (const row of await db.all(`SELECT o.id FROM orders o JOIN shop_orders s ON s.order_id = o.id WHERE o.status = 'at_pickup'
+      AND s.handover_exception IS NOT NULL AND ${exceptionSince} <= ? AND NOT ${escalated} LIMIT 50`, now - handoverMs))
+      changed += await timer(async () => {
+        const r = await db.one(`SELECT id, driver_id FROM orders WHERE id = ?${forUpdate}`, row.id);
+        if (!r || r.driver_id == null || !(await handoverOverdue(Number(row.id), now)) || await db.one(`SELECT 1 FROM orders o WHERE o.id = ? AND ${escalated}`, row.id)) return 0;
+        await audit(Number(r.driver_id), Number(row.id), 'SHOP_HANDOVER_ESCALATED'); // the captain raised the exception the sweep escalates
+        await push(await adminIds(), 'attention', Number(row.id), '/admin/orders');
+        return 1;
+      });
     // MER-08: an expired trade licence pauses the shop. Accepted orders continue.
     for (const row of await db.all("SELECT id, owner_user_id FROM merchants WHERE status = 'active' AND licence_expires_at <= ? LIMIT 50", now))
       changed += await timer(async () => {
@@ -808,7 +865,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     void actor;
   }
   /** After a completed or returned shop order commits its status: the money rows (DLV-15, DLV-25, DRV-17). */
-  async function afterFinish(r: Row, next: 'completed' | 'returned', actor: number, body: Row = {}) {
+  async function afterFinish(r: Row, next: 'completed' | 'returned', actor: number, body: Row = {}, deliveredToOffice = false) {
     if (r.service !== 'shop') return;
     if (next === 'completed') await recordSeals(r, body, 'deliver', actor);
     const s = (await shopRow(r.id))!;
@@ -834,12 +891,27 @@ export function registerShop(route: Register, deps: ShopDeps) {
     }
     // A returned shop order earns no commission; the captain is paid the trip and the return leg from operating expenses.
     await db.run('UPDATE orders SET commission = 0 WHERE id = ?', r.id);
-    const pay = 2 * Number(s.delivery_fee_agorot);
+    // Pay follows how custody entered the return, whichever route closes it (Sol R2-H3), from the order's own audit:
+    // DRV-17: the captain holding it was blocked: the trip so far is paid only by a cleared block review (none on a schema without one).
+    const history = await db.all("SELECT action, detail, created_at FROM security_events WHERE order_id = ? AND action IN ('COURIER_BLOCKED', 'CUSTODY_TAKEN')", r.id);
+    const said = (row: Row) => { try { return JSON.parse(String(row.detail ?? '{}')); } catch { return {}; } };
+    if (history.some(e => e.action === 'COURIER_BLOCKED' && custodyBlockFrom(r, e) !== null)) return;
+    // Support recovered the goods from the captain: the trip so far (one fee), no return leg.
+    const recovered = history.some(e => e.action === 'CUSTODY_TAKEN'
+      && said(e).assignmentEpoch === r.assignment_epoch && said(e).driverId === r.driver_id) || await legacySupportCollected(db, r);
+    const pay = (recovered ? 1 : deliveredToOffice ? 3 : 2) * Number(s.delivery_fee_agorot);
     if (pay && r.driver_id) {
-      await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay, 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
+      await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay,
+        recovered ? 'Trip so far, support recovered the goods' : deliveredToOffice ? 'Trip, return and office delivery' : 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
       await ledger('wind', { driver: Number(r.driver_id), order: r.id }, 'opex_trip', -pay, 'Captain pay for a failed delivery', actor, `shop-trip-opex-${r.id}`);
       await deps.journal(r.id, Number(r.driver_id), 'trip', { trip: pay });
     }
+  }
+  /** DRV-17: a cleared block review pays the trip so far from operating expenses, once. */
+  async function blockTripPay(orderId: number, driverId: number, pay: number, actor: number) {
+    await ledger('captain', { driver: driverId, order: orderId }, 'trip_pay', pay, 'Trip so far, courier block review cleared', actor, `shop-block-trip-${orderId}`);
+    await ledger('wind', { driver: driverId, order: orderId }, 'opex_trip', -pay, 'Captain pay, courier block review cleared', actor, `shop-block-opex-${orderId}`);
+    await deps.journal(orderId, driverId, 'trip', { trip: pay });
   }
   /** DLV-23 money: an assigned captain is paid the trip so far from operating expenses when the order stops before collection. */
   async function postCancel(r: Row, s: Row, reason: ShopCancelReason, actor: number) {
@@ -935,21 +1007,30 @@ export function registerShop(route: Register, deps: ShopDeps) {
   // DLV-23: an operator cancels only with one of the allowed reasons, at the allowed stage, with a note.
   route('POST', '/api/admin/orders/:id/shop/cancel', async ({ user, params, body }) => inTx(async () => {
     const { r, s } = await adminOrder(user, Number(params[0]));
-    const reason = body.reason as ShopCancelReason;
+    // Old servers reject this command because a generic cancellation requires an explicit reason.
+    const handover = body.action === 'cancel_handover_exception';
+    if (body.action !== undefined && (!handover || body.reason !== undefined)) fail(400, 'invalid_input');
+    const reason = handover ? 'handover_exception_unresolved' : body.reason as ShopCancelReason;
     if (reason === 'below_minimum' || reason === 'accept_expired') fail(409, 'reason_reserved');
     if (!adminShopCancels.includes(reason)) fail(400, 'invalid_input');
+    if (reason === 'handover_exception_unresolved' && !handover) fail(400, 'invalid_input');
     const note = text(body.note, 500);
     if (note.length < 5) fail(400, 'invalid_input');
+    if (handover) needStaff(await staffActor(db, user as never), fail, 'support', 'dispatcher');
     if (r.status === 'cancelled') return getOrder(r.id, user);
     if (s.merchant_state === 'handed_over' || !['requested', 'searching', 'assigned', 'at_pickup'].includes(r.status)) fail(409, 'use_hold'); // after collection it is a hold, never a cancel
     const state = s.merchant_state as MerchantState | null;
     const allowed = reason === 'customer_via_support_accepted' ? state === 'accepted'
       : reason === 'no_captain' ? ['accepted', 'preparing', 'ready', 'awaiting_approval'].includes(state ?? '') && ['requested', 'searching'].includes(r.status)
-      : reason === 'handover_exception_unresolved' ? !!s.handover_exception
+      : handover ? await handoverOverdue(r.id)
       : reason === 'merchant_request' ? ['preparing', 'awaiting_approval', 'ready'].includes(state ?? '')
       : true; // operational: safety, legal hold or platform outage, before collection
     if (!allowed) fail(409, 'cancel_refused');
-    await cancelWith(r, s, reason, user.id, note);
+    if (handover) {
+      if (!Number.isSafeInteger(body.exceptionAt)) fail(400, 'invalid_input');
+      if (await openExceptionAt(r.id) !== body.exceptionAt) fail(409, 'exception_changed');
+    }
+    await cancelWith(r, s, reason, user.id, note, handover ? body.exceptionAt : undefined);
     return getOrder(r.id, user);
   }));
   // DLV-22: support records who answers for a failed or disputed order once; credits and PAY-09 wait for it.
@@ -1040,15 +1121,15 @@ export function registerShop(route: Register, deps: ShopDeps) {
     const now = Date.now();
     const rows = await db.all(`SELECT o.id FROM orders o JOIN shop_orders s ON s.order_id = o.id WHERE
       (o.status = 'searching' AND s.no_captain_alerted_at IS NOT NULL)
-      OR (s.handover_exception IS NOT NULL AND o.status = 'at_pickup')
+      OR (s.handover_exception IS NOT NULL AND o.status = 'at_pickup' AND ${exceptionSince} <= ?)
       OR (s.pickup_failures >= ?)
       OR (o.status IN ('returned','on_hold') AND NOT EXISTS (SELECT 1 FROM shop_faults f WHERE f.order_id = o.id) AND o.updated_at < ?)
-      ORDER BY o.id DESC LIMIT 100`, lockedTries, now - 2 * DAY);
+      ORDER BY o.id DESC LIMIT 100`, now - (await settings()).shopHandoverMinutes * MINUTE, lockedTries, now - 2 * DAY);
     const orders = [];
     for (const row of rows) orders.push(await getOrder(Number(row.id), user));
     return { orders };
   });
 
-  return { place, view, merchantSees, customerCancel, sweep, holdCents, handover, beforeAdvance, doorCash, afterFinish, guardCaptainExit, guardResolve,
+  return { place, view, merchantSees, customerCancel, sweep, holdCents, handover, beforeAdvance, doorCash, afterFinish, guardCaptainExit, guardResolve, blockTripPay,
     recordSeals, exceptionReasons: shopExceptionReasons as readonly string[] };
 }

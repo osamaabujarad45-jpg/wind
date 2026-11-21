@@ -57,6 +57,7 @@ async function mailCode(count) {
 try {
   const admin = await register();
   await promote(phones[0]);
+  admin.token = (await call('/auth/login', { body: { phone: phones[0], password } })).token;
   const customer = await register(), driver = await register('driver'), victim = await register(), removed = await register();
   const forbidden = (path, body = {}, method) => call(path, { token: customer.token, body: method === 'DELETE' ? undefined : body, method, expect: 403 });
 

@@ -11,8 +11,8 @@ import { canOrderAgain, canSendAnother, newRequestId, scheduleSlots } from '../.
 import { delivered, outboxKey, outboxStore, sendText, without, type Unsent } from '../../chat-outbox';
 import { storage } from '../../storage';
 import { AdminAssign } from '../../admin-assign';
-import { useDriverWork } from '../../driver-work';
-import { activeStatuses, bookedAhead, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, isolate, pickupRefusal, pickupRefusalDetails, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type PickupRefusalDetail, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
+import { acceptPosition, useDriverWork } from '../../driver-work';
+import { activeStatuses, bookedAhead, pickupPayCents, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, isolate, pickupRefusal, pickupRefusalDetails, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, typedNumber, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type PickupRefusalDetail, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
 import { SealToggles, sealsBody, sealsReady, ShopAdminPanel, ShopCustomerPanel, ShopHandover } from '../../shop-ui';
 import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
@@ -66,13 +66,13 @@ export default function OrderScreen() {
     return label ? `${title}: ${label}` : title;
   };
   const { time } = useFormat();
-  const { data: polled, error, reload, setData } = useApi<Order>(`/orders/${id}?capacityProtocol=1&recoveryProtocol=1`, effectiveRuntime().values.orderRefreshMs);
+  const { data: polled, error, reload, setData } = useApi<Order>(`/orders/${id}?capacityProtocol=1&recoveryProtocol=1&liveProtocol=1`, effectiveRuntime().values.orderRefreshMs);
   // The driver's position comes over the live push as soon as it is stored; the 4 s poll carries everything else.
-  const pushed = useLiveFix<NonNullable<Order['driverLocation']>>(polled?.driverId && activeStatuses.includes(polled.status) ? `/orders/${id}/live?driver=${polled.driverId}` : null);
+  const pushed = useLiveFix<NonNullable<Order['driverLocation']>>(polled?.driverId && activeStatuses.includes(polled.status) ? `/orders/${id}/live?driver=${polled.driverId}${polled.assignmentEpoch == null ? '' : `&assignment=${polled.assignmentEpoch}`}` : null); // A→B→A restarts the watch (Sol R3-M3)
   // The server stops sending a fix after 120 s; keep the last one seen for this order and assignment so the map shows
   // it faded as "last known" instead of dropping the car (a reload, another order or another driver starts without it).
   const fresh = polled && pushed.value !== undefined ? newerFix(pushed.value, polled.driverLocation) : polled?.driverLocation;
-  const assignment = polled && `${polled.id}:${polled.driverId}`;
+  const assignment = polled && `${polled.id}:${polled.driverId}:${polled.assignmentEpoch ?? polled.assignedAt ?? ''}`; // A→B→A is a new assignment (Sol M5)
   const [kept, setKept] = useState<{ assignment: string; fix?: NonNullable<Order['driverLocation']> }>();
   if (assignment && (kept?.assignment !== assignment || (fresh && fresh !== kept?.fix))) setKept({ assignment, fix: fresh ?? undefined });
   const shown = fresh ?? (polled && kept?.assignment === assignment && activeStatuses.includes(polled.status) ? kept?.fix : null) ?? null;
@@ -81,7 +81,8 @@ export default function OrderScreen() {
   const order = useMemo(() => polled && { ...polled, ...(pushed.driverChanged
     ? { driverName: undefined, driverPhone: undefined, driverLocation: null }
     : { driverLocation: shown }) }, [polled, shown, pushed.driverChanged]);
-  const suggested = suggestedNextAction(order ? order.exceptionReason : null);
+  // The server's attempt ceiling wins over the reason's suggestion (SHIP-08, Sol R2-M6): one recommendation, one primary action.
+  const suggested = order?.reattemptAllowed === false ? 'return' : suggestedNextAction(order ? order.exceptionReason : null);
   const announced = useRef<{ orderId: number; viewerId: number; status: Order['status']; proposalId?: string } | null>(null);
   useEffect(() => {
     if (!order || !me) return;
@@ -147,6 +148,7 @@ export default function OrderScreen() {
   // Header chip and map label: the same words as EtaLine (arrival first, then the shared short wording).
   const etaChip = ([lo, hi]: [number, number]) => arrivingNow(lo, alerts.length > 0) ? (toPickup ? c.arrivingPickup : c.arrivingDropoff) : etaShort(c, [lo, hi], alerts.length > 0);
   const cancelled = order.status === 'cancelled';
+  const returned = order.status === 'returned';
   const from = city(order.pickupCity), to = city(order.dropoffCity);
   const pickup = order.pickupPoint ?? from, dropoff = order.dropoffPoint ?? to;
   // A held or returning item is still past pickup; the bar does not move backwards.
@@ -182,7 +184,12 @@ export default function OrderScreen() {
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
   const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
+  const rideNoShow = mine && order.service === 'ride' && !!order.ride && !order.safetyHold
+    && ['assigned', 'at_pickup'].includes(order.status) && waitingEndsAt != null
+    && order.recovery?.assignmentEpoch != null && secondsUntil(waitingEndsAt, now, order.journey) <= 0;
   const fareChange = order.journey?.lastFareChange;
+  // Same rule as the jobs board (H-02, Sol R2-M5): with presence on, an offline idle captain goes online first.
+  const offlineIdle = me?.capabilities?.driverPresence !== false && !work.orders.length && work.presenceState !== 'online';
   const atPickup = order.status === 'at_pickup';
   const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - order.updatedAt <= 7 * 86_400_000;
 
@@ -219,7 +226,9 @@ export default function OrderScreen() {
         if (!prepared) { setActionError(c.locationOff); return; }
         const lease = dispatchAcceptance(order, tapTime());
         if (lease === null) { setActionError(c.dispatchExpired); return; }
-        body = { ...lease, ...capacityCommand(order) };
+        const position = await acceptPosition(order.service);
+        if (apiSessionRevision() !== session || focusRevision.current !== focus) return;
+        body = { ...lease, ...capacityCommand(order), position };
       }
       if (key === 'advance') {
         setAdvanceLocked(order.status);
@@ -278,7 +287,7 @@ export default function OrderScreen() {
   // Near the door the customer needs this at a glance, so it leaves the sheet's body for the header a closed sheet still shows.
   const codeAtDoor = live && ['in_transit', 'on_hold', 'returning'].includes(order.status);
   const codes = <>
-    {isCustomer && order.handoverCode && live && order.status !== 'returning' && <Appear index={4}>
+    {isCustomer && order.handoverCode && live && order.status !== 'returning' && order.status !== 'on_hold' && <Appear index={4}>{/* no captain is coming while support decides (H-10) */}
       <Card tone="clay">
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
@@ -482,10 +491,11 @@ export default function OrderScreen() {
           <Detail label={c.issued} value={time(order.createdAt)} />
           {/* a cancelled order was never charged and pays the driver nothing (earnings count finished jobs only) */}
           {/* A shop order's total is the goods plus both fees, collected at the door (its fee lines are in the shop card). */}
-          <Detail label={order.discount > 0 || cancelled ? c.fare : c.total} value={money(order.shop ? order.shop.cashAgorot / 100 : order.price)} strong={!order.discount && !cancelled} />
+          <Detail label={order.discount > 0 || cancelled || returned ? c.fare : c.total} value={money(order.shop ? order.shop.cashAgorot / 100 : order.price)} strong={!order.discount && !cancelled && !returned} />
           {order.discount > 0 && <Detail label={c.promoDiscount} value={money(-order.discount)} />}
-          {order.discount > 0 && !isAdmin && !cancelled && <Detail label={isDriver ? c.cashToCollect : c.youPayCash} value={money(order.price - order.discount)} strong />}
-          {isDriver && !cancelled && <Detail label={c.youEarn} value={money(order.price - (order.commission ?? commissionOn(order.price, rate)))} strong />}
+          {order.discount > 0 && !isAdmin && !cancelled && !returned && <Detail label={isDriver ? c.cashToCollect : c.youPayCash} value={money(order.price - order.discount)} strong />}
+          {isCustomer && returned && !order.shop && <Detail label={c.youPayCash} value={money(0)} strong />}
+          {isDriver && !cancelled && !returned && <Detail label={c.youEarn} value={money(order.price - (order.commission ?? commissionOn(order.price, rate)))} strong />}
           {isAdmin && order.commission != null && <Detail label={c.commission} value={money(order.commission)} />}
           {order.collected && (isAdmin || isDriver) && <Detail label={c.doorCollectedShort} value={money(order.collected.cents / 100)} />}
           {order.collected?.reason && (isAdmin || isDriver) && <Detail label={c.doorReasonShort} value={c[`variance_${order.collected.reason}`]} />}
@@ -530,21 +540,29 @@ export default function OrderScreen() {
       <View style={{ gap: 8 }}>
         {(['reattempt', 'return'] as const).map(action => <Button key={action} title={action === 'reattempt' ? c.reattempt : c.returnToSender}
           variant={action === (suggested ?? 'reattempt') ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
-          loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
+          loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5 || (action === 'reattempt' && order.reattemptAllowed === false)}
+          reason={action === 'reattempt' && order.reattemptAllowed === false ? c.err_reattempt_limit : busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(c.resolveConfirm, () => act(action, `/admin/orders/${order.id}/resolve`,
             { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), action === 'reattempt' ? c.reattempt : c.returnToSender, c.no)} />)}
       </View>
     </Card>}
 
     {isAdmin && order.status === 'returning' && <Card tone="clay">
-      <Txt variant="title">{c.confirmReturn}</Txt>
-      <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.confirmReturnHint}</Txt>
+      <Txt variant="title">{c.confirmReturnTitle}</Txt>
       <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setDecision({ id, reason })} />
-      <Button title={c.confirmReturn} variant="outline" icon="checkmark-done-outline" loading={busy === 'confirm_return'}
-        disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
-        onPress={() => confirm(c.confirmReturnHint, () => act('confirm_return', `/admin/orders/${order.id}/resolve`,
-          { action: 'confirm_return', reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), c.confirmReturn, c.no)} />
+      <View style={{ gap: 8 }}>
+        {([
+          ['confirm_sender_return', undefined, c.confirmReturn, c.confirmReturnHint],
+          // Who brought the goods decides the captain's office leg: recorded by the button, never assumed.
+          ['confirm_office_return', 'captain', c.confirmOfficeReturnCaptain, c.confirmOfficeReturnHint],
+          ['confirm_office_return', 'staff', c.confirmOfficeReturnStaff, c.confirmOfficeReturnStaffHint],
+        ] as const).map(([action, carrier, title, hint]) => <Button key={`${action}-${carrier ?? ''}`} title={title} variant="outline" icon="checkmark-done-outline"
+          loading={busy === `${action}-${carrier ?? ''}`} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
+          onPress={() => confirm(hint, () => act(`${action}-${carrier ?? ''}`, `/admin/orders/${order.id}/resolve`,
+            { action, ...(carrier && { carrier }), reason: decisionReason.trim() },
+            () => setDecision({ id, reason: '' })), title, c.no)} />)}
+      </View>
     </Card>}
 
     {isAdmin && (order.status === 'returning' || (order.status === 'in_transit' && order.service !== 'ride')) && <Card>
@@ -564,21 +582,28 @@ export default function OrderScreen() {
     {order.shop && isCustomer && <ShopCustomerPanel order={order} onChange={setData} />}
     {order.shop && mine && atPickup && <ShopHandover order={order} onChange={setData} />}
     {order.shop && isAdmin && <ShopAdminPanel order={order} onChange={setData} />}
-    {isAdmin && order.status === 'returned' && (order.service === 'parcel' || order.service === 'freight') && <OfficePanel orderId={order.id} />}
+    {isAdmin && order.pickupPayReview && <PickupPayReviewCard key={order.id} orderId={order.id} fareCents={Math.round(order.price * 100)} review={order.pickupPayReview} onDone={reload} />}
+    {isAdmin && order.blockReview && <BlockReviewCard order={order} review={order.blockReview} me={me!.user.id} now={now} onDone={reload} />}
+    {isAdmin && order.status === 'returned' && order.service !== 'ride' && <OfficePanel orderId={order.id} shop={order.service === 'shop'} />}
 
     {!live && <ErrorText>{actionError}</ErrorText>}
 
     <View style={{ gap: 8 }}>
-      {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || !canTake(work.orders, order.service)}
-        reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
+      {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || offlineIdle || !canTake(work.orders, order.service)}
+        reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : offlineIdle ? c.accept_go_online : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
         onPress={() => act('accept', `/jobs/${order.id}/accept`)} />}
 
       {isCustomer && boarding?.locked && ['assigned','at_pickup'].includes(order.status) && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
       {/* The PIN itself is in the sheet header, visible with the sheet closed. */}
       {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">{c.rideBoardingHint}</Txt>}
-      {(isCustomer || mine) && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">
-        {secondsUntil(waitingEndsAt!, now, order.journey) > 0 ? fill(c.rideGrace, { n: secondsUntil(waitingEndsAt!, now, order.journey) }) : c.rideGraceEnded}
-      </Txt>}
+      {(isCustomer || mine) && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status)
+        && <GraceClock left={secondsUntil(waitingEndsAt!, now, order.journey)} extended={!!order.ride?.graceExtended} />}
+      {isCustomer && order.ride?.graceExtended && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status)
+        && secondsUntil(waitingEndsAt, now, order.journey) > 0 && <Txt variant="caption">{c.rideGraceExtended}</Txt>}
+      {/* RIDE-06/A11Y-08: once, while the waiting grace runs; the server owns the new end time. */}
+      {isCustomer && order.ride?.graceExtended === false && waitingEndsAt != null && order.recovery?.assignmentEpoch != null && ['assigned', 'at_pickup'].includes(order.status)
+        && secondsUntil(waitingEndsAt, now, order.journey) > 0 && <Button title={c.rideGraceExtend} icon="time-outline" variant="outline"
+          disabled={!!busy} loading={busy === 'grace'} onPress={() => act('grace', `/orders/${order.id}/ride/grace-extension`, { expectedAssignmentEpoch: order.recovery!.assignmentEpoch })} />}{/* the assignment the rider saw (Sol R2-M2) */}
       {mine && activeStatuses.includes(order.status) && <>
         {((order.status === 'at_pickup' && order.service !== 'shop') || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">
           <Txt variant="title" style={{ marginBottom: 8 }}>{atPickup ? c.pickupProblem : c.reportProblem}</Txt>
@@ -754,6 +779,9 @@ export default function OrderScreen() {
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
             : parcelFarKm !== null ? confirm(farFill(c.parcelPickupFarConfirm, c.parcelPickupFarCityConfirm), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
             : act('advance', `/orders/${order.id}/advance`, { code })} />}
+        {rideNoShow && <Button title={c.rideNoShow} variant="outline" disabled={!!busy} loading={busy === 'no-show'}
+          onPress={() => confirm(c.rideNoShowConfirm, () => act('no-show', `/orders/${order.id}/ride/no-show`,
+            { reason: 'absent', expectedAssignmentEpoch: order.recovery?.assignmentEpoch }, () => { void work.reload(); }), c.rideNoShow, c.no)} />}
         <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
           const toDropoff = order.status === 'in_transit' || order.status === 'on_hold'; // returning goes back to the sender
           openMaps(toDropoff ? order.dropoffPoint ?? null : order.pickupPoint, (toDropoff ? to : from)[language], toDropoff ? order.dropoffNote : order.pickupNote, c.mapsRegion)
@@ -1015,3 +1043,96 @@ const styles = StyleSheet.create({
   send: { width: 48, height: 48, borderRadius: 24, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, // Field's bottom margin: aligns with the box
   quick: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 24, backgroundColor: palette.olivePale },
 });
+
+function PickupPayReviewCard({ orderId, fareCents, review, onDone }: { orderId: number; fareCents: number; review: NonNullable<Order['pickupPayReview']>; onDone: () => unknown }) {
+  const { c, money, err } = useCopy();
+  const { time } = useFormat();
+  const [km, setKm] = useState(review.drivenKm?.toFixed(2) ?? '');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
+  const [failure, setFailure] = useState('');
+  const distance = km.trim() ? typedNumber(km) : NaN;
+  const canGrant = Number.isFinite(distance) && distance >= 0 && distance <= 200;
+  async function decide(granted: boolean) {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true); setFailure('');
+    try {
+      await api(`/admin/orders/${orderId}/pickup-pay-review`, { granted, km: granted ? distance : 0, reason: reason.trim() });
+      await onDone();
+    } catch (error) { setFailure(err(error)); }
+    finally { inFlight.current = false; setBusy(false); }
+  }
+  const { decision, originKm, currentKm, originFixAt, currentFixAt, suggestedCents, drivenKm } = review;
+  const distanceText = (km: number | null | undefined) => km == null ? c.pickupPayEvidenceUnavailable : fill(c.pickupPayDistance, { km: km.toFixed(2) });
+  return <Card>
+    <Txt variant="title">{c.pickupPayReview}</Txt>
+    <Txt variant="caption">{c[`pickup_${review.reason}`]}</Txt>
+    <Txt variant="caption">{fill(c.pickupPayOrigin, { distance: distanceText(originKm), time: originFixAt == null ? c.pickupPayEvidenceUnavailable : time(originFixAt) })}</Txt>
+    <Txt variant="caption">{fill(c.pickupPayCurrent, { distance: distanceText(currentKm), time: currentFixAt == null ? c.pickupPayEvidenceUnavailable : time(currentFixAt) })}</Txt>
+    {/* The origin fix is read just before the assignment by design (within 120 s): only a missing fix time is weak (Haiku r6 F1). */}
+    {originFixAt == null && <Txt variant="caption">{c.pickupPayWeakOrigin}</Txt>}
+    <Txt variant="caption">{suggestedCents == null ? c.pickupPayNoSuggestion : fill(c.pickupPaySuggestion, { pay: money(suggestedCents / 100) })}</Txt>
+    {decision ? <>
+      <Txt>{decision.granted ? fill(c.pickupPayCredited, { pay: money(decision.paidCents / 100) }) : c.pickupPayDenied}</Txt>
+      <Txt variant="caption">{decision.reason}</Txt>
+    </> : <>
+      {drivenKm != null && <Txt variant="caption">{c.pickupPayDistanceBasis}</Txt>}
+      <Field label={c.pickupPayKm} value={km} onChangeText={setKm} keyboardType="decimal-pad" disabled={busy} />
+      {canGrant && <Txt variant="caption">{fill(c.pickupPayGrantAmount, { pay: money(pickupPayCents(fareCents, distance, review.rate) / 100) })}</Txt>}
+      <Field label={c.cashReason} value={reason} onChangeText={setReason} maxLength={500} disabled={busy} />
+      <ErrorText>{failure}</ErrorText>
+      <Row gap={8} style={{ flexWrap: 'wrap' }}>
+        <Button title={c.pickupPayGrant} size="sm" disabled={busy || !canGrant || reason.trim().length < 5} onPress={() => void decide(true)} />
+        <Button title={c.pickupPayDeny} size="sm" variant="outline" disabled={busy || reason.trim().length < 5} onPress={() => void decide(false)} />
+      </Row>
+    </>}
+  </Card>;
+}
+
+// DRV-17: a second admin decides whether the captain is cleared and the trip pay can be posted.
+function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; review: NonNullable<Order['blockReview']>; me: number; now: number; onDone: () => unknown }) {
+  const { c, err } = useCopy();
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState<'' | 'yes' | 'no'>('');
+  const [error, setError] = useState('');
+  const pay = `${(review.tripPayCents / 100).toFixed(2)} ₪`;
+  async function decide(cleared: boolean) {
+    if (busy) return;
+    setBusy(cleared ? 'yes' : 'no'); setError('');
+    try { await api(`/admin/orders/${order.id}/block-review`, { cleared, note: note.trim() }); await onDone(); }
+    catch (e) { setError(err(e)); }
+    finally { setBusy(''); }
+  }
+  if (review.decidedAt != null) return <Card>
+    <Txt variant="title">{c.blockReview}</Txt>
+    <Txt variant="caption">{review.cleared ? fill(c.blockReviewCleared, { pay, paid: `${((review.paidCents ?? 0) / 100).toFixed(2)} ₪` }) : c.blockReviewNotCleared}</Txt>
+  </Card>;
+  const self = review.blockedBy === me, noteOk = note.trim().length >= 5;
+  return <Card tone={review.dueAt < now ? 'clay' : undefined}>
+    <Txt variant="title">{c.blockReview}</Txt>
+    <Txt variant="caption">{fill(c.blockReviewDue, { pay, due: new Date(review.dueAt).toLocaleString() })}</Txt>
+    {self ? <Txt variant="caption">{c.blockReviewSecondAdmin}</Txt> : <>
+      <Field label={c.adminNote} value={note} onChangeText={setNote} multiline maxLength={500} />
+      <Button title={c.blockReviewClear} size="sm" disabled={!noteOk || !!busy} reason={noteOk ? undefined : c.adminNoteNeeded} loading={busy === 'yes'} onPress={() => decide(true)} />
+      <Button title={c.blockReviewKeep} size="sm" variant="outline" disabled={!noteOk || !!busy} reason={noteOk ? undefined : c.adminNoteNeeded} loading={busy === 'no'} onPress={() => decide(false)} />
+    </>}
+    <ErrorText>{error}</ErrorText>
+  </Card>;
+}
+
+/** A11Y-08 (Sol R2-M2): the waiting clock speaks when it crosses 2 min, 1 min and 30 s, at the end, and when an extension lands. */
+function GraceClock({ left, extended }: { left: number; extended: boolean }) {
+  const { c } = useCopy();
+  const text = left > 0 ? fill(c.rideGrace, { n: left }) : c.rideGraceEnded;
+  const step = left > 120 ? 4 : left > 60 ? 3 : left > 30 ? 2 : left > 0 ? 1 : 0;
+  // What is spoken changes only at a step or an extension: native announces it, the web reads it from a polite live region
+  // (announceForAccessibility is a no-op on react-native-web; Sol R3-M5), the same pattern as the captain's offer clock.
+  const spoken = step === 0 ? c.rideGraceEnded : `${extended ? `${c.rideGraceExtended} ` : ''}${fill(c.rideGrace, { n: [0, 30, 60, 120, Math.ceil(left / 60) * 60][step] })}`;
+  useEffect(() => { if (Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(spoken); }, [spoken]);
+  return <View>
+    <Txt variant="caption">{text}</Txt>
+    {Platform.OS === 'web' && <View accessibilityLiveRegion="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}><Txt>{spoken}</Txt></View>}
+  </View>;
+}

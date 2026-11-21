@@ -2,6 +2,8 @@
 import { createECDH, createHmac, createCipheriv, randomBytes, sign, type KeyObject } from 'node:crypto';
 
 export const b64url = (b: Buffer) => b.toString('base64url');
+// An older active service worker uses its generic fallback for this kind instead of claiming sender handback.
+export const webPushKind = (kind: string) => kind === 'returned' ? 'return_complete' : kind;
 const hmac = (key: Buffer, data: Buffer) => createHmac('sha256', key).update(data).digest();
 
 /** Encrypt one push message for a subscription (single record, RFC 8291 §3–4). Salt and sender key are injectable for the RFC test vector. */
@@ -44,7 +46,7 @@ const pushWords: Record<string, { ar: string; en: string }> = {
   message: { ar: 'رسالة جديدة بخصوص طلبك.', en: 'New message about your order.' },
   on_hold: { ar: 'طلبك متوقف مؤقتاً. افتح ويند للتفاصيل.', en: 'Your order is on hold. Open Wind for details.' },
   returning: { ar: 'يعود طلبك إلى المرسل. جهّز رمز الإرجاع.', en: 'Your order is coming back. Have the return code ready.' },
-  returned: { ar: 'أُعيد الطلب إلى المرسل.', en: 'The order was returned to the sender.' },
+  returned: { ar: 'اكتمل إرجاع الطلب.', en: 'The return is complete.' },
   decided: { ar: 'صدر قرار بخصوص طلبك. افتح ويند.', en: 'A decision was made on your job. Open Wind.' },
   approved: { ar: 'تمت الموافقة على حسابك. يمكنك استلام الطلبات الآن.', en: 'Your account is approved. You can take jobs now.' },
   attention: { ar: 'أمر يحتاج إلى مراجعتك. افتح ويند.', en: 'Something needs your review. Open Wind.' },

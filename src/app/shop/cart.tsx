@@ -1,15 +1,17 @@
 // Cart and checkout (DLV-02..05, BOOK-02/03): one shop; a substitution choice per line; the agreed limit for weighed goods;
 // goods, delivery fee and service fee as their own lines; cash named as the method; the drop-off pin and a landmark note.
 // The place button says why it is disabled (A11Y-07), and a failed place keeps the cart (A11Y-14).
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
-import { api, errorCode } from '../../api';
-import { newRequestId } from '../../booking';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { api, ApiError, errorCode, storage } from '../../api';
+import { apiSessionRevision } from '../../api-client';
+import { pendingOutcome } from '../../booking';
+import { basketIdentity, newShopCheckout, readShopCheckout, shopCheckoutKey, type ShopCheckout } from '../../shop-checkout';
 import { city, goodsCapFor, shopPolicies, type Order, type Point, type ShopPolicy } from '../../model';
 import PinSheet from '../../pin-sheet';
 import { useSession } from '../../session';
-import { cartGoods, clearCart, setPolicy, setQuantity, useCart } from '../../shop-cart';
+import { cartGoods, clearCart, setPolicy, setQuantity, storedCart, useCart } from '../../shop-cart';
 import { QtyControl } from '../../shop-ui';
 import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
 
@@ -27,7 +29,57 @@ export default function ShopCart() {
   const [contact, setContact] = useState(me?.user.phone ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [requestId, setRequestId] = useState(newRequestId);
+  const key = me?.user.role === 'customer' ? shopCheckoutKey(me.user.id) : null;
+  const [pending, setPending] = useState<ShopCheckout | null>(null);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const placing = useRef(false);
+  const visible = useRef(false);
+  const finish = useCallback(async (command: ShopCheckout, orderId: number, current: () => boolean) => {
+    if (!key || !current()) return;
+    const contents = await storedCart(); // the persisted basket, not this tab's copy (review M2)
+    if (!current()) return;
+    if (contents && basketIdentity(contents) === command.basket) await clearCart(true);
+    if (!current()) return;
+    await storage.set(key, null, true);
+    if (current() && visible.current) router.replace(`/order/${orderId}`);
+  }, [key]);
+  const check = useCallback(async (focused: () => boolean = () => true) => {
+    if (!key) return;
+    const revision = apiSessionRevision(), current = () => focused() && revision === apiSessionRevision();
+    try { await storage.exclusive(async () => {
+      if (!current()) return;
+      let command: ShopCheckout | null;
+      try { command = readShopCheckout(await storage.get(key, true)); }
+      catch { if (current()) setError(c.bookingStorageError); return; }
+      if (!current()) return;
+      setLoadedKey(key); setPending(command);
+      if (!command) return;
+      try {
+        const answer = pendingOutcome(await api<unknown>(`/orders/commands/${command.requestId}`), command);
+        if (!current()) return;
+        if (answer.state === 'present') await finish(command, answer.orderId, current);
+        if (answer.state === 'absent') {
+          await storage.set(key, null, true);
+          if (current()) { setPending(null); setError(''); }
+        }
+      } catch { /* Keep the command until an authoritative receipt can be read. */ }
+    }, key); } catch { if (current()) setError(c.bookingStorageError); }
+  }, [key, finish, c.bookingStorageError]);
+  useFocusEffect(useCallback(() => {
+    let focused = true;
+    visible.current = true;
+    const run = () => { if (!placing.current) void check(() => focused); };
+    run();
+    const timer = setInterval(run, 15_000);
+    return () => { visible.current = false; focused = false; clearInterval(timer); };
+  }, [check]));
+  if (!key || loadedKey !== key || pending) return <Screen>
+    <Header title={c.shopCart} back />
+    {loadedKey === key && pending && <Card><Section title={c.bookingPending} /><Txt>{c.bookingRecoveryWait}</Txt></Card>}
+    <ErrorText>{error}</ErrorText>
+    {key && <Button title={c.retry} variant="soft" disabled={busy} onPress={() => { void check(() => visible.current); }} />}
+    {key && <Button title={c.orders} variant="ghost" onPress={() => router.replace('/(customer)/orders')} />}
+  </Screen>;
   if (!cart) return <Screen><Header title={c.shopCart} back /><Empty icon="basket-outline" title={c.shopCartEmpty} action={<Button title={c.shopBrowse} onPress={() => router.replace('/shop')} />} /></Screen>;
   const goods = cartGoods(cart);
   const short = Math.max(0, cart.minOrderAgorot - goods);
@@ -38,19 +90,40 @@ export default function ShopCart() {
   const shopInfo = { merchantId: cart.merchantId, merchantName: cart.merchantName, city: cart.city, minOrderAgorot: cart.minOrderAgorot,
     deliveryFeeAgorot: cart.deliveryFeeAgorot, serviceFeeAgorot: cart.serviceFeeAgorot };
   async function place() {
-    if (busy || reason) return;
+    if (!key || !cart || placing.current || reason) return;
+    const revision = apiSessionRevision(), current = () => revision === apiSessionRevision();
+    placing.current = true;
     setBusy(true); setError('');
     try {
-      const order = await api<Order>('/orders', { service: 'shop', merchantId: cart!.merchantId, requestId, expectedGoodsAgorot: goods, agreeLimit: limit,
-        lines: cart!.lines.map(l => ({ itemId: l.itemId, qtyMilli: l.qtyMilli, policy: l.policy })),
-        dropoffCity: cart!.city, dropoffPoint: point, dropoffNote: note.trim(), contact });
-      clearCart();
-      router.replace(`/order/${order.id}`);
-    } catch (e) {
-      const code = errorCode(e);
-      setError(c[`err_${code}` as keyof typeof c] ?? c.err_generic);
-      if (code !== 'network' && code !== 'server_error') setRequestId(newRequestId()); // a refusal is final for its key; the cart stays (A11Y-14)
-    } finally { setBusy(false); }
+      await storage.exclusive(async () => {
+        if (!current()) return;
+        const saved = readShopCheckout(await storage.get(key, true));
+        if (!current()) return;
+        if (saved) { setPending(saved); return; }
+        const command = newShopCheckout(cart);
+        await storage.set(key, JSON.stringify(command), true);
+        if (!current()) return;
+        setPending(command);
+        let order: Order;
+        try {
+          order = await api<Order>('/orders', { service: 'shop', merchantId: cart.merchantId,
+            requestId: command.requestId, commandExpiresAt: command.commandExpiresAt, expectedGoodsAgorot: goods, agreeLimit: limit,
+            lines: cart.lines.map(l => ({ itemId: l.itemId, qtyMilli: l.qtyMilli, policy: l.policy })),
+            dropoffCity: cart.city, dropoffPoint: point, dropoffNote: note.trim(), contact });
+        } catch (e) {
+          if (!current()) return;
+          const code = errorCode(e);
+          if (e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && code !== 'idempotency_conflict') {
+            await storage.set(key, null, true);
+            if (current()) setPending(null);
+          }
+          if (current()) setError(c[`err_${code}` as keyof typeof c] ?? c.err_generic);
+          return;
+        }
+        await finish(command, order.id, current);
+      }, key);
+    } catch { if (current()) setError(c.bookingStorageError); }
+    finally { placing.current = false; setBusy(false); }
   }
   const footer = <Button title={fill(c.shopPlace, { r: money((goods + fees) / 100) })} icon="checkmark" loading={busy} disabled={!!reason} reason={reason || undefined} onPress={place} />;
   return <Screen footer={footer}>

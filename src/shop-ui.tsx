@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform, Pressable, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { api, errorCode } from './api';
+import { api } from './api';
 import { handoverExceptions, hhmm, isolate, latinDigits, ltr, minorFromText, type Merchant, type MerchantItem, type Order, type ShopLine, type ShopPolicy } from './model';
-import { replaceCart } from './shop-cart';
+import { currentCart, replaceCart } from './shop-cart';
 import { newRequestId } from './booking';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScale, palette, Row, Section, Txt, useCopy } from './ui';
 
@@ -45,14 +45,15 @@ export function QtyControl({ item, qtyMilli, name, onChange }: { item: Pick<Merc
 }
 
 /** Remaining minutes and seconds, announced once a minute and at 60 s and 15 s (A11Y-08). */
-export function useCountdown(until: number | null, label: string) {
+export function useCountdown(until: number | null, label: string, expired?: string) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { if (!until) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [until]);
   const left = until ? Math.max(0, Math.round((until - now) / 1000)) : 0;
   useEffect(() => {
     if (!until || Platform.OS === 'web') return;
     if (left > 0 && (left % 60 === 0 || left === 15)) AccessibilityInfo.announceForAccessibility(`${label} ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`);
-  }, [left, until, label]);
+    else if (left === 0 && expired) AccessibilityInfo.announceForAccessibility(expired); // A11Y-08: say the timer acted, once
+  }, [left, until, label, expired]);
   return { left, text: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` };
 }
 
@@ -73,7 +74,7 @@ export function ShopLines({ order, totalsOnly = false }: { order: Order; totalsO
       <Money label={c.shopGoods} value={money(s.goodsAgorot / 100)} />
       <Money label={c.shopDeliveryFeeLine} value={money(s.deliveryFeeAgorot / 100)} />
       {s.serviceFeeAgorot > 0 && <Money label={c.shopServiceFee} value={money(s.serviceFeeAgorot / 100)} />}
-      <Money label={c.shopCashAtDoor} value={money(s.cashAgorot / 100)} strong />
+      <Money label={c.shopCashAtDoor} value={money(order.status === 'returned' ? 0 : s.cashAgorot / 100)} strong />
       {s.state !== 'handed_over' && order.status !== 'completed' && <Txt variant="caption">{fill(c.shopAgreedLimit, { r: money(s.goodsCapAgorot / 100) })}</Txt>}
     </View>
   </>;
@@ -87,16 +88,16 @@ function Money({ label, value, strong }: { label: string; value: string; strong?
 
 /** The customer's part of a shop order: the actor-named step, the consent card, cancel while free, rating and order again. */
 export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange: (o: Order) => void }) {
-  const { c, language, money } = useCopy();
+  const { c, language, money, err } = useCopy();
   const s = order.shop!;
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const consent = useCountdown(s.change?.expiresAt ?? null, c.shopConsentLeft);
+  const consent = useCountdown(s.change?.expiresAt ?? null, c.shopConsentLeft, c.shopConsentExpired);
   async function act(key: string, path: string, body: object = {}) {
     if (busy) return;
     setBusy(key); setError('');
     try { onChange(await api<Order>(path, body)); haptic.success(); }
-    catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    catch (e) { setError(err(e)); }
     finally { setBusy(''); }
   }
   async function again() {
@@ -105,11 +106,18 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
       const r = await api<{ merchant: { id: number; name: string; city: string; minOrderAgorot: number; deliveryFeeAgorot: number; serviceFeeAgorot: number };
         lines: { itemId: number; qtyMilli: number; policy: ShopPolicy }[]; changes: { itemId: number; nameAr: string; nameEn: string; kind: string; toAgorot: number | null }[] }>(`/orders/${order.id}/shop/again`, {});
       const items = await api<{ items: MerchantItem[] }>(`/shop/merchants/${r.merchant.id}`);
-      replaceCart({ merchantId: r.merchant.id, merchantName: r.merchant.name, city: r.merchant.city, minOrderAgorot: r.merchant.minOrderAgorot,
+      const rebuilt = { merchantId: r.merchant.id, merchantName: r.merchant.name, city: r.merchant.city, minOrderAgorot: r.merchant.minOrderAgorot,
         deliveryFeeAgorot: r.merchant.deliveryFeeAgorot, serviceFeeAgorot: r.merchant.serviceFeeAgorot,
-        lines: r.lines.flatMap(l => { const i = items.items.find(x => x.id === l.itemId); return i ? [{ itemId: i.id, nameAr: i.nameAr, nameEn: i.nameEn, unitAgorot: i.priceAgorot, byWeight: i.byWeight, qtyMilli: l.qtyMilli, policy: l.policy }] : []; }) });
-      router.push({ pathname: '/shop/cart', params: r.changes.length ? { changes: r.changes.map(x => `${language === 'ar' ? x.nameAr : x.nameEn}: ${x.kind === 'unavailable' ? c.shopNowUnavailable : money((x.toAgorot ?? 0) / 100)}`).join('\n') } : {} });
-    } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+        lines: r.lines.flatMap(l => { const i = items.items.find(x => x.id === l.itemId); return i ? [{ itemId: i.id, nameAr: i.nameAr, nameEn: i.nameEn, unitAgorot: i.priceAgorot, byWeight: i.byWeight, qtyMilli: l.qtyMilli, policy: l.policy }] : []; }) };
+      const openCart = () => {
+        replaceCart(rebuilt);
+        router.push({ pathname: '/shop/cart', params: r.changes.length ? { changes: r.changes.map(x => `${language === 'ar' ? x.nameAr : x.nameEn}: ${x.kind === 'unavailable' ? c.shopNowUnavailable : money((x.toAgorot ?? 0) / 100)}`).join('\n') } : {} });
+      };
+      if (!rebuilt.lines.length) { setError(c.shopNoItems); return; }
+      const existing = await currentCart();
+      if (existing) confirm(fill(c.shopReplaceCart, { shop: existing.merchantName }), openCart, c.shopClearYes, c.cancel);
+      else openCart();
+    } catch (e) { setError(err(e)); }
     finally { setBusy(''); }
   }
   // After a failed delivery (DLV-20) the order status says where the goods are, not the last shop step.
@@ -126,11 +134,11 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
         ? fill(c.shopConsentWeight, { item: lineName(s.change, language), from: money(s.change.fromAgorot / 100), to: money(s.change.toAgorot / 100) })
         : fill(c.shopConsentSub, { item: lineName(s.change, language), to: money(s.change.toAgorot / 100) })}</Txt>
       <Txt style={{ marginTop: 4 }}>{fill(c.shopConsentTotal, { r: money(s.change.goodsAfterAgorot / 100) })}</Txt>
-      <Txt variant="caption" accessibilityLabel={fill(c.shopConsentTimer, { t: consent.text })} style={{ marginTop: 4 }}>{fill(c.shopConsentTimer, { t: consent.text })}</Txt>
+      <Txt variant="caption" style={{ marginTop: 4 }}>{consent.left === 0 ? c.shopConsentExpired : fill(c.shopConsentTimer, { t: consent.text })}</Txt>
       <Row style={{ marginTop: 8, flexWrap: 'wrap' }}>
-        <Button title={c.shopApprove} loading={busy === 'approve'} onPress={() => act('approve', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'approve' })} />
-        <Button title={c.shopDecline} variant="outline" loading={busy === 'decline'} onPress={() => act('decline', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'decline' })} />
-        {!s.change.extended && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, extend: true })} />}
+        <Button title={c.shopApprove} loading={busy === 'approve'} disabled={consent.left === 0} reason={consent.left === 0 ? c.shopConsentExpired : undefined} onPress={() => act('approve', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'approve' })} />
+        <Button title={c.shopDecline} variant="outline" loading={busy === 'decline'} disabled={consent.left === 0} onPress={() => act('decline', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'decline' })} />
+        {!s.change.extended && consent.left > 0 && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, extend: true })} />}
       </Row>
     </Card>}
     <View style={{ marginTop: 8 }}><ShopLines order={order} /></View>
@@ -150,13 +158,13 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
 
 function AcceptClock({ until }: { until: number }) {
   const { c } = useCopy();
-  const t = useCountdown(until, c.shopAcceptLeft);
-  return <Txt variant="caption" accessibilityLabel={fill(c.shopAcceptTimer, { t: t.text })}>{fill(c.shopAcceptTimer, { t: t.text })}</Txt>;
+  const t = useCountdown(until, c.shopAcceptLeft, c.shopAcceptExpired);
+  return <Txt variant="caption">{t.left === 0 ? c.shopAcceptExpired : fill(c.shopAcceptTimer, { t: t.text })}</Txt>;
 }
 
 /** The captain at the shop (DLV-13): check the packages and bags, then enter the shop's code, or report what is wrong. */
 export function ShopHandover({ order, onChange }: { order: Order; onChange: (o: Order) => void }) {
-  const { c, language } = useCopy();
+  const { c, language, err } = useCopy();
   const s = order.shop!;
   const [code, setCode] = useState('');
   const [problem, setProblem] = useState<(typeof handoverExceptions)[number]>('missing_item');
@@ -174,7 +182,7 @@ export function ShopHandover({ order, onChange }: { order: Order; onChange: (o: 
         ...(check.result === 'ok' && { code: latinDigits(code) }) }));
       attempt.current = null;
       haptic.success();
-    } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    } catch (e) { setError(err(e)); }
     finally { setBusy(''); }
   }
   if (s.state !== 'ready') return <Card tone="muted"><Txt>{s.handoverException ? fill(c.shopWaitFix, { problem: c[`handover_${s.handoverException}`] }) : c.shopWaitReady}</Txt></Card>;
@@ -215,9 +223,9 @@ export const sealsReady = (order: Order, value: Record<number, boolean>) => (ord
 /** Support's shop actions on one order (DLV-13, DLV-22, DLV-23, DLV-25): a typed cancel with a note, the fault result,
  * unsellable credit, a refund, and the audited pickup-code reset. The server enforces when each is allowed. */
 export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o: Order) => void }) {
-  const { c, language } = useCopy();
+  const { c, language, err } = useCopy();
   const s = order.shop!;
-  const [reason, setReason] = useState<string>('operational');
+  const [cancel, setCancel] = useState<{ orderId: number; reason: string; exceptionAt?: number | null }>();
   const [note, setNote] = useState('');
   const [fault, setFault] = useState<'merchant' | 'wind' | 'none'>('wind');
   const [line, setLine] = useState<string>(String(s.lines.find(l => !l.removed)?.id ?? ''));
@@ -229,7 +237,7 @@ export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o
     if (busy) return;
     setBusy(key); setError('');
     try { onChange(await api<Order>(path, body)); setNote(''); if (key === 'refund') { setRefund(''); setRefundId(newRequestId()); } }
-    catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    catch (e) { setError(err(e)); }
     finally { setBusy(''); }
   }
   const noteOk = note.trim().length >= 5;
@@ -238,23 +246,37 @@ export function ShopAdminPanel({ order, onChange }: { order: Order; onChange: (o
   const cancels = (['customer_via_support_accepted', 'no_captain', 'operational', 'merchant_request', 'handover_exception_unresolved'] as const).filter(k =>
     k === 'customer_via_support_accepted' ? s.state === 'accepted'
     : k === 'no_captain' ? ['accepted', 'preparing', 'ready', 'awaiting_approval'].includes(s.state ?? '') && ['requested', 'searching'].includes(order.status)
-    : k === 'handover_exception_unresolved' ? !!s.handoverException
+    : k === 'handover_exception_unresolved' ? !!s.handoverOverdue
     : k === 'merchant_request' ? ['preparing', 'awaiting_approval', 'ready'].includes(s.state ?? '')
     : true);
   const before = ['requested', 'searching', 'assigned', 'at_pickup'].includes(order.status) && s.state !== 'handed_over';
   const after = ['returned', 'cancelled', 'completed', 'on_hold'].includes(order.status);
+  const cancelReason = cancel?.orderId === order.id && (cancel.reason !== 'handover_exception_unresolved'
+    || cancel.exceptionAt === s.handoverExceptionAt) ? cancels.find(k => k === cancel.reason) : undefined;
   return <Card>
     <Section title={c.adminShopActions} />
     <Txt variant="caption">{`${c.shopPickupCode}: ${s.pickupCode ?? '—'}`}</Txt>
     <Field label={c.adminNote} value={note} onChangeText={setNote} multiline maxLength={500} />
     {before && <>
       <Txt variant="label">{c.adminShopCancelWhy}</Txt>
-      <Choices label={c.adminShopCancelWhy} value={cancels.some(k => k === reason) ? reason : 'operational'} onChange={setReason}
+      <Choices label={c.adminShopCancelWhy} value={cancelReason ?? ''} disabled={!!busy}
+        onChange={reason => setCancel({ orderId: order.id, reason, exceptionAt: s.handoverExceptionAt })}
         items={cancels.map(k => ({ key: k, label: c[`adminCancel_${k}`] }))} />
-      <Button title={c.adminShopCancel} variant="danger" size="sm" disabled={!noteOk} reason={noteOk ? undefined : c.adminNoteNeeded} loading={busy === 'cancel'}
-        onPress={() => act('cancel', `/admin/orders/${order.id}/shop/cancel`, { reason: cancels.some(k => k === reason) ? reason : 'operational', note: note.trim() })} />
+      <Button title={c.adminShopCancel} variant="danger" size="sm" disabled={!!busy || !noteOk || !cancelReason}
+        reason={busy ? c.wait_busy : !cancelReason ? c.adminShopCancelWhy : c.adminNoteNeeded} loading={busy === 'cancel'}
+        onPress={() => cancelReason && act('cancel', `/admin/orders/${order.id}/shop/cancel`, {
+          ...(cancelReason === 'handover_exception_unresolved'
+            ? { action: 'cancel_handover_exception', exceptionAt: cancel?.exceptionAt } : { reason: cancelReason }), note: note.trim(),
+        })} />
       <Button title={c.adminShopResetPickup} variant="outline" size="sm" disabled={!noteOk} loading={busy === 'reset'}
         onPress={() => act('reset', `/admin/orders/${order.id}/shop/reset-pickup`, { reason: note.trim() })} />
+      {/* DLV-13: past the shop's minutes, support removes the line at fault (DLV-06 re-runs) or cancels above. */}
+      {s.handoverOverdue && <>
+        <Txt variant="label">{c.adminShopHandoverOverdue}</Txt>
+        <Choices label={c.adminShopRemoveLine} value={line} onChange={setLine} items={s.lines.filter(l => !l.removed).map(l => ({ key: String(l.id), label: lineName(l, language) }))} />
+        <Button title={c.adminShopRemoveLine} size="sm" variant="outline" disabled={!line || !noteOk} reason={noteOk ? undefined : c.adminNoteNeeded} loading={busy === 'remove'}
+          onPress={() => act('remove', `/admin/orders/${order.id}/shop/lines/${line}/remove`, { exceptionAt: s.handoverExceptionAt, note: note.trim() })} />
+      </>}
     </>}
     {after && <>
       <Txt variant="label">{s.fault ? fill(c.adminShopFaultIs, { f: c[`adminFault_${s.fault}`] }) : c.adminShopFault}</Txt>

@@ -40,6 +40,7 @@ const MIN = 60_000;
 try {
   const admin = await call('/auth/register', { body: { phone: '0599520001', name: 'Admin', password: 'secret1' } });
   await promote('0599520001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599520001', password: 'secret1' } })).token;
   const owner = await call('/auth/register', { body: { phone: '0599520002', name: 'Grocer', password: 'secret1' } });
   const customer = await call('/auth/register', { body: { phone: '0599520003', name: 'Rana', password: 'secret1' } });
   const captain = await call('/auth/register', { body: { phone: '0599520004', name: 'Omar', password: 'secret1', role: 'driver', vehicle: 'car' } });

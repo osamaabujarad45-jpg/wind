@@ -24,6 +24,8 @@ NON_LEGACY_TABLES.add('firebase_resets'); // a reset in progress lasts an hour; 
 // T33: PostgreSQL orders carry the commission-rate snapshot, so the import populates it instead of skipping it.
 const SQLITE_ONLY_COLUMNS = new Set<string>([]);
 const importColumns = (table: Table) => table.columns.filter(c => !SQLITE_ONLY_COLUMNS.has(c.name));
+const importValue = (table: Table, row: Row, column: string) =>
+  table.name === 'courier_block_reviews' && column === 'cleared' && row[column] !== null ? Boolean(row[column]) : row[column];
 // Sorted at every depth: JSONB reorders nested keys too, so preferences holding quiet hours would never reconcile.
 const stable = (value: Row) => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
   ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
@@ -120,7 +122,7 @@ export async function reconcile(snapshot: Snapshot, database: Persistence) {
       for(const entries of grouped.values())entries.sort();
       return grouped;
     };
-    const source = group(snapshot.rows[table.name].map(row => Object.fromEntries(columns.map(c => [c.name, row[c.name]])))), target = group(rows);
+    const source = group(snapshot.rows[table.name].map(row => Object.fromEntries(columns.map(c => [c.name, importValue(table, row, c.name)])))), target = group(rows);
     for (const [key, value] of source) if (JSON.stringify(target.get(key)) !== JSON.stringify(value)) mismatches.push({ table: table.name, key, reason: target.has(key) ? 'row/multiplicity differs' : 'missing key' });
     for (const key of target.keys()) if (!source.has(key)) mismatches.push({ table: table.name, key, reason: 'unexpected key' });
     tables.push({ table: table.name, keyColumns:table.keyColumns, sourceRows: snapshot.rows[table.name].length, targetRows: rows.length,
@@ -155,15 +157,19 @@ export async function reconcile(snapshot: Snapshot, database: Persistence) {
   };
   if (stable(financial) !== stable(targetFinancial)) mismatches.push({ table: 'financial', reason: 'minor-unit totals differ' });
   const obligations: Row[] = [];
+  // DRV-17: returns closed under the no-fare rule (RETURN_NO_FARE marker) get no promo relief; every other return keeps its booked terms.
+  const noFare = new Set((snapshot.rows.security_events ?? []).filter((r: Row) => r.action === 'RETURN_NO_FARE').map((r: Row) => Number(r.order_id)));
   for (const driver of new Set([...orders.map(r => r.driver_id), ...cash.map(r => r.driver_id), ...snapshot.rows.users.filter(r => r.role === 'driver').map(r => r.id)].filter(v => v !== null))) {
     const sourceOrders = orders.filter(r => r.driver_id === driver && ['completed','returned'].includes(r.status));
+    const relieved = sourceOrders.filter(r => r.status === 'completed' || !noFare.has(Number(r.id))); // DRV-17 no-fare returns
     const sourceCash = cash.filter(r => r.driver_id === driver);
-    const owed = BigInt(sum(sourceOrders, 'commission', true)) - BigInt(sum(sourceOrders, 'discount', true))
+    const owed = BigInt(sum(sourceOrders, 'commission', true)) - BigInt(sum(relieved, 'discount', true))
       + BigInt(sum(sourceCash.filter(r => r.kind === 'adjustment'), 'amount_cents'))
       - BigInt(sum(sourceCash.filter(r => r.kind === 'remittance' && r.status === 'confirmed'), 'amount_cents'));
-    const pg = (await database.one(`SELECT COALESCE((SELECT SUM(COALESCE(commission_minor,0)-COALESCE(discount_minor,0)) FROM orders WHERE driver_id=? AND status IN ('completed','returned')),0)
+    const pg = (await database.one(`SELECT COALESCE((SELECT SUM(COALESCE(commission_minor,0)) FROM orders WHERE driver_id=? AND status IN ('completed','returned')),0)
+      -COALESCE((SELECT SUM(COALESCE(discount_minor,0)) FROM orders WHERE driver_id=? AND (status='completed' OR (status='returned' AND NOT EXISTS (SELECT 1 FROM security_events nf WHERE nf.order_id=orders.id AND nf.action='RETURN_NO_FARE')))),0)
       +COALESCE((SELECT SUM(amount_cents) FROM cash_entries WHERE driver_id=? AND kind='adjustment'),0)
-      -COALESCE((SELECT SUM(amount_cents) FROM cash_entries WHERE driver_id=? AND kind='remittance' AND status='confirmed'),0) owed`, driver, driver, driver))!;
+      -COALESCE((SELECT SUM(amount_cents) FROM cash_entries WHERE driver_id=? AND kind='remittance' AND status='confirmed'),0) owed`, driver, driver, driver, driver))!;
     if (BigInt(pg.owed) !== owed) mismatches.push({ table: 'financial', key: hash(String(driver)), reason: 'driver open obligation differs' });
     obligations.push({ driverKey: hash(String(driver)), owedCents: owed.toString(), targetOwedCents: String(pg.owed),
       pendingCents: sum(sourceCash.filter(r => r.status === 'pending'), 'amount_cents') });
@@ -190,18 +196,19 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
         if (importColumns(table).some(c => !columns.includes(c.name))) errors.push({ table: table.name, reason: 'unreviewed SQLite schema/column; update migration explicitly' });
         if (columns.length && (await database.one(`SELECT COUNT(*) count FROM ${quote(table.name)}`))!.count) errors.push({ table: table.name, reason: 'target is not empty; never merge or overwrite' });
       }
-      const legacyTables = actual.map(r => r.table_name).filter(name => !['schema_migrations','driver_run_resources','service_zone_geometries','command_results','event_sequences','domain_events','outbox','consumer_inbox','event_projection',
+      const legacyTables = actual.map(r => r.table_name).filter(name => !NON_LEGACY_TABLES.has(name) && !['schema_migrations','driver_run_resources','service_zone_geometries','command_results','event_sequences','domain_events','outbox','consumer_inbox','event_projection',
         'firebase_resets','eligibility_policy','service_areas','route_permissions','vehicles','driver_eligibility','driver_vehicles','verification_checks','order_requirements','vehicle_runs','capacity_reservations','capacity_stops','eligibility_offers','eligibility_audit','order_approaches',
         'phone_profiles','phone_mappings','phone_aliases','phone_challenges','phone_command_results','phone_rate_windows','phone_provider_budget','phone_audit',
         'driver_presence_sessions','driver_latest_locations','driver_presence_audit','driver_active_gps_sessions','driver_active_gps_session_ids','driver_active_gps_generations','native_push_tokens','quotes','road_restrictions','road_restriction_policy','dispatch_rounds','dispatch_offers','assignment_history','ride_lifecycle','ride_boarding_attempts','order_declared_scope','custody_records','order_scope_checks','private_objects','private_object_reads','ledger_accounts','ledger_journals','ledger_entries','cash_receipts','cash_receipt_events','payment_intents','payment_attempts','payment_events','refunds','merchant_cod','merchant_cod_events','support_cases','support_case_events','staff_actions','financial_approvals'].includes(name));
       // A snapshot taken before A12 has no order_command_rejections; present rows import and reconcile normally (Fable CAND6).
       // Shop delivery tables (migration 33) are absent from a snapshot taken before the shop line; present rows import normally.
       const optionalLegacy = new Set(['order_command_rejections', 'merchants', 'merchant_hours', 'merchant_items', 'shop_orders', 'shop_lines', 'shop_snapshots',
-        'shop_changes', 'shop_handover_checks', 'shop_seals', 'shop_faults', 'shop_ledger']);
+        'shop_changes', 'shop_handover_checks', 'shop_seals', 'shop_faults', 'shop_ledger', 'courier_block_reviews']);
       for (const name of new Set(legacyTables)) if (!optionalLegacy.has(name) && !snapshot.tables.some(t => t.name === name)) errors.push({ table: name, reason: 'required legacy table missing from snapshot' });
       if (errors.length) throw new Error('Snapshot preflight failed');
-      // Assignment guards lock accounts; insert users before the deferred-reference tables.
-      for (const table of [...snapshot.tables].sort((a,b) => Number(b.name === 'users') - Number(a.name === 'users'))) for (const row of snapshot.rows[table.name]) {
+      // Users satisfy assignment guards, and reviews reference the already imported orders.
+      const importRank = (name: string) => name === 'users' ? -1 : name === 'courier_block_reviews' ? 1 : 0;
+      for (const table of [...snapshot.tables].sort((a,b) => importRank(a.name) - importRank(b.name))) for (const row of snapshot.rows[table.name]) {
         if (NON_LEGACY_TABLES.has(table.name)) continue; // policy seed installed by migration 11; quotes/restrictions are PG-only (see preflight)
         const key = keyOf(table, row);
         await database.run('SAVEPOINT import_row');
@@ -211,7 +218,7 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
             if (amount !== null && cents! / 100 !== amount) rounding.push({ table: table.name, key, column, legacyAmount: amount, minor: cents });
           }
           const columns = importColumns(table);
-          await database.run(`INSERT INTO ${quote(table.name)} (${columns.map(c => quote(c.name)).join(',')}) VALUES(${columns.map(() => '?').join(',')})`, ...columns.map(c => row[c.name]));
+          await database.run(`INSERT INTO ${quote(table.name)} (${columns.map(c => quote(c.name)).join(',')}) VALUES(${columns.map(() => '?').join(',')})`, ...columns.map(c => importValue(table, row, c.name)));
         } catch (error) {
           await database.run('ROLLBACK TO SAVEPOINT import_row');
           const e = error as { code?: string; constraint?: string };

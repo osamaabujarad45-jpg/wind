@@ -1032,6 +1032,39 @@
       }
     },
     {
+      "id": "driver-earnings",
+      "role": "driver",
+      "method": "GET",
+      "path": "/driver/earnings",
+      "httpStatus": 200,
+      "response": {
+        "today": {
+          "jobs": 0,
+          "gross": 0,
+          "commission": 0,
+          "net": 0,
+          "earnedNet": 0,
+          "tripPayCents": 0
+        },
+        "week": {
+          "jobs": 0,
+          "gross": 0,
+          "commission": 0,
+          "net": 0,
+          "earnedNet": 0,
+          "tripPayCents": 0
+        },
+        "all": {
+          "jobs": 0,
+          "gross": 0,
+          "commission": 0,
+          "net": 0,
+          "earnedNet": 0,
+          "tripPayCents": 0
+        }
+      }
+    },
+    {
       "id": "default-disabled:ride",
       "role": "customer",
       "method": "POST",
@@ -2329,6 +2362,107 @@
       }
     },
     {
+      "id": "cash-remittance",
+      "role": "admin",
+      "method": "POST",
+      "path": "/admin/cash/remittance",
+      "request": {
+        "driverId": 3,
+        "amountCents": 300,
+        "requestId": "<requestId>",
+        "note": "Synthetic two-person handover"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "kind": "remittance",
+        "amountCents": 300,
+        "note": "Synthetic two-person handover",
+        "status": "pending",
+        "reference": "R-000001",
+        "createdAt": "<server-timestamp>",
+        "decidedAt": null
+      }
+    },
+    {
+      "id": "cash-pending",
+      "role": "driver",
+      "method": "GET",
+      "path": "/driver/cash",
+      "httpStatus": 200,
+      "response": {
+        "owedCents": 300,
+        "pendingCents": 300,
+        "commissionCents": 300,
+        "discountsCents": 0,
+        "remittedCents": 0,
+        "adjustmentsCents": 0,
+        "capCents": 15000,
+        "exposureCents": 300,
+        "entries": [
+          {
+            "id": 1,
+            "kind": "remittance",
+            "amountCents": 300,
+            "note": "Synthetic two-person handover",
+            "status": "pending",
+            "reference": "R-000001",
+            "createdAt": "<server-timestamp>",
+            "decidedAt": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "cash-confirm",
+      "role": "driver",
+      "method": "POST",
+      "path": "/driver/cash/1/confirm",
+      "request": {
+        "decision": "confirm"
+      },
+      "httpStatus": 200,
+      "response": {
+        "id": 1,
+        "kind": "remittance",
+        "amountCents": 300,
+        "note": "Synthetic two-person handover",
+        "status": "confirmed",
+        "reference": "R-000001",
+        "createdAt": "<server-timestamp>",
+        "decidedAt": "<server-timestamp>"
+      }
+    },
+    {
+      "id": "cash-settled",
+      "role": "driver",
+      "method": "GET",
+      "path": "/driver/cash",
+      "httpStatus": 200,
+      "response": {
+        "owedCents": 0,
+        "pendingCents": 0,
+        "commissionCents": 300,
+        "discountsCents": 0,
+        "remittedCents": 300,
+        "adjustmentsCents": 0,
+        "capCents": 15000,
+        "exposureCents": 0,
+        "entries": [
+          {
+            "id": 1,
+            "kind": "remittance",
+            "amountCents": 300,
+            "note": "Synthetic two-person handover",
+            "status": "confirmed",
+            "reference": "R-000001",
+            "createdAt": "<server-timestamp>",
+            "decidedAt": "<server-timestamp>"
+          }
+        ]
+      }
+    },
+    {
       "id": "delivery-exception",
       "role": "driver",
       "method": "POST",
@@ -2742,7 +2876,7 @@
         "recipientName": "Synthetic recipient",
         "recipientPhone": "<foreign-customer-phone>",
         "price": 20,
-        "commission": 3,
+        "commission": 0,
         "status": "returned",
         "handoverCode": null,
         "rating": null,
@@ -2811,7 +2945,7 @@
         "recipientName": "Synthetic recipient",
         "recipientPhone": "<foreign-customer-phone>",
         "price": 20,
-        "commission": 3,
+        "commission": 0,
         "status": "returned",
         "handoverCode": null,
         "rating": null,
@@ -2905,7 +3039,7 @@
         "recipientName": "Synthetic recipient",
         "recipientPhone": "<foreign-customer-phone>",
         "price": 20,
-        "commission": 3,
+        "commission": 0,
         "status": "returned",
         "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
@@ -2951,109 +3085,30 @@
       "path": "/driver/cash",
       "httpStatus": 200,
       "response": {
-        "owedCents": 600,
+        "owedCents": -6000,
         "pendingCents": 0,
-        "commissionCents": 600,
+        "commissionCents": 300,
         "discountsCents": 0,
-        "remittedCents": 0,
-        "adjustmentsCents": 0,
+        "remittedCents": 300,
+        "adjustmentsCents": -6000,
         "capCents": 15000,
-        "exposureCents": 600,
-        "entries": []
-      }
-    },
-    {
-      "id": "cash-remittance",
-      "role": "admin",
-      "method": "POST",
-      "path": "/admin/cash/remittance",
-      "request": {
-        "driverId": 3,
-        "amountCents": 600,
-        "requestId": "<requestId>",
-        "note": "Synthetic two-person handover"
-      },
-      "httpStatus": 200,
-      "response": {
-        "id": 1,
-        "kind": "remittance",
-        "amountCents": 600,
-        "note": "Synthetic two-person handover",
-        "status": "pending",
-        "reference": "R-000001",
-        "createdAt": "<server-timestamp>",
-        "decidedAt": null
-      }
-    },
-    {
-      "id": "cash-pending",
-      "role": "driver",
-      "method": "GET",
-      "path": "/driver/cash",
-      "httpStatus": 200,
-      "response": {
-        "owedCents": 600,
-        "pendingCents": 600,
-        "commissionCents": 600,
-        "discountsCents": 0,
-        "remittedCents": 0,
-        "adjustmentsCents": 0,
-        "capCents": 15000,
-        "exposureCents": 600,
+        "exposureCents": -6000,
         "entries": [
           {
-            "id": 1,
-            "kind": "remittance",
-            "amountCents": 600,
-            "note": "Synthetic two-person handover",
-            "status": "pending",
-            "reference": "R-000001",
+            "id": 2,
+            "kind": "adjustment",
+            "amountCents": -6000,
+            "note": "Trip pay · أجر الرحلة · order 3",
+            "status": "confirmed",
+            "reference": null,
             "createdAt": "<server-timestamp>",
-            "decidedAt": null
-          }
-        ]
-      }
-    },
-    {
-      "id": "cash-confirm",
-      "role": "driver",
-      "method": "POST",
-      "path": "/driver/cash/1/confirm",
-      "request": {
-        "decision": "confirm"
-      },
-      "httpStatus": 200,
-      "response": {
-        "id": 1,
-        "kind": "remittance",
-        "amountCents": 600,
-        "note": "Synthetic two-person handover",
-        "status": "confirmed",
-        "reference": "R-000001",
-        "createdAt": "<server-timestamp>",
-        "decidedAt": "<server-timestamp>"
-      }
-    },
-    {
-      "id": "cash-settled",
-      "role": "driver",
-      "method": "GET",
-      "path": "/driver/cash",
-      "httpStatus": 200,
-      "response": {
-        "owedCents": 0,
-        "pendingCents": 0,
-        "commissionCents": 600,
-        "discountsCents": 0,
-        "remittedCents": 600,
-        "adjustmentsCents": 0,
-        "capCents": 15000,
-        "exposureCents": 0,
-        "entries": [
+            "decidedAt": null,
+            "source": "trip_pay"
+          },
           {
             "id": 1,
             "kind": "remittance",
-            "amountCents": 600,
+            "amountCents": 300,
             "note": "Synthetic two-person handover",
             "status": "confirmed",
             "reference": "R-000001",
@@ -3390,7 +3445,7 @@
         "recipientName": "Synthetic recipient",
         "recipientPhone": "<foreign-customer-phone>",
         "price": 20,
-        "commission": 3,
+        "commission": 0,
         "status": "returned",
         "handoverCode": "<handoverCode>",
         "rating": null,
@@ -3925,7 +3980,7 @@
         "recipientName": "Synthetic recipient",
         "recipientPhone": "<foreign-customer-phone>",
         "price": 20,
-        "commission": 3,
+        "commission": 0,
         "status": "returned",
         "canChangeDestination": false,
         "handoverCode": "<handoverCode>",
@@ -4424,7 +4479,7 @@
         "recipientName": "Synthetic recipient",
         "recipientPhone": "<foreign-customer-phone>",
         "price": 20,
-        "commission": 3,
+        "commission": 0,
         "status": "returned",
         "handoverCode": "<handoverCode>",
         "rating": null,
@@ -4454,7 +4509,15 @@
         "sharedRun": false,
         "myOffer": null,
         "customerRating": null,
-        "driverRating": 4
+        "driverRating": 4,
+        "blockReview": {
+          "dueAt": "<server-timestamp>",
+          "tripPayCents": 2000,
+          "decidedAt": null,
+          "cleared": null,
+          "paidCents": null,
+          "blockedBy": 1
+        }
       }
     },
     {

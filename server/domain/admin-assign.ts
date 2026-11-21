@@ -18,7 +18,9 @@ type Deps = RefusalDeps & {
   commissionOn: (price: number, rate: number) => number;
   safetyFree: (orderId: number) => Promise<void>;
   hasOpenOffer: (orderId: number) => Promise<boolean>;
+  guardRideAssignment: (orderId: number) => Promise<void>;
   ensureAssignment: (orderId: number, driverId: number, source: 'legacy') => Promise<void>;
+  assignedFrom: (orderId: number, driverId: number, actorId: number) => Promise<void>;
   getOrder: (id: number, viewer: never) => Promise<unknown>;
   queuePush: (ids: any[], kind: any, order: number, path?: string) => Promise<void>;
   // The measured eligibility guard (server/domain/eligibility.ts), which the driver accept runs before its handler.
@@ -62,8 +64,9 @@ export function registerAdminAssignRoutes(route: Register, deps: Deps): void {
 
     await deps.db.exec('BEGIN IMMEDIATE');
     try {
-      // Same lock order as the driver accept (driver, then order) so the two cannot deadlock on PostgreSQL.
+      // Same lock order as the driver accept: order (HTTP preflight), rider fence, captain, then policy (Sol R3-H2).
       if (deps.db.backend === 'postgres') {
+        await deps.guardRideAssignment(orderId);
         await one('SELECT id FROM users WHERE id = ? FOR UPDATE', driverId);
         await one('SELECT id FROM orders WHERE id = ? FOR UPDATE', orderId);
       }
@@ -73,6 +76,9 @@ export function registerAdminAssignRoutes(route: Register, deps: Deps): void {
       // A double submit (or a second admin choosing the same driver) finds the work already done.
       if (order.driver_id === driverId && ['assigned', 'at_pickup'].includes(order.status as string)) { /* nothing to do */ } else {
         if (!ASSIGNABLE.includes(order.status as string)) fail(409, 'cannot_assign');
+        // DRV-17: custody is never re-queued; a shop order handed to its captain stays with them even while still at_pickup.
+        if (order.service === 'shop' && order.driver_id != null
+          && await one("SELECT 1 FROM shop_orders WHERE order_id = ? AND merchant_state = 'handed_over'", orderId)) fail(409, 'cannot_release');
         if ((body.expectedStatus !== undefined && body.expectedStatus !== order.status)
           || (body.expectedDriverId !== undefined && (body.expectedDriverId ?? null) !== (order.driver_id ?? null))) fail(409, 'order_changed');
         const rate = await deps.driverRate(driverId);
@@ -80,6 +86,7 @@ export function registerAdminAssignRoutes(route: Register, deps: Deps): void {
         // Every driver refusal is a 409 here: the admin is the authorized caller and the named driver is the ineligible one.
         // The driver's own accept answers 403 for its account state (blocked, pending), its own state rather than the order's.
         if (refused) fail(409, refused);
+        await deps.guardRideAssignment(orderId);
         // A reassign of a measured order would strand its reservation, which moves only through the release flow.
         if (order.status !== 'searching' && await deps.measured()
           && await one('SELECT 1 FROM capacity_reservations WHERE order_id = ?', orderId)) fail(409, 'measured_reassign_unsupported');
@@ -95,7 +102,8 @@ export function registerAdminAssignRoutes(route: Register, deps: Deps): void {
         if (order.status !== 'searching') await deps.safetyFree(orderId); // as a release: an open safety report holds the order
         // Their other parcels (if any) keep the live position; an empty load clears the stale one below.
         const carrying = await deps.activeLoad(driverId);
-        const now = Date.now();
+        const now = Math.max(Date.now(), Number(order.assigned_at ?? 0) + 1);
+        if (order.service === 'parcel' || order.service === 'freight') await deps.assignedFrom(orderId, driverId, user.id);
         const changed = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ?
           WHERE id = ? AND status = ? AND COALESCE(driver_id, 0) = ? AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`,
         driverId, deps.commissionOn(Number(order.price), rate), now, now, orderId, order.status, order.driver_id ?? 0, orderId, driverId)).changes;

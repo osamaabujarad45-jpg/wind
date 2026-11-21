@@ -96,7 +96,7 @@ try {
   assert.ok(await f.db.one('SELECT id FROM ledger_journals WHERE business_ref=?', `cash-entry:${remit.id}`), 'the confirmed handover posts its journal');
   assert.ok(await ledger.driverBalance(f.d1.user.id) < pendingBalance, 'the settled handover lowers the receivable');
   const beforeAdjustment = await ledger.driverBalance(f.d1.user.id);
-  await f.call('/admin/cash/adjustment', { token: f.admin.token, body: { driverId: f.d1.user.id, amountCents: 100, reason: 'Missed fuel top-up', requestId: randomUUID() } });
+  await f.call('/admin/cash/adjustment', { token: f.admin.token, body: { driverId: f.d1.user.id, amountCents: 100, intent: 'charge', reason: 'Missed fuel top-up', requestId: randomUUID() } });
   assert.ok(await f.db.one("SELECT id FROM ledger_journals WHERE kind='cash_adjustment' ORDER BY id DESC LIMIT 1"), 'the adjustment posted as it was recorded');
   assert.ok(await ledger.driverBalance(f.d1.user.id) > beforeAdjustment, 'a positive adjustment raises the receivable');
 

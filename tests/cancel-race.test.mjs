@@ -63,6 +63,7 @@ try {
   };
   const admin = await call('/auth/register', { body: { phone: '0599970001', name: 'Synthetic admin', password: 'secret1' } });
   await promote('0599970001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599970001', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599970002', name: 'Synthetic sender', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0599970003', name: 'Synthetic courier', password: 'secret1', role: 'driver', vehicle: 'car' } });
   await call(`/admin/users/${driver.user.id}/approve`, { token: admin.token, body: {} });
@@ -118,7 +119,7 @@ try {
   // Do not lower PARCEL_LOAD for the test: stale cancelled load must fail a real new HTTP acceptance.
   while (replacements <= PARCEL_LOAD) await freshAcceptance(`A load cycle ${++replacements}`);
   assert.ok(replacements > PARCEL_LOAD);
-  assert.deepEqual(await earnings(), { jobs: 0, gross: 0, commission: 0, net: 0 });
+  assert.deepEqual(await earnings(), { jobs: 0, gross: 0, commission: 0, net: 0, earnedNet: 0, tripPayCents: 0 }); // no location at acceptance, so no DRV-18 pay
 
   // B: real assigned -> at_pickup flow. Parcel pickup needs no PIN; delivery needs the sender's handover code.
   for (const [round, mode] of modes.entries()) {

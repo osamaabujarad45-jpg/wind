@@ -292,7 +292,8 @@ function restyle() {
   for (const layer of map.getStyle().layers) {
     const { id, type } = layer;
     if (type === 'symbol' && JSON.stringify(layer.layout?.['text-field'] ?? '').includes('name'))
-      map.setLayoutProperty(id, 'text-field', labelField(config.language));
+      map.setLayoutProperty(id, 'text-field', config.language === 'ar' && layer['source-layer'] === 'transportation_name'
+        ? ['coalesce', ['get', 'name:ar'], ''] : labelField(config.language));
     if (type === 'fill-extrusion' || id.includes('shield')) { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
     if (type === 'background') paint(id, 'background-color', '#F2F2EE');
     else if (type === 'fill' && id.startsWith('building')) { paint(id, 'fill-color', '#E8E8E3'); paint(id, 'fill-outline-color', '#DEDED8'); }

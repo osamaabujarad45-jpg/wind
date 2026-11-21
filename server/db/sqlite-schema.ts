@@ -305,6 +305,67 @@ try {
 // T25, additive: an administrator who resolves a pending handover leaves an actor and a reason on the row.
 for (const column of ['resolved_by INTEGER', "resolution_note TEXT"])
   if (!(db.prepare('PRAGMA table_info(cash_entries)').all() as Row[]).some(r => r.name === column.split(' ')[0])) db.exec(`ALTER TABLE cash_entries ADD COLUMN ${column}`);
+// Match the PostgreSQL assignment epoch across releases and reassignments.
+db.exec('BEGIN IMMEDIATE');
+try {
+  if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === 'assignment_epoch')) {
+    db.exec(`ALTER TABLE orders ADD COLUMN assignment_epoch INTEGER NOT NULL DEFAULT 0;
+      UPDATE orders SET assignment_epoch = 1 WHERE driver_id IS NOT NULL;`);
+  }
+  db.exec(`CREATE TRIGGER IF NOT EXISTS orders_assignment_epoch_insert AFTER INSERT ON orders
+  WHEN NEW.driver_id IS NOT NULL AND NEW.assignment_epoch = 0
+  BEGIN UPDATE orders SET assignment_epoch = 1 WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS orders_assignment_epoch_update AFTER UPDATE OF driver_id, status ON orders
+  WHEN NEW.driver_id IS NOT OLD.driver_id OR
+    (OLD.status NOT IN ('assigned','at_pickup','in_transit','on_hold','returning')
+      AND NEW.status IN ('assigned','at_pickup','in_transit','on_hold','returning'))
+  BEGIN UPDATE orders SET assignment_epoch = OLD.assignment_epoch + 1 WHERE id = NEW.id; END;`);
+  db.exec('COMMIT');
+} catch (error) { db.exec('ROLLBACK'); throw error; }
+
+// DRV-17/18: legacy cash entries have no typed source.
+for (const column of [
+  'order_id INTEGER REFERENCES orders(id)',
+  "source TEXT CHECK (source IS NULL OR (kind = 'adjustment' AND status = 'confirmed' AND ((source IN ('trip_pay','pickup_pay') AND order_id IS NOT NULL AND amount_cents < 0) OR (source = 'payout' AND order_id IS NULL AND amount_cents > 0 AND request_id IS NOT NULL))))",
+]) {
+  if (!(db.prepare('PRAGMA table_info(cash_entries)').all() as Row[]).some(r => r.name === column.split(' ')[0])) db.exec(`ALTER TABLE cash_entries ADD COLUMN ${column}`);
+}
+db.exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS cash_entries_source_order ON cash_entries(source, order_id) WHERE order_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS security_events_order_action ON security_events(order_id, action);
+`);
+const createBlockReviews = `CREATE TABLE IF NOT EXISTS courier_block_reviews (
+  order_id INTEGER PRIMARY KEY REFERENCES orders(id),
+  driver_id INTEGER NOT NULL REFERENCES users(id),
+  blocked_by INTEGER NOT NULL REFERENCES users(id),
+  service TEXT NOT NULL CHECK (service IN ('parcel','freight','shop')),
+  from_status TEXT NOT NULL,
+  trip_pay_cents INTEGER NOT NULL CHECK (trip_pay_cents >= 0),
+  blocked_at INTEGER NOT NULL,
+  due_at INTEGER NOT NULL,
+  decided_at INTEGER,
+  decided_by INTEGER REFERENCES users(id),
+  cleared INTEGER CHECK (cleared IN (0,1)),
+  paid_cents INTEGER CHECK (paid_cents >= 0),
+  note TEXT NOT NULL DEFAULT '',
+  CHECK ((decided_at IS NULL) = (decided_by IS NULL) AND (decided_at IS NULL) = (cleared IS NULL)),
+  CHECK (decided_by IS NULL OR decided_by <> blocked_by)
+);`;
+db.exec('BEGIN IMMEDIATE');
+try {
+  const existing = db.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'courier_block_reviews'").get();
+  const widening = existing && !String(existing.sql).includes("'shop'");
+  if (widening) db.exec('ALTER TABLE courier_block_reviews RENAME TO legacy_courier_block_reviews');
+  db.exec(createBlockReviews);
+  if (widening) db.exec(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status,
+    trip_pay_cents, blocked_at, due_at, decided_at, decided_by, cleared, paid_cents, note)
+    SELECT order_id, driver_id, blocked_by, service, from_status,
+      trip_pay_cents, blocked_at, due_at, decided_at, decided_by, cleared, paid_cents, note
+    FROM legacy_courier_block_reviews;
+    DROP TABLE legacy_courier_block_reviews;`);
+  db.exec('CREATE INDEX IF NOT EXISTS courier_block_reviews_open ON courier_block_reviews(due_at) WHERE decided_at IS NULL');
+  db.exec('COMMIT');
+} catch (error) { db.exec('ROLLBACK'); throw error; }
 // Native push on this runtime, additive (user_version stays 3). As on PostgreSQL, ending a session drops its token.
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS sessions_token_user ON sessions(token_hash, user_id);
 CREATE TABLE IF NOT EXISTS native_push_tokens (

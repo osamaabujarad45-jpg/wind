@@ -36,6 +36,7 @@ try {
   console.log('Booking retry: starting isolated server scenarios');
   const admin = await call('/auth/register', { phone: '0599222000', name: 'Admin', password: 'secret1' });
   await promote('0599222000');
+  admin.token = (await call('/auth/login', { phone: '0599222000', password: 'secret1' })).token;
   const owner = await call('/auth/register', { phone: '0599222001', name: 'Customer', password: 'secret1' });
   const payload = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
     pickupNote: 'Gate', dropoffNote: 'Door', detail: 'Box', contact: owner.user.phone,

@@ -14,6 +14,15 @@ import { createPresenceStartGuard } from './presence-start-guard';
 import { createLocationWebClock } from './location-web-clock';
 import { boundedPermission } from './location-permission-timeout';
 
+/** A single foreground fix after the captain has granted tracking permission. */
+export async function acceptPosition(service: Order['service']) {
+  if (service !== 'parcel' && service !== 'freight') return;
+  const fix = await boundedPermission(() => Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }), 4_000).catch(() => null);
+  if (!fix || fix.coords.accuracy == null) return;
+  const { latitude, longitude, accuracy } = fix.coords;
+  return { latitude, longitude, accuracy, at: fix.timestamp };
+}
+
 type Tracking = 'idle' | 'off' | 'starting' | 'sharing';
 type Work = { order: Order | null; orders: Order[]; known: boolean; error?: string; tracking: Tracking; diagnostics: DriverLocationDiagnostics; reload: () => Promise<void>; update: (order: Order) => void;
   permission: ReturnType<typeof Location.useForegroundPermissions>[0]; requestPermission: ReturnType<typeof Location.useForegroundPermissions>[1]; prepareTracking: () => Promise<boolean>;

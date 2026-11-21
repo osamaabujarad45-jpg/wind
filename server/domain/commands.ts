@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { SESSION_DAY_MS, SESSION_DAYS, SESSION_IDLE_DAYS } from './session-policy.ts';
 import { priorityIdentity } from './priority.ts';
+import { needStaff, staffActor } from './ops.ts';
 type Failure = Error & { status: number };
 const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
@@ -13,9 +14,20 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
   if (!user) fail(401, 'unauthorized');
   if (typeof body.commandId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.commandId)) fail(400, 'invalid_command_id');
   if (!/^\/api\/(orders(?:\/|$)|jobs\/|admin\/orders\/|admin\/cash(?:\/|$)|driver\/cash(?:\/|$))/.test(path)) fail(400, 'unsupported_command');
+  // Ride lifecycle steps replay on their own state (arrival, no-show event, one-shot grace) and take strict bodies with no
+  // envelope fields: refuse the envelope before anything is stored rather than record an invalid_input (review 19 Nov).
+  if (/^\/api\/orders\/\d+\/(?:arrive|ride\/no-show|ride\/grace-extension)$/.test(path)) fail(400, 'unsupported_command');
+  // Staff-duty decisions replay on their own record under the current duty check, never from a saved receipt (Sol R3-M2).
+  if (/^\/api\/admin\/orders\/\d+\/(?:block-review|pickup-pay-review|office|shop\/lines\/\d+\/remove)$/.test(path)) fail(400, 'unsupported_command');
   const { commandId, clientRecordedAt: _recorded, payload: nested, ...fields } = body;
   if (nested !== undefined && (!nested || typeof nested !== 'object' || Array.isArray(nested))) fail(400, 'invalid_input');
   const input = nested === undefined ? fields : { ...nested, ...fields };
+  if (Object.hasOwn(input, '__proto__')) fail(400, 'invalid_input');
+  if ((path === '/api/admin/cash/adjustment' && (input.source === 'payout' || input.intent === 'payout')) ||
+    (/^\/api\/admin\/(?:orders\/\d+\/resolve|eligibility\/orders\/\d+\/recovery)$/.test(path)
+      && ['confirm_return', 'confirm_office_return', 'confirm_sender_return'].includes(input.action))
+    || (/^\/api\/admin\/orders\/\d+\/shop\/cancel$/.test(path) && input.action === 'cancel_handover_exception'))
+    fail(400, 'unsupported_command');
   const hash = createHash('sha256').update(JSON.stringify(canonical({ path, method, input: priorityIdentity(input) }))).digest('hex');
   await db.one('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', `${user.id}:${commandId}`);
   const saved = await db.one('SELECT * FROM command_results WHERE actor_id=? AND command_id=?', user.id, commandId);
@@ -35,6 +47,7 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
     if ((driverAction || customerAction) && actor.status !== 'active')
       fail(403,actor.status === 'pending' ? 'pending_approval' : 'blocked');
     if (driverAction && policy.requirePermanentDriverApproval && !actor.approved_at) fail(403,'pending_approval');
+    if (/^\/api\/admin\/cash\/(?:adjustment|remittance|\d+\/resolve)$/.test(path)) needStaff(await staffActor(db, { id: user.id, role: actor.role, status: actor.status }), fail, 'finance');
     if (saved.payload_hash !== hash) fail(409, 'idempotency_conflict');
     const response = JSON.parse(saved.response);
     const target = /^\/api\/(?:orders|jobs|admin\/orders)\/(\d+)(?:\/|$)/.exec(path);
@@ -52,6 +65,10 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
         else fail(404,'not_found');
       }
     }
+    if (Number.isSafeInteger(response?.redactedOrderId)) return authorizeOrder(response.redactedOrderId);
+    // A reply scrubbed by the 18 Nov release kept only {id, status} of the deleted customer's order: re-read it the same way.
+    if (target && response && Object.keys(response).length === 2 && response.id === Number(target[1]) && typeof response.status === 'string')
+      return authorizeOrder(response.id);
     return response;
   }
   let response: unknown, error: Failure | undefined;
@@ -67,13 +84,18 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
     const cashDecision = /^\/api\/driver\/cash\/(\d+)\/confirm$/.exec(path);
     if (/^\/api\/(?:admin|driver)\/cash/.test(path) && input.currency !== 'ILS') fail(400, 'invalid_currency');
     if (cashDecision) {
+      // Captain row first, then the handover: the office resolution and the confirm handler take them in that order, and
+      // the opposite order here deadlocked against a cashier deciding the same handover (Sol R25-M3).
+      await db.one('SELECT id FROM users WHERE id=? FOR UPDATE', user.id);
       const entry = await db.one('SELECT * FROM cash_entries WHERE id=? AND driver_id=? FOR UPDATE', Number(cashDecision[1]), user.id) ?? fail(404, 'not_found');
       if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) fail(400, 'invalid_version');
       if (input.expectedVersion !== entry.version) fail(409, 'VERSION_CONFLICT');
       if (input.amountCents !== entry.amount_cents) fail(409, 'cash_amount_changed');
     }
     if (input.currency !== undefined && input.currency !== 'ILS') fail(400, 'invalid_currency');
-    Object.keys(body).forEach(key => delete body[key]); Object.assign(body, input);
+    Object.keys(body).forEach(key => delete body[key]);
+    // Define the normalized request fields directly so copying them cannot invoke an inherited setter.
+    Object.defineProperties(body, Object.getOwnPropertyDescriptors(input));
     // Shared installed handlers retain every custody, price and proof rule.
     if (body.requestId === undefined) body.requestId = commandId;
     response = await invoke();

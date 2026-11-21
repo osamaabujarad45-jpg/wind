@@ -22,6 +22,7 @@ const advance = (token, order, extra = {}) => call(`/orders/${order.id}/advance`
 try {
   const admin = await call('/auth/register', { body: { phone: '0599200001', name: 'Admin', password: 'secret1' } });
   await promote('0599200001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599200001', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599200002', name: 'Lina', password: 'secret1' } });
   const driver = async (phone, name) => {
     const d = await call('/auth/register', { body: { phone, name, password: 'secret1', role: 'driver', vehicle: 'car' } });
@@ -66,8 +67,9 @@ try {
   // The job card shows the km the price used (pins), not the city-centre estimate.
   assert.equal((await call('/jobs', { token: sami.token })).find(j => j.id === order.id).routeKm, rec.km);
   // ---- old apps and Souq keep the fixed tariff and cannot be offered on ----
+  const otherRider = await call('/auth/register', { body: { phone: '0599200006', name: 'Other rider', password: 'secret1' } });
   const legacyBody = { ...input, pricing: undefined, pickupPoint: undefined, dropoffPoint: undefined };
-  const legacy = await call('/orders', { token: customer.token, body: { ...legacyBody, quotedPrice: quote(s, { ...trip, shared: false }), requestId: randomUUID() } });
+  const legacy = await call('/orders', { token: otherRider.token, body: { ...legacyBody, quotedPrice: quote(s, { ...trip, shared: false }), requestId: randomUUID() } });
   assert.equal(legacy.recommendedPrice, null);
   assert.equal(legacy.routeKm, null);
   assert.equal(legacy.offers, undefined);
@@ -78,7 +80,7 @@ try {
     externalRef: 'l:b:r', quotedPrice: (await call('/partner/quotes', { partnerKey, body: souqInput })).price } });
   assert.equal(souq.recommendedPrice, null);
   await call(`/jobs/${souq.id}/offer`, { token: sami.token, body: { price: souq.price }, expect: 409 });
-  await call(`/orders/${legacy.id}/cancel`, { token: customer.token, body: {} });
+  await call(`/orders/${legacy.id}/cancel`, { token: otherRider.token, body: {} });
   await call(`/partner/orders/${souq.id}/cancel`, { partnerKey, body: {} });
 
   // ---- drivers name prices inside the band; the customer sees them cheapest first, with stats ----
@@ -124,7 +126,7 @@ try {
 
   // ---- a busy driver's offer is hidden and refused ----
   await call(`/jobs/${order.id}/offer`, { token: omar.token, body: { price: rec.price + 1 } });
-  const other = await book();
+  const other = await call('/orders', { token: otherRider.token, body: { ...input, quotedPrice: rec.price, requestId: randomUUID() } });
   await call(`/jobs/${other.id}/accept`, { token: omar.token, body: {} }); // takes another job at the recommendation
   assert.equal(db.prepare('SELECT COUNT(*) n FROM order_offers WHERE driver_id = ?').get(omar.user.id).n, 0); // taking a job drops his offers
   // Backstop for any other way a driver becomes busy: a fresh offer row from a busy driver stays hidden and refused.
@@ -132,7 +134,7 @@ try {
   assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).offers.some(o => o.name === 'Omar'), false);
   await call(`/orders/${order.id}/offers/${omar.user.id}/accept`, { token: customer.token, body: {}, expect: 409 });
   await call(`/jobs/${order.id}/offer`, { token: omar.token, body: { price: rec.price }, expect: 409 }); // busy
-  await call(`/orders/${other.id}/cancel`, { token: customer.token, body: {} });
+  await call(`/orders/${other.id}/cancel`, { token: otherRider.token, body: {} });
   await call(`/orders/${order.id}/cancel`, { token: customer.token, body: {} });
 
   // ---- a promo discount never exceeds a cheaper accepted price minus ₪1 ----

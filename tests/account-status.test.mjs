@@ -34,6 +34,7 @@ const login = (phone, password, expect) => call('/auth/login', { body: { phone, 
 try {
   const admin = await call('/auth/register', { body: { phone: '0599810001', name: 'Admin', password: 'secret1' } });
   await promote('0599810001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599810001', password: 'secret1' } })).token;
   const driver = await call('/auth/register', { body: { phone: '0599810002', name: 'Driver', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const customer = await call('/auth/register', { body: { phone: '0599810003', name: 'Customer', password: 'secret1' } });
   const driverPush = 'https://fcm.googleapis.com/fcm/send/driver';
@@ -75,9 +76,10 @@ try {
 
   // Release review, 18 Nov: the sign-in limit counts an attempt when it starts, so parallel guesses cannot all pass a
   // check-only gate before the first failure is recorded. Ten at once: at most five are judged, the rest are refused.
-  // Bound check: SQLite serializes these requests, so the race itself shows only on PostgreSQL; this cannot fail on old code.
+  loginCheck.delayMs = 150; // each verification waits, so the ten requests really overlap
   const burst = await Promise.all(Array.from({ length: 10 }, () => realFetch(`${base}/auth/login`, { method: 'POST',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: '0599810077', password: 'guess-pass' }) }).then(r => r.status)));
+  loginCheck.delayMs = 0;
   assert.ok(burst.filter(status => status === 401).length <= 5, `at most five guesses judged: ${burst}`);
   assert.equal(burst.filter(status => status === 429).length + burst.filter(status => status === 401).length, 10);
   console.log('Account status checks passed: approval push, blocked code, enumeration policy, unblock, parallel guess limit.');

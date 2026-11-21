@@ -51,6 +51,8 @@ export class Payments {
   private verify: Verifier;
   constructor(db: Persistence, fail: Fail, provider: PaymentsProvider | null = null, verify: Verifier = () => false) { this.db = db; this.fail = fail; this.provider = provider; this.verify = verify; }
   private async gate() { if (!(await paymentsAvailable(this.db))) this.fail(409, 'payments_unavailable'); }
+  // G-COD (SRS §G): creating goods COD requires the flag. Existing COD can still be read, collected, remitted and resolved.
+  private codWrites() { if (process.env.WIND_GOODS_COD !== 'on') this.fail(409, 'cod_unavailable'); }
   private async providerGate() { await this.gate(); if (!this.provider) this.fail(409, 'payments_unavailable'); return this.provider!; }
   private async tx<T>(work: () => Promise<T>): Promise<T> { return this.db.scope(async () => { if (this.db.inTransaction) return work(); await this.db.exec('BEGIN'); try { const value = await work(); await this.db.exec('COMMIT'); return value; } catch (e) { if (this.db.inTransaction) await this.db.exec('ROLLBACK'); throw e; } }); }
   private async order(actor: Actor, id: number) { const row = await this.db.one('SELECT * FROM orders WHERE id=?', id) ?? this.fail(404, 'not_found'); if (actor.role !== 'admin' && actor.id !== Number(row.customer_id) && actor.id !== Number(row.driver_id)) this.fail(403, 'forbidden'); return row; }
@@ -161,7 +163,7 @@ export class Payments {
   }
   async refundOrder(actor: Actor, orderId: number, body: Row) { await this.providerGate(); needStaff(await staffActor(this.db, actor), this.fail, 'finance'); const intent = await this.db.one('SELECT id FROM payment_intents WHERE order_id=?', orderId) ?? this.fail(404, 'not_found'); return this.refund(actor, String(intent.id), body.amountMinor, body.reason, body.requestId); }
   async createCod(actor: Actor, orderId: number, body: Row) {
-    await this.gate(); const order = await this.order(actor, orderId); this.owner(actor, order);
+    await this.gate(); this.codWrites(); const order = await this.order(actor, orderId); this.owner(actor, order);
     // A shop order collects its goods through the shop ledger; a second COD would be a second collection at the door.
     if (['searching', 'cancelled'].includes(order.status) || order.service === 'shop') this.fail(409, 'cod_unavailable');
     if (typeof body.beneficiary !== 'string' || !body.beneficiary.trim() || !Number.isSafeInteger(body.goodsMinor) || body.goodsMinor < 0 || body.goodsMinor > COD_LIMIT_MINOR || !Number.isSafeInteger(body.remittanceDueAt) || body.remittanceDueAt <= 0) this.fail(400, 'invalid_input');

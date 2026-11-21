@@ -2,12 +2,12 @@
 // out-of-stock switch, which is the edit a busy shop makes most often.
 import { useState } from 'react';
 import { ActivityIndicator, Switch, View } from 'react-native';
-import { api, errorCode, useApi } from '../../api';
+import { api, useApi } from '../../api';
 import { minorFromText, type MerchantItem } from '../../model';
 import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Loading, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
 
 export default function MerchantCatalogue() {
-  const { c, language, money } = useCopy();
+  const { c, language, money, err } = useCopy();
   const { data, error, reload } = useApi<{ items: MerchantItem[] }>('/merchant/catalogue');
   const [editing, setEditing] = useState<MerchantItem | 'new' | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
@@ -16,7 +16,7 @@ export default function MerchantCatalogue() {
   async function toggle(item: MerchantItem) {
     setBusy(item.id); setActionError('');
     try { await api(`/merchant/items/${item.id}`, { available: !item.available }); await reload(); }
-    catch (e) { setActionError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    catch (e) { setActionError(err(e)); }
     finally { setBusy(null); }
   }
   const sections = [...new Set(data.items.map(i => i.section))];
@@ -50,7 +50,7 @@ export default function MerchantCatalogue() {
 }
 
 function ItemForm({ item, onDone }: { item: MerchantItem | null; onDone: () => void }) {
-  const { c } = useCopy();
+  const { c, err } = useCopy();
   const [section, setSection] = useState(item?.section ?? '');
   const [nameAr, setNameAr] = useState(item?.nameAr ?? '');
   const [nameEn, setNameEn] = useState(item?.nameEn ?? '');
@@ -66,7 +66,7 @@ function ItemForm({ item, onDone }: { item: MerchantItem | null; onDone: () => v
     try {
       await api(item ? `/merchant/items/${item.id}` : '/merchant/items', { section: section.trim(), nameAr: nameAr.trim(), nameEn: nameEn.trim(), priceAgorot, byWeight, available: item?.available ?? true });
       onDone();
-    } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    } catch (e) { setError(err(e)); }
     finally { setBusy(false); }
   }
   return <Card>

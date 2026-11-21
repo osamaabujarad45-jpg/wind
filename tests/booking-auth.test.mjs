@@ -69,6 +69,7 @@ try {
 
   const admin = await call('/auth/register', { phone: '0599111000', name: 'Admin', password: 'secret1' });
   await promote('0599111000');
+  admin.token = (await call('/auth/login', { phone: '0599111000', password: 'secret1' })).token;
   const owner = await call('/auth/register', { phone: '0599111090', name: 'Receipt owner', password: 'secret1' });
   const other = await call('/auth/register', { phone: '0599111091', name: 'Other customer', password: 'secret1' });
   const driver = await call('/auth/register', { phone: '0599111092', name: 'Driver', password: 'secret1', registrationRole: 'driver', vehicle: 'bicycle' });

@@ -23,11 +23,12 @@ for (const language of ['ar', 'en']) {
 // One screen rendered with a stub React: hooks are slots kept in call order, as React keeps them.
 // `me` is the session's user record; for settings it carries the server settings the form starts from.
 // `store` is the device's secure storage (shared between two renders = an app restart); `effects` runs mount effects once;
-// `receipt` is what GET /admin/cash/commands/:id answers.
-function screen(file, language, { data = {}, me = {}, store = new Map(), effects = false, receipt = null } = {}) {
+// `receipt` is what GET /admin/cash/commands/:id answers: one entry for every id, or a function of the request id (which may
+// return a promise, to hold the lookup open).
+function screen(file, language, { data = {}, errors = {}, me = {}, store = new Map(), effects = false, receipt = null, delayPayroll = false } = {}) {
   const slots = [], calls = [], dialogs = [];
   let cursor = 0, serverSettings = me.settings ? { ...me.settings } : null;
-  let loseNext = false, holding = false, releaseHeld = null;
+  let loseNext = false, forbidNext = false, holding = false, releaseHeld = null;
   const react = {
     useState(initial) {
       const index = cursor++;
@@ -35,16 +36,24 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
       return [slots[index], value => { slots[index] = typeof value === 'function' ? value(slots[index]) : value; }];
     },
     useRef(initial) { const index = cursor++; return slots[index] ??= { current: initial }; },
-    useEffect(run) { const index = cursor++; if (effects && !(index in slots)) { slots[index] = true; run(); } },
+    useEffect(run, deps) {
+      const index = cursor++, previous = slots[index];
+      if (effects && (!deps || !previous || deps.some((dep, i) => !Object.is(dep, previous[i])))) { slots[index] = deps; run(); }
+    },
   };
   // The server side of the stub. A "lost" call still reaches the server first (the write commits) and then the reply is dropped.
-  const api = async (path, body, method) => {
+  // The settings screen negotiates the payroll rate with ?payroll=1 (older admin builds never see it); calls log the bare path.
+  const payrollView = settings => { const { pickupPayPerKm = 1, ...legacy } = settings ?? {}; return { settings: legacy, pickupPayPerKm }; };
+  const openedWith = serverSettings ? payrollView(serverSettings) : null; // what the screen fetched when it opened
+  let payrollData = delayPayroll ? null : openedWith;
+  const api = async (rawPath, body, method) => {
+    const payroll = rawPath.endsWith('?payroll=1'), path = rawPath.replace('?payroll=1', '');
     calls.push(JSON.parse(JSON.stringify({ path, body: body ?? null, method: method ?? null })));
     const lost = loseNext;
     loseNext = false;
     if (path === '/me') {
       if (lost) throw new Error('network');
-      return { ...me, settings: { ...serverSettings } };
+      return payroll ? payrollView(serverSettings) : { ...me, settings: { ...serverSettings } };
     }
     if (path === '/admin/settings') {
       // The server's compare-and-set: refuse, before anything is written, if a reviewed value has moved.
@@ -53,9 +62,10 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
       serverSettings = { ...serverSettings, ...writes };
       if (holding) { holding = false; await new Promise(resolve => { releaseHeld = resolve; }); }
       if (lost) throw new Error('network');
-      return { ...serverSettings };
+      return payroll ? payrollView(serverSettings) : { ...serverSettings };
     }
-    if (path.startsWith('/admin/cash/commands/')) { if (lost) throw new Error('network'); return { entry: receipt }; }
+    if (forbidNext && !path.startsWith('/admin/cash/commands/')) { forbidNext = false; throw Object.assign(new ApiError('forbidden'), { status: 403 }); }
+    if (path.startsWith('/admin/cash/commands/')) { if (lost) throw new Error('network'); return { entry: typeof receipt === 'function' ? await receipt(path.split('/').pop()) : receipt }; }
     if (lost) throw new Error('network');
     return { reference: 'REF-1' };
   };
@@ -63,7 +73,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
   const ui = new Proxy({
     fill, palette: {}, tones: {}, haptic: { success() {}, error() {} },
     confirm: (message, yes, yesLabel, noLabel) => dialogs.push({ message, yes, yesLabel, noLabel }),
-    useCopy: () => ({ c, err: e => e.message, money: n => String(n), largeText: false }),
+    useCopy: () => ({ c, rtl: language === 'ar', err: e => typeof e === 'string' ? e : e.message, money: n => String(n), largeText: false }),
   }, { get: (target, name) => name in target ? target[name] : String(name) });
   const session = { me, refresh: async () => {}, signOut: async () => {}, language, setLanguage() {} };
   class ApiError extends Error {}
@@ -71,7 +81,7 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
     react,
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-native': new Proxy({}, { get: (_, name) => String(name) }),
-    '../../api': { api, ApiError, useApi: path => ({ data: data[path] ?? [], error: undefined, reload: async () => {} }) },
+    '../../api': { api, ApiError, apiSessionRevision: () => 0, useApi: path => ({ data: path === '/me?payroll=1' ? payrollData : path in data ? data[path] : [], error: errors[path], reload: async () => {} }) },
     '../../model': model,
     '../../parts': { useFormat: () => ({ date: String, time: String }), PasswordCard: 'PasswordCard' },
     '../../session': { useSession: () => session },
@@ -89,10 +99,17 @@ function screen(file, language, { data = {}, me = {}, store = new Map(), effects
   }).outputText, context);
   return {
     calls, dialogs, store,
-    render() { cursor = 0; return context.exports.default(); },
+    deliverPayroll() { payrollData = openedWith; },
+    // UI components are mocked as string types; a function-typed element is the screen's own component, rendered inline
+    // with the shared hook cursor as React would render it.
+    render() { cursor = 0; const expand = node => !node || typeof node !== 'object' ? node : typeof node.type === 'function' ? expand(node.type(node.props))
+      : node.props?.children === undefined ? node : { ...node, props: { ...node.props, children: [node.props.children].flat(Infinity).map(expand) } };
+      return expand(context.exports.default()); },
     server: () => serverSettings,
     // The next call (a write or a read) commits or answers on the server, then its reply is lost.
     loseNextCall() { loseNext = true; },
+    // The next write is refused with 403 (this admin lost finance duty) before anything is written.
+    forbidNextWrite() { forbidNext = true; },
     // The next settings write commits but waits; the returned function lets its reply through.
     holdNextSettingsWrite() { holding = true; return () => releaseHeld(); },
     // Another admin saves a different setting while this form is open.
@@ -187,6 +204,22 @@ for (const language of ['ar', 'en']) {
     assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 ₪ → 10 ₪` }), 'compared against the saved 12, not the stale 10');
     config.dialogs.at(-1).yes(); await flush();
     assert.equal(config.server().parcelPrice, 10);
+  }
+
+  // The initial payroll response can arrive before or after the first confirmed save.
+  for (const arrivesAfterSave of [false, true]) {
+    const config = screen('settings', language, { me: { settings: settingsBase }, effects: true, delayPayroll: true });
+    field(config.render(), c.set_parcelPrice).onChangeText(typed12);
+    if (!arrivesAfterSave) { config.deliverPayroll(); config.render(); }
+    assert.equal(field(config.render(), c.set_parcelPrice).value, typed12, 'an early response preserves the touched value');
+    await tap(config, c.save);
+    config.dialogs[0].yes(); await flush();
+    if (arrivesAfterSave) { config.deliverPayroll(); config.render(); }
+    assert.equal(field(config.render(), c.set_parcelPrice).value, '12');
+    field(config.render(), c.set_parcelPrice).onChangeText(typed14);
+    await tap(config, c.save);
+    config.dialogs[1].yes(); await flush();
+    assert.deepEqual(config.calls.at(-1).body, { parcelPrice: 14, expected: { parcelPrice: 12 } });
   }
 
   // Same setting changed by another admin after this form opened: the server refuses the reviewed write, nothing is
@@ -435,7 +468,15 @@ for (const language of ['ar', 'en']) {
   assert.ok(unknown.calls.every(call => call.path !== '/admin/cash/remittance'), `${language}: the lookup never records`);
   assert.equal(store.size, 1);
 
-  const known = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: { id: 41, kind: 'remittance', reference: 'R-000041' } });
+  const withoutBalances = screen('cash', language, { data: { ...cashData, '/admin/cash': undefined }, errors: { '/admin/cash': new Error('network') },
+    me: cashAdmin, effects: true, store: new Map(store) });
+  withoutBalances.render(); await flush();
+  assert.ok(shows(withoutBalances.render(), c.cashUncertain), `${language}: the balance error leaves the receipt visible`);
+  await tap(withoutBalances, c.cashRetrySame); await flush();
+  assert.deepEqual(withoutBalances.calls.find(call => call.path === '/admin/cash/remittance')?.body, sent,
+    `${language}: Retry sends the original receipt without the balances`);
+
+  const known = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: { id: 41, kind: 'remittance', reference: 'R-000041', amountCents: sent.amountCents, note: sent.note ?? '' } }); // a receipt names what it holds
   known.render(); // mounting runs the recovery lookup
   await flush();
   tree = known.render();
@@ -445,3 +486,295 @@ for (const language of ['ar', 'en']) {
   assert.equal(store.size, 0, `${language}: the settled command is cleared`);
 }
 console.log('Admin cash entry survives a restart and is settled only by its command receipt');
+
+// Sol R25-M2, R26-L1: a recovered handover is read with its status at the check, without saying who decided it; a disputed one
+// asks for a check with the driver and the office.
+for (const language of ['ar', 'en']) for (const status of ['pending', 'confirmed', 'disputed']) {
+  const c = copy[language];
+  const store = new Map();
+  const before = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store });
+  before.render(); await flush();
+  await tap(before, c.cashRecord);
+  before.loseNextCall();
+  await tap(before, c.cashRecord);
+  before.dialogs.at(-1).yes(); await flush();
+  const sent = before.calls.at(-1).body;
+  const after = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store,
+    receipt: { id: 61, kind: 'remittance', reference: 'R-000061', amountCents: sent.amountCents, note: sent.note ?? '', status } });
+  after.render(); await flush();
+  const tree = after.render();
+  const expected = { pending: c.cashRecorded, confirmed: c.cashRecordedConfirmed, disputed: c.cashRecordedDisputed }[status];
+  assert.ok(shows(tree, fill(expected, { r: model.ltr('R-000061') })), `${language}/${status}: the receipt reads its status`);
+  if (status !== 'pending') assert.ok(!shows(tree, fill(c.cashRecorded, { r: model.ltr('R-000061') })), `${language}/${status}: no pending wording for a decided entry`);
+  // Sol R26-L3: the disputed instruction (and any receipt) survives a pull-to-refresh: the refreshed lists do not show it.
+  await nodes(tree, 'Screen').find(props => props.onRefresh).onRefresh(); await flush();
+  assert.ok(shows(after.render(), fill(expected, { r: model.ltr('R-000061') })), `${language}/${status}: a refresh keeps the named receipt`);
+}
+console.log('Admin cash recovered receipt reads its status at the check and survives a refresh');
+
+// Sol R25-M1: a restored entry's Retry fails offline (unconfirmed), then records on the next Retry. The captain has one line,
+// the receipt, beside another captain's kept instruction; a refresh does not bring the failure back.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map(), key = cashCommand.cashCommandKey(1);
+  const receipts = {};
+  const options = { data: cashData, me: cashAdmin, effects: true, store, receipt: id => receipts[id] ?? null };
+  let view = screen('cash', language, options);
+  view.render(); await flush();
+  await tap(view, c.cashRecord);
+  view.loseNextCall();
+  await tap(view, c.cashRecord);
+  view.dialogs.at(-1).yes(); await flush();
+  const x = JSON.parse(store.get(key));
+  view = screen('cash', language, options); view.render(); await flush(); // restarted: X comes back restored
+  assert.ok(shows(view.render(), c.cashUncertain), `${language}: X is restored and uncertain`);
+  view.loseNextCall(); // the same-id resend of this Retry loses its reply: still unconfirmed
+  await tap(view, c.cashRetrySame); await flush();
+  const prefix = `${model.isolate('Driver')} · ${model.ltr('0599000102')} · ${x.amountCents / 100}: `;
+  assert.ok(shows(view.render(), prefix + 'network'), `${language}: the offline Retry says it failed, naming the captain`);
+  await tap(view, c.cashRetrySame); await flush(); // the resend answers with the entry (the stub's REF-1)
+  let tree = view.render();
+  assert.ok(shows(tree, prefix + fill(c.cashRecorded, { r: model.ltr('REF-1') })), `${language}: the receipt names the captain`);
+  assert.ok(!shows(tree, prefix + 'network'), `${language}: the failed attempt's line is replaced by the receipt`);
+  const refresh = nodes(tree, 'Screen').find(props => props.onRefresh)?.onRefresh;
+  assert.ok(refresh, 'the cash screen refreshes');
+  await refresh(); await flush();
+  tree = view.render();
+  assert.ok(!shows(tree, prefix + 'network'), `${language}: a refresh does not bring the failure back`);
+}
+console.log('Admin cash Retry that records after a failed attempt keeps one line for the entry');
+// Sol R27-M1: a lost reply, then the cashier loses finance duty: the Retry gets 403 and no receipt yet. The entry stays saved and
+// named, the cashier reads the finance-duty instruction, and once the first write's receipt appears the same Retry settles it.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map(), key = cashCommand.cashCommandKey(1);
+  let found = null;
+  const view = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: () => found });
+  view.render(); await flush();
+  await tap(view, c.cashRecord);
+  view.loseNextCall();
+  await tap(view, c.cashRecord);
+  view.dialogs.at(-1).yes(); await flush();
+  const x = JSON.parse(store.get(key));
+  view.forbidNextWrite();
+  await tap(view, c.cashRetrySame); await flush();
+  const prefix = `${model.isolate('Driver')} · ${model.ltr('0599000102')} · ${x.amountCents / 100}: `;
+  let tree = view.render();
+  assert.ok(shows(tree, prefix + c.cashFinanceRequired), `${language}: the named line says finance duty is needed`);
+  assert.ok(shows(tree, c.cashUncertain) && store.size === 1, `${language}: the entry stays saved and open`);
+  found = { id: 81, kind: 'remittance', reference: 'R-000081', amountCents: x.amountCents, note: x.note, status: 'pending' };
+  view.forbidNextWrite();
+  await tap(view, c.cashRetrySame); await flush();
+  tree = view.render();
+  assert.ok(shows(tree, prefix + fill(c.cashRecorded, { r: model.ltr('R-000081') })) && !shows(tree, c.cashFinanceRequired), `${language}: the receipt settles it`);
+  assert.equal(store.size, 0, `${language}: cleared only once the receipt is found`);
+}
+console.log('Admin cash Retry without finance duty keeps the entry and settles by its receipt');
+// Haiku r25 M1: a first send refused with 403 and no receipt saved nothing: the line says so and the slot is clear.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map();
+  const view = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store });
+  view.render(); await flush();
+  await tap(view, c.cashRecord);
+  view.forbidNextWrite();
+  await tap(view, c.cashRecord);
+  view.dialogs.at(-1).yes(); await flush();
+  const tree = view.render();
+  assert.ok(shows(tree, c.cashFinanceRefused) && !shows(tree, c.cashFinanceRequired), `${language}: nothing was recorded`);
+  assert.equal(store.size, 0, `${language}: nothing stays saved`);
+}
+console.log('Admin cash first send without finance duty says nothing was recorded');
+// Haiku r26 N1: a first send refused with 403 whose receipt lookup fails is still saved and unconfirmed: it says so, and never
+// "nothing was recorded" beside a form that says the receipt may be recorded.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map();
+  const view = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: () => { throw new Error('network'); } });
+  view.render(); await flush();
+  await tap(view, c.cashRecord);
+  view.forbidNextWrite();
+  await tap(view, c.cashRecord);
+  view.dialogs.at(-1).yes(); await flush();
+  const tree = view.render();
+  assert.ok(shows(tree, c.cashFinanceRequired) && !shows(tree, c.cashFinanceRefused), `${language}: the kept entry says it stays saved`);
+  assert.ok(shows(tree, c.cashUncertain) && store.size === 1, `${language}: the entry stays saved and open`);
+}
+console.log('Admin cash first send without finance duty and an unknown receipt keeps the entry');
+
+// Sol R21-M1, Haiku r19 N19-1: another tab settled entry X and saved entry Y for another captain, whose reply was lost. This
+// tab's Retry on X (in place after a lost reply, or restored after a restart) settles X by its receipt, then drains Y: both
+// receipts stay on screen, Y names its captain, and nothing is posted again.
+for (const language of ['ar', 'en']) for (const restored of [false, true]) {
+  const c = copy[language];
+  const store = new Map(), key = cashCommand.cashCommandKey(1);
+  const receipts = {};
+  const options = { data: cashData, me: cashAdmin, effects: true, store, receipt: id => receipts[id] ?? null };
+  let view = screen('cash', language, options);
+  view.render(); await flush();
+  await tap(view, c.cashRecord);
+  view.loseNextCall();
+  await tap(view, c.cashRecord);
+  view.dialogs.at(-1).yes(); await flush();
+  const x = JSON.parse(store.get(key));
+  if (restored) { view = screen('cash', language, options); view.render(); await flush(); }
+  assert.ok(shows(view.render(), c.cashUncertain), `${language}: X is uncertain`);
+  const y = { ...x, requestId: randomUUID(), driverId: 8, amountCents: 300, note: '' };
+  store.set(key, JSON.stringify(y)); // the other tab: X settled, Y saved and its reply lost
+  receipts[x.requestId] = { id: 51, kind: 'remittance', reference: 'R-201', amountCents: x.amountCents, note: x.note };
+  receipts[y.requestId] = { id: 52, kind: 'remittance', reference: 'R-202', amountCents: 300, note: '' };
+  const posts = view.calls.filter(call => call.path === '/admin/cash/remittance').length;
+  await tap(view, c.cashRetrySame); await flush();
+  const tree = view.render();
+  assert.ok(shows(tree, 'R-201') && shows(tree, 'R-202'), `${language}/${restored}: both receipts stay on screen`);
+  // Haiku r23 F3, Sol R25-L1: X's own receipt names its captain too, restored or in place.
+  assert.ok(shows(tree, `${model.isolate('Driver')} · ${model.ltr('0599000102')} · ${x.amountCents / 100}: `), `${language}/${restored}: X's receipt names its captain`);
+  assert.ok(shows(tree, `${model.isolate('Other')} · ${model.ltr('0599000103')} · 3: `), `${language}/${restored}: the drained receipt names its captain and amount`);
+  assert.equal(view.calls.filter(call => call.path === '/admin/cash/remittance').length, posts, `${language}/${restored}: nothing is posted again`);
+  assert.equal(store.size, 0, `${language}/${restored}: both slots are settled`);
+  assert.ok(!shows(tree, c.cashUncertain), `${language}/${restored}: no form is left open`);
+}
+console.log('Admin cash Retry drains another saved entry and keeps both receipts');
+
+// Sol R21-M2, Haiku r19 N19-2: the installed build's positive adjustment and this build's refused record for another captain,
+// neither with a receipt. Both instructions stay on screen, each naming its captain, even when the drain finishes before the
+// balance list loads (Haiku r20 N20-1).
+for (const language of ['ar', 'en']) {
+  const store = new Map();
+  const data = { ...cashData, '/admin/cash': undefined }; // the balance list has not loaded yet
+  const legacy = { ...cashCommand.newCashCommand(1, 7, 'adjustment', 100, 'Promo credits paid in cash'), schemaVersion: 1 };
+  const marked = { ...cashCommand.newCashCommand(1, 8, 'remittance', 300, ''), refused: true };
+  store.set(cashCommand.legacyCashCommandKey(1), JSON.stringify(legacy));
+  store.set(cashCommand.cashCommandKey(1), JSON.stringify(marked));
+  const view = screen('cash', language, { data, me: cashAdmin, effects: true, store });
+  view.render(); await flush();
+  assert.ok(shows(view.render(), '#7 · 1: cash_command_ambiguous') && shows(view.render(), '#8 · 3: cash_command_settled'), `${language}: both lines name their captain before the list loads`);
+  data['/admin/cash'] = cashData['/admin/cash']; // the list arrives
+  const tree = view.render();
+  assert.ok(shows(tree, `${model.isolate('Driver')} · ${model.ltr('0599000102')} · 1: cash_command_ambiguous`), `${language}: the installed build's instruction names its captain`);
+  assert.ok(shows(tree, `${model.isolate('Other')} · ${model.ltr('0599000103')} · 3: cash_command_settled`), `${language}: the second refusal is added, not swapped in`);
+  assert.equal(store.size, 0, `${language}: both slots are settled`);
+  assert.ok(view.calls.every(call => !call.path.startsWith('/admin/cash/remittance') && !call.path.startsWith('/admin/cash/adjustment')), `${language}: nothing is posted`);
+  // Haiku r21 N21-5: the line leads with the screen's direction mark.
+  assert.ok(shows(tree, `${language === 'ar' ? '\u200f' : '\u200e'}${model.isolate('Driver')}`), `${language}: the line leads with the screen's direction`);
+  // Haiku r21 N21-1: a new action keeps every captain's drained instruction.
+  await tap(view, copy[language].cashRecord); // a row's form opens
+  await tap(view, copy[language].cashRecord); // the form's record button asks for review
+  view.dialogs.at(-1).yes(); await flush(); // a new entry is submitted and recorded
+  const after = view.render();
+  assert.ok(shows(after, 'REF-1'), `${language}: the new entry is recorded`);
+  assert.ok(shows(after, '1: cash_command_ambiguous') && shows(after, '3: cash_command_settled'), `${language}: a submit keeps every captain's instruction`);
+}
+console.log('Admin cash recovery keeps every instruction of one drain');
+
+// Sol R22-M2: two captains with one name, one adjustment each of the same amount, in the installed build's slot and in this
+// build's; both receipts match and carry no reference. Two recorded lines, told apart by phone.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map();
+  const data = { '/admin/cash': [
+    { driverId: 7, name: 'Omar', phone: '0599000201', owedCents: 0, pendingCents: 0, lastRemittanceAt: null },
+    { driverId: 8, name: 'Omar', phone: '0599000202', owedCents: 0, pendingCents: 0, lastRemittanceAt: null }], '/admin/cash/pending': [] };
+  const legacy = { ...cashCommand.newCashCommand(1, 7, 'adjustment', 500, 'Fuel card charge'), schemaVersion: 1 };
+  const current = cashCommand.newCashCommand(1, 8, 'adjustment', 500, 'Fuel card charge');
+  store.set(cashCommand.legacyCashCommandKey(1), JSON.stringify(legacy));
+  store.set(cashCommand.cashCommandKey(1), JSON.stringify(current));
+  const receipts = { [legacy.requestId]: { id: 61, kind: 'adjustment', reference: null, amountCents: 500, note: legacy.note },
+    [current.requestId]: { id: 62, kind: 'adjustment', reference: null, amountCents: 500, note: current.note } };
+  const view = screen('cash', language, { data, me: cashAdmin, effects: true, store, receipt: id => receipts[id] ?? null });
+  view.render(); await flush();
+  const tree = view.render();
+  for (const phone of ['0599000201', '0599000202'])
+    assert.ok(shows(tree, `${model.isolate('Omar')} · ${model.ltr(phone)} · 5: ${c.cashAdjustRecorded}`), `${language}: the adjustment for ${phone} is shown`);
+  assert.equal(store.size, 0, `${language}: both slots are settled`);
+}
+console.log('Admin cash drain tells same-name captains apart');
+
+// Haiku r21 N21-2: a captain who leaves the balance list after the drain keeps the name and phone the list showed.
+for (const language of ['ar', 'en']) {
+  const store = new Map();
+  const data = { ...cashData };
+  const marked = { ...cashCommand.newCashCommand(1, 8, 'remittance', 300, ''), refused: true };
+  store.set(cashCommand.cashCommandKey(1), JSON.stringify(marked));
+  const view = screen('cash', language, { data, me: cashAdmin, effects: true, store });
+  view.render(); await flush();
+  // Haiku r22 F4: while the captain is on the list, the live name wins over the one captured at settlement.
+  data['/admin/cash'] = cashData['/admin/cash'].map(row => row.driverId === 8 ? { ...row, name: 'Renamed' } : row);
+  assert.ok(shows(view.render(), `${model.isolate('Renamed')} · ${model.ltr('0599000103')} · 3: `), `${language}: the live name is shown`);
+  data['/admin/cash'] = cashData['/admin/cash'].filter(row => row.driverId !== 8); // captain 8 left the list
+  assert.ok(shows(view.render(), `${model.isolate('Other')} · ${model.ltr('0599000103')} · 3: cash_command_settled`), `${language}: the captured name stays`);
+}
+console.log('Admin cash drained line keeps a departed captain\'s name');
+
+// Sol R23-L2: the installed build's adjustment has no receipt (check the balance), then this build's entry has a matching
+// receipt. The receipt is added beside the instruction, never in its place.
+for (const language of ['ar', 'en']) {
+  const store = new Map();
+  const legacy = { ...cashCommand.newCashCommand(1, 7, 'adjustment', 100, 'Promo credits paid in cash'), schemaVersion: 1 };
+  const current = cashCommand.newCashCommand(1, 8, 'remittance', 300, '');
+  store.set(cashCommand.legacyCashCommandKey(1), JSON.stringify(legacy));
+  store.set(cashCommand.cashCommandKey(1), JSON.stringify(current));
+  const receipts = { [current.requestId]: { id: 81, kind: 'remittance', reference: 'R-81', amountCents: 300, note: '' } };
+  const view = screen('cash', language, { data: cashData, me: cashAdmin, effects: true, store, receipt: id => receipts[id] ?? null });
+  view.render(); await flush();
+  const tree = view.render();
+  assert.ok(shows(tree, `${model.ltr('0599000102')} · 1: cash_command_ambiguous`), `${language}: the instruction stays`);
+  assert.ok(shows(tree, `${model.ltr('0599000103')} · 3: `) && shows(tree, 'R-81'), `${language}: the receipt is added beside it`);
+  assert.equal(store.size, 0, `${language}: both slots are settled`);
+}
+console.log('Admin cash receipt never replaces an earlier instruction');
+
+// Sol R23-L3, Haiku r20 N20-4: while the mount recovery's receipt lookup is open, no handover can be marked; afterwards a
+// confirmed resolution is sent and its notice sits beside the recovered receipt.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const store = new Map();
+  const saved = cashCommand.newCashCommand(1, 7, 'remittance', 100, '');
+  store.set(cashCommand.cashCommandKey(1), JSON.stringify(saved));
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const data = { ...cashData, '/admin/cash/pending': [{ id: 5, amountCents: 100, createdAt: 0, userName: 'Driver', userPhone: '0599000102', userStatus: 'active', reference: null }] };
+  const view = screen('cash', language, { data, me: cashAdmin, effects: true, store, receipt: () => held });
+  view.render(); await flush();
+  let tree = view.render();
+  for (const title of [c.cashMarkConfirmed, c.cashMarkDisputed])
+    assert.ok(button(tree, title).length === 1 && button(tree, title)[0].disabled, `${language}: ${title} waits for the recovery`);
+  release({ id: 71, kind: 'remittance', reference: 'R-71', amountCents: 100, note: '' }); await flush(); await flush();
+  tree = view.render();
+  assert.ok(shows(tree, 'R-71'), `${language}: the recovered receipt is shown`);
+  for (const title of [c.cashMarkConfirmed, c.cashMarkDisputed])
+    assert.equal(button(tree, title)[0].disabled, false, `${language}: ${title} is available after the recovery`);
+  await tap(view, c.cashMarkConfirmed);
+  assert.ok(shows(view.render(), 'R-71'), `${language}: a Mark press keeps the drained receipt (Haiku r22 F2/F3)`);
+  field(view.render(), c.cashResolutionReason).onChangeText('Cash counted at the office');
+  await tap(view, c.cashResolveSave);
+  assert.ok(view.dialogs.at(-1).message.includes(`${model.isolate('Driver')} · ${model.ltr('0599000102')} · 1`) && view.dialogs.at(-1).message.includes(c.cashMarkConfirmed), `${language}: the confirmation names the decision, captain and amount (Haiku r23 F6, Sol R26-L2)`);
+  view.dialogs.at(-1).yes(); await flush();
+  const sent = view.calls.at(-1);
+  assert.deepEqual([sent.path, sent.body.decision], ['/admin/cash/5/resolve', 'confirm'], `${language}: the resolution is sent`);
+  tree = view.render();
+  assert.ok(shows(tree, 'R-71') && shows(tree, c.cashResolved), `${language}: the resolution notice is added beside the receipt`);
+}
+console.log('Admin cash handover marking waits for the recovery');
+
+// Haiku r23 F6, Sol R26-L2: the handover leaves the bounded waiting list while its card is open (answered, or pushed out by
+// newer entries). The card keeps whose handover it is, Save stays available and the server's compare-and-set decides.
+for (const language of ['ar', 'en']) {
+  const c = copy[language];
+  const entry = { id: 6, amountCents: 100, createdAt: 0, userName: 'Driver', userPhone: '0599000102', userStatus: 'active', reference: 'R-000006' };
+  const data = { ...cashData, '/admin/cash/pending': [entry] };
+  const view = screen('cash', language, { data, me: cashAdmin, effects: true });
+  view.render(); await flush();
+  await tap(view, c.cashMarkDisputed);
+  field(view.render(), c.cashResolutionReason).onChangeText('Office counted a different amount');
+  data['/admin/cash/pending'] = []; // the next poll no longer lists it
+  const who = `${model.isolate('Driver')} · ${model.ltr('0599000102')} · 1 · ${model.ltr('R-000006')}`;
+  assert.ok(shows(view.render(), who), `${language}: the card still names the handover`);
+  assert.equal(button(view.render(), c.cashResolveSave)[0].disabled, false, `${language}: Save stays available`);
+  await tap(view, c.cashResolveSave);
+  const dialog = view.dialogs.at(-1).message;
+  assert.ok(dialog.includes(c.cashMarkDisputed) && dialog.includes(who), `${language}: the confirmation names the decision and the handover`);
+  view.dialogs.at(-1).yes(); await flush();
+  assert.equal(view.calls.at(-1).path, '/admin/cash/6/resolve', `${language}: the server decides`);
+}
+console.log('Admin cash resolution keeps its handover when the list moves');

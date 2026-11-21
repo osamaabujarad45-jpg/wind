@@ -150,12 +150,14 @@ export function PinMap(props: PinMapProps) {
 function ApplePin({ center, onChange, onGesture, onFail, onReady, height = 320 }: PinMapProps) {
   const { c } = useCopy();
   const view = useRef<MapView>(null);
+  const touching = useRef(false);
   const reported = useRef(center);
   const pendingCenter = useRef<PinMapProps['center'] | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const callbacks = useRef({ onFail, onReady });
+  const gesture = () => { pendingCenter.current = null; onGesture?.(); };
   useEffect(() => { callbacks.current = { onFail, onReady }; });
   useEffect(() => {
     if (reported.current.latitude === center.latitude && reported.current.longitude === center.longitude) return;
@@ -181,10 +183,11 @@ function ApplePin({ center, onChange, onGesture, onFail, onReady, height = 320 }
     </Pressable>
   </View>;
   return <View style={{ height, width: '100%' }}>
-    <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }} showsUserLocation
+    <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} initialRegion={{ ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
       accessibilityLabel={c.pinHint}
-      pitchEnabled={false} rotateEnabled={false} // Apple reports no isGesture and its pan recogniser misses pinch: any touch takes over from a pending GPS camera.
-      onTouchStart={() => { pendingCenter.current = null; onGesture?.(); }} onPanDrag={() => { pendingCenter.current = null; onGesture?.(); }} onMapReady={() => setReady(true)}
+      pitchEnabled={false} rotateEnabled={false} // Apple does not report isGesture. A region change under a touch also catches a pinch.
+      onTouchStart={() => { touching.current = true; }} onTouchEnd={() => { touching.current = false; }} onTouchCancel={() => { touching.current = false; }}
+      onRegionChange={() => { if (touching.current) gesture(); }} onPanDrag={gesture} onMapReady={() => setReady(true)}
       onRegionChangeComplete={r => {
         const target = pendingCenter.current;
         if (target && Math.abs(target.latitude - r.latitude) + Math.abs(target.longitude - r.longitude) > 0.000001) return;

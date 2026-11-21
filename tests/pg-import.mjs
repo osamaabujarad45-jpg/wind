@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { initializeSqlite } from '../server/db/sqlite-schema.ts';
 import { snapshotSqlite, importSnapshot, reconcile, NON_LEGACY_TABLES } from '../server/migrate.ts';
 import { Persistence } from '../server/db/persistence.ts';
+import { Ledger } from '../server/domain/ledger.ts';
 import { initializePostgres, MIGRATION_LOCK } from '../server/db/postgres-schema.ts';
 import { connectionString, connect, freshPostgres, schemaName } from './pg-support.mjs';
 import { startApiProcess } from './support/api-process.mjs';
@@ -33,6 +34,11 @@ const admin = sqlite.prepare("SELECT id FROM users WHERE role='admin' ORDER BY i
 const driver = sqlite.prepare("SELECT id FROM users WHERE role='driver' ORDER BY id LIMIT 1").get().id;
 const order = sqlite.prepare('SELECT id FROM orders ORDER BY id LIMIT 1').get().id;
 const now = Date.now();
+const payout = Number(sqlite.prepare(`INSERT INTO cash_entries(driver_id,kind,amount_cents,note,status,recorded_by,created_at,request_id,source)
+  VALUES(?,'adjustment',100,'Office payout on source','confirmed',?,?,'00000000-0000-4000-8000-000000000002','payout')`).run(driver,admin,now).lastInsertRowid);
+const legacyNote = Number(sqlite.prepare(`INSERT INTO cash_entries(driver_id,kind,amount_cents,note,status,recorded_by,created_at)
+  VALUES(?,'adjustment',125,'DRV-17 manual correction','confirmed',?,?)`).run(driver,admin,now).lastInsertRowid);
+const trip = sqlite.prepare("SELECT id, order_id, amount_cents FROM cash_entries WHERE source = 'trip_pay' ORDER BY id LIMIT 1").get();
 const token = randomBytes(32).toString('hex');
 const sessionHash = createHash('sha256').update(token).digest('hex');
 sqlite.prepare('INSERT INTO sessions(token_hash,user_id,created_at) VALUES(?,?,?)').run(sessionHash, driver, now);
@@ -108,6 +114,26 @@ try {
   assert.equal(report.ok,true,JSON.stringify(report.errors));
   assert.ok(report.rounding.some(r=>r.column==='price'));
   assert.equal(report.reconciliation.mismatches.length,0);
+  const finance = { id: admin, role: 'admin', status: 'active' };
+  const fail = (_status, message) => { throw new Error(message); };
+  const ledger = new Ledger(database, fail);
+  assert.ok((await ledger.importLegacy(finance)).journals > 0);
+  const postings = (db, entryId) => db.all(`SELECT a.kind, e.debit_minor, e.credit_minor FROM ledger_journals j
+    JOIN ledger_entries e ON e.journal_id=j.id JOIN ledger_accounts a ON a.id=e.account_id
+    WHERE j.cash_entry_id=? ORDER BY e.debit_minor DESC`, entryId);
+  assert.deepEqual(await postings(database, trip.id), [
+    { kind: 'operating_expense', debit_minor: -trip.amount_cents, credit_minor: 0 },
+    { kind: 'driver_receivable', debit_minor: 0, credit_minor: -trip.amount_cents },
+  ]);
+  assert.deepEqual(await postings(database, payout), [
+    { kind: 'driver_receivable', debit_minor: 100, credit_minor: 0 },
+    { kind: 'provider_clearing', debit_minor: 0, credit_minor: 100 },
+  ]);
+  assert.deepEqual(await postings(database, legacyNote), [
+    { kind: 'driver_receivable', debit_minor: 125, credit_minor: 0 },
+    { kind: 'platform_revenue', debit_minor: 0, credit_minor: 125 },
+  ]);
+  assert.equal(await database.one('SELECT id FROM ledger_journals WHERE business_ref=?', `order:${trip.order_id}:discount`), undefined);
   assert.equal((await database.one('SELECT priority FROM orders WHERE id=?',priorityOrder)).priority,'same_day','current snapshot retains parcel priority');
   assert.equal((await database.one("SELECT error FROM order_command_rejections WHERE request_id='00000000-0000-4000-8000-000000000001'")).error,'priority_cutoff','terminal refusal survives import');
   assert.ok(report.reconciliation.tables.every(t=>t.sourceRows>0),'every legacy table has nonempty import evidence');
@@ -173,11 +199,15 @@ try {
   const restoreUrl=new URL(connectionString);restoreUrl.pathname=`/${freshDatabase}`;
   restored=new Persistence({connectionString:restoreUrl.href,pool:{options:`-c search_path=${schema},public`},statementTimeoutMs:30_000});
   await restored.run('CREATE EXTENSION postgis');
-  execFileSync(join(bin,executable('pg_restore')),['--dbname',restoreUrl.href,'--exit-on-error','--no-owner','--no-acl',archive],{windowsHide:true,timeout:30_000,stdio:'pipe'});
+  execFileSync(join(bin,executable('pg_restore')),['--dbname',restoreUrl.href,'--exit-on-error','--no-owner','--no-acl',archive],{windowsHide:true,timeout:120_000,stdio:'pipe'});
   const afterRestore=await reconcile(snapshot,restored);
   assert.equal(afterRestore.ok,true,JSON.stringify(afterRestore.mismatches));
   assert.equal((await restored.one('SELECT priority FROM orders WHERE id=?',priorityOrder)).priority,'same_day','dump/restore retains parcel priority');
   assert.deepEqual(afterRestore.financial,report.reconciliation.financial);
+  const restoredLedger = new Ledger(restored, fail);
+  assert.equal((await restoredLedger.importLegacy(finance)).journals, 0);
+  assert.equal(await restoredLedger.driverBalance(driver), await ledger.driverBalance(driver));
+  for (const entryId of [trip.id, payout, legacyNote]) assert.deepEqual(await postings(restored, entryId), await postings(database, entryId));
   assert.equal(afterRestore.tables.find(t=>t.table==='promo_redemptions').targetRows,2,'restore retains distinct PK-less redemptions');
   writeFileSync(join(dir,'restore-report.json'),JSON.stringify({schema,database:freshDatabase,...afterRestore},null,2));
   await assert.rejects(restored.run('DELETE FROM cash_entries'),/append-only/);

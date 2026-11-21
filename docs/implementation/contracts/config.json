@@ -19,6 +19,7 @@
       "freightPerKm": 2.5,
       "freightLarge": 50,
       "loadingHelp": 30,
+      "pickupPayPerKm": 1,
       "sharedDiscount": 0.4,
       "plusDiscount": 0.15,
       "commission": 0.15,
@@ -33,7 +34,8 @@
       "shopAcceptMinutes": 5,
       "shopConsentMinutes": 5,
       "shopNoCaptainMinutes": 10,
-      "shopDispatchLeadMinutes": 15
+      "shopDispatchLeadMinutes": 15,
+      "shopHandoverMinutes": 10
     },
     "units": "ILS; percentage settings are fractions in existing source",
     "fractionKeys": [

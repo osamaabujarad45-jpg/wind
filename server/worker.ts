@@ -2,7 +2,7 @@ import { createPrivateKey, generateKeyPairSync, randomInt, randomUUID } from 'no
 import { setTimeout as delay } from 'node:timers/promises';
 import { Persistence, type Row } from './db/persistence.ts';
 import { runtimePersistence } from './db/runtime.ts';
-import { encrypt, isDeviceNotRegistered, pushEndpoint, sendExpoPush, vapid } from './push.ts';
+import { encrypt, isDeviceNotRegistered, pushEndpoint, sendExpoPush, vapid, webPushKind } from './push.ts';
 import { durableProtocolAvailable, subscriptionKey } from './domain/events.ts';
 import { nativeSuppression, PUSH_KINDS, URGENT_KINDS } from './domain/native-push.ts';
 import { pushSubject } from './push.ts';
@@ -92,7 +92,10 @@ export class DurableWorker {
       if (kind==='job' || kind==='offer') {
         if (order.status!=='searching' || (order.scheduled_for && (order.scheduled_for<=Date.now() || order.scheduled_for>Date.now()+30*60_000))) return;
         if (kind==='job' && user.role!=='driver') return;
-      } else if (user.role!=='admin' && userId!==order.customer_id && userId!==order.driver_id) return;
+      } else if (user.role!=='admin' && userId!==order.customer_id && userId!==order.driver_id
+        // a shop order's merchant owner is a party to it (DLV-13 removal, MER-03 updates); shop orders imply the shop tables
+        && !(order.service==='shop' && user.role==='customer' // merchant authority is a customer account owning the shop (Sol R3-L5)
+          && await this.db.one('SELECT 1 FROM shop_orders s JOIN merchants m ON m.id=s.merchant_id WHERE s.order_id=? AND m.owner_user_id=?',order.id,userId))) return;
       if (kind==='offer_accepted' && (order.status!=='assigned' || userId!==order.driver_id)) return;
       if (['assigned','at_pickup','in_transit','completed','returned','on_hold','returning','cancelled'].includes(kind) && order.status!==kind) return;
     }
@@ -147,7 +150,7 @@ export class DurableWorker {
       if (isExpo && target && (target as { invalidToken?: boolean }).invalidToken) { await this.db.run('DELETE FROM native_push_tokens WHERE token_hash=?',(target as { token: Row }).token.token_hash); await this.finish(work,'obsolete','invalid_token'); return true; }
       if (!target) { await this.finish(work,'obsolete','expired_or_revoked'); return true; }
       const p=work.payload;
-      const message=JSON.stringify({ kind:p.kind,order:p.order,url:p.path ?? (p.kind==='job'?'/driver':`/order/${p.order}`),
+      const message=JSON.stringify({ kind:isExpo?p.kind:webPushKind(p.kind),order:p.order,url:p.path ?? (p.kind==='job'?'/driver':`/order/${p.order}`),
         lang:(((target as { token?: Row }).token ?? (target as { subscription: Row }).subscription).lang as string),eventId:work.event_id });
       if (isExpo) {
         if (this.options.expoTransport) await this.options.expoTransport((target as { token: Row }).token,message,target.remaining);

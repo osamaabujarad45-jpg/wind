@@ -6,21 +6,23 @@ import {join} from 'node:path';
 import {freshPostgres,selectRuntime,connectionString} from './pg-support.mjs';
 import {startApiProcess} from './support/api-process.mjs';
 import {apiCaller} from './support/api.mjs';
+import {defaultSettings} from '../src/model.ts';
 const {schema,database}=await freshPostgres('activegps'); selectRuntime(schema);
 process.env.DB_PATH=join(await mkdtemp(join(tmpdir(),'gps-')),'compat.sqlite');
 process.env.WIND_ENABLED_SERVICES='parcel'; delete process.env.WIND_IDENTITY_MODE;
 process.env.WIND_TEST_ACTIVE_GPS='1';
-const {server,promote,shutdown}=await import('../server/main.ts');
+const {server,promote,shutdown,liveWatcherCount}=await import('../server/main.ts');
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const call=apiCaller(()=>`http://127.0.0.1:${server.address().port}/api`);
 const child=await startApiProcess({DB_PATH:process.env.DB_PATH,WIND_DATABASE_URL:connectionString,WIND_POSTGRES_TEST_ONLY:'1',WIND_POSTGRES_TEST_SCHEMA:schema});
 const other=apiCaller(()=>child.base);
 try {
  const admin=await call('/auth/register',{body:{phone:'0599890001',name:'Admin',password:'secret1'}}); await promote('0599890001');
+ admin.token = (await call('/auth/login', { body: { phone: '0599890001', password: 'secret1' } })).token;
  const customer=await call('/auth/register',{body:{phone:'0599890002',name:'Customer',password:'secret1'}});
  const driver=await call('/auth/register',{body:{phone:'0599890003',name:'Driver',password:'secret1',role:'driver',vehicle:'car'}});
  await call(`/admin/users/${driver.user.id}/approve`,{token:admin.token,body:{}});
- const makeOrder=()=>call('/orders',{token:customer.token,body:{service:'parcel',pickupCity:'ramallah',dropoffCity:'nablus',option:'small',shared:false,pickupNote:'Gate',dropoffNote:'Door',contact:'0599890002',detail:'Box',quotedPrice:20}});
+ const makeOrder=()=>call('/orders',{token:customer.token,body:{service:'parcel',pickupCity:'ramallah',dropoffCity:'nablus',option:'small',shared:false,pickupNote:'Gate',pickupPoint:{latitude:31.9038,longitude:35.2034},dropoffNote:'Door',contact:'0599890002',detail:'Box',quotedPrice:20}});
  const order=await makeOrder(); await call(`/jobs/${order.id}/accept`,{token:driver.token,body:{}});
  const deviceId=randomUUID(), first=randomUUID(), second=randomUUID();
  const acquire=(body,expect=200)=>call('/location/session',{token:driver.token,body:{deviceId,...body},expect});
@@ -52,10 +54,18 @@ try {
  assert.equal((await acquire({sessionId:first,previousSessionId:second,expectedGeneration:replacement.generation},409)).error,'active_gps_session_stale');
  assert.equal((await acquire({sessionId:randomUUID(),previousSessionId:first,expectedGeneration:firstSession.generation},409)).error,'active_gps_session_stale');
  assert.equal((await call('/location/session',{token:driver.token,body:{deviceId:randomUUID()},expect:409})).error,'active_gps_session_conflict');
+ assert.equal((await upload({deviceId,sessionId:second,seq:1,assignments:replacement.assignments})).accepted,true);
  const another=await makeOrder(); await call(`/jobs/${another.id}/accept`,{token:driver.token,body:{}});
- assert.equal((await upload({deviceId,sessionId:second,seq:1,assignments:replacement.assignments})).reason,'assignment_stale');
+ const assignedFrom=await database.one("SELECT detail FROM security_events WHERE order_id=? AND action='ASSIGNED_FROM'",another.id);
+ assert.ok(JSON.parse(assignedFrom.detail).km>0,'capture the fix before the PostgreSQL assignment invalidates it');
+ assert.equal((await upload({deviceId,sessionId:second,seq:2,assignments:replacement.assignments})).reason,'assignment_stale');
  const inspected=await acquire({}); const third=randomUUID();
  const refreshed=await acquire({sessionId:third,previousSessionId:second,expectedGeneration:inspected.generation}); assert.equal(refreshed.assignments.length,2); assert.equal(refreshed.seq,0);
+ const liveOrder = await call(`/orders/${order.id}?liveProtocol=1`, {token:customer.token});
+ const livePath = `/orders/${order.id}/live?driver=${driver.user.id}`;
+ const held = call(`${livePath}&assignment=${liveOrder.assignmentEpoch}&since=${Date.now() + 20_000}`, {token:customer.token});
+ for (let retry = 0; retry < 100 && !liveWatcherCount(order.id); retry++) await new Promise(resolve => setTimeout(resolve, 10));
+ assert.equal(liveWatcherCount(order.id), 1, 'the authenticated request is waiting on the old assignment');
  await database.run("UPDATE orders SET status='cancelled' WHERE id=?",order.id);
  await database.run("UPDATE orders SET status='assigned' WHERE id=?",order.id);
  const afterReassign=await acquire({}); const fourth=randomUUID();
@@ -75,6 +85,8 @@ try {
  });
  assert.equal((await database.one('SELECT seq FROM driver_active_gps_sessions WHERE driver_id=?',driver.user.id)).seq,2);
  assert.equal((await upload({deviceId,sessionId:fourth,seq:3,assignments:reassigned.assignments})).accepted,true);
+ assert.deepEqual(await held, {driverLocation:null,driverKey:String(driver.user.id),driverChanged:true});
+ assert.ok((await call(livePath,{token:customer.token})).driverLocation, 'installed driver-only long poll still works');
  // A different API process waits while a new assignment holds the shared driver lock.
  const pending=await makeOrder(); let committed; const gate=new Promise(resolve=>{committed=resolve;}); let locked;
  const entered=new Promise(resolve=>{locked=resolve;});
@@ -102,5 +114,17 @@ try {
  await call('/auth/logout',{token:fresh.token,body:{}}); const later=await login();
  const delayed=await call('/location/session',{token:later.token,body:{deviceId,sessionId:randomUUID(),previousSessionId:null,expectedGeneration:inspection.generation},expect:409});
  assert.equal(delayed.error,'active_gps_session_stale');
+ const gpsState=await call('/location/session',{token:later.token,body:{deviceId}});
+ const current=await call('/location/session',{token:later.token,body:{deviceId,sessionId:randomUUID(),previousSessionId:null,expectedGeneration:gpsState.generation}});
+ const pickup={latitude:31.9038,longitude:35.2034};
+ const currentFix=await call('/location',{token:later.token,body:{...pickup,activeGps:{deviceId,sessionId:current.sessionId,seq:1,assignments:current.assignments}}});
+ assert.equal(currentFix.accepted,true);
+ assert.equal((await call(`/orders/${another.id}/cancel`,{token:customer.token,body:{}})).status,'cancelled');
+ assert.equal(await database.one('SELECT driver_id FROM driver_locations WHERE driver_id=?',driver.user.id),undefined);
+ const originKm=JSON.parse(assignedFrom.detail).km;
+ const pickupPay=Math.min(2000,Math.round(Math.round(originKm*100)/100*defaultSettings.pickupPayPerKm*100)); // the server rounds the driven km to 2 decimals
+ const review=JSON.parse((await database.one("SELECT detail FROM security_events WHERE order_id=? AND action='PICKUP_PAY_REVIEW'",another.id)).detail);
+ assert.deepEqual([review.originKm,review.currentKm,review.suggestedCents],[originKm,0,pickupPay]);
+ assert.equal(await database.one("SELECT id FROM cash_entries WHERE source='pickup_pay' AND order_id=?",another.id),undefined);
  console.log('Active GPS CAS, replay, assignment set, device, legacy exclusion and logout passed');
 } finally {await child.stop();await shutdown();await database.close();}

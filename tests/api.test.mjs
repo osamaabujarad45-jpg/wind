@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request as httpRequest } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
-import { defaultSettings, quote } from '../src/model.ts';
+import { crowKm, defaultSettings, quote } from '../src/model.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-'));
 process.env.DB_PATH = join(dir, 'test.db');
@@ -41,7 +41,14 @@ try {
   // Registering can't make an admin; only the server-side promote command can.
   const admin = await call('/auth/register', { body: { phone: '0599000001', name: 'Admin', password: 'secret1', role: 'admin' } });
   assert.equal(admin.user.role, 'customer');
+  const adminId = admin.user.id;
+  db.prepare('INSERT INTO firebase_resets (user_id, requested_at) VALUES (?, ?)').run(adminId, Date.now());
+  db.prepare('INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)').run(adminId, 'https://example.test/admin', 'test', 'test', Date.now());
   await promote('0599000001');
+  await call('/me', { token: admin.token, expect: 401 });
+  for (const table of ['push_subscriptions', 'firebase_resets'])
+    assert.equal(db.prepare(`SELECT 1 FROM ${table} WHERE user_id = ?`).get(adminId), undefined);
+  admin.token = (await call('/auth/login', { body: { phone: '0599000001', password: 'secret1' } })).token;
   assert.equal((await call('/me', { token: admin.token })).user.role, 'admin');
   assert.deepEqual((await call('/me', { token: admin.token })).capabilities, { enabledServices: ['parcel'], pooling: false, emailVerification: false });
   await assert.rejects(() => promote('0599999999'));
@@ -158,10 +165,38 @@ try {
   await call('/partner/quotes', { partnerKey, body: { ...pinned, pickupPoint: { latitude: '31.9', longitude: 35.2 } }, expect: 400 });
   const pinnedOrder = await call('/partner/orders', { partnerKey, body: { ...pinned, externalRef: 'listing:buyer:pinned',
     quotedPrice: (await call('/partner/quotes', { partnerKey, body: pinned })).price } });
-  await call(`/jobs/${pinnedOrder.id}/accept`, { token: driver.token, body: {} });
+  const beforePickup = { latitude: 31.875, longitude: pinned.pickupPoint.longitude };
+  // The origin is a validated fix, and an idle captain cannot upload one. Seed it on another parcel, then accept this one.
+  const carrier = await call('/orders', { token: customer.token, body: { ...orderInput, quotedPrice: quote(defaultSettings, orderInput) } });
+  await call(`/jobs/${carrier.id}/accept`, { token: driver.token, body: {} });
+  assert.equal((await call('/location', { token: driver.token, body: { ...beforePickup, accuracy: 5 } })).accepted, true);
+  await call(`/jobs/${pinnedOrder.id}/accept`, { token: driver.token, body: { position: { ...beforePickup, at: Date.now(), accuracy: 5 } } });
   const pinnedJob = await call(`/orders/${pinnedOrder.id}`, { token: driver.token });
   assert.deepEqual([pinnedJob.pickupPoint, pinnedJob.dropoffPoint], [pinned.pickupPoint, pinned.dropoffPoint]);
-  await call(`/partner/orders/${pinnedOrder.id}/cancel`, { partnerKey, body: {} });
+  const realNow = Date.now;
+  const partnerCancel = () => call(`/partner/orders/${pinnedOrder.id}/cancel`, { partnerKey, body: {} });
+  try {
+    Date.now = () => realNow() + 60_000;
+    assert.equal((await call('/location', { token: driver.token, body: pinned.pickupPoint })).accepted, true);
+    assert.equal((await partnerCancel()).status, 'cancelled');
+    assert.equal((await partnerCancel()).status, 'cancelled');
+  } finally { Date.now = realNow; }
+  await call(`/orders/${carrier.id}/cancel`, { token: customer.token, body: {} });
+  await call(`/admin/orders/${carrier.id}/pickup-pay-review`, { token: admin.token, body: { granted: false, km: 0, reason: 'No validated origin' } });
+  const partnerKm = crowKm(beforePickup, pinned.pickupPoint);
+  const partnerPay = Math.round(Math.round(partnerKm * 100) / 100 * defaultSettings.pickupPayPerKm * 100); // driven km rounded to 2 decimals
+  const partnerReview = (await call(`/orders/${pinnedOrder.id}`, { token: admin.token })).pickupPayReview;
+  assert.deepEqual([partnerReview.reason, partnerReview.originKm, partnerReview.currentKm, partnerReview.suggestedCents],
+    ['partner_cancelled', partnerKm, 0, partnerPay]);
+  const partnerActorId = db.prepare("SELECT id FROM users WHERE phone = 'partner:souq'").get().id;
+  assert.equal(db.prepare("SELECT actor_id FROM security_events WHERE order_id = ? AND action = 'PICKUP_PAY_REVIEW'").get(pinnedOrder.id).actor_id, partnerActorId);
+  const partnerEntries = () => db.prepare('SELECT amount_cents FROM cash_entries WHERE note = ?')
+    .all(`DRV-18 pickup pay order ${pinnedOrder.id}`).map(r => r.amount_cents);
+  assert.deepEqual(partnerEntries(), []);
+  await call(`/admin/orders/${pinnedOrder.id}/pickup-pay-review`, {
+    token: admin.token, body: { granted: true, km: partnerKm, reason: 'Confirmed partner pickup distance' },
+  });
+  assert.deepEqual(partnerEntries(), [-partnerPay]);
   // The partner account owns every Souq delivery: no admin route lists, edits, resets or deletes it.
   const souq = db.prepare("SELECT id FROM users WHERE phone = 'partner:souq'").get();
   assert.ok(!(await call('/admin/users?q=partner', { token: admin.token })).some(u => u.id === souq.id));
@@ -246,7 +281,9 @@ try {
 
   const earnings = await call('/driver/earnings', { token: driver.token });
   assert.equal(earnings.all.jobs, 1);
+  assert.equal(earnings.all.tripPayCents, partnerPay);
   assert.equal(earnings.all.net, Math.round((order.price - done.commission) * 100) / 100);
+  assert.equal(earnings.all.earnedNet, (Math.round((order.price - done.commission) * 100) + partnerPay) / 100);
 
   // Subscriptions: request, admin activates, plan applies
   const pending = await call('/subscriptions', { token: driver.token, body: {} });

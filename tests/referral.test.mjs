@@ -24,6 +24,7 @@ const register = (phone, name, extra = {}) => call('/auth/register', { body: { p
 try {
   const admin = await register('0599130001', 'Admin');
   await promote('0599130001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599130001', password: 'secret1' } })).token;
   await call('/admin/settings', { token: admin.token, body: { parcelPrice: 49 } });
   const inviter = await register('0599130002', 'Lina');
   const friend = await register('0599130003', 'Omar');

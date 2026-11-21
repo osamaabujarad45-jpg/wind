@@ -202,7 +202,8 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
             <Row style={{ justifyContent: 'space-between', marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
               {status ? <Badge label={statusText(c, order, mine)} status={order.status} /> : <View />}
               {/* time and code are separate facts: two plain labels, no separator glyph */}
-              <Row gap={8}>
+              {/* wraps at large text: on one line the code ran off the card's edge (A53, 200%) */}
+              <Row gap={8} style={{ flexWrap: 'wrap', flexShrink: 1 }}>
                 <Txt variant="micro">{order.scheduledFor && ['searching', 'assigned'].includes(order.status) ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
                 <Txt variant="micro">{orderCode(order.id)}</Txt>
               </Row>
@@ -408,13 +409,13 @@ export function VerifyEmailNudge() {
 export function HelpLinks({ help = true, privacy = true }: { help?: boolean; privacy?: boolean }) {
   const { c, language } = useCopy();
   return <Row gap={16} style={{ justifyContent: 'center', flexWrap: 'wrap', marginTop: 6 }}>
-    {help && <Press accessibilityRole="link" accessibilityLabel={c.help} onPress={() => router.push('/help')}>
+    {help && <Press accessibilityRole="link" accessibilityLabel={c.help} style={styles.helpLinkTarget} onPress={() => router.push('/help')}>
       <Txt variant="caption" style={styles.link}>{c.help}</Txt>
     </Press>}
-    {SUPPORT_URL && <Press accessibilityRole="link" accessibilityLabel={c.support} onPress={() => Linking.openURL(SUPPORT_URL!)}>
+    {SUPPORT_URL && <Press accessibilityRole="link" accessibilityLabel={c.support} style={styles.helpLinkTarget} onPress={() => Linking.openURL(SUPPORT_URL!)}>
       <Txt variant="caption" style={styles.link}>{c.support}</Txt>
     </Press>}
-    {privacy && <Press accessibilityRole="link" accessibilityLabel={c.privacy} onPress={() => Linking.openURL(privacyUrl(language))}>
+    {privacy && <Press accessibilityRole="link" accessibilityLabel={c.privacy} style={styles.helpLinkTarget} onPress={() => Linking.openURL(privacyUrl(language))}>
       <Txt variant="caption" style={styles.link}>{c.privacy}</Txt>
     </Press>}
   </Row>;
@@ -507,6 +508,7 @@ export function AccountScreen() {
 }
 
 const styles = StyleSheet.create({
+  helpLinkTarget: { minHeight: 44, justifyContent: 'center' },
   link: { color: palette.olive, fontWeight: '800', textDecorationLine: 'underline', paddingVertical: 8 },
   stop: { alignItems: 'stretch', gap: 10, minHeight: 48 },
   rail: { width: 12, alignItems: 'center', paddingTop: 5 },

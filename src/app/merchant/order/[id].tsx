@@ -4,18 +4,20 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { api, errorCode, useApi } from '../../../api';
+import { api, useApi } from '../../../api';
 import { isolate, merchantRejects, type MerchantItem, type Order, type ShopLine } from '../../../model';
+import { useFormat } from '../../../parts';
 import { qtyLabel, ShopLines, useCountdown } from '../../../shop-ui';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, Header, Loading, palette, Row, Screen, Section, Stepper, Txt, useCopy } from '../../../ui';
 
 export default function MerchantOrder() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { c, language, money, rtl } = useCopy();
+  const { c, language, money, rtl, err } = useCopy();
+  const { time } = useFormat();
   const { data: order, error, reload, setData } = useApi<Order>(`/orders/${Number(id)}`, 10_000);
   const catalogue = useApi<{ items: MerchantItem[] }>('/merchant/catalogue');
   const [prep, setPrep] = useState(20);
-  const [reject, setReject] = useState<(typeof merchantRejects)[number]>('out_of_stock');
+  const [reject, setReject] = useState<(typeof merchantRejects)[number] | null>(null); // never pre-selected: the reason decides DLV-23 money
   const [busy, setBusy] = useState('');
   const [actionError, setActionError] = useState('');
   const [editing, setEditing] = useState<number | null>(null);
@@ -30,7 +32,7 @@ export default function MerchantOrder() {
     if (busy) return;
     setBusy(key); setActionError('');
     try { setData(await api<Order>(path, body)); setEditing(null); setGrams(''); setSubstitute(''); }
-    catch (e) { setActionError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    catch (e) { setActionError(err(e)); }
     finally { setBusy(''); }
   }
   const code = `W-${String(order.id).padStart(5, '0')}`;
@@ -39,20 +41,26 @@ export default function MerchantOrder() {
   const packingOk = packing.length > 0 && (packing.some(p => p.sealed) || live.every(l => packing.some(p => !p.sealed && p.lineIds.includes(l.id))));
   const readyReason = s.change ? c.err_change_pending : missingWeight.length ? fill(c.merchantWeighFirst, { items: missingWeight.map(name).join('، ') }) : !packingOk ? c.err_packing_required : '';
   const step = order.status === 'cancelled' ? (s.cancelReason ? c[`shopCancel_${s.cancelReason}`] : c.cancelled)
-    : order.status === 'returning' ? c.merchantReturning : s.state ? c[`merchantState_${s.state}`] : c.merchantStateNew;
+    : order.status === 'returning' ? c.merchantReturning : order.status === 'returned' ? c.returned : s.state ? c[`merchantState_${s.state}`] : c.merchantStateNew;
   return <Screen onRefresh={reload}>
     <Header title={code} back subtitle={step} />
+    {s.office && <Card>
+      <Section title={c.officeTitle} />
+      <Txt>{s.office.closed
+        ? fill(s.office.closed.action === 'collected' ? c.officeShopCollectedAt : c[`officeClosed_${s.office.closed.action}`], { t: time(s.office.closed.at) })
+        : fill(c.officeUntil, { t: time(s.office.until) })}</Txt>
+    </Card>}
     {!s.state && order.status === 'requested' && <Card tone="clay">
       <Txt variant="label">{c.merchantStateNew}</Txt>
-      <Txt accessibilityLabel={fill(c.shopAcceptTimer, { t: clock.text })}>{fill(c.shopAcceptTimer, { t: clock.text })}</Txt>
+      <Txt>{clock.left === 0 ? c.shopAcceptExpired : fill(c.shopAcceptTimer, { t: clock.text })}</Txt>
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantPrepMinutes}</Txt>
       <Stepper value={prep} min={5} max={120} label={c.merchantPrepMinutes} onChange={n => setPrep(Math.round(n / 5) * 5 || 5)} />
-      <Button title={c.merchantAccept} icon="checkmark" loading={busy === 'accept'} onPress={() => act('accept', `/merchant/orders/${order.id}/accept`, { prepMinutes: prep })} />
-      {!s.acceptExtended && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/merchant/orders/${order.id}/extend`)} />}
+      <Button title={c.merchantAccept} icon="checkmark" loading={busy === 'accept'} disabled={clock.left === 0} reason={clock.left === 0 ? c.shopAcceptExpired : undefined} onPress={() => act('accept', `/merchant/orders/${order.id}/accept`, { prepMinutes: prep })} />
+      {!s.acceptExtended && clock.left > 0 && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/merchant/orders/${order.id}/extend`)} />}
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantRejectWhy}</Txt>
-      <Choices label={c.merchantRejectWhy} value={reject} onChange={setReject} items={merchantRejects.map(k => ({ key: k, label: c[`merchantReject_${k}`] }))} />
-      <Button title={c.merchantReject} variant="danger" loading={busy === 'reject'}
-        onPress={() => confirm(c.merchantRejectConfirm, () => act('reject', `/merchant/orders/${order.id}/reject`, { reason: reject }), c.merchantReject, c.cancel)} />
+      <Choices label={c.merchantRejectWhy} value={reject ?? ''} onChange={k => setReject(k || null)} items={merchantRejects.map(k => ({ key: k, label: c[`merchantReject_${k}`] }))} />
+      <Button title={c.merchantReject} variant="danger" loading={busy === 'reject'} disabled={!reject || clock.left === 0} reason={clock.left === 0 ? c.shopAcceptExpired : reject ? undefined : c.merchantRejectChoose}
+        onPress={() => reject && confirm(c.merchantRejectConfirm, () => act('reject', `/merchant/orders/${order.id}/reject`, { reason: reject }), c.merchantReject, c.cancel)} />
     </Card>}
     {s.state === 'accepted' && <Button title={c.merchantStartPreparing} icon="construct-outline" loading={busy === 'prep'} onPress={() => act('prep', `/merchant/orders/${order.id}/preparing`)} />}
     {s.handoverException && s.state === 'preparing' && <Card tone="clay"><Txt>{fill(c.merchantFixHandover, { problem: c[`handover_${s.handoverException}`] })}</Txt></Card>}
@@ -115,12 +123,12 @@ export default function MerchantOrder() {
 }
 
 function RateCustomer({ order, onDone }: { order: Order; onDone: (o: Order) => void }) {
-  const { c } = useCopy();
+  const { c, err } = useCopy();
   const [error, setError] = useState('');
   return <Card>
     <Txt variant="label">{c.merchantRateCustomer}</Txt>
     <Row style={{ marginTop: 4, flexWrap: 'wrap' }}>{[1, 2, 3, 4, 5].map(n => <Button key={n} size="sm" variant="ghost" title={String(n)} label={fill(c.shopStars, { n })}
-      onPress={async () => { try { onDone(await api<Order>(`/orders/${order.id}/shop/rate`, { rating: n })); } catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); } }} />)}</Row>
+      onPress={async () => { try { onDone(await api<Order>(`/orders/${order.id}/shop/rate`, { rating: n })); } catch (e) { setError(err(e)); } }} />)}</Row>
     <ErrorText>{error}</ErrorText>
   </Card>;
 }

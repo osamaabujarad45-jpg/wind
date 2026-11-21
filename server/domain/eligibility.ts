@@ -1,3 +1,4 @@
+import { needStaff, staffActor } from './ops.ts';
 import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { offerRange, vehicleServices, type Vehicle } from '../../src/model.ts';
@@ -16,7 +17,7 @@ export const eligibilityDefaults = Object.freeze({ version: 1, boundary: 'ST_Cov
   insertionOptimization: false, identityScansCollected: false, legacyCapacityMeasured: false,
   presenceHeartbeatSeconds: 15, presenceLeaseSeconds: 60, matchingFixMaxAgeSeconds: 30,
   movingLocationSeconds: 5, stationaryLocationSeconds: 15, locationTransportMinSeconds: 2,
-  dispatchOfferSeconds: 15, dispatchMaxOffers: 3, dispatchSearchSeconds: 90, quoteSeconds: 120,
+  dispatchMaxOffers: 3, dispatchSearchSeconds: 90, quoteSeconds: 120,
   negotiatedOfferSeconds: 600, newWaitingFeeMinor: 0, newCancellationFeeMinor: 0,
   projectedCashCapMinor: 100000, cashCapActivated: false, futureDispatchActivated: false,
   otpSeconds: 300, otpAttempts: 5, otpResendSeconds: 45, otpPhoneDevicePer15Minutes: 3, otpPhoneDevicePerDay: 10,
@@ -84,6 +85,12 @@ export class Eligibility {
   reason(body: Row) { const s=this.str(body.reason,500); if (s.length<5) this.fail(400,'reason_required'); return s; }
   ref(body: Row) { const s=this.str(body.evidenceRef); if (!/^[A-Za-z0-9][A-Za-z0-9_.:/-]{2,159}$/.test(s)) this.fail(400,'invalid_evidence_ref'); return s; }
   async available() { if (!(await measuredCapability(this.db))) this.fail(409,'measured_protocol_unavailable'); }
+  /** Timed dispatch locks captain, vehicle and run before the policy row; the measured guard takes the vehicle and its run first too, so
+   * two captains sharing a vehicle cannot hold them in opposite orders (Sol R2-H1). base() re-reads them under the same locks. */
+  async lockResources(vehicleId: number) {
+    await this.db.one('SELECT id FROM vehicles WHERE id=? FOR UPDATE',vehicleId);
+    await this.db.one('SELECT vehicle_id FROM vehicle_runs WHERE vehicle_id=? FOR UPDATE',vehicleId);
+  }
   async lockPolicy(mode:'update'|'share'='update') { await this.available(); return (await this.db.one(`SELECT * FROM eligibility_policy WHERE id=1 FOR ${mode==='share'?'SHARE':'UPDATE'}`))!; }
   async audit(actor: number, action: string, subject: number, reason: string, evidence: string | null = null) {
     await this.db.run('INSERT INTO eligibility_audit(actor_id,action,subject_id,reason,evidence_ref,created_at) VALUES(?,?,?,?,?,?)',actor,action,subject,reason,evidence,Date.now());
@@ -246,8 +253,8 @@ export class Eligibility {
     if (!cohort?.enrolled && requested===undefined && !req && !declaredEarly && !oldOffer) {
       // Linked installed clients may retain their flow, but cannot add unknown work to a measured/shared exclusive run.
       if (cohort) {
+        await this.lockResources(cohort.vehicle_id);
         await this.lockPolicy();
-        await this.db.one('SELECT id FROM vehicles WHERE id=? FOR UPDATE',cohort.vehicle_id);
         const busy=await this.db.one(`SELECT o.id FROM orders o JOIN driver_vehicles dv ON dv.driver_id=o.driver_id
           JOIN driver_eligibility selected ON selected.driver_id=dv.driver_id AND selected.vehicle_id=dv.vehicle_id
           WHERE dv.vehicle_id=? AND o.id<>? AND o.status IN ${active}
@@ -257,6 +264,7 @@ export class Eligibility {
       }
       return;
     }
+    if (cohort?.vehicle_id != null) await this.lockResources(cohort.vehicle_id);
     const policy=await this.lockPolicy();
     // A scope assessment may have committed while this request waited for the policy lock.
     req=await this.db.one('SELECT * FROM order_requirements WHERE order_id=? FOR SHARE',orderId);
@@ -366,7 +374,7 @@ export class Eligibility {
   }
 }
 
-export function registerEligibilityRoutes(route: Register, e: Eligibility, custodyDecided: (order: { id: number; driver_id: number; customer_id: number }, action: 'hold'|'return'|'confirm_return') => Promise<void>) {
+export function registerEligibilityRoutes(route: Register, e: Eligibility, custodyDecided: (order: { id: number; driver_id: number; customer_id: number }, action: 'hold'|'return'|'confirm_return', actorId: number, officeLeg?: boolean) => Promise<void>) {
   const db=e.db, fail=e.fail;
   const admin=(user: Actor)=>{ if (user.role!=='admin') fail(403,'forbidden'); };
   const driver=(user: Actor)=>{ if (user.role!=='driver') fail(403,'forbidden'); };
@@ -570,24 +578,35 @@ export function registerEligibilityRoutes(route: Register, e: Eligibility, custo
     await e.audit(user.id,'order_measured',id,reason,ref); return await db.one('SELECT order_id,revision,grams,cm3,pieces,seats FROM order_requirements WHERE order_id=?',id);
   }));
   route('POST','/api/admin/eligibility/orders/:id/recovery',mutation(async({user,body,params})=>{
-    admin(user); e.fields(body,['action','reason','evidenceRef','expectedVersion']);
+    admin(user); e.fields(body,['action','reason','evidenceRef','expectedVersion','carrier']);
     const id=e.int(Number(params[0]),1),order=await db.one('SELECT * FROM orders WHERE id=? FOR UPDATE',id)??fail(404,'not_found'); await e.lockPolicy();
     if (e.int(body.expectedVersion,1)!==order.version) fail(409,'VERSION_CONFLICT');
     const reason=e.reason(body),ref=e.ref(body),action=e.choice(body.action,['hold','return','confirm_return']);
-    if (!['in_transit','on_hold','returning'].includes(order.status)) fail(409,'custody_required');
+    if (order.service === 'ride' || !['in_transit','on_hold','returning'].includes(order.status)) fail(409,'custody_required');
+    if (action === 'return' || action === 'confirm_return') needStaff(await staffActor(db, user), fail, 'support');
+    // Closing at the office names who brought the goods, as the support resolve does: only a captain carrier earns the office leg.
+    const carrier = action === 'confirm_return' ? body.carrier : undefined;
+    if (action === 'confirm_return' ? carrier !== 'captain' && carrier !== 'staff' : body.carrier !== undefined) fail(400,'invalid_input');
     if (action==='hold') {
-      if (order.status==='returning') fail(409,'cannot_resolve');
+      if (order.status!=='in_transit') fail(409,'cannot_resolve');
       await db.run("UPDATE orders SET status='on_hold',exception_reason='support',updated_at=? WHERE id=?",Date.now(),id);
     } else if (action==='return') {
+      const taken = await db.one(`SELECT 1 FROM security_events WHERE order_id=? AND action='CUSTODY_TAKEN'
+        AND detail::jsonb->>'assignmentEpoch'=? AND detail::jsonb->>'driverId'=?`, id, String(order.assignment_epoch), String(order.driver_id));
+      if (!taken) await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'CUSTODY_TAKEN',?,?)",
+        user.id,id,JSON.stringify({assignmentEpoch: order.assignment_epoch, driverId: order.driver_id, reason, evidenceRef: ref}),Date.now());
       if (order.status!=='returning') {
         await db.run("UPDATE orders SET status='returning',return_code=?,updated_at=? WHERE id=?",String(randomInt(1000,10000)),Date.now(),id);
         await db.run('DELETE FROM proof_attempts WHERE order_id=?',id);
       }
     } else {
       if (order.status!=='returning') fail(409,'cannot_resolve');
-      await db.run("UPDATE orders SET status='returned',completed_at=?,updated_at=? WHERE id=?",Date.now(),Date.now(),id);
+      await db.run("UPDATE orders SET status='returned',commission=0,completed_at=?,updated_at=? WHERE id=?",Date.now(),Date.now(),id); // DRV-17
+      await db.run("INSERT INTO security_events(actor_id,order_id,action,created_at) VALUES(?,?,'RETURN_NO_FARE',?)",user.id,id,Date.now()); // main.ts markNoFare
+      await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'EXCEPTION_RESOLVED',?,?)",
+        user.id,id,JSON.stringify({action,reason,handoff:'office',carrier}),Date.now());
     }
-    await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'ELIGIBILITY_CUSTODY_RECOVERY',?,?)",user.id,id,JSON.stringify({action,reason,evidenceRef:ref}),Date.now());
-    await e.audit(user.id,`custody_${action}`,id,reason,ref); const after=await db.one('SELECT id,status,driver_id,version FROM orders WHERE id=?',id); if(after?.status!==order.status) await custodyDecided({id,driver_id:Number(order.driver_id),customer_id:Number(order.customer_id)},action as 'hold'|'return'|'confirm_return'); return after;
+    await db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'ELIGIBILITY_CUSTODY_RECOVERY',?,?)",user.id,id,JSON.stringify({action,reason,evidenceRef:ref,...(carrier&&{carrier})}),Date.now());
+    await e.audit(user.id,`custody_${action}`,id,reason,ref); const after=await db.one('SELECT id,status,driver_id,version FROM orders WHERE id=?',id); if(after?.status!==order.status) await custodyDecided({id,driver_id:Number(order.driver_id),customer_id:Number(order.customer_id)},action as 'hold'|'return'|'confirm_return',user.id,carrier === 'captain'); return after;
   }));
 }

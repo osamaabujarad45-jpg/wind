@@ -224,6 +224,24 @@ export class Persistence {
     }
   }
 
+  /** Roll back a business mutation while keeping earlier writes in its transaction. */
+  async savepoint<T>(work: () => Promise<T>): Promise<T> {
+    const owner = this.owner();
+    if (!owner?.active) throw new Error('Savepoints require an active transaction');
+    const effects = owner.pending.length;
+    await this.run('SAVEPOINT business_mutation');
+    try {
+      const result = await work();
+      await this.run('RELEASE SAVEPOINT business_mutation');
+      return result;
+    } catch (error) {
+      await this.run('ROLLBACK TO SAVEPOINT business_mutation');
+      await this.run('RELEASE SAVEPOINT business_mutation');
+      owner.pending.length = effects;
+      throw error;
+    }
+  }
+
   /** PG request envelope keeps legacy commit boundaries as savepoints until durable intents exist. */
   async atomic<T>(actor: { id?: number; purpose?: string; correlationId?: string }, work: () => Promise<T>): Promise<T> {
     if (this.backend !== 'postgres') return this.scope(work);

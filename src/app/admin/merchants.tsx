@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { router } from 'expo-router';
 import { View } from 'react-native';
-import { api, errorCode, useApi } from '../../api';
+import { api, useApi } from '../../api';
 import { newRequestId } from '../../booking';
 import { city, minorFromText, orderCode, type Merchant, type Order } from '../../model';
 import { Badge, Button, Card, Empty, ErrorText, Field, fill, Header, Loading, Press, Row, Screen, Section, tones, Txt, useCopy } from '../../ui';
@@ -40,7 +40,7 @@ export default function AdminMerchants() {
 }
 
 function MerchantCard({ merchant: m, onChange }: { merchant: AdminMerchant; onChange: () => void }) {
-  const { c, language, money } = useCopy();
+  const { c, language, money, err } = useCopy();
   const [open, setOpen] = useState(m.status === 'pending');
   const [min, setMin] = useState(String(m.minOrderAgorot / 100));
   const [fee, setFee] = useState(String(m.deliveryFeeAgorot / 100));
@@ -56,7 +56,7 @@ function MerchantCard({ merchant: m, onChange }: { merchant: AdminMerchant; onCh
   async function save(key: string, body: object) {
     setBusy(key); setError('');
     try { await api(key === 'payout' ? `/admin/merchants/${m.id}/payout` : `/admin/merchants/${m.id}`, body); if (key === 'payout') { setPayout(''); setReference(''); setPayoutId(newRequestId()); } onChange(); }
-    catch (e) { setError(c[`err_${errorCode(e)}` as keyof typeof c] ?? c.err_generic); }
+    catch (e) { setError(err(e)); }
     finally { setBusy(''); }
   }
   const terms = () => {

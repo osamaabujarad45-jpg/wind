@@ -17,6 +17,9 @@ export const RIDE_ARRIVAL_RADIUS_METERS = 300;
 export const RIDE_ARRIVAL_FIX_MAX_AGE_MS = 120_000;
 /** Operational grace after a valid arrival; no waiting fee is attached (WP11). */
 export const RIDE_GRACE_MS = 5 * 60_000;
+/** RIDE-06/A11Y-08: the rider can ask once, during the grace, for 2 more minutes. */
+export const RIDE_GRACE_EXTENSION_MS = 2 * 60_000;
+const graceEnd = (row: Row) => Number(row.arrived_at) + RIDE_GRACE_MS + (row.grace_extended_at == null ? 0 : RIDE_GRACE_EXTENSION_MS);
 
 export const boardingEnabled = (env: NodeJS.ProcessEnv = process.env) =>
   eligibilityDefaults.futureBoardingChallengeActivated || (env.NODE_ENV === 'test' && env.WIND_BOARDING_TEST_ONLY === '1');
@@ -42,9 +45,17 @@ export class RideLifecycle {
   private db: Persistence;
   private fail: Fail;
   onBoardingLocked?: (orderId: number) => Promise<void>;
+  onNoShow?: (orderId: number, customerId: number) => Promise<void>;
   constructor(db: Persistence, fail: Fail) { this.db = db; this.fail = fail; }
   async metadataAvailable() {
     return await this.available() && !!await this.db.one('SELECT version FROM schema_migrations WHERE version=29');
+  }
+  async graceExtensionAvailable() {
+    return await this.available() && this.db.memo('rideGraceExtension', async () => !!await this.db.one('SELECT version FROM schema_migrations WHERE version=38'));
+  }
+  /** A new assignment (and so a new arrival) starts a fresh grace with the rider's one extension unused. */
+  private async resetGraceExtension(orderId: number) {
+    if (await this.graceExtensionAvailable()) await this.db.run('UPDATE ride_lifecycle SET grace_extended_at=NULL WHERE order_id=?', orderId);
   }
   enabled() { return boardingEnabled(); }
   async available() { return rideLifecycleAvailable(this.db); }
@@ -69,6 +80,7 @@ export class RideLifecycle {
       VALUES(?,?,?,?,1,?,?) ON CONFLICT(order_id) DO UPDATE SET driver_id=excluded.driver_id,assignment_epoch=excluded.assignment_epoch,
       arrived_at=NULL,arrival_source=NULL,arrival_actor_id=NULL,boarding_code=excluded.boarding_code,boarding_required=1,updated_at=excluded.updated_at`,
       orderId, driverId, epoch, newBoardingCode(), now, now);
+    await this.resetGraceExtension(orderId);
     await this.noteIssued(orderId, now);
     await this.db.run(`INSERT INTO ride_boarding_attempts(order_id,assignment_epoch,failures) VALUES(?,?,0)
       ON CONFLICT(order_id) DO UPDATE SET assignment_epoch=excluded.assignment_epoch,failures=0`, orderId, epoch);
@@ -108,10 +120,11 @@ export class RideLifecycle {
     if (existing && Number(existing.assignment_epoch) === epoch && Number(existing.driver_id) === driverId) return existing;
     const required = this.enabled() || (await this.dispatchAssigned(Number(order.id), driverId)) || !!existing?.boarding_required;
     const now = Date.now();
-    const row = await this.db.one(`INSERT INTO ride_lifecycle(order_id,driver_id,assignment_epoch,boarding_code,boarding_required,created_at,updated_at)
+    await this.db.one(`INSERT INTO ride_lifecycle(order_id,driver_id,assignment_epoch,boarding_code,boarding_required,created_at,updated_at)
       VALUES(?,?,?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET driver_id=excluded.driver_id,assignment_epoch=excluded.assignment_epoch,
       arrived_at=NULL,arrival_source=NULL,arrival_actor_id=NULL,boarding_code=excluded.boarding_code,boarding_required=excluded.boarding_required,updated_at=excluded.updated_at RETURNING *`,
       order.id, driverId, epoch, required ? newBoardingCode() : null, required ? 1 : 0, now, now);
+    await this.resetGraceExtension(Number(order.id));
     await this.db.run(`INSERT INTO ride_boarding_attempts(order_id,assignment_epoch,failures) VALUES(?,?,0)
       ON CONFLICT(order_id) DO UPDATE SET assignment_epoch=excluded.assignment_epoch,failures=0`, order.id, epoch);
     await this.noteIssued(Number(order.id), now);
@@ -130,7 +143,9 @@ export class RideLifecycle {
     const canSeeCode = !!row.boarding_code && Number(row.assignment_epoch) === Number(order.assignment_epoch)
       && viewer.role === 'customer' && viewer.id === Number(order.customer_id)
       && ['assigned', 'at_pickup'].includes(String(order.status));
-    return { arrivedAt, graceUntil: arrivedAt == null ? null : arrivedAt + RIDE_GRACE_MS,
+    const extensible = await this.graceExtensionAvailable();
+    return { arrivedAt, graceUntil: arrivedAt == null ? null : graceEnd(row),
+      ...(extensible ? { graceExtended: row.grace_extended_at != null } : {}),
       arrivalSource: row.arrival_source ?? null, boardingRequired: !!Number(row.boarding_required),
       boardingLocked: failures >= eligibilityDefaults.newBoardingChallengeAttempts,
       ...(canSeeCode ? { boardingCode: row.boarding_code as string } : {}) };
@@ -183,6 +198,54 @@ export class RideLifecycle {
     await this.db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'RIDE_ARRIVED',?,?)",
       driverId, orderId, JSON.stringify({ source: 'gps', distanceMeters: Math.round(distance), fixAgeMs: now - fix.at }), now);
     return { ok: true, orderId, ride: await this.summary(orderId, { id: driverId, role: 'driver' }, order) };
+  }
+
+  async noShow(user: Actor, orderId: number, body: Row) {
+    if (user.role !== 'driver') this.fail(403, 'forbidden');
+    if (user.status !== 'active') this.fail(403, 'blocked');
+    await this.requireAvailable();
+    this.fields(body, ['reason', 'expectedAssignmentEpoch']);
+    if (body.reason !== 'absent' || !Number.isSafeInteger(body.expectedAssignmentEpoch)) this.fail(400, 'invalid_input');
+    const order = await this.db.one('SELECT * FROM orders WHERE id=? FOR UPDATE', orderId) ?? this.fail(404, 'not_found');
+    if (order.service !== 'ride' || Number(order.driver_id) !== user.id) this.fail(404, 'not_found');
+    if (Number(order.assignment_epoch) !== body.expectedAssignmentEpoch) this.fail(409, 'assignment_changed');
+    if (order.status === 'cancelled' && await this.db.one("SELECT 1 FROM security_events WHERE order_id=? AND actor_id=? AND action='RIDE_NO_SHOW'", orderId, user.id))
+      return { ok: true, orderId };
+    if (!['assigned', 'at_pickup'].includes(String(order.status))) this.fail(409, 'cannot_arrive');
+    if (await this.db.one("SELECT 1 FROM safety_incidents WHERE order_id=? AND status='open' LIMIT 1", orderId)) this.fail(409, 'safety_hold');
+    const ride = await this.db.one('SELECT * FROM ride_lifecycle WHERE order_id=? FOR UPDATE', orderId) ?? this.fail(409, 'arrival_required');
+    if (Number(ride.assignment_epoch) !== Number(order.assignment_epoch) || Number(ride.driver_id) !== user.id || ride.arrived_at == null)
+      this.fail(409, 'arrival_required');
+    const now = Date.now();
+    if (now < graceEnd(ride)) this.fail(409, 'ride_grace_active');
+    await this.db.run("UPDATE orders SET status='cancelled', commission=NULL, updated_at=? WHERE id=?", now, orderId);
+    await this.db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'RIDE_NO_SHOW',?,?)",
+      user.id, orderId, JSON.stringify({ reason: body.reason, assignmentEpoch: body.expectedAssignmentEpoch }), now);
+    await this.onNoShow?.(orderId, Number(order.customer_id));
+    return { ok: true, orderId };
+  }
+
+  /** RIDE-06/A11Y-08: the rider adds 2 minutes once, only while the grace is still running. Replays return the same summary. */
+  async extendGrace(user: Actor, orderId: number, body: Row) {
+    if (user.role !== 'customer') this.fail(403, 'forbidden');
+    if (!(await this.graceExtensionAvailable())) this.fail(409, 'ride_lifecycle_unavailable');
+    this.fields(body, ['expectedAssignmentEpoch']);
+    if (!Number.isSafeInteger(body.expectedAssignmentEpoch)) this.fail(400, 'invalid_input'); // the assignment the rider saw, as the no-show
+    const order = await this.db.one('SELECT * FROM orders WHERE id=? FOR UPDATE', orderId) ?? this.fail(404, 'not_found');
+    if (order.service !== 'ride' || Number(order.customer_id) !== user.id) this.fail(404, 'not_found');
+    // A tap or retry from before a reassignment never extends the next captain's grace (Sol R2-M2).
+    if (Number(order.assignment_epoch) !== body.expectedAssignmentEpoch) this.fail(409, 'assignment_changed');
+    const viewer = { id: user.id, role: user.role };
+    const ride = await this.db.one('SELECT * FROM ride_lifecycle WHERE order_id=? FOR UPDATE', orderId);
+    if (!ride || ride.arrived_at == null || Number(ride.assignment_epoch) !== Number(order.assignment_epoch)) this.fail(409, 'ride_grace_not_running');
+    if (ride.grace_extended_at != null) return { ok: true, orderId, ride: await this.summary(orderId, viewer, order) };
+    if (!['assigned', 'at_pickup'].includes(String(order.status)) || order.driver_id == null) this.fail(409, 'ride_grace_not_running');
+    const now = Date.now();
+    if (now >= graceEnd(ride)) this.fail(409, 'ride_grace_not_running');
+    await this.db.run('UPDATE ride_lifecycle SET grace_extended_at=?,updated_at=? WHERE order_id=? AND grace_extended_at IS NULL', now, now, orderId);
+    await this.db.run("INSERT INTO security_events(actor_id,order_id,action,detail,created_at) VALUES(?,?,'RIDE_GRACE_EXTENDED',?,?)",
+      user.id, orderId, JSON.stringify({ extensionMs: RIDE_GRACE_EXTENSION_MS, assignmentEpoch: Number(order.assignment_epoch) }), now);
+    return { ok: true, orderId, ride: await this.summary(orderId, viewer, order) };
   }
 
   private reason(body: Row) {
@@ -273,6 +336,8 @@ export class RideLifecycle {
 
 export function registerRideLifecycleRoutes(route: Register, service: RideLifecycle) {
   route('POST', '/api/orders/:id/arrive', ctx => service.arrive(ctx.user, Number(ctx.params[0]), ctx.body));
+  route('POST', '/api/orders/:id/ride/no-show', ctx => service.noShow(ctx.user, Number(ctx.params[0]), ctx.body));
+  route('POST', '/api/orders/:id/ride/grace-extension', ctx => service.extendGrace(ctx.user, Number(ctx.params[0]), ctx.body));
   route('POST', '/api/admin/orders/:id/arrival/override', ctx => service.overrideArrival(ctx.user, Number(ctx.params[0]), ctx.body));
   route('POST', '/api/admin/orders/:id/boarding-reset', ctx => service.resetBoarding(ctx.user, Number(ctx.params[0]), ctx.body, ctx.query?.get('journeyProtocol') === '1'));
 }

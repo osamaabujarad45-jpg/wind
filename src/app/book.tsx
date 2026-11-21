@@ -141,6 +141,8 @@ function BookForm() {
   const declaredScope = useMemo(() => pending?.payload.declaredScope ?? (wantsScope ? freightScope(freight, windowStart, loadingHours) : undefined),
     [pending?.payload.declaredScope, wantsScope, freight, windowStart, loadingHours]);
   const scopeInvalid = wantsScope && declaredScope === null;
+  const freightPinsMissing = wantsScope && (!pickupPoint || !dropoffPoint);
+  const scopeIncomplete = scopeInvalid || freightPinsMissing;
   const sending = useRef(false);
   const savedKey = pendingKey(me!.user.id);
   const releasable = pendingReleasable(outcome);
@@ -422,14 +424,14 @@ function BookForm() {
   const priceKey = JSON.stringify([service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, declaredScope, quotePriority, priceTick]);
   const [quoted, setQuoted] = useState<{ key: string; quote: PriceQuote | null; error?: unknown } | null>(null);
   useEffect(() => {
-    if (!isCustomer || pending || !routeChosen || scopeInvalid) return; // a pending booking keeps its complete terms
+    if (!isCustomer || pending || !routeChosen || scopeIncomplete) return; // a pending booking keeps its complete terms
     let live = true;
     const timer = setTimeout(() => api<PriceQuote>('/price', { service, option, loadingHelp, pickupCity, dropoffCity, ...(service === 'parcel' && quotePriority === 'same_day' && { priority: quotePriority }),
       ...(pickupPoint && { pickupPoint }), ...(dropoffPoint && { dropoffPoint }), ...(declaredScope && { declaredScope }), ...(scheduledFor !== null && { scheduledFor }) })
       .then(quote => { if (live) setQuoted({ key: priceKey, quote }); }, error => { if (live) setQuoted({ key: priceKey, quote: null, error }); }), 300);
     return () => { live = false; clearTimeout(timer); };
-  }, [isCustomer, pending, routeChosen, priceKey, service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, scopeInvalid, declaredScope, quotePriority]);
-  const quoting = isCustomer && !pending && routeChosen && !scopeInvalid && quoted?.key !== priceKey; // the Request button waits for it
+  }, [isCustomer, pending, routeChosen, priceKey, service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, scopeIncomplete, declaredScope, quotePriority]);
+  const quoting = isCustomer && !pending && routeChosen && !scopeIncomplete && quoted?.key !== priceKey; // the Request button waits for it
   const quoteFailed = isCustomer && !pending && routeChosen && quoted?.key === priceKey && quoted.quote === null;
   const smart = quoted?.key === priceKey ? quoted.quote : null;
   const [, expireQuoteEta] = useState(0);
@@ -456,7 +458,7 @@ function BookForm() {
     : promo && promo.price === price ? promo : null;
   const pay = price - (applied?.discount ?? 0);
   const submitBlocked = !ready || locating || (!!pending && resolving) || (!pending && (quoting || quoteFailed || checking || !available));
-  const promoBlocked = locked || !routeChosen || scopeInvalid || quoting || quoteFailed;
+  const promoBlocked = locked || !routeChosen || scopeIncomplete || quoting || quoteFailed;
   async function applyPromo(code: string) {
     const revision = apiSessionRevision();
     const current = () => alive.current && revision === apiSessionRevision();
@@ -485,7 +487,7 @@ function BookForm() {
     if (!alive.current || submitBlocked || sending.current) return;
     const revision = apiSessionRevision();
     const current = () => alive.current && revision === apiSessionRevision();
-    if (!pending && scopeInvalid) { setError(c.freightScopeInvalid); return; }
+    if (!pending && scopeIncomplete) { setError(freightPinsMissing ? c.err_freight_pins_required : c.freightScopeInvalid); return; }
     if (!pending && !routeChosen) { setField(pickupChosen ? 'dropoff' : 'pickup'); setStep('search'); return; }
     if (!pending && scheduledFor !== null && scheduledFor < Date.now() + 60 * 60_000) { // the form sat open past the slot
       const at = Date.now();
@@ -586,7 +588,7 @@ function BookForm() {
 
   const located = !!pickupPoint && pickupPoint === gpsPoint;
   // Why Request waits, or what to do first (design §5, §10). Price shows only once it is quoted for this form: never dots or a guess.
-  const requestReason = !ready ? c.form_loading : locating ? c.locating : !routeChosen ? c.quote_pick_route : scopeInvalid ? c.freightScopeInvalid : quoting ? c.quote_calculating : quoteFailed ? (quoted?.error instanceof ApiError && quoted.error.status !== undefined && quoted.error.status >= 400 && quoted.error.status < 500 && ![401, 408, 429].includes(quoted.error.status) ? err(quoted.error) : c.quote_failed)
+  const requestReason = !ready ? c.form_loading : locating ? c.locating : !routeChosen ? c.quote_pick_route : freightPinsMissing ? c.err_freight_pins_required : scopeInvalid ? c.freightScopeInvalid : quoting ? c.quote_calculating : quoteFailed ? (quoted?.error instanceof ApiError && quoted.error.status !== undefined && quoted.error.status >= 400 && quoted.error.status < 500 && ![401, 408, 429].includes(quoted.error.status) ? err(quoted.error) : c.quote_failed)
     : checking ? c.promo_checking : !available && !pending ? c.serviceUnavailable : null;
   // The form-wide lock (promo and checks wait on it): the same sentence as the Request button, never a silent grey control.
   const lockedReason = !available ? c.serviceUnavailable : locating ? c.locating : busy || !!pending ? c.wait_busy : c.form_loading;
@@ -708,8 +710,8 @@ function BookForm() {
         </Press>}
       </View>}
       footer={pending ? undefined : <>
-        <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed && !scopeInvalid ? money(pay) : undefined}
-          onPress={submit} loading={busy} disabled={submitBlocked || scopeInvalid} />
+        <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed && !scopeIncomplete ? money(pay) : undefined}
+          onPress={submit} loading={busy} disabled={submitBlocked || scopeIncomplete} />
         {requestReason && <Reason>{requestReason}</Reason>}
         {quoteFailed && <Button title={c.retry} variant="ghost" onPress={requote} />}
       </>}>
@@ -778,7 +780,7 @@ function BookForm() {
         </View>}
       </Card>
 
-      {!pending && routeChosen && !scopeInvalid && <Card style={{ paddingVertical: 10, minHeight: 112 }}>
+      {!pending && routeChosen && !scopeIncomplete && <Card style={{ paddingVertical: 10, minHeight: 112 }}>
         <Row gap={12}>
           <View style={styles.cash}><Ionicons name="sparkles-outline" size={18} color={palette.olive} /></View>
           <View style={{ flex: 1 }}>

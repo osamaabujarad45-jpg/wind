@@ -34,6 +34,7 @@ try {
   const register = (phone, role = 'customer') => call('/auth/register', { body: { phone, role, name: 'Multi-recipient fixture',
     password: 'secret123', ...(role === 'driver' && { vehicle: 'van' }) } });
   const admin = await register('0599351001'); await promote('0599351001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599351001', password: 'secret123' } })).token;
   const sender = await register('0599351002'), driver = await register('0599351003', 'driver');
   await call(`/admin/users/${driver.user.id}/approve`, { token: admin.token, body: {} });
   const advance = (order, extra = {}, expect = 200) => call(`/orders/${order.id}/advance`, { token: driver.token,
@@ -106,9 +107,11 @@ try {
   offline = false;
   const earnings = (await call('/driver/earnings', { token: driver.token })).all;
   assert.equal(Number(earnings.jobs), 3);
-  assert.equal(Number(earnings.gross), 70);
+  assert.equal(Number(earnings.gross), 50, 'a return collected no fare, so it adds no gross (SRS DRV-17)');
   assert.equal(Math.round(Number(earnings.commission) * 100), Math.round((recovered.commission + completedB.commission + returned.commission) * 100));
-  assert.equal(Math.round(earnings.net * 100), 7000 - Math.round(earnings.commission * 100));
+  assert.equal(earnings.tripPayCents, Math.round((completedB.price + 2 * returned.price) * 100));
+  assert.equal(Math.round(earnings.net * 100), 5000 - Math.round(earnings.commission * 100));
+  assert.equal(Math.round(earnings.earnedNet * 100), 5000 - Math.round(earnings.commission * 100) + earnings.tripPayCents);
   console.log(`${persistence.backend} multi-recipient: current run sheet, proof/cash association, lost ACK/reconnect, reattempt, sender return and earnings passed`);
 } finally {
   await shutdown(); globalThis.fetch = actualFetch; rmSync(directory, { recursive: true, force: true });

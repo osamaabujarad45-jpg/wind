@@ -74,6 +74,7 @@ function ownBrowser() {
 try {
   const admin = await call('/auth/register', { body: { phone: '0599150001', name: 'Admin', password: 'secret1' } });
   await promote('0599150001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599150001', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599150002', name: 'Rana', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0599150003', name: 'Omar', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const truck = await call('/auth/register', { body: { phone: '0599150004', name: 'Truck', password: 'secret1', role: 'driver', vehicle: 'truck' } });
@@ -237,7 +238,7 @@ try {
   sent.length = 0;
   await resolve('confirm_return', 'Sender handed it back at the shop');
   await settle();
-  assert.deepEqual(heard(), [[fcm('h'), 'decided'], [fcm('c'), 'returned']]);
+  assert.deepEqual(heard(), [[fcm('h'), 'decided'], [fcm('c'), 'return_complete']]);
   // Support, money, safety and plans (SPEC-notification-audit.md): each change someone waits on reaches that person.
   const newcomer = await call('/auth/register', { body: { phone: '0599150009', name: 'Yara', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const newcomerBrowser = ownBrowser();
@@ -248,7 +249,7 @@ try {
   await settle();
   assert.deepEqual(heard(), [[fcm('y'), 'approved']]);
   sent.length = 0;
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: newcomer.user.id, amountCents: 500, reason: 'Fuel receipt not logged' } });
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: newcomer.user.id, amountCents: 500, intent: 'charge', reason: 'Fuel receipt not logged' } });
   await settle();
   assert.deepEqual(heard(), [[fcm('y'), 'cash']]);
   sent.length = 0;

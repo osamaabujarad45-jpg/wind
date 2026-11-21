@@ -28,9 +28,11 @@ try {
   const booking = inspect.prepare(`INSERT INTO orders(customer_id,service,shared,pickup_city,dropoff_city,pickup_note,dropoff_note,contact,
     detail,option,loading_help,price,status,created_at,updated_at) VALUES(?,?,0,'ramallah','bireh','Synthetic pickup','Synthetic destination',
     '0597000000','Synthetic trip',?,0,20,'searching',?,?)`);
-  const book = (service = 'ride') => Number(booking.run(actors[0].id, service, service === 'ride' ? '1' : 'small', now, now).lastInsertRowid);
+  // One active ride per rider (SRS ride fence): each raced ride below has its own synthetic rider.
+  const riders = [1, 2, 3, 4].map(index => Number(user.run(`059${String(7_100_000 + index)}`, `Synthetic rider ${index}`, '', 'customer', 'active', null, now, now, now).lastInsertRowid));
+  const book = (service = 'ride', rider = actors[0].id) => Number(booking.run(rider, service, service === 'ride' ? '1' : 'small', now, now).lastInsertRowid);
   const orderId = book();
-  const otherId = book();
+  const otherId = book('ride', riders[3]);
   second = await startApiProcess({ DB_PATH: path });
   const servers = [first, second];
   async function accept(id, actor, target) {
@@ -55,10 +57,10 @@ try {
   assert.equal((await accept(otherId, winner, second)).status, 409, 'an exclusively committed driver cannot claim a second ride');
   assert.equal(inspect.prepare('SELECT driver_id,status FROM orders WHERE id=?').get(otherId).status, 'searching');
   const available = actors.slice(1).filter(actor => actor !== winner);
-  const rides = [book(), book()];
+  const rides = [book('ride', riders[0]), book('ride', riders[1])];
   const exclusive = await Promise.all(rides.map((id, index) => accept(id, available[0], servers[index])));
   assert.equal(exclusive.filter(result => result.status === 200).length, 1, 'one driver racing for two rides gets one commitment');
-  const mixedOrders = [book(), book('parcel')];
+  const mixedOrders = [book('ride', riders[2]), book('parcel')];
   const mixed = await Promise.all(mixedOrders.map((id, index) => accept(id, available[1], servers[index])));
   assert.equal(mixed.filter(result => result.status === 200).length, 1, 'ride-versus-parcel race cannot create mixed work');
   const parcels = [book('parcel'), book('parcel')];

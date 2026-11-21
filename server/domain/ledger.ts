@@ -9,6 +9,9 @@ type Register = (method: string, path: string, handler: (ctx: Context) => Promis
 type Entry = { accountId: number; debitMinor?: number; creditMinor?: number };
 type Journal = { businessRef: string; kind: string; entries: Entry[]; currency?: string; orderId?: number | null; cashEntryId?: number | null; actorId?: number | null; reason?: string | null; rateBps?: number | null; reversesJournalId?: string | null };
 
+/** security_events action marking a return closed under the DRV-17 rule (commission 0, no promo relief); see main.ts markNoFare. */
+export const RETURN_NO_FARE = 'RETURN_NO_FARE';
+export const isCaptainPay = (source: unknown) => source === 'trip_pay' || source === 'pickup_pay';
 export const PROJECTED_CASH_CAP_MINOR = 100000;
 export function ledgerConfig() { return { projectedCashCapMinor: PROJECTED_CASH_CAP_MINOR, cashCapActivated: false }; }
 export async function ledgerAvailable(db: Persistence) {
@@ -63,30 +66,47 @@ export class Ledger {
       return created;
     });
   }
+  async cashJournal(entry: Row): Promise<Journal | undefined> {
+    const amount = Number(entry.amount_cents);
+    if (!amount || (entry.kind === 'remittance' && entry.status !== 'confirmed')) return;
+    const receivable = await this.ensureAccount(`driver:${entry.driver_id}:receivable`, 'driver_receivable', Number(entry.driver_id));
+    const pay = isCaptainPay(entry.source);
+    const remittance = entry.kind === 'remittance';
+    const other = pay
+      ? await this.ensureAccount('platform:operating_expense', 'operating_expense', null)
+      : remittance || entry.source === 'payout'
+        ? await this.ensureAccount('platform:provider_clearing', 'provider_clearing', null)
+        : await this.ensureAccount('platform:revenue', 'platform_revenue', null);
+    const debitReceivable = remittance ? amount < 0 : amount > 0;
+    const n = Math.abs(amount);
+    return {
+      businessRef: `cash-entry:${entry.id}`, kind: remittance ? 'cash_remittance' : 'cash_adjustment', cashEntryId: Number(entry.id),
+      entries: debitReceivable ? [{ accountId: receivable.id, debitMinor: n }, { accountId: other.id, creditMinor: n }]
+        : [{ accountId: other.id, debitMinor: n }, { accountId: receivable.id, creditMinor: n }],
+    };
+  }
   async importLegacy(actor: Actor) {
     await this.gate(); needStaff(await staffActor(this.db, actor), this.fail, 'finance');
     return this.tx(async () => {
       const revenue = await this.ensureAccount('platform:revenue', 'platform_revenue', null);
       const promo = await this.ensureAccount('platform:promo_expense', 'promo_expense', null);
-      const clearing = await this.ensureAccount('platform:provider_clearing', 'provider_clearing', null);
       let journals = 0;
       const post = async (input: Journal) => { const exists = await this.db.one('SELECT id FROM ledger_journals WHERE business_ref=?', input.businessRef); await this.postJournal(input); if (!exists) journals++; };
       const orders = await this.db.all("SELECT * FROM orders WHERE driver_id IS NOT NULL AND status IN ('completed','returned') ORDER BY id");
+      // DRV-17: a return closed under the no-fare rule got no promo relief live, so the import posts none either (Sol R2-H5, R3-H1).
+      const noFare = new Set((await this.db.all('SELECT order_id FROM security_events WHERE action=?', RETURN_NO_FARE)).map(r => Number(r.order_id)));
       for (const order of orders) {
         const receivable = await this.ensureAccount(`driver:${order.driver_id}:receivable`, 'driver_receivable', Number(order.driver_id));
         const commission = Number(order.commission_minor ?? 0), discount = Number(order.discount_minor ?? 0);
         if (commission > 0) await post({ businessRef: `order:${order.id}:commission`, kind: 'commission_accrual', orderId: Number(order.id), entries: [{ accountId: receivable.id, debitMinor: commission }, { accountId: revenue.id, creditMinor: commission }] });
-        if (discount > 0) await post({ businessRef: `order:${order.id}:discount`, kind: 'discount_funding', orderId: Number(order.id), entries: [{ accountId: promo.id, debitMinor: discount }, { accountId: receivable.id, creditMinor: discount }] });
+        if (discount > 0 && !(order.status === 'returned' && noFare.has(Number(order.id)))) await post({ businessRef: `order:${order.id}:discount`, kind: 'discount_funding', orderId: Number(order.id), entries: [{ accountId: promo.id, debitMinor: discount }, { accountId: receivable.id, creditMinor: discount }] });
       }
       const cash = await this.db.all("SELECT * FROM cash_entries WHERE kind='adjustment' OR (kind='remittance' AND status='confirmed') ORDER BY id");
       for (const entry of cash) {
-        const amount = Number(entry.amount_cents); if (!amount) continue;
-        const receivable = await this.ensureAccount(`driver:${entry.driver_id}:receivable`, 'driver_receivable', Number(entry.driver_id));
-        const other = entry.kind === 'remittance' ? clearing : revenue;
-        // Sign-aware: a negative remittance reverses a confirmed handover (Dr receivable), a negative adjustment relieves it (Cr receivable).
-        const debitReceivable = entry.kind === 'adjustment' ? amount > 0 : amount < 0;
-        const n = Math.abs(amount);
-        await post({ businessRef: `cash-entry:${entry.id}`, kind: entry.kind === 'remittance' ? 'cash_remittance' : 'cash_adjustment', cashEntryId: Number(entry.id), entries: debitReceivable ? [{ accountId: receivable.id, debitMinor: n }, { accountId: other.id, creditMinor: n }] : [{ accountId: other.id, debitMinor: n }, { accountId: receivable.id, creditMinor: n }] });
+        // Pre-release postings are immutable. Unposted legacy rows follow the original kind and sign.
+        if (entry.source == null && await this.db.one('SELECT id FROM ledger_journals WHERE business_ref=? AND cash_entry_id=?', `cash-entry:${entry.id}`, entry.id)) continue;
+        const journal = await this.cashJournal(entry);
+        if (journal) await post(journal);
       }
       return { journals, orders: orders.length, cashEntries: cash.length };
     });

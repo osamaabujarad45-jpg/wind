@@ -108,6 +108,7 @@ try {
   [admin, customer, driver, , spare] = actors;
   const foreign = actors[3];
   await promote(phones[0]);
+  admin.token = (await call('/auth/login', { body: { phone: phones[0], password: 'synthetic-local-password' } })).token;
   await exchange('pending-driver', 'driver', '/jobs', { token: driver.token, expect: 403 });
   for (const actor of [driver, spare]) await call(`/admin/users/${actor.user.id}/approve`, { token: admin.token, body: {} });
   // Additive admin and driver routes enforce their roles here, where no SQLite capability gate answers first (authz-matrix covers SQLite).
@@ -140,6 +141,7 @@ try {
   assert.equal(session.capabilities.declaredScope, persistence.backend === 'postgres' ? true : undefined,
     'scope forms follow the migrated server capability');
   assert.equal(typeof session.user.id, 'number');
+  await exchange('driver-earnings', 'driver', '/driver/earnings', { token: driver.token });
   for (const actor of actors) assert.equal((await persistence.one('SELECT token_hash FROM sessions WHERE user_id = ?', actor.user.id)).token_hash.length, 64);
   assert.equal((await persistence.one('SELECT 1 FROM sessions WHERE token_hash = ?', customer.token)), undefined);
   assert.match((await persistence.one('SELECT password FROM users WHERE id = ?', customer.user.id)).password, /^[a-f0-9]{32}:[a-f0-9]{64}$/);
@@ -192,6 +194,12 @@ try {
   }
   await exchange('customer-rating-privacy', 'customer', `/orders/${order.id}`, { token: customer.token });
 
+  const remittance = await exchange('cash-remittance', 'admin', '/admin/cash/remittance', { token: admin.token,
+    body: { driverId: driver.user.id, amountCents: 300, requestId: randomUUID(), note: 'Synthetic two-person handover' } });
+  await exchange('cash-pending', 'driver', '/driver/cash', { token: driver.token });
+  await exchange('cash-confirm', 'driver', `/driver/cash/${remittance.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
+  await exchange('cash-settled', 'driver', '/driver/cash', { token: driver.token });
+
   order = await inTransit();
   order = await transition('delivery-exception', 'driver', order, `/orders/${order.id}/exception`, { token: driver.token,
     body: { requestId: randomUUID(), expectedStatus: 'in_transit', reason: 'refused' } }, 'on_hold');
@@ -215,11 +223,6 @@ try {
     token: actor.token, body: actor === customer ? { rating: 4, priceRating: 4 } : { customerRating: 4 }, expect: 409 });
   await exchange('returned-dispute', 'customer', `/orders/${order.id}/dispute`, { token: customer.token, body: { reason: 'Synthetic return handling review' } });
   await exchange('finished-cash', 'driver', '/driver/cash', { token: driver.token });
-  const remittance = await exchange('cash-remittance', 'admin', '/admin/cash/remittance', { token: admin.token,
-    body: { driverId: driver.user.id, amountCents: 600, requestId: randomUUID(), note: 'Synthetic two-person handover' } });
-  await exchange('cash-pending', 'driver', '/driver/cash', { token: driver.token });
-  await exchange('cash-confirm', 'driver', `/driver/cash/${remittance.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
-  await exchange('cash-settled', 'driver', '/driver/cash', { token: driver.token });
 
   for (const stage of ['searching', 'assigned', 'at_pickup']) {
     let current = await book();
@@ -337,7 +340,10 @@ try {
       if (ex.id === 'customer-session' && persistence.backend === 'postgres') delete ex.response.capabilities.declaredScope;
       // On Postgres /api/ready reports the max applied migration version (503 below 21);
       // the frozen SQLite fixture keeps the SQLite schema version. Assert the real PG value, then normalize like the timestamp below.
-      if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') { if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 36, 'PG readiness must report the door-cash (31), parcel-priority (32), shop (33), pickup-refusal (34), saved-place-points (35) and quote-privacy (36) migrations without changing installed payloads'); ex.response.schema = 3; }
+      if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') {
+        if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 41, 'readiness reports the finance handover audit migration');
+        ex.response.schema = 3;
+      }
       if (ex.id === 'quote' && ex.response && typeof ex.response === 'object') {
         delete ex.response.quoteId;
         delete ex.response.quoteExpiresAt;

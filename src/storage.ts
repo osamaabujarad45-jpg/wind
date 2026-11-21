@@ -1,8 +1,10 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { inProcess } from './serial-lock';
 import { webGet, webSet, type WebStore } from './web-storage';
 const webStore: WebStore = () => localStorage;
 type LockManager = { request: <T>(name: string, run: () => Promise<T>) => Promise<T> };
+
 export const storage = {
   /**
    * Reading the session token and acting on it, with no other tab's sign-in or sign-out in between.
@@ -10,7 +12,7 @@ export const storage = {
    */
   exclusive: <T>(run: () => Promise<T>, lock = 'wind.session.token'): Promise<T> => {
     const locks = Platform.OS === 'web' ? (globalThis.navigator as unknown as { locks?: LockManager } | undefined)?.locks : undefined;
-    return locks ? locks.request(lock, run) : run();
+    return locks ? locks.request(lock, run) : inProcess(lock, run);
   },
   get: async (key: string, required = false) => Platform.OS === 'web' ? webGet(webStore, key, required) : SecureStore.getItemAsync(key),
   set: async (key: string, value: string | null, required = false) => {

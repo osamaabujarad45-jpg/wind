@@ -63,6 +63,57 @@ Production moved to a VM on a separate student subscription. The 15 November sec
   Going back to the pre-master server (`/opt/windapi-old-20261116`) also needs `10-master.conf` removed and
   `systemctl daemon-reload`, and that server cannot read master's schema: it would need its own empty database
   (`/data/pre-master-20261116/wind.db`).
+- **Release notes, 19 November (PR #97):**
+  - **Before rolling back past this release**, have the finance lead freeze office payouts and balance adjustments used to settle
+    captains. Stop scheduled and manual finance ledger imports. Record the time the freeze began and retain it throughout rollback.
+    An older binary can restore promo relief in its balance view for a discounted `RETURN_NO_FARE` return and classify newer
+    entries differently during import. Keep the database and any orders written during rollback.
+  - **Cashier builds and order** (cashier protocol 1.1.5, client build 10105):
+    - Cashiers record cash in the web app this host serves (`WEB_ROOT`): reloading it gives the release's own bundle.
+      A browser tab still on an older bundle gets the update screen (Reload) for a new cash write; its own pending
+      request still replays.
+    - Production refuses new cash writes from any bundle below 10105, and from one that sends no build header at all
+      (builds before the forced-upgrade gate). Supported cashier builds: the web app of this release, and native 1.1.5
+      or later.
+    - A native 1.1.4 admin install that taps a cash write gets 426 and the whole app shows the update screen, without a
+      Download action (`EXPO_PUBLIC_UPDATE_URL` is unset on this EAS project), until the app is closed and reopened.
+      Nothing is written. Tell native admins to record cash in the web app until a 1.1.5 APK is published.
+    - A cashier who sees “This device could not save the cash entry’s state” stops using that device for cash: the entry
+      is checked against the captain’s balance and any correction is recorded from another device. If that device later
+      restores the entry after a restart, do not press Retry on it there; check the balance from another device first.
+    - Cash entry in the web app needs a browser with Web Locks (every current browser, over https): it keeps two tabs from
+      settling one saved entry each. A browser without them shows a notice and takes no cash entries.
+    - Order: release the server first. A native 1.1.5 build sends typed payouts that the 16 November API would book as
+      ordinary adjustments, so no 1.1.5 APK reaches a cashier before this server is live.
+  - **Return decisions during a rollback:** freeze return confirmations and office intake with cash writes. The previous API prices an office return without the carrier rule and cannot read the typed commands.
+  - **Cash writes during a rollback** (Sol R10-H3): the previous API does not know typed payouts or the 1.1.5 cashier
+    protocol and would book a current tab's payout as an ordinary adjustment. Freeze cash writes and close every open Cash
+    tab before stopping the service, keep them frozen while the previous API runs, and reopen them only after re-release.
+    A cashier bundle older than 1.1.5 gets the update screen for new cash writes on this release (same-id replay still
+    answers it), so after a client-only rollback the office also waits for re-release before recording cash.
+  - **After re-release**, reconcile the captains on orders marked `RETURN_NO_FARE` or linked to a `trip_pay` cash entry. Compare
+    booked fares, discounts, credits, payouts and any pending handovers with the office receipts and current cash balances.
+    For PostgreSQL, also compare captain receivables and operating-expense journals to those entries before resuming imports.
+    The finance lead records any differences and resolves them before reopening payouts and import.
+  - Captain pay (SRS DRV-17/18): a failed parcel or freight delivery pays the booked fare per leg. Support custody recovery pays
+    one leg. A courier block waits for a second admin's clearing review on either database. On API startup, missing shipping and shop
+    reviews are recovered from custody-block audits for drivers who can still settle cash. The review keeps the original
+    block time and is due two working days after recovery. The API logs skipped reviews for departed drivers. Every pre-pickup
+    cancellation after assignment and every failed pickup goes to support review. Validated distance informs the suggested
+    credit, capped at the booked fare. A support or finance decision grants or denies the credit. The office records
+    disbursements with the Pay driver action after pending handovers are resolved.
+  - Return and shop handover decisions use the web bundle served by this release. Support records an office handback with
+    `confirm_office_return` with `carrier: captain` or `carrier: staff` and enters the holding details on the returned order.
+    The extra office leg is paid only for `captain`, and not when support collected the goods or the captain was blocked
+    holding them (a block review decides that pay). A verified handback at the return endpoint uses `confirm_sender_return`. For an overdue shop
+    handover, `cancel_handover_exception` carries the timestamp of the open exception. The 16 November API now in production refuses these commands. The eligibility custody recovery (PostgreSQL only) closes an office return with the same `carrier`.
+  - Goods COD writes stay off unless `WIND_GOODS_COD=on` (G-COD), whatever the database schema allows.
+  - Shop delivery (off in this pilot) needs admin builds of 1.1.5 or later before it is switched on. A 1.1.4 admin cannot cancel an overdue handover exception, because the cancellation must now name the exception episode: the request is refused and nothing changes. A 1.1.4 support build's plain `confirm_return` keeps its one-return-leg price and is not office intake: goods kept at the office are confirmed with the web bundle's typed office action, because a plain confirmation made from this release on cannot be shelved afterwards (before this release it could). Plain confirmations recorded before this release keep their office meaning. If a captain did carry goods closed with the plain command, finance records the missing office leg as a documented payout adjustment.
+  - Command replay: a reply scrubbed by this release replays as a re-read under current authorization. An earlier
+    tree reading the same database returns the scrubbed marker as it is; the client then re-reads the order.
+  - Before rides are enabled on any database (G-RIDE), audit duplicate active rides and reconcile any row it returns:
+    `SELECT customer_id, COUNT(*) FROM orders WHERE service='ride' AND status IN ('assigned','at_pickup','in_transit') GROUP BY customer_id HAVING COUNT(*) > 1;`
+    The fence that prevents new ones assumes one API writer at a time, which this single-service swap gives.
 - **Data:** the database started fresh on 16 November. Users register again; the old data is only on the disabled
   subscription.
   - `/data/pre-master-20261116/` keeps the pre-master database and the QA journey database.
@@ -93,7 +144,7 @@ Production moved to a VM on a separate student subscription. The 15 November sec
 - **Settings:** `/srv/wind-api.env` (root, 0600) holds the same keys as before, with `WIND_PUSH_SUBJECT=https://windapp-ps.swedencentral.cloudapp.azure.com`, `OSRM_URL=http://wind-osrm:5000` and `WIND_TRUST_PROXY=1`.
 - **Cron:** `infra/vm/wind.cron` at `/etc/cron.d/wind`: nightly backup 03:10 UTC, watchdog every minute.
 - **Backups:** `windpsbackup` is zone-redundant, shared-key and public access are off (identity only), blob versioning is on, and deleted blobs and versions are kept 30 days.
-- **APK downloads:** storage account `windpsrelease`, container `downloads` with blob-level anonymous read (a blob opens by its exact URL; the container cannot be listed). `https://windpsrelease.blob.core.windows.net/downloads/wind.apk` is always the newest signed APK; it is the EAS variable `EXPO_PUBLIC_UPDATE_URL`, which the forced-upgrade screen opens. Build it with `npx eas-cli build -p android --profile production-apk` (the production environment and keystore, as an installable APK; the `production` profile makes the Play Store AAB), upload it to `downloads/wind.apk` and a versioned `downloads/wind-<versionCode>.apk`. To force older installs onto it, set `WIND_MIN_CLIENT_BUILD` in `/srv/wind-api.env` to the new build's `CLIENT_BUILD` (`src/api-client.ts`: major×10000 + minor×100 + patch of the `app.json` version, so 10101 for 1.1.1), **not** the Android versionCode. The file is read only when the container is created, so recreate `wind-api` with the `docker run` line from `infra/vm/deploy.sh` (a restart keeps the old value), then check `docker exec wind-api printenv WIND_MIN_CLIENT_BUILD` and `curl -s -o /dev/null -w '%{http_code}' -H 'X-Wind-Client: 1' http://127.0.0.1:4000/api/ready` (426). Installs up to 1.0.13 send no `X-Wind-Client` header and are never refused (`server/domain/runtime-readiness.ts`): they need the new APK link sent to them directly.
+- **APK downloads:** storage account `windpsrelease`, container `downloads` with blob-level anonymous read (a blob opens by its exact URL; the container cannot be listed). `https://windpsrelease.blob.core.windows.net/downloads/wind.apk` is always the newest signed APK; it is the EAS variable `EXPO_PUBLIC_UPDATE_URL`, which the forced-upgrade screen opens. Build it with `npx eas-cli build -p android --profile production-apk` (the production environment and keystore, as an installable APK; the `production` profile makes the Play Store AAB), upload it to `downloads/wind.apk` and a versioned `downloads/wind-<versionCode>.apk`. To force older installs onto it, set `WIND_MIN_CLIENT_BUILD` in `/srv/wind-api.env` to the new build's `CLIENT_BUILD` (`src/api-client.ts`: major×10000 + minor×100 + patch of the `app.json` version, so 10101 for 1.1.1), **not** the Android versionCode. The file is read only when the container is created, so recreate `wind-api` with the `docker run` line from `infra/vm/deploy.sh` (a restart keeps the old value), then check `docker exec wind-api printenv WIND_MIN_CLIENT_BUILD` and `curl -s -o /dev/null -w '%{http_code}' -H 'X-Wind-Client: 1' http://127.0.0.1:4000/api/ready` (426). Builds from before the forced-upgrade gate (commit 7d17ccc5, part of the 1.0.13 line) send no `X-Wind-Client` header and pass this global check (`server/domain/runtime-readiness.ts`): they need the new APK link sent to them directly. Production cash writes have their own build gate (`cashClientFenced`), which refuses them.
 - **Data:** create it before the first `docker run` with `install -d -o 1000 -g 1000 -m 700 /srv/wind-data`: the image runs as `node` (uid 1000), and a directory Docker creates for the mount is root's, which stopped the first Azure start with `unable to open database file` (15 November).
 - **Scripts:** `apt-get install -y docker.io jq sqlite3`, then `install -m 0755` each of `infra/vm/{azure-token,deploy,wind-backup,wind-restore,wind-watchdog}.sh` to `/srv/`, `infra/vm/Caddyfile` to `/srv/Caddyfile` and `infra/vm/wind.cron` to `/etc/cron.d/wind` (0644). After changing one, copy it again and compare SHA256.
 - **Caddy:** started once by hand; its certificate lives in the `caddy_data` volume:
@@ -189,7 +240,7 @@ WIND_POSTGRES_STAGING=1 WIND_DATABASE_URL='postgresql://…?sslmode=verify-full'
   npm run db:migrate:staging -- --confirm
 ```
 
-`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option other than a single `sslmode=verify-full`, and a missing `--confirm`; it creates `wp16_staging` and applies migrations 3–36 under `MIGRATION_LOCK` (35 saved-place pins, 36 quote privacy scrub). `/api/ready` must then report schema 36. This is owner-run, never CI, and must not run concurrently with another migration. It initializes staging; it is not the legacy-data production importer.
+`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option other than a single `sslmode=verify-full`, and a missing `--confirm`; it creates `wp16_staging` and applies migrations 3–41 under `MIGRATION_LOCK`. Migration 40 adds typed captain cash entries and opens shipping block reviews. Migration 41 permits an audited office handover decision. `/api/ready` must then report schema 41. Typed credits and payouts require migration 40. This is owner-run, never CI, and must not run concurrently with another migration. It initializes staging; it is not the legacy-data production importer.
 
 `server/migrate.ts` separately restricts its import CLI to test mode, loopback and an isolated schema. Its `--freeze-writes` holds the SQLite lock only while taking the snapshot, releasing it before import. Production needs a reviewed importer and a continuously enforced freeze of every SQLite writer.
 

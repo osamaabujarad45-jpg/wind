@@ -15,7 +15,7 @@ import { isValidPhone } from '../src/model.ts';
 const source = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 assert.ok(source.includes('onSubmitEditing={submit}'), 'the contact keyboard go-key wires straight to submit (the bypass under test)');
 assert.ok(source.includes('onSubmitEditing={() => applyPromo(promoInput)}'), 'the promo keyboard go-key wires straight to applyPromo');
-assert.ok(source.includes('disabled={submitBlocked || scopeInvalid}'), 'the Request button uses the callback submission guard');
+assert.ok(source.includes('disabled={submitBlocked || scopeIncomplete}'), 'the Request button uses the callback submission guard');
 const guards = [...source.matchAll(/^  const (?:submitBlocked|promoBlocked) = [^\n]+;/gm)].map(match => match[0]).join('\n');
 assert.ok(guards.includes('submitBlocked') && guards.includes('promoBlocked'), 'callbacks and controls share their guards');
 
@@ -42,13 +42,14 @@ function pendingCommand() {
 function harness(overrides = {}) {
   const state = {
     ready: true, available: true, pending: null, busy: false, locating: false, quoting: false, quoteFailed: false,
-    checking: false, resolving: false, scopeInvalid: false, routeChosen: true, pickupChosen: true, scheduledFor: null,
+    checking: false, resolving: false, scopeInvalid: false, freightPinsMissing: false, routeChosen: true, pickupChosen: true, scheduledFor: null,
     service: 'parcel', priority: 'standard', sameDayOpen: true, pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: POINT_A, dropoffPoint: POINT_B,
     pickupNote: 'Gate 3', dropoffNote: 'Door B', detail: 'Fragile box', contact: '0599123456', recipientPhone: '', recipientName: '', goodsOk: true,
     option: 'small', loadingHelp: false, declaredScope: undefined, price: 48, applied: null, smart: null, error: '',
     ...overrides,
   };
   // Derived like book.tsx: same day is booked now, never with a scheduled slot.
+  state.scopeIncomplete = state.scopeInvalid || state.freightPinsMissing;
   state.sameDayAllowed ??= state.sameDayOpen && state.scheduledFor == null;
   const calls = { writes: [], posts: [], setChecking: [], setPromo: [], navigations: [] };
   const context = {
@@ -174,7 +175,7 @@ await check('a fresh definitive refusal can clear its never-retried command', as
 for (const [label, overrides] of [
   ['locked: busy', { busy: true }], ['locked: pending', { pending: pendingCommand() }], ['locked: not ready', { ready: false }],
   ['locked: locating', { locating: true }], ['locked: service unavailable', { available: false }],
-  ['route not chosen', { routeChosen: false }], ['invalid freight scope', { scopeInvalid: true }],
+  ['route not chosen', { routeChosen: false }], ['invalid freight scope', { scopeInvalid: true }], ['missing freight pins', { freightPinsMissing: true }],
   ['quoting', { quoting: true }], ['quoteFailed', { quoteFailed: true }], ['checking (shared by the request footer controls)', { checking: true }],
 ]) {
   await check(`applyPromo cannot start while ${label}: no /promos/check, checking never set`, async () => {

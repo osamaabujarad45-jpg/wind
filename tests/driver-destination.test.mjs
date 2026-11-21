@@ -29,6 +29,7 @@ const call = apiCaller(() => base, realFetch);
 try {
   const admin = await call('/auth/register', { body: { phone: '0599600001', name: 'Admin', password: 'secret1' } });
   await promote('0599600001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599600001', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599600002', name: 'Lina', password: 'secret1' } });
   const driver = async phone => {
     const d = await call('/auth/register', { body: { phone, name: `Driver ${phone}`, password: 'secret1', role: 'driver', vehicle: 'car' } });
@@ -38,10 +39,12 @@ try {
   };
   const homebound = await driver('0599600003'), free = await driver('0599600004');
   const points = { ramallah: { latitude: 31.9022, longitude: 35.2063 }, nablus: { latitude: 32.2211, longitude: 35.2544 }, hebron: { latitude: 31.5326, longitude: 35.0998 } };
+  let nextRider = 5;
   const book = async to => {
+    const rider = await call('/auth/register', { body: { phone: '059960000' + nextRider++, name: 'Rider', password: 'secret1' } });
     const trip = { service: 'ride', pickupCity: 'ramallah', dropoffCity: to, option: '1', pickupPoint: points.ramallah, dropoffPoint: points[to] };
-    const { price } = await call('/price', { token: customer.token, body: trip });
-    return call('/orders', { token: customer.token, body: { ...trip, shared: false, pickupNote: 'Manara', dropoffNote: 'Centre',
+    const { price } = await call('/price', { token: rider.token, body: trip });
+    return call('/orders', { token: rider.token, body: { ...trip, shared: false, pickupNote: 'Manara', dropoffNote: 'Centre',
       contact: '0599600002', detail: '', pricing: 'smart', quotedPrice: price, requestId: randomUUID() } });
   };
   const jobs = async who => (await call('/jobs', { token: who.token })).map(j => j.dropoffCity).sort();

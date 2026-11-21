@@ -98,7 +98,7 @@ function createScreen({ slotBucketAt, saved = null, params = {} } = {}) {
     get scheduledFor() { return derived.scheduledFor; },
     setSlot, setSlotBucket, setWhen, setPending,
     // the flags the real guards read
-    ready: true, available: true, scopeInvalid: false, routeChosen: true, pickupChosen: true,
+    ready: true, available: true, scopeIncomplete: false, routeChosen: true, pickupChosen: true,
     locating: false, resolving: false, quoting: false, quoteFailed: false, checking: false,
     get submitBlocked() { return context.blocked(); },
     sending: { current: false }, settled: { current: false }, latest: { current: null }, scrollRef: { current: null },

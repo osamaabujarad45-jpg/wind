@@ -19,8 +19,8 @@ import { copyRuntimeSources } from '../scripts/runtime-sources.mjs';
   assert.match(build, /ENV EXPO_PUBLIC_API_URL=\$\{EXPO_PUBLIC_API_URL\}/);
   assert.doesNotMatch(build, /EXPO_PUBLIC_API_URL=https?:/, 'Docker cannot silently select an old deployment');
   assert.doesNotMatch(build, /^COPY .*\bexpo-env\.d\.ts\b/m, 'Docker must build from a clean checkout without generated Expo types');
-  for (const file of [pkg.main, ...Object.values(pkg.dependencies).filter(value => value.startsWith('file:')).map(value => value.slice(5).replace(/^\.\//, ''))]) {
-    const isDirectory = !file.includes('.js');
+  for (const file of [pkg.main, 'scripts/runtime-sources.mjs', 'scripts/runtime-dependencies.mjs', ...Object.values(pkg.dependencies).filter(value => value.startsWith('file:')).map(value => value.slice(5).replace(/^\.\//, ''))]) {
+    const isDirectory = !/\.(?:js|mjs)$/.test(file);
     for (const ignore of ['.dockerignore', '.railwayignore']) {
       const rules = read(ignore).split(/\r?\n/);
       assert.ok(rules.lastIndexOf('**/node_modules') > rules.lastIndexOf('!vendor/**'), `${ignore} excludes generated dependencies after including vendored packages`);
@@ -97,7 +97,8 @@ try {
   }
   const password = 'Synthetic_Strong_12345';
   const missingAttestation = cli(['enroll', '0599010090', 'admin', 'Synthetic admin'], {}, password);
-  assert.notEqual(missingAttestation.status, 0); assert.match(missingAttestation.stderr, /phone ownership/);
+  assert.notEqual(missingAttestation.status, 0);
+  assert.match(missingAttestation.stderr, /Verify phone ownership|OPERATOR_PHONE_PROOF_REQUIRED/);
   let inspect = new DatabaseSync(path);
   assert.equal(inspect.prepare('SELECT COUNT(*) count FROM users').get().count, 0); inspect.close(); // startup never seeds demo accounts
   const enrolled = cli(['enroll', '0599010090', 'admin', 'Synthetic admin', '--phone-verified'], {}, password);

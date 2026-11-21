@@ -10,7 +10,8 @@ export type Cart = { merchantId: number; merchantName: string; city: string; min
 
 const KEY = 'wind.shopCart.v1';
 let cart: Cart | null = null;
-let loaded = false;
+let loadPromise: Promise<void> | undefined;
+let writes: Promise<unknown> = Promise.resolve();
 const listeners = new Set<() => void>();
 const emit = () => { for (const l of listeners) l(); };
 
@@ -26,15 +27,19 @@ export function readCart(raw: unknown): Cart | null {
     && c.lines.every(l => !!l && Number.isSafeInteger(l.itemId) && text(l.nameAr) && text(l.nameEn) && agorot(l.unitAgorot)
       && typeof l.byWeight === 'boolean' && Number.isSafeInteger(l.qtyMilli) && l.qtyMilli > 0 && shopPolicies.includes(l.policy)) ? c : null;
 }
-async function load() {
-  if (loaded) return;
-  loaded = true;
-  try { const saved = readCart(JSON.parse((await storage.get(KEY)) ?? 'null')); if (saved) { cart = saved; emit(); } } catch { /* a damaged copy starts empty */ }
+function load() {
+  return loadPromise ??= (async () => {
+    try { const saved = readCart(JSON.parse((await storage.get(KEY)) ?? 'null')); if (saved) { cart = saved; emit(); } } catch { /* a damaged copy starts empty */ }
+  })();
 }
-function save(next: Cart | null) {
-  cart = next && next.lines.length ? next : null;
-  emit();
-  void storage.set(KEY, cart ? JSON.stringify(cart) : null).catch(() => {});
+function save(next: Cart | null, required = false) {
+  const previous = cart;
+  const value = next?.lines.length ? next : null;
+  if (!required) { cart = value; emit(); }
+  const write = writes.then(() => storage.set(KEY, value ? JSON.stringify(value) : null, required));
+  writes = write.catch(() => {});
+  if (!required) return writes;
+  return write.then(() => { if (cart === previous) { cart = value; emit(); } });
 }
 
 export function useCart() {
@@ -44,6 +49,16 @@ export function useCart() {
 export const cartGoods = (c: Cart | null) => (c?.lines ?? []).reduce((sum, l) => sum + lineAgorot(l.unitAgorot, l.qtyMilli), 0);
 /** Another shop's item: the caller asks before clearing (DLV-02). */
 export const otherShop = (merchantId: number) => !!cart && cart.merchantId !== merchantId;
+export async function currentCart(): Promise<Cart | null> { await load(); return cart; }
+/** What storage holds now, after this tab's queued writes: another tab may have changed the basket since this one loaded it.
+ *  ponytail: no cross-tab lock, so a write landing between this read and the clear can still be lost; add a revision if that shows up. */
+export async function storedCart(): Promise<Cart | null> {
+  await load(); await writes;
+  let stored: Cart | null = null;
+  try { stored = readCart(JSON.parse((await storage.get(KEY)) ?? 'null')); } catch { /* damaged: treat as empty */ }
+  if (JSON.stringify(stored) !== JSON.stringify(cart)) { cart = stored; emit(); }
+  return stored;
+}
 /** Sets an item's quantity (0 removes it). A weighed item steps by 250 g, a counted one by one. */
 export function setQuantity(shop: Omit<Cart, 'lines'>, item: MerchantItem, qtyMilli: number) {
   const base: Cart = cart && cart.merchantId === shop.merchantId ? { ...cart, ...shop } : { ...shop, lines: [] };
@@ -59,7 +74,7 @@ export function setQuantity(shop: Omit<Cart, 'lines'>, item: MerchantItem, qtyMi
 export function setPolicy(itemId: number, policy: ShopPolicy) {
   if (cart) save({ ...cart, lines: cart.lines.map(l => l.itemId === itemId ? { ...l, policy } : l) });
 }
-export const clearCart = () => save(null);
+export const clearCart = (required = false) => save(null, required);
 /** "Order again" (DLV-18): the server's rebuilt lines replace the cart. */
 export const replaceCart = (next: Cart) => save(next);
 export const qtyOf = (c: Cart | null, itemId: number) => c?.lines.find(l => l.itemId === itemId)?.qtyMilli ?? 0;

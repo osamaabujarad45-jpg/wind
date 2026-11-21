@@ -43,8 +43,30 @@ Docs: https://docs.expo.dev/eas/index.md
 ## Test device and heavy work (owner rule, 29 Oct 2026)
 
 - **Never use an emulator.** All acceptance and UI testing uses the connected physical Android phone (`SM-A5360`, adb serial `R5CTB0FJP9Z`). If it is not attached, stop and ask instead of starting one.
-- **Run tests and GPU work on the `k5` PC over SSH** when it is reachable. Local runs are a fallback only and must be labelled as such; never claim remote evidence. As of 30 Oct 2026 `ssh k5` works (Windows, i5-4460, no Node/Git/PostgreSQL installed); a portable copy lives in `C:\wq-k5` and runs every gate except the browser suites (setup and the two workarounds: `docs/HANDOFF-2026-10-30-phone-acceptance.md`). Several sessions can use k5 at once: each needs its own folder and PostgreSQL port (e.g. `C:\wq-k5b` on 55474 with `WIND_TEST_DATABASE_URL`), and must never start, stop or copy files into another session's folder. Sharing `C:\wq-k5`/55473 overwrote files and stopped the database mid-run.
+- **Tests run in the Docker cloud sandbox** (see "Default test sandbox" below; owner decision, 19 Nov 2026). The local WSL runner below is the emergency fallback, used only with the owner's sign-off. From Git Bash in any checkout:
+  `MSYS_NO_PATHCONV=1 wsl.exe -e sh /mnt/c/<path-to-checkout>/scripts/test-device.sh [--serial] [typecheck lint unit persistence export parity]`
+  It sends one archive, never a mount: a clean checkout from git objects (`git archive <commit>`, the gate evidence), uncommitted work as tracked and unignored regular files without credential-looking names (`.env*` except `.env.example`, `.npmrc`, keys, `credentials*`, `secrets*`; a tracked one stops a clean run) into `sandbox-node24:<hash of the Dockerfile and base image>` (built from `infra/test-device/Dockerfile` alone, on the owner's `sandbox-node:local`: Node 24.12 with a pinned SHA-256, PostgreSQL 16 and 18 clients), reuses `node_modules` per lockfile and image id from the `wind-test-cache` volume (a package file changed in place fails the run and drops the entry), runs typecheck+lint+export and then unit+persistence+parity side by side, the full persistence suite on a PostgreSQL 18 sidecar (`wind-test-pg18`, 55475; unit gets `wind-test-pg18u`, 55476; both removed after the run; 55474 stays free for ad-hoc checks), and `parity` on the owner's PostgreSQL 16 device (`sandbox-pg-host`, 55473). Runs are serialized by a lock; unknown suite names are refused. Logs: `.expo/test-device/<UTC>-<pid>/` (`env.txt` with the revision, `summary.txt`); the exit code is non-zero unless every requested suite ran and passed. Gate evidence comes from a clean worktree (`git worktree add --detach`), where `env.txt` shows `+0 uncommitted`. Local Windows runs are for quick single-file checks only and are never gate evidence.
 - Keep the phone's test backend on `adb reverse` (the QA sandbox binds `127.0.0.1`), and do not clear the phone's Chrome profile.
+
+## Default test sandbox — Docker cloud sandbox (owner decision, 2026-11-19)
+
+**All tests for this repo run in the Docker cloud sandbox `sbx_001m7sknp49sr4g8bytx182r0z2`, not the local WSL2 sandbox.** `C:\Users\osama\.docker-sandbox\test-cloud.ps1` is the entry point (wraps `sbx_sync.sh`, which runs over SSH using the passphrase-free key `C:\Users\osama\.ssh\sbx_cloud` + cert `C:\Users\osama\.docker-sandbox\sbx-cert.pub`):
+
+```powershell
+C:\Users\osama\.docker-sandbox\test-cloud.ps1              # sync + npm test (CI-equivalent)
+C:\Users\osama\.docker-sandbox\test-cloud.ps1 -VerifyOnly  # re-run npm test, no sync
+```
+
+The runner rsyncs the source tree (`.expo`/`.claude`/`.artifacts`/`.git`/`node_modules`/`research_notes` excluded), provisions Node 24.12.0 (matches CI) + pinned Bicep 0.48.1, syncs the prebuilt `node_modules`, repairs the 4 Windows junction links (`decode-uri-component`, `deepmerge`, `node-forge` ×2) with real copies of `vendor/`, starts PostGIS 16 on :55473, and runs `npm test` with `WIND_TEST_DATABASE_URL=postgresql://fastship_test@127.0.0.1:55473/fastship_test`. Verified live 2026-11-19: **Integration gate: 106 suites passed**.
+
+- The WSL fallback runner's own image (`infra/test-device`, Node 24.12 with npm 11.6) does install the lockfile with `npm ci` ("added 874 packages", 19 Nov); the failure below concerns the cloud sandbox's npm.
+- **Never run `npm ci`/`npm install` in the sandbox.** The repo's `"overrides": { "decode-uri-component": "$decode-uri-component", ... }` makes npm's `OverrideSet` call `semver.intersects()` on `file:./vendor/decode-uri-component` → `TypeError: Invalid comparator` (fails on npm 9/10/11 alike). The runner's node_modules sync exists for exactly this reason.
+- The cloud sandbox cannot mount the host workspace; the source is always synced in. Local working-tree changes are what get tested (uncommitted files included).
+- Tests that need live Azure tooling are covered by the pinned standalone Bicep 0.48.1 via `BICEP_COMMAND=/home/agent/bicep/bicep`; no Azure login is used.
+- The SSH cert expires ~every 24h (`CertDeadline` in `connect-cloud.ps1`). When expired, regenerate the connect script on the sandbox page and re-paste its cert into `C:\Users\osama\.docker-sandbox\sbx-cert.pub` (the page issues it over `sbx_cloud`; fingerprint `SHA256:XLUSjvELzLphDllOr345++YdfmHspR7GeCuAqIBxatQ`).
+- Local WSL2 runner (`C:\Users\osama\.docker-sandbox\test.ps1`) remains as an emergency fallback only; cloud is the default per owner decision 2026-11-19. WSL2 was broken earlier that day by a full C: drive and was repaired (Temp/.cache cleaned, ~34 GB freed).
+- A branch or worktree: `sbx_sync.sh` hardcodes the main checkout and the remote workspace `wind`. Run a copy with `REPO_WIN=<worktree path under /mnt/c>`, its own `WS` (for example `wind-<branch>`) and Linux `node_modules` built for that lockfile, so another session's workspace is never overwritten. The sandbox also runs typecheck, lint, the web export, `test:persistence` on a PostgreSQL 18 sidecar and the PG16 parity suites; `postgresql-client-16`/`-18` are installed there (19 Nov).
+- If the cloud sandbox itself expires/disappears, do not silently fall back: the owner re-creates/regenerates it, then the cert is re-pasted as above.
 
 ## Agent recovery and provider failover (owner rule, 10 Nov 2026)
 

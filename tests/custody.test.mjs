@@ -21,6 +21,7 @@ const advance = (token, order, extra = {}) =>
 try {
   const admin = await call('/auth/register', { body: { phone: '0599210001', name: 'Admin', password: 'secret1' } });
   await promote('0599210001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599210001', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599210002', name: 'Lina', password: 'secret1' } });
   const other = await call('/auth/register', { body: { phone: '0599210004', name: 'Omar', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0599210003', name: 'Sami', password: 'secret1', role: 'driver', vehicle: 'car' } });
@@ -56,37 +57,62 @@ try {
   retried = await advance(driver.token, retried); // in_transit
   for (let i = 0; i < 2; i++) {
     await call(`/orders/${retried.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
-    await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Call before coming' } });
+    if (i === 0) {
+      const both = await Promise.all([1, 2].map(() => fetch(`${base}/admin/orders/${retried.id}/resolve`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${admin.token}` }, body: JSON.stringify({ action: 'reattempt', reason: 'Call before coming' }) })));
+      assert.deepEqual(both.map(r => r.status).sort(), [200, 409]);
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='EXCEPTION_RESOLVED'").get(retried.id).n, 1,
+        'concurrent reattempts append one decision');
+    } else await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Call before coming' } });
   }
   const attempts = (await call(`/orders/${retried.id}/custody`, { token: customer.token })).steps.filter(s => s.kind === 'decided');
   assert.deepEqual(attempts.map(s => [s.reason, s.attempt]), [['reattempt', 2], ['reattempt', 3]]);
-  // Two resolves at once (a double submit, two admins) decide once: one succeeds, the other is refused, one event is written.
-  await call(`/orders/${retried.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
-  const both = await Promise.all([1, 2].map(() => fetch(`${base}/admin/orders/${retried.id}/resolve`, { method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${admin.token}` }, body: JSON.stringify({ action: 'reattempt', reason: 'Call before coming' }) })));
-  assert.deepEqual(both.map(r => r.status).sort(), [200, 409]);
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'EXCEPTION_RESOLVED'").get(retried.id).n, 3);
-  // Support can hold and resume an order with no failed delivery: that resume is not a new attempt.
+  // Resuming a support hold does not use a delivery attempt.
   db.prepare("UPDATE orders SET status = 'on_hold', exception_reason = 'support' WHERE id = ?").run(retried.id);
   await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Support hold released' } });
+  await call(`/orders/${retried.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+  assert.equal((await call(`/orders/${retried.id}`, { token: admin.token })).reattemptAllowed, false, 'the admin sees the limit before submitting (SHIP-08)');
+  assert.equal((await call(`/orders/${retried.id}`, { token: customer.token })).reattemptAllowed, undefined);
+  // The limit is the order's: a parcel now held by another captain (a new assignment) still has no attempt left.
+  const held = db.prepare('SELECT driver_id, assignment_epoch FROM orders WHERE id = ?').get(retried.id);
+  db.prepare('UPDATE orders SET driver_id = ?, assignment_epoch = assignment_epoch + 1 WHERE id = ?').run(admin.user.id, retried.id);
+  assert.equal((await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'New captain tries' }, expect: 409 })).error, 'reattempt_limit');
+  db.prepare('UPDATE orders SET driver_id = ?, assignment_epoch = ? WHERE id = ?').run(held.driver_id, held.assignment_epoch, retried.id);
+  const refused = await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Call before coming' }, expect: 409 });
+  assert.equal(refused.error, 'reattempt_limit');
   const decided = (await call(`/orders/${retried.id}/custody`, { token: customer.token })).steps.filter(s => s.kind === 'decided');
-  assert.deepEqual(decided.map(s => s.attempt ?? null), [2, 3, 4, null]);
+  assert.deepEqual(decided.map(s => s.attempt ?? null), [2, 3, null]);
+  const startReturn = await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Three delivery attempts completed' } });
+  assert.equal(startReturn.status, 'returning');
+  await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, expect: 400,
+    body: { action: 'confirm_return', handoff: 'sender', reason: 'Support verified receipt' } });
+  await call(`/admin/orders/${retried.id}/resolve`, { token: admin.token, body: { action: 'confirm_sender_return', reason: 'Support verified receipt' } });
+  const senderReturn = await call(`/orders/${retried.id}/custody`, { token: customer.token });
+  assert.ok(senderReturn.steps.some(step => step.kind === 'returned' && step.by === 'support'));
+  assert.ok(!senderReturn.steps.some(step => step.kind === 'decided' && step.reason === 'confirm_return'));
+  const officePath = `/admin/orders/${retried.id}/office`;
+  assert.equal((await call(officePath, { token: admin.token })).canReceive, false);
+  await call(officePath, { token: admin.token, body: { action: 'received', note: 'Wrong destination' }, expect: 409 });
   await call(`/orders/${order.id}/custody`, { token: other.token, expect: 404 });
   await call(`/orders/${order.id}/custody`, { expect: 401 });
   await call('/orders/999999/custody', { token: admin.token, expect: 404 });
 
   // SHIP-19: nobody took the return, support received it at the office (perishable: 24 h), the sender is reminded daily, and the
   // order ends once: collected, or after the hold, donated/destroyed with a reason and an actor.
-  async function backAtOffice() {
+  async function backAtOffice(action = 'confirm_office_return') {
     let o = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
     o = await advance(driver.token, await call(`/jobs/${o.id}/accept`, { token: driver.token, body: {} }));
     o = await advance(driver.token, o);
     await call(`/orders/${o.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'refused' } });
     await call(`/admin/orders/${o.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'fraud' } }); // one word, still support's own text
-    return call(`/admin/orders/${o.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Received at office' } });
+    return call(`/admin/orders/${o.id}/resolve`, { token: admin.token, body: { action, ...(action === 'confirm_office_return' && { carrier: 'captain' }), reason: 'Received at office' } });
   }
   let kept = await backAtOffice();
   assert.equal(kept.status, 'returned');
+  const officeChain = await call(`/orders/${kept.id}/custody`, { token: customer.token });
+  assert.ok(officeChain.steps.some(step => step.kind === 'decided' && step.reason === 'confirm_return'));
+  assert.ok(!officeChain.steps.some(step => step.kind === 'returned'), 'the office decision is the return receipt');
+  assert.equal((await call(`/admin/orders/${kept.id}/office`, { token: admin.token })).canReceive, true);
   await call(`/admin/orders/${kept.id}/office`, { token: customer.token, body: { action: 'received', note: 'Shelf A' }, expect: 403 });
   await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'collected' }, expect: 409 }); // not received yet
   await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'received', note: 'x' }, expect: 400 }); // a reason is needed
@@ -116,6 +142,12 @@ try {
   assert.equal((await call('/admin/office', { token: admin.token })).items.length, 0);
 
   // Past the hold (non-perishable, 7 days) it may be donated, with the actor recorded.
+  // A markerless confirm_return (installed 1.1.4 admin) is no longer office intake: it kept its one-leg sender price, so the
+  // goods are not shelved against it; office intake needs the typed command with its carrier (Kimi review of the Sol lead).
+  const markerless = await backAtOffice('confirm_return');
+  assert.equal((await call(`/admin/orders/${markerless.id}/office`, { token: admin.token })).canReceive, false);
+  assert.equal(JSON.parse(db.prepare("SELECT detail FROM security_events WHERE order_id = ? AND action = 'EXCEPTION_RESOLVED' ORDER BY id DESC LIMIT 1").get(markerless.id).detail).handoff, 'unspecified');
+  await call(`/admin/orders/${markerless.id}/office`, { token: admin.token, body: { action: 'received', note: 'Shelf B' }, expect: 409 });
   kept = await backAtOffice();
   await call(`/admin/orders/${kept.id}/office`, { token: admin.token, body: { action: 'received', note: 'Shelf B' } });
   db.prepare("UPDATE security_events SET created_at = created_at - ? WHERE order_id = ? AND action = 'OFFICE_RECEIVED'").run(8 * 24 * 3_600_000, kept.id);

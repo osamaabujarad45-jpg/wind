@@ -10,7 +10,7 @@ process.env.DB_PATH = join(dir, 'settings.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
 process.env.SUPPORT_CONTACT = 'Synthetic <support> & "contact"';
 
-const { shutdown, server, promote } = await import('../server/main.ts');
+const { shutdown, server, promote, persistence } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -31,6 +31,18 @@ try {
   const token = (await call('/auth/login', { body: { phone: '0599700001', password: 'secret1' } })).token;
 
   const saved = () => call('/me', { token }).then(m => m.settings);
+  await persistence.run("INSERT INTO settings (key, value) VALUES ('returnPolicyFrom', 123)");
+  const legacy = {
+    parcelPrice: 20, parcelLarge: 10, rideBase: 15, ridePerKm: 1.1, freightBase: 70, freightPerKm: 2.5,
+    freightLarge: 50, loadingHelp: 30, sharedDiscount: 0.4, plusDiscount: 0.15, commission: 0.15,
+    proCommission: 0.05, plusPrice: 29, proPrice: 99, perMinute: 0.25, nightExtra: 0.2, driverCashCap: 150,
+    orderCashCeiling: 500, shopAgreeLimit: 0.1, shopAcceptMinutes: 5, shopConsentMinutes: 5, shopNoCaptainMinutes: 10,
+    shopDispatchLeadMinutes: 15,
+  };
+  assert.deepEqual(await saved(), legacy);
+  assert.deepEqual(await call('/admin/settings', { token, body: legacy }), legacy, 'the installed form posts every legacy key');
+  const payroll = '/admin/settings?payroll=1';
+  const pickupRate = () => call('/me?payroll=1', { token }).then(m => m.pickupPayPerKm);
 
   // A blank field reaches the server as 0. It must be refused by name, not stored.
   for (const [body, field] of [
@@ -49,8 +61,11 @@ try {
     [{ parcelPrice: 2000 }, 'parcelPrice'],
     [{ plusPrice: 2000 }, 'plusPrice'],
     [{ ridePerKm: 500 }, 'ridePerKm'],
+    [{ pickupPayPerKm: 10.01 }, 'pickupPayPerKm'],
+    [{ pickupPayPerKm: '' }, 'pickupPayPerKm'],
+    [{ pickupPayPerKm: null }, 'pickupPayPerKm'],
   ]) {
-    const r = await call('/admin/settings', { token, body, expect: 400 });
+    const r = await call(field === 'pickupPayPerKm' ? payroll : '/admin/settings', { token, body, expect: 400 });
     assert.equal(r.error, `invalid_setting:${field}`, `${field} ceiling`);
   }
 
@@ -62,6 +77,15 @@ try {
   assert.equal(after.commission, 0.15);
   assert.equal(after.parcelPrice, 20);
   assert.equal(after.plusPrice, 29);
+  assert.equal(Object.hasOwn(after, 'pickupPayPerKm'), false);
+  assert.equal(await pickupRate(), 1);
+  await call('/admin/settings', { token, body: { pickupPayPerKm: 2 }, expect: 400 });
+  await call(payroll, { token, body: { pickupPayPerKm: -0.01 }, expect: 400 });
+  for (const pickupPayPerKm of [0, 10]) {
+    const response = await call(payroll, { token, body: { pickupPayPerKm } });
+    assert.deepEqual(response, { settings: { ...legacy, shopHandoverMinutes: 10 }, pickupPayPerKm });
+    assert.equal(await pickupRate(), pickupPayPerKm);
+  }
 
   // Valid values still save, including at the ceiling.
   await call('/admin/settings', { token, body: { parcelPrice: 25, commission: 0.2 } });

@@ -32,6 +32,9 @@ for (const key of ['WIND_DATABASE_URL', 'WIND_POSTGRES_TEST_ONLY', 'WIND_POSTGRE
 // Synthetic screenshots also cover gated legacy services; production defaults stay parcel-only.
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight,shop';
 process.env.WIND_IDENTITY_MODE = 'self-service';
+// The fixture sets the driver-presence mode itself rather than inheriting the caller's (Sol R11-L2): presence on (the card)
+// for the screenshots, off for the production accept-to-tracking check below.
+delete process.env.WIND_DRIVER_PRESENCE;
 // Deterministic West Bank road fixture (recorded OSRM highway geometries, with curved fallback) so every route map draws real road lines offline.
 const recordedRoutes = JSON.parse(readFileSync(join(root, 'scripts', 'screens-routes.json'), 'utf8'));
 function syntheticRoad([lng1, lat1], [lng2, lat2]) {
@@ -87,6 +90,9 @@ const osrm = createServer((req, res) => {
 });
 await new Promise(resolve => osrm.listen(0, '127.0.0.1', resolve));
 process.env.OSRM_URL = `http://127.0.0.1:${osrm.address().port}`;
+// The synthetic API runs outside production whatever the caller's shell says (Sol R12-L5): an inherited NODE_ENV=production
+// would turn presence off. The web export below sets its own production build environment.
+delete process.env.NODE_ENV;
 const { db, server, promote } = await import('../server/main.ts');
 const { quote, defaultSettings } = await import('../src/model.ts');
 const { scheduleSlots } = await import('../src/booking.ts');
@@ -112,10 +118,13 @@ const register = (phone, name, extra = {}) => call('/auth/register', null, { pho
 
 const layla = await register('0599000001', 'ليلى حداد');
 const omar = await register('0599000004', 'عمر ناصر');
+// One active ride per rider (this release): the ride on its way is Nour's, so Layla can still be finding a driver for hers.
+const nour = await register('0599000005', 'نور سعيد');
 const ahmad = await register('0599000002', 'أحمد يوسف', { role: 'driver', vehicle: 'car' });
 const sami = await register('0569000003', 'سامي خليل', { role: 'driver', vehicle: 'van' }); // stays pending
 const boss = await register('0599000009', 'إدارة ويند');
 await promote('0599000009');
+boss.token = (await call('/auth/login', null, { phone: '0599000009', password: 'Screenshot_Secret1' })).token;
 await call(`/admin/users/${ahmad.user.id}/approve`, boss.token, {});
 
 // Layla has Wind Plus (requested, then activated by the admin); Omar and Ahmad have requests waiting.
@@ -137,9 +146,9 @@ async function smartOrder(who, o) {
 }
 const completed = await order(layla, true, { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus',
   pickupNote: 'محل الزهراء، شارع ركب', dropoffNote: 'دوار الشهداء، بجانب الصيدلية', detail: 'صندوق ملابس وهدية', option: 'medium' });
-const inTransit = await order(layla, true, { service: 'ride', pickupCity: 'ramallah', dropoffCity: 'bethlehem',
+const inTransit = await order(nour, false, { service: 'ride', pickupCity: 'ramallah', dropoffCity: 'bethlehem',
   pickupNote: 'دوار المنارة', dropoffNote: 'ساحة المهد', option: '2', detail: 'معي عربة أطفال' });
-const shared = await call(`/orders/${inTransit.id}/share`, layla.token, {}); // the recipient's public page (no sign-in)
+const shared = await call(`/orders/${inTransit.id}/share`, nour.token, {}); // the recipient's public page (no sign-in)
 // A ride: drivers offer on rides and freight; parcels have one standard price (SPEC-parcel-standard.md).
 const searching = await smartOrder(layla, { service: 'ride', option: '1', pickupCity: 'bireh', dropoffCity: 'tulkarm',
   pickupNote: 'مكتبة الجامعة', dropoffNote: 'مدخل السوق' });
@@ -232,7 +241,7 @@ if (!args.includes('--no-build') || !existsSync(join(webDir, 'index.html'))) {
   rmSync(webDir, { recursive: true, force: true });
   const built = spawnSync('npx', ['expo', 'export', '--platform', 'web', '--clear', '--output-dir', webDir], {
     cwd: root, stdio: 'inherit', shell: process.platform === 'win32',
-    env: { ...process.env, CI: '1', WIND_LOCAL_TEST: '1', EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH: '1', EXPO_UNSTABLE_TREE_SHAKING: '1', // same bundle as the Dockerfile
+    env: { ...process.env, NODE_ENV: 'production', CI: '1', WIND_LOCAL_TEST: '1', EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH: '1', EXPO_UNSTABLE_TREE_SHAKING: '1', // same bundle as the Dockerfile
       EXPO_PUBLIC_API_URL: `http://localhost:${API_PORT}`, EXPO_PUBLIC_SUPPORT_WHATSAPP: '970590000000' },
   });
   if (built.status !== 0) throw new Error('expo export failed');
@@ -270,7 +279,7 @@ const screens = [
   { id: 'orders', group: 'Customer', name: 'My orders', route: '/orders', file: 'src/app/(customer)/orders.tsx', role: 'customer' },
   { id: 'order-searching', group: 'Customer', name: 'Order · finding a driver', route: `/order/${searching.id}`, file: 'src/app/order/[id].tsx', role: 'customer', motion: true },
   { id: 'order-scheduled', group: 'Customer', name: 'Parcel · scheduled, changing its time', route: `/order/${scheduled.id}`, file: 'src/app/order/[id].tsx', role: 'customer', clicks: ['changeTime'] },
-  { id: 'order-live', group: 'Customer', name: 'Order · on the way', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'customer', fix: true },
+  { id: 'order-live', group: 'Customer', name: 'Order · on the way', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'rider', fix: true },
   { id: 'order-parcel-live', group: 'Customer', name: 'Parcel · awaiting handover', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
   { id: 'track', group: 'Customer', name: 'Public tracking link (recipient, no sign-in)', route: shared.path, shown: '/track/{token}', file: 'src/app/track/[token].tsx', role: null }, // shown: the index must not churn on the random token
   { id: 'order-done', group: 'Customer', name: 'Order · delivered', route: `/order/${completed.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
@@ -308,7 +317,7 @@ const screens = [
   { id: 'admin-subscriptions', group: 'Admin', name: 'Subscriptions', route: '/admin/subscriptions', file: 'src/app/admin/subscriptions.tsx', role: 'admin' },
   { id: 'admin-settings', group: 'Admin', name: 'Tariffs & settings', route: '/admin/settings', file: 'src/app/admin/settings.tsx', role: 'admin' },
 ].filter(s => !only || only.includes(s.id));
-const tokens = { customer: layla.token, driver: ahmad.token, courier: recoveryDriver.token, idle: idleDriver.token, pending: sami.token, admin: boss.token, merchant: baker.token };
+const tokens = { customer: layla.token, rider: nour.token, driver: ahmad.token, courier: recoveryDriver.token, idle: idleDriver.token, pending: sami.token, admin: boss.token, merchant: baker.token };
 
 // ---------- 4. capture ----------
 const { chromium } = await import('playwright');
@@ -413,7 +422,9 @@ for (const language of ['ar', 'en']) {
       assert.equal(await page.getByRole('button', { name: copy[language].sharingLocation, exact: true }).count(), 0);
       assert.equal(await page.getByRole('button', { name: copy[language].activeOrder, exact: true }).count(), 0);
       assert.equal(await page.getByRole('button', { name: copy[language].accept, exact: true }).count() > 0, true);
-      for (const button of await page.getByRole('button', { name: copy[language].accept, exact: true }).all()) assert.equal(await button.isDisabled(), false);
+      // Offline (Go online not pressed): no surface accepts a job, and each card says how to take one.
+      for (const button of await page.getByRole('button', { name: copy[language].accept, exact: true }).all()) assert.equal(await button.isDisabled(), true);
+      assert.ok(await page.getByText(copy[language].accept_go_online, { exact: true }).count() > 0);
     }
     if (screen.id === 'order-parcel-live')
       assert.equal(await page.getByRole('button', { name: copy[language].proofResetAction, exact: true }).count(), 0);
@@ -441,6 +452,10 @@ for (const language of ['ar', 'en']) {
   }
 }
 if (!only || only.some(id => id.startsWith('driver-'))) {
+  // Production's driver flow (presence off, SQLite): the job board is the whole flow, and accepting a job is what starts
+  // sharing the location. The API reads this per request; presence returns for the screenshots and checks after this block.
+  process.env.WIND_DRIVER_PRESENCE = 'off';
+  try {
   const testOrder = await order(layla, true, { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'bireh',
     pickupNote: 'دوار المنارة', dropoffNote: 'البلدية', detail: 'فحص دورة السائق' });
   const context = await browser.newContext({ viewport: phone, reducedMotion: 'reduce', permissions: ['geolocation'],
@@ -607,6 +622,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   assert.equal(publications, loggedOutPublications);
   await context.close();
   console.log('Driver UI: idle GPS privacy, foreground assignment/permission recovery, revoked/granted/pending/failed/stale permission reads, busy offers, role hints, completion cleanup, direct accept, late callbacks and logout passed');
+  } finally { delete process.env.WIND_DRIVER_PRESENCE; } // back to the fixture's presence-on mode, even after a failed check
 }
 // ---------- 4b. interactive states: a held quote and an offer price outside its band ----------
 if (!only || only.some(id => id === 'book-calculating' || id === 'driver-offer-range')) {
@@ -637,15 +653,20 @@ if (!only || only.some(id => id === 'book-calculating' || id === 'driver-offer-r
   const calculating = screens.find(s => s.id === 'book-calculating');
   const offerRange = screens.find(s => s.id === 'driver-offer-range');
   // A smart-priced ride no driver has taken yet, and a fresh approved driver with no custody, so the offer form opens.
-  await smartOrder(omar, { service: 'ride', option: '1', pickupCity: 'ramallah', dropoffCity: 'bireh', pickupNote: 'دوار المنارة', dropoffNote: 'البلدية', detail: '' });
-  const fresh = await register('0599000011', 'سائق اختبار', { role: 'driver', vehicle: 'car' });
-  await call(`/admin/users/${fresh.user.id}/approve`, boss.token, {});
+  // Its own rider: Omar already has a ride open, and one rider holds one active ride. Seeded only when that shot runs.
+  let fresh;
+  if (offerRange) {
+    const rider = await register('0599000013', 'رهف عمر');
+    await smartOrder(rider, { service: 'ride', option: '1', pickupCity: 'ramallah', dropoffCity: 'bireh', pickupNote: 'دوار المنارة', dropoffNote: 'البلدية', detail: '' });
+    fresh = await register('0599000011', 'سائق اختبار', { role: 'driver', vehicle: 'car' });
+    await call(`/admin/users/${fresh.user.id}/approve`, boss.token, {});
+  }
   for (const language of ['ar', 'en']) {
     // The quote request is held for 9 s, so the footer shows the calculating reason and a disabled Request.
-    await stateShot(calculating, language, layla.token, {
+    if (calculating) await stateShot(calculating, language, layla.token, {
       setup: page => page.route(/\/api\/price(?:\?|$)/, async route => { await new Promise(r => setTimeout(r, 9000)); await route.continue(); }),
     });
-    await stateShot(offerRange, language, fresh.token, {
+    if (offerRange) await stateShot(offerRange, language, fresh.token, {
       run: async page => {
         await page.getByRole('button', { name: copy[language].offerPrice, exact: true }).first().click();
         await page.getByLabel(`${copy[language].offerPrice} (₪)`).first().fill('5');

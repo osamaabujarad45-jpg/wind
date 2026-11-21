@@ -16,7 +16,7 @@ export async function addDriver(f, { latitude = 31.9005, longitude = 35.195, idl
   return { driver, vehicle, deviceId, sessionId: online.sessionId };
 }
 
-export const bookRide = (f, extra = {}) => f.book({ service: 'ride', option: '1', ...extra });
+export const bookRide = (f, extra = {}, rider = f.customer) => f.book({ service: 'ride', option: '1', ...extra }, rider);
 
 /** Measure the ride and attest an approach for every candidate vehicle. */
 export async function assessRide(f, order, vehicles = []) {

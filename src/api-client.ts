@@ -15,7 +15,7 @@ export class ApiError extends Error {
 }
 
 /** app.json version as major·10000 + minor·100 + patch; tests keep the two equal. The server gates on it (426). */
-export const CLIENT_BUILD = 10104;
+export const CLIENT_BUILD = 10105;
 let updateRequired = false;
 const updateListeners = new Set<() => void>();
 export const clientUpdateRequired = () => updateRequired;
@@ -68,7 +68,10 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
       updateRequired = true;
       for (const listener of updateListeners) listener();
     }
-    if (requestToken !== token || requestRevision !== sessionRevision) throw new ApiError('session_changed', 401);
+    // The reply belongs to a session that is gone. Its status is kept (servedStatus) for a caller that must settle its own
+    // device state, as a cash command refused for good (Sol R16-M1); nothing else reads it.
+    if (requestToken !== token || requestRevision !== sessionRevision)
+      throw Object.assign(new ApiError('session_changed', 401), { servedStatus: res.status });
     noteServerDate(res.headers.get('date'), receivedAt, Math.max(0, receivedAt - startedAt));
     if (res.status === 401 && requestToken && data?.error === 'unauthorized') unauthorized();
     if (!res.ok) {

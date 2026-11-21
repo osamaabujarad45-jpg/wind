@@ -23,6 +23,7 @@ const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus'
 try {
   const reg = (n, extra = {}) => call('/auth/register', { body: { phone: `05995000${String(n).padStart(2, '0')}`, name: 'Synthetic', password: 'synthetic-secret', ...extra } });
   const admin = await reg(1); await promote(admin.user.phone);
+  admin.token = (await call('/auth/login', { body: { phone: admin.user.phone, password: 'synthetic-secret' } })).token;
   const customer = await reg(2), foreign = await reg(3);
   const driver = await reg(4, { role: 'driver', vehicle: 'car' });
   await call(`/admin/users/${driver.user.id}/approve`, { token: admin.token, body: {} });

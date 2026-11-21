@@ -22,4 +22,5 @@
 !plugins/**
 !scripts/
 !scripts/runtime-dependencies.mjs
+!scripts/runtime-sources.mjs
 **/node_modules

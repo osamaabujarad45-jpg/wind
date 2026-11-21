@@ -175,7 +175,12 @@ for (const rtl of [false, true]) for (const file of ['google-map.native.tsx', 'r
 {
   const h = harness('pin-sheet.tsx'); let resolveFix, signal;
   h.render(h.exports.default, { start: first, autoLocate: true, onLocate: next => { signal = next; return new Promise(resolve => { resolveFix = resolve; }); }, onConfirm() {} });
-  const pin = find(h.tree, 'PinMap'); pin.onReady(); pin.onGesture(); pin.onChange({ latitude: 31.91, longitude: 35.21 }); h.render();
+  const pin = find(h.tree, 'PinMap'); pin.onReady(); pin.onGesture(); h.render();
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, true, 'a gesture cannot confirm the previous pin before its camera settles');
+  h.deadline(20_000); h.render();
+  assert.equal(find(h.tree, 'Button', 'Confirm pin').disabled, true, 'a continuing drag is never confirmable');
+  assert.ok(!JSON.stringify(h.tree).includes('Positioning failed'), 'the GPS timeout does not apply to a continuing drag');
+  find(h.tree, 'PinMap').onChange({ latitude: 31.91, longitude: 35.21 }); h.render();
   assert.equal(signal.aborted, true, 'a user gesture cancels collection immediately');
   resolveFix(latest); await flush(); h.render();
   assert.deepEqual(plain(find(h.tree, 'PinMap').center), { latitude: 31.91, longitude: 35.21 }, 'late GPS cannot overwrite the manual pin');
@@ -347,10 +352,14 @@ for (const file of ['google-map.native.tsx', 'route-map.native.tsx']) {
     assert.equal(gestures, 1, 'a Google pinch counts as a gesture');
     assert.deepEqual(plain(changed.at(-1)), pinched, 'a Google pinch during a pending GPS camera reports the pinched centre');
   }
-  if (file === 'route-map.native.tsx') { // Apple: a pinch reaches React only as a touch
+  if (file === 'route-map.native.tsx') { // Apple: a pinch reaches React as a camera change during a touch
     let gestures = 0; const pinched = { latitude: 31.97, longitude: 35.27 };
     h.render(undefined, { ...props, center: latest, onGesture: () => gestures++ });
     find(h.tree, 'MapView').onTouchStart();
+    find(h.tree, 'MapView').onTouchEnd();
+    assert.equal(gestures, 0, 'a touch without a camera move does not lock an existing pin');
+    find(h.tree, 'MapView').onTouchStart();
+    find(h.tree, 'MapView').onRegionChange(pinched);
     find(h.tree, 'MapView').onRegionChangeComplete(pinched);
     assert.equal(gestures, 1, 'an Apple pinch counts as a gesture');
     assert.deepEqual(plain(changed.at(-1)), pinched, 'an Apple pinch during a pending GPS camera reports the pinched centre');

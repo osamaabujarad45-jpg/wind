@@ -17,12 +17,19 @@ legacy.exec(`PRAGMA foreign_keys = ON; PRAGMA user_version = 2;
     phone_verified_at INTEGER, email TEXT, email_verified_at INTEGER, approved_at INTEGER, consent_at INTEGER, consent_version TEXT);
   CREATE TABLE sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, created_at INTEGER NOT NULL);
   CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), driver_id INTEGER REFERENCES users(id), status TEXT NOT NULL, service TEXT NOT NULL DEFAULT 'parcel');
-  CREATE TABLE driver_locations (driver_id INTEGER PRIMARY KEY REFERENCES users(id), lat REAL NOT NULL, lng REAL NOT NULL, updated_at INTEGER NOT NULL);`);
+  CREATE TABLE driver_locations (driver_id INTEGER PRIMARY KEY REFERENCES users(id), lat REAL NOT NULL, lng REAL NOT NULL, updated_at INTEGER NOT NULL);
+  CREATE TABLE courier_block_reviews (
+    order_id INTEGER PRIMARY KEY REFERENCES orders(id), driver_id INTEGER NOT NULL REFERENCES users(id), blocked_by INTEGER NOT NULL REFERENCES users(id),
+    service TEXT NOT NULL CHECK (service IN ('parcel','freight')), from_status TEXT NOT NULL, trip_pay_cents INTEGER NOT NULL,
+    blocked_at INTEGER NOT NULL, due_at INTEGER NOT NULL, decided_at INTEGER, decided_by INTEGER REFERENCES users(id), cleared INTEGER,
+    paid_cents INTEGER, note TEXT NOT NULL DEFAULT '');
+  CREATE INDEX courier_block_reviews_open ON courier_block_reviews(due_at) WHERE decided_at IS NULL;`);
 legacy.prepare("INSERT INTO users VALUES (1, '0599000111', 'Existing customer', 'hash', 'customer', 'active', NULL, ?, ?, 'customer@example.test', NULL, NULL, NULL, NULL)").run(now, now);
 legacy.prepare("INSERT INTO users VALUES (2, '0599000112', 'Existing driver', 'hash', 'driver', 'active', 'car', ?, ?, 'driver@example.test', NULL, ?, NULL, NULL)").run(now, now, now);
 legacy.prepare("INSERT INTO sessions VALUES ('legacy-session', 1, ?)").run(now);
 legacy.prepare("INSERT INTO orders (id,customer_id,driver_id,status) VALUES (10, 1, 2, 'completed')").run();
 legacy.prepare('INSERT INTO driver_locations VALUES (2, 31.9, 35.2, ?)').run(now);
+legacy.prepare("INSERT INTO courier_block_reviews VALUES (10, 2, 1, 'parcel', 'in_transit', 900, ?, ?, NULL, NULL, NULL, NULL, 'Saved decision')").run(now, now + 1000);
 legacy.close();
 
 process.env.DB_PATH = path;
@@ -45,6 +52,11 @@ try {
   assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
   assert.doesNotThrow(() => db.prepare("INSERT INTO users (phone, name, password, role, status, vehicle, created_at) VALUES ('0599000113', 'Bike driver', 'hash', 'driver', 'pending', 'bicycle', ?)").run(now));
   assert.throws(() => db.prepare("INSERT INTO users (phone, name, password, role, status, vehicle, created_at) VALUES ('0599000114', 'Invalid vehicle', 'hash', 'driver', 'pending', 'scooter', ?)").run(now));
+  assert.deepEqual({ ...db.prepare('SELECT service, trip_pay_cents, note FROM courier_block_reviews WHERE order_id = 10').get() },
+    { service: 'parcel', trip_pay_cents: 900, note: 'Saved decision' });
+  db.exec("INSERT INTO orders (id, customer_id, driver_id, service, status) VALUES (11, 1, 2, 'shop', 'returned')");
+  db.prepare("INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at) VALUES (11, 2, 1, 'shop', 'in_transit', 1000, ?, ?)").run(now, now + 1000);
+  assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
   console.log('Vehicle migration checks passed: v2 constraint upgrade preserves user, session, order and GPS references.');
 } finally {
   await shutdown();

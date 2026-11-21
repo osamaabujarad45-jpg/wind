@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings as standard, quote } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
+import { checkCompletedReattempt, checkPickupPay } from './support/shipping-pay.mjs';
 import { cashLines } from '../src/cash-lines.ts';
 import { copy } from '../src/copy.ts';
 // The ledger maths below were written for a ₪49 parcel; the admin tariff is set to match (SPEC-parcel-standard.md).
@@ -17,7 +18,7 @@ const defaultSettings = { ...standard, parcelPrice: 49 };
 const dir = mkdtempSync(join(tmpdir(), 'wind-cash-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { shutdown, server, promote } = await import('../server/main.ts');
+const { shutdown, server, promote, liveWatcherCount } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -28,9 +29,11 @@ const advance = (token, order, extra = {}) =>
 try {
   const admin = await call('/auth/register', { body: { phone: '0599300001', name: 'Cashier', password: 'secret1' } });
   await promote('0599300001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599300001', password: 'secret1' } })).token;
   // T23.1: forgiving debt needs a request approved by a different finance approver, so the suite needs a second admin.
   const approver = await call('/auth/register', { body: { phone: '0599300005', name: 'Approver', password: 'secret1' } });
   await promote('0599300005');
+  approver.token = (await call('/auth/login', { body: { phone: '0599300005', password: 'secret1' } })).token;
   const forgive = async amountMinor => {
     const request = await call('/admin/approvals', { token: admin.token, body: { subjectType: 'cash_adjustment',
       subjectId: String(driver.user.id), amountMinor, reason: 'Synthetic cash forgiveness request' } });
@@ -45,10 +48,11 @@ try {
 
   const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
     pickupNote: 'A', dropoffNote: 'B', contact: '0599300002', detail: 'Box' };
-  async function deliver() {
+  async function deliver(complete = true) {
     let order = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
     order = await call(`/jobs/${order.id}/accept`, { token: driver.token, body: {} });
     order = await advance(driver.token, await advance(driver.token, order));
+    if (!complete) return order;
     const { handoverCode } = await call(`/orders/${order.id}`, { token: customer.token });
     return advance(driver.token, order, { code: handoverCode });
   }
@@ -96,7 +100,7 @@ try {
   assert.equal(cash.owedCents, commissionCents - 500); // disputed never counts
   assert.equal(cash.pendingCents, 0);
 
-  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 200, reason: 'x' }, expect: 400 });
+  await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 200, intent: 'charge', reason: 'x' }, expect: 400 });
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 0, reason: 'Nothing at all' }, expect: 400 });
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1_000_001, reason: 'Too much money' }, expect: 400 });
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -200, reason: 'Customer paid by mistake to office' }, expect: 409 }); // no approval: refused, not forgiven
@@ -122,37 +126,16 @@ try {
 
   // An older handover stays confirmable however many newer entries follow it.
   const handover = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1 } });
-  for (let i = 0; i < 50; i++) await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1, reason: 'Fuel card top-up' } });
+  for (let i = 0; i < 50; i++) await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: 1, intent: 'charge', reason: 'Fuel card top-up' } });
   cash = await call('/driver/cash', { token: driver.token });
   assert.equal(cash.entries.filter(e => e.status !== 'pending').length, 50); // the history stays one page
   assert.deepEqual(cash.entries.filter(e => e.status === 'pending').map(e => e.id), [handover.id]);
   await call(`/driver/cash/${handover.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -49, approvalId: await forgive(49), reason: 'Undo the fuel top-ups' } }); // owed as before
 
-  // ---- Ship review: exact rounding, returned jobs, no payouts, no leaving with debt, append-only ----
-  assert.equal(Math.round(a.commission * 100), 735); // ₪49 × 15%, asserted independently of the server formula
-  let returned = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
-  returned = await call(`/jobs/${returned.id}/accept`, { token: driver.token, body: {} });
-  returned = await advance(driver.token, await advance(driver.token, returned));
-  await call(`/orders/${returned.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
-  await call(`/admin/orders/${returned.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient not home' } });
-  const { returnCode } = await call(`/orders/${returned.id}`, { token: customer.token });
-  await advance(driver.token, { ...returned, status: 'returning' }, { code: returnCode });
-  cash = await call('/driver/cash', { token: driver.token });
-  assert.equal(cash.commissionCents, 735 * 3);
-  let supportReturn = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
-  supportReturn = await call(`/jobs/${supportReturn.id}/accept`, { token: driver.token, body: {} });
-  supportReturn = await advance(driver.token, await advance(driver.token, supportReturn));
-  await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
-  await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient absent again' } });
-  const confirmedReturn = await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Sender confirmed receipt by phone' } });
-  assert.equal(confirmedReturn.commission, 7.35, 'support-confirmed returns record the same commission as code-confirmed returns');
-  const { persistence: ledgerDb } = await import('../server/main.ts');
-  assert.ok(await ledgerDb.one('SELECT 1 FROM ledger_journals WHERE business_ref = ?', `order:${supportReturn.id}:commission`), 'and post the same journal');
-  cash = await call('/driver/cash', { token: driver.token });
-  assert.equal(cash.commissionCents, 735 * 4);
-  assert.equal((await call('/driver/earnings', { token: driver.token })).all.jobs, 4);
-  const open = cash.owedCents;
+  // Exact rounding, no manual payouts, no leaving with debt, append-only.
+  assert.equal(Math.round(a.commission * 100), 735); // ₪49 × 15%, independent of the server formula
+  const open = (await call('/driver/cash', { token: driver.token })).owedCents;
   await call('/admin/cash/adjustment', { token: admin.token, body: { driverId: driver.user.id, amountCents: -(open + 1), reason: 'Would become a payout' }, expect: 400 });
   await call('/me/delete', { token: driver.token, body: { password: 'secret1' }, expect: 409 });
   await call(`/admin/users/${driver.user.id}`, { token: admin.token, body: { role: 'customer' }, expect: 409 });
@@ -162,6 +145,237 @@ try {
   const settle = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: driver.user.id, amountCents: open } });
   await call(`/driver/cash/${settle.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
   assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
+  await call('/admin/cash/adjustment', { token: admin.token, body: {
+    driverId: driver.user.id, amountCents: 50, intent: 'charge', reason: 'Office fuel charge', requestId: randomUUID(),
+  } });
+  const officeHandover = { driverId: driver.user.id, amountCents: 50, requestId: randomUUID() };
+  await persistence.run("UPDATE users SET staff_role='support' WHERE id=?", approver.user.id);
+  await call('/admin/cash/remittance', { token: approver.token, body: officeHandover, expect: 403 });
+  await persistence.run("UPDATE users SET staff_role='finance' WHERE id=?", approver.user.id);
+  const handoverCommand = { ...officeHandover, currency: 'ILS', commandId: randomUUID() };
+  const pendingHandover = await call('/admin/cash/remittance', { token: approver.token, body: handoverCommand });
+  const handoverPath = `/admin/cash/${pendingHandover.id}/resolve`;
+  const resolution = { decision: 'confirm', reason: 'Office verified the handover', evidenceRef: 'Receipt 123' };
+  await persistence.run("UPDATE users SET staff_role='support' WHERE id=?", approver.user.id);
+  await call('/admin/cash/remittance', { token: approver.token, body: officeHandover, expect: 403 });
+  await call('/admin/cash/remittance', { token: approver.token, body: handoverCommand, expect: 403 });
+  await call(handoverPath, { token: approver.token, body: resolution, expect: 403 });
+  assert.deepEqual(await call(`/admin/cash/commands/${officeHandover.requestId}`, { token: approver.token }), { entry: pendingHandover });
+  // DRV-17: Wind pays two legs for a captain's return, including an office handback.
+  await call('/admin/promos', { token: admin.token, body: { code: 'RETURN5', amount: 5, maxUses: 5, days: 7 } });
+  let returned = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input), promoCode: 'RETURN5', expectedDiscount: 5 } });
+  assert.equal(returned.discount, 5);
+  returned = await call(`/jobs/${returned.id}/accept`, { token: driver.token, body: {} });
+  returned = await advance(driver.token, await advance(driver.token, returned));
+  await call(`/orders/${returned.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+  await call(`/admin/orders/${returned.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient not home' } });
+  const { returnCode } = await call(`/orders/${returned.id}`, { token: customer.token });
+  const returnProof = { expectedStatus: 'returning', requestId: randomUUID(), code: returnCode };
+  const returnPath = `/orders/${returned.id}/advance`;
+  await call(returnPath, { token: driver.token, body: { ...returnProof, code: 'incorrect', requestId: randomUUID() }, expect: 400 });
+  await persistence.run("INSERT INTO ledger_accounts(code,kind,created_at) VALUES('platform:operating_expense','platform_revenue',?)", Date.now());
+  assert.equal((await call(returnPath, { token: driver.token, body: { ...returnProof, requestId: randomUUID() }, expect: 409 })).error, 'account_conflict');
+  assert.equal((await persistence.one('SELECT status FROM orders WHERE id = ?', returned.id)).status, 'returning');
+  assert.equal(await persistence.one("SELECT 1 FROM security_events WHERE order_id = ? AND action IN ('RETURN_NO_FARE','RETURN_COMPLETED')", returned.id), undefined);
+  assert.equal(await persistence.one("SELECT 1 FROM cash_entries WHERE order_id = ? AND source = 'trip_pay'", returned.id), undefined);
+  assert.equal((await persistence.one('SELECT failures FROM proof_attempts WHERE order_id = ?', returned.id)).failures, 1);
+  // Repair the synthetic account metadata before testing a fresh successful request.
+  await persistence.scope(async () => {
+    await persistence.exec('BEGIN');
+    try {
+      await persistence.run('ALTER TABLE ledger_accounts DISABLE TRIGGER ledger_accounts_immutable');
+      await persistence.run("UPDATE ledger_accounts SET kind = 'operating_expense' WHERE code = 'platform:operating_expense'");
+      await persistence.run('ALTER TABLE ledger_accounts ENABLE TRIGGER ledger_accounts_immutable');
+      await persistence.exec('COMMIT');
+    } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
+  });
+  assert.equal((await call(returnPath, { token: driver.token, body: returnProof })).status, 'returned');
+  assert.equal((await call(returnPath, { token: driver.token, body: returnProof })).status, 'returned');
+  await call(returnPath, { token: driver.token, body: { ...returnProof, requestId: randomUUID() }, expect: 409 });
+  assert.equal(await persistence.one('SELECT 1 FROM ledger_journals WHERE business_ref = ?', `order:${returned.id}:discount`), undefined, 'a no-fare return has no discount journal');
+  cash = await call('/driver/cash', { token: driver.token });
+  assert.equal(cash.commissionCents, 735 * 2, 'a return collected no fare, so it adds no commission (SRS DRV-17)');
+  const returnPay = 2 * Math.round(returned.price * 100);
+  assert.deepEqual([cash.owedCents, cash.pendingCents], [50 - returnPay, 50], 'the return uses the undiscounted fare');
+  assert.equal((await call('/admin/cash/adjustment', { token: admin.token, body: {
+    driverId: driver.user.id, amountCents: 1, intent: 'payout', reason: 'Office paid the captain', requestId: randomUUID(),
+  }, expect: 409 })).error, 'remittance_pending');
+  const resolveCommand = { ...resolution, currency: 'ILS', commandId: randomUUID() };
+  await persistence.run("UPDATE users SET staff_role='finance' WHERE id=?", approver.user.id);
+  const resolvedHandover = await call(handoverPath, { token: approver.token, body: resolveCommand });
+  assert.equal(resolvedHandover.status, 'confirmed');
+  assert.deepEqual(await call(handoverPath, { token: approver.token, body: resolveCommand }), resolvedHandover);
+  const audit = await persistence.one('SELECT resolved_by, resolution_note FROM cash_entries WHERE id = ?', pendingHandover.id);
+  assert.deepEqual(audit, { resolved_by: approver.user.id, resolution_note: 'Office verified the handover | evidence: Receipt 123' });
+  await assert.rejects(() => persistence.run('UPDATE cash_entries SET resolution_note = ? WHERE id = ?', 'Altered audit', pendingHandover.id), { code: '23514' });
+  await persistence.run("UPDATE users SET staff_role='support' WHERE id=?", approver.user.id);
+  await call(handoverPath, { token: approver.token, body: resolveCommand, expect: 403 });
+  await persistence.run('UPDATE users SET staff_role=NULL WHERE id=?', approver.user.id);
+  cash = await call('/driver/cash', { token: driver.token });
+  assert.deepEqual([cash.owedCents, cash.pendingCents], [-returnPay, 0]);
+  const tripEntries = (balance, order) => balance.entries.filter(e => e.note === `Trip pay · أجر الرحلة · order ${order.id}`);
+  const codePay = tripEntries(cash, returned);
+  assert.deepEqual(codePay.map(e => [e.kind, e.amountCents, e.status]), [['adjustment', -returnPay, 'confirmed']]);
+  let supportReturn = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  supportReturn = await call(`/jobs/${supportReturn.id}/accept`, { token: driver.token, body: {} });
+  supportReturn = await advance(driver.token, await advance(driver.token, supportReturn));
+  await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+  await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'reattempt', reason: 'Recipient asked to try again' } });
+  await call(`/orders/${supportReturn.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+  await call(`/admin/orders/${supportReturn.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient absent again' } });
+  const confirmReturn = { action: 'confirm_office_return', carrier: 'captain', reason: 'Received at office' };
+  await persistence.run("UPDATE users SET staff_role='finance' WHERE id=?", approver.user.id);
+  await call(`/admin/orders/${supportReturn.id}/resolve`, { token: approver.token, body: confirmReturn, expect: 403 });
+  await persistence.run("UPDATE users SET staff_role='support' WHERE id=?", approver.user.id);
+  const confirmedReturn = await call(`/admin/orders/${supportReturn.id}/resolve`, { token: approver.token, body: confirmReturn });
+  await persistence.run('UPDATE users SET staff_role=NULL WHERE id=?', approver.user.id);
+  assert.equal(Number(confirmedReturn.commission), 0, 'support-confirmed returns owe no commission, as code-confirmed returns (SRS DRV-17)');
+  const { persistence: ledgerDb } = await import('../server/main.ts');
+  assert.equal(await ledgerDb.one('SELECT 1 FROM ledger_journals WHERE business_ref = ?', `order:${supportReturn.id}:commission`), undefined, 'and post no commission journal');
+  cash = await call('/driver/cash', { token: driver.token });
+  assert.equal(cash.commissionCents, 735 * 2);
+  const officePay = 4 * Math.round(supportReturn.price * 100);
+  assert.equal(cash.owedCents, -returnPay - officePay);
+  assert.deepEqual(tripEntries(cash, supportReturn).map(e => e.amountCents), [-officePay]);
+  const earnings = await call('/driver/earnings', { token: driver.token });
+  assert.equal(earnings.all.jobs, 4);
+  assert.equal(earnings.all.tripPayCents, returnPay + officePay);
+
+  const journalFor = entryId => ledgerDb.all(`SELECT j.kind, a.code, a.kind AS account_kind, e.debit_minor, e.credit_minor
+    FROM ledger_journals j JOIN ledger_entries e ON e.journal_id = j.id JOIN ledger_accounts a ON a.id = e.account_id
+    WHERE j.business_ref = ? ORDER BY e.debit_minor DESC`, `cash-entry:${entryId}`);
+  assert.deepEqual(await journalFor(codePay[0].id), [
+    { kind: 'cash_adjustment', code: 'platform:operating_expense', account_kind: 'operating_expense', debit_minor: returnPay, credit_minor: 0 },
+    { kind: 'cash_adjustment', code: `driver:${driver.user.id}:receivable`, account_kind: 'driver_receivable', debit_minor: 0, credit_minor: returnPay },
+  ]);
+  assert.equal((await call('/admin/ledger/import', { token: admin.token, body: {} })).journals, 0, 'import agrees with live journals');
+
+  // The office resolve route recognizes support's eligibility recovery and pays one leg.
+  const recovered = await deliver(false);
+  const { version } = await ledgerDb.one('SELECT version FROM orders WHERE id = ?', recovered.id);
+  await call(`/admin/eligibility/orders/${recovered.id}/recovery`, { token: admin.token,
+    body: { action: 'return', expectedVersion: version, reason: 'Support collected the parcel', evidenceRef: 'synthetic:return' } });
+  await call(`/admin/orders/${recovered.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'staff', reason: 'Received from support' } });
+  cash = await call('/driver/cash', { token: driver.token });
+  assert.deepEqual(tripEntries(cash, recovered).map(e => e.amountCents), [-Math.round(recovered.price * 100)]);
+
+  const codeAfterRecovery = await deliver(false);
+  const recoveryVersion = (await ledgerDb.one('SELECT version FROM orders WHERE id = ?', codeAfterRecovery.id)).version;
+  await call(`/admin/eligibility/orders/${codeAfterRecovery.id}/recovery`, { token: admin.token,
+    body: { action: 'return', expectedVersion: recoveryVersion, reason: 'Support collected the parcel', evidenceRef: 'synthetic:return' } });
+  // Pre-release recovery wrote ELIGIBILITY_CUSTODY_RECOVERY without a CUSTODY_TAKEN event.
+  await ledgerDb.atomic({ purpose: 'test' }, () => ledgerDb.run("DELETE FROM security_events WHERE order_id = ? AND action = 'CUSTODY_TAKEN'", codeAfterRecovery.id));
+  const recoveryCode = (await call(`/orders/${codeAfterRecovery.id}`, { token: customer.token })).returnCode;
+  await advance(driver.token, { ...codeAfterRecovery, status: 'returning' }, { code: recoveryCode });
+  assert.equal((await ledgerDb.one("SELECT amount_cents FROM cash_entries WHERE order_id = ? AND source = 'trip_pay'", codeAfterRecovery.id)).amount_cents,
+    -Math.round(codeAfterRecovery.price * 100), 'a code closure also recognizes custody transferred by a legacy release');
+
+  // A courier block also uses one leg, and only a clearing second-admin review posts the pay.
+  const blockedParcel = await deliver(false);
+  await call(`/admin/users/${driver.user.id}`, { token: admin.token, body: { status: 'blocked', recovery: 'return' } });
+  await call(`/admin/orders/${blockedParcel.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Received from support' } });
+  const blockPayNote = `DRV-17 trip pay order ${blockedParcel.id}`;
+  assert.equal(await ledgerDb.one('SELECT 1 FROM cash_entries WHERE note = ?', blockPayNote), undefined);
+  const decision = { token: approver.token, body: { cleared: true, note: 'Synthetic review cleared the captain' } };
+  const reviewPath = `/admin/orders/${blockedParcel.id}/block-review`;
+  const review = await call(reviewPath, decision);
+  assert.equal(review.paidCents, Math.round(blockedParcel.price * 100));
+  assert.equal(review.paidCents, review.tripPayCents);
+  assert.deepEqual(await call(reviewPath, decision), review);
+  assert.equal((await ledgerDb.all('SELECT amount_cents FROM cash_entries WHERE note = ?', blockPayNote)).length, 1);
+  await call(`/admin/users/${driver.user.id}`, { token: admin.token, body: { status: 'active' } });
+  driver.token = (await call('/auth/login', { body: { phone: '0599300003', password: 'secret1' } })).token;
+
+  await checkCompletedReattempt({ call, persistence, input, driver, customer, admin });
+  await checkPickupPay({ call, persistence, input, driver, other, customer, admin, liveWatcherCount });
+  const cancelled = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  await call(`/jobs/${cancelled.id}/accept`, { token: driver.token, body: {} });
+  await call(`/orders/${cancelled.id}/cancel`, { token: customer.token, body: {} });
+  const pickupPath = `/admin/orders/${cancelled.id}/pickup-pay-review`;
+  const submitReview = async (actor, granted) => {
+    const response = await fetch(base + pickupPath, { method: 'POST',
+      headers: { Authorization: `Bearer ${actor.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ granted, km: granted ? 1 : 0, reason: 'Concurrent staff decision' }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  // The grant pauses on the driver row while it holds the order lock. The denial must wait behind it.
+  const blocker = await persistence.pool.connect();
+  const waitForReviewLocks = async count => {
+    const deadline = Date.now() + 5000; // a wait loop, not a sleep: generous for a loaded gate run (Haiku r7 N-6)
+    for (;;) {
+      const { n } = await persistence.one(`WITH waiting AS (
+        SELECT pid, pg_blocking_pids(pid) AS blockers FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'
+      ) SELECT COUNT(*) AS n FROM waiting w WHERE ? = ANY(w.blockers)
+        OR EXISTS (SELECT 1 FROM waiting ahead WHERE ahead.pid = ANY(w.blockers) AND ? = ANY(ahead.blockers))`,
+      blocker.processID, blocker.processID);
+      if (n >= count) return;
+      assert.ok(Date.now() < deadline, 'pickup decisions reached their row locks');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  };
+  let grant, denial;
+  try {
+    await blocker.query('BEGIN');
+    await blocker.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [driver.user.id]);
+    grant = submitReview(admin, true);
+    await waitForReviewLocks(1);
+    denial = submitReview(approver, false);
+    await waitForReviewLocks(2);
+  } finally {
+    await blocker.query('ROLLBACK');
+    blocker.release();
+  }
+  const replies = await Promise.all([grant, denial]);
+  assert.deepEqual(replies.map(reply => reply.status), [200, 409]);
+  assert.equal(replies.find(reply => reply.status === 409).body.error, 'review_decided');
+  const grantedReview = replies[0].body;
+  assert.ok(grantedReview.paidCents > 0);
+  assert.deepEqual((await call(`/orders/${cancelled.id}`, { token: admin.token })).pickupPayReview.decision, grantedReview);
+  assert.equal((await persistence.one("SELECT COUNT(*) AS n FROM security_events WHERE order_id = ? AND action = 'PICKUP_PAY_DECIDED'", cancelled.id)).n, 1);
+  assert.deepEqual((await persistence.all("SELECT amount_cents FROM cash_entries WHERE order_id = ? AND source = 'pickup_pay'", cancelled.id))
+    .map(row => row.amount_cents), [-grantedReview.paidCents]);
+  const credit = (await call('/driver/cash', { token: driver.token })).owedCents;
+  const payoutBody = { driverId: driver.user.id, amountCents: -credit, reason: 'Office paid trip earnings', source: 'payout', requestId: randomUUID() };
+  await persistence.run("UPDATE users SET staff_role='support' WHERE id=?", approver.user.id);
+  await call('/admin/settings?payroll=1', { token: approver.token, body: { pickupPayPerKm: 1 }, expect: 403 });
+  await call('/admin/cash/adjustment', { token: approver.token, body: payoutBody, expect: 403 });
+  const envelope = { commandId: randomUUID(), payload: { driverId: driver.user.id, amountCents: 1, intent: 'charge', reason: 'Cashier adjustment', currency: 'ILS' } };
+  await call('/admin/cash/adjustment', { token: approver.token, body: envelope, expect: 403 });
+  await call('/admin/cash/adjustment', { token: approver.token, body: { driverId: other.user.id, amountCents: 1, intent: 'charge', reason: 'Office fuel charge' }, expect: 403 });
+  await persistence.run("UPDATE users SET staff_role='finance' WHERE id=?", approver.user.id);
+  const replayEnvelope = { ...envelope, commandId: randomUUID() };
+  const replayEntry = await call('/admin/cash/adjustment', { token: approver.token, body: replayEnvelope });
+  assert.equal(replayEntry.source, undefined, 'a charge in credit still posts to revenue');
+  assert.deepEqual(await call('/admin/cash/adjustment', { token: approver.token, body: replayEnvelope }), replayEntry);
+  assert.ok((await journalFor(replayEntry.id)).some(row => row.code === 'platform:revenue' && row.credit_minor === 1));
+  assert.equal((await call('/admin/cash/adjustment', { token: approver.token, body: {
+    driverId: driver.user.id, amountCents: 1, reason: 'Older admin form', requestId: randomUUID(),
+  }, expect: 426 })).error, 'client_update_required');
+  assert.equal((await call('/admin/cash/adjustment', { token: approver.token, body: {
+    ...payoutBody, requestId: randomUUID(),
+  }, expect: 400 })).error, 'invalid_amount');
+  await persistence.run("UPDATE users SET staff_role='support' WHERE id=?", approver.user.id);
+  await call('/admin/cash/adjustment', { token: approver.token, body: replayEnvelope, expect: 403 });
+  assert.deepEqual(await call(`/admin/cash/commands/${replayEnvelope.commandId}`, { token: approver.token }), { entry: replayEntry });
+  await persistence.run("UPDATE users SET staff_role='finance' WHERE id=?", approver.user.id);
+  payoutBody.amountCents -= 1;
+  const payout = await call('/admin/cash/adjustment', { token: approver.token, body: payoutBody });
+  assert.deepEqual(await call('/admin/cash/adjustment', { token: approver.token, body: payoutBody }), payout);
+  await call('/admin/cash/adjustment', { token: admin.token, body: { ...payoutBody, requestId: randomUUID() }, expect: 400 });
+  assert.equal(payout.note, payoutBody.reason);
+  assert.equal(payout.source, 'payout');
+  assert.match(payout.reference, /^P-/);
+  assert.deepEqual(await journalFor(payout.id), [
+    { kind: 'cash_adjustment', code: `driver:${driver.user.id}:receivable`, account_kind: 'driver_receivable', debit_minor: payoutBody.amountCents, credit_minor: 0 },
+    { kind: 'cash_adjustment', code: 'platform:provider_clearing', account_kind: 'provider_clearing', debit_minor: 0, credit_minor: payoutBody.amountCents },
+  ]);
+  assert.equal((await call('/admin/ledger/import', { token: admin.token, body: {} })).journals, 0, 'import agrees with the live payout journal');
+  assert.equal((await call('/driver/cash', { token: driver.token })).owedCents, 0);
+  assert.equal((await call('/admin/cash/adjustment', { token: approver.token, body: {
+    driverId: driver.user.id, amountCents: 1, reason: 'Edited old payout form', requestId: randomUUID(),
+  }, expect: 426 })).error, 'client_update_required');
   await call('/me/delete', { token: driver.token, body: { password: 'secret1' } }); // settled drivers may leave
 
   // ---- Cash cap: a driver who would owe Wind more than driverCashCap (₪) cannot take another job until a handover ----

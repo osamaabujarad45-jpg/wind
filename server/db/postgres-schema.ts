@@ -149,6 +149,27 @@ export async function initializePostgres(database: Persistence, schema: string) 
       await database.run(readFileSync(new URL('./postgres-quote-privacy.sql', import.meta.url), 'utf8'));
       await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(36,?)', Date.now());
     }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 37'))) {
+      await database.run('ALTER TABLE users ADD COLUMN ride_offer_seconds INTEGER NOT NULL DEFAULT 20 CHECK(ride_offer_seconds IN (20,30,40))');
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(37,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 38'))) {
+      // RIDE-06/A11Y-08: the rider may add 2 minutes once to the waiting grace; a new assignment clears it.
+      await database.run('ALTER TABLE ride_lifecycle ADD COLUMN IF NOT EXISTS grace_extended_at BIGINT');
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(38,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 39'))) {
+      await database.run(readFileSync(new URL('./postgres-block-reviews.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(39,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 40'))) {
+      await database.run(readFileSync(new URL('./postgres-captain-pay.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(40,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 41'))) {
+      await database.run(readFileSync(new URL('./postgres-cash-resolution.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(41,?)', Date.now());
+    }
   });
 }
 

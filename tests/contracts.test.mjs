@@ -104,12 +104,14 @@ try {
   [admin, customer, driver, , spare] = actors;
   const foreign = actors[3];
   await promote(phones[0]);
+  admin.token = (await call('/auth/login', { body: { phone: phones[0], password: 'synthetic-local-password' } })).token;
   await exchange('pending-driver', 'driver', '/jobs', { token: driver.token, expect: 403 });
   for (const actor of [driver, spare]) await call(`/admin/users/${actor.user.id}/approve`, { token: admin.token, body: {} });
   const session = await exchange('customer-session', 'customer', '/me', { token: customer.token });
   assert.deepEqual(session.capabilities.enabledServices, ['parcel']);
   assert.equal(session.capabilities.pooling, false);
   assert.equal(typeof session.user.id, 'number');
+  await exchange('driver-earnings', 'driver', '/driver/earnings', { token: driver.token });
   for (const actor of actors) assert.equal(db.prepare('SELECT token_hash FROM sessions WHERE user_id = ?').get(actor.user.id).token_hash.length, 64);
   assert.equal(db.prepare('SELECT 1 FROM sessions WHERE token_hash = ?').get(customer.token), undefined);
   assert.match(db.prepare('SELECT password FROM users WHERE id = ?').get(customer.user.id).password, /^[a-f0-9]{32}:[a-f0-9]{64}$/);
@@ -162,6 +164,12 @@ try {
   }
   await exchange('customer-rating-privacy', 'customer', `/orders/${order.id}`, { token: customer.token });
 
+  const remittance = await exchange('cash-remittance', 'admin', '/admin/cash/remittance', { token: admin.token,
+    body: { driverId: driver.user.id, amountCents: 300, requestId: randomUUID(), note: 'Synthetic two-person handover' } });
+  await exchange('cash-pending', 'driver', '/driver/cash', { token: driver.token });
+  await exchange('cash-confirm', 'driver', `/driver/cash/${remittance.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
+  await exchange('cash-settled', 'driver', '/driver/cash', { token: driver.token });
+
   order = await inTransit();
   order = await transition('delivery-exception', 'driver', order, `/orders/${order.id}/exception`, { token: driver.token,
     body: { requestId: randomUUID(), expectedStatus: 'in_transit', reason: 'refused' } }, 'on_hold');
@@ -185,11 +193,6 @@ try {
     token: actor.token, body: actor === customer ? { rating: 4, priceRating: 4 } : { customerRating: 4 }, expect: 409 });
   await exchange('returned-dispute', 'customer', `/orders/${order.id}/dispute`, { token: customer.token, body: { reason: 'Synthetic return handling review' } });
   await exchange('finished-cash', 'driver', '/driver/cash', { token: driver.token });
-  const remittance = await exchange('cash-remittance', 'admin', '/admin/cash/remittance', { token: admin.token,
-    body: { driverId: driver.user.id, amountCents: 600, requestId: randomUUID(), note: 'Synthetic two-person handover' } });
-  await exchange('cash-pending', 'driver', '/driver/cash', { token: driver.token });
-  await exchange('cash-confirm', 'driver', `/driver/cash/${remittance.id}/confirm`, { token: driver.token, body: { decision: 'confirm' } });
-  await exchange('cash-settled', 'driver', '/driver/cash', { token: driver.token });
 
   for (const stage of ['searching', 'assigned', 'at_pickup']) {
     let current = await book();

@@ -113,7 +113,29 @@ try {
   const view = await g.call(`/orders/${order.id}`, { token: g.customer.token });
   assert.equal((await advance(g, who.driver.token, order.id, 'assigned')).status, 'at_pickup');
   assert.equal((await advance(g, who.driver.token, order.id, 'at_pickup', { boardingCode: view.ride.boardingCode })).status, 'in_transit');
-  console.log('WP11 ride-lifecycle: far/stale/missing fix rejection and audited operator override passed');
+  // SRS §2.1 / DRV-17: a courier block ends the boarded ride unpaid for the rider; the captain's trip so far waits on a second admin's review.
+  await g.call(`/admin/users/${who.driver.user.id}`, { token: g.admin.token, method: 'PATCH', body: { status: 'blocked', recovery: 'return' } });
+  assert.equal((await g.call(`/orders/${order.id}`, { token: g.customer.token })).status, 'cancelled');
+  const review = (await g.call(`/orders/${order.id}`, { token: g.admin.token })).blockReview;
+  const fare = Number((await g.db.one('SELECT price, discount FROM orders WHERE id=?', order.id)).price);
+  assert.equal(review.tripPayCents, Math.floor(Math.round(fare * 100) / 2), 'trip so far is half the booked fare');
+  assert.equal(review.decidedAt, null);
+  assert.ok(review.dueAt >= Date.now() + 2 * 86_400_000 - 5_000, 'two working days at least');
+  assert.equal((await g.call(`/orders/${order.id}`, { token: g.customer.token })).blockReview, undefined, 'only support sees the review');
+  const reviewPath = `/admin/orders/${order.id}/block-review`;
+  assert.equal((await g.call(reviewPath, { token: g.admin.token, body: { cleared: true, note: 'Synthetic same admin' }, expect: 409 })).error, 'second_admin_required');
+  const auditor = await g.account('admin');
+  assert.equal((await g.call(reviewPath, { token: auditor.token, body: { cleared: true, note: 'no' }, expect: 400 })).error, 'invalid_input');
+  await g.db.run(`INSERT INTO cash_entries (driver_id, kind, amount_cents, note, status, recorded_by, created_at) VALUES (?, 'adjustment', ?, 'Synthetic owed commission', 'confirmed', ?, ?)`,
+    who.driver.user.id, 100, g.admin.user.id, Date.now());
+  const decided = await g.call(reviewPath, { token: auditor.token, body: { cleared: true, note: 'Synthetic review cleared the captain' } });
+  assert.equal(decided.cleared, true);
+  assert.equal(decided.paidCents, review.tripPayCents, 'a cleared review pays the full trip so far (owner 19 Nov: owed may go below zero)');
+  assert.deepEqual(await g.call(reviewPath, { token: auditor.token, body: { cleared: true, note: 'Synthetic review cleared the captain' } }), decided, 'a lost reply replays');
+  assert.equal((await g.call(reviewPath, { token: auditor.token, body: { cleared: false, note: 'Synthetic change of mind' }, expect: 409 })).error, 'review_decided');
+  assert.equal(Number((await g.db.one('SELECT COALESCE(SUM(amount_cents),0) s FROM cash_entries WHERE driver_id=? AND note=?', who.driver.user.id, `DRV-17 trip pay order ${order.id}`)).s), -decided.paidCents);
+  assert.equal(Number((await g.db.one("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='BLOCK_REVIEW_DECIDED'", order.id)).n), 1);
+  console.log('WP11 ride-lifecycle: far/stale/missing fix rejection, audited operator override and courier block review passed');
 } finally { await g.close(); }
 
 // --- Five boarding misses lock; an audited admin reset recovers --------------
@@ -137,7 +159,49 @@ try {
   assert.equal(Number((await h.db.one('SELECT failures FROM ride_boarding_attempts WHERE order_id=?', order.id)).failures), 0);
   assert.equal((await advance(h, who.driver.token, order.id, 'at_pickup', { boardingCode: code })).status, 'in_transit', 'an audited reset recovers boarding');
   assert.equal(await h.db.one('SELECT failures FROM proof_attempts WHERE order_id=?', order.id), undefined);
-  console.log('WP11 ride-lifecycle: five-miss boarding lock and audited recovery passed');
+  const boardedEpoch = Number((await h.db.one('SELECT assignment_epoch FROM orders WHERE id=?', order.id)).assignment_epoch);
+  assert.equal((await h.call(`/orders/${order.id}/ride/no-show`, { token: who.driver.token, body: { reason: 'absent', expectedAssignmentEpoch: boardedEpoch }, expect: 409 })).error, 'cannot_arrive');
+  await advance(h, who.driver.token, order.id, 'in_transit');
+  const missedOrder = await dispatchAssigned(h, who, await bookRide(h));
+  const seenEpoch = Number((await h.db.one('SELECT assignment_epoch FROM orders WHERE id=?', missedOrder.id)).assignment_epoch);
+  assert.equal((await h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token: h.customer.token, body: {}, expect: 400 })).error, 'invalid_input', 'the extension names the assignment the rider saw (Haiku M2)');
+  assert.equal((await h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token: h.customer.token, body: { expectedAssignmentEpoch: seenEpoch }, expect: 409 })).error, 'ride_grace_not_running', 'no extension before the captain arrives');
+  await h.call(`/orders/${missedOrder.id}/arrive`, { token: who.driver.token, body: {} });
+  const noShow = (token, body, expect = 200) => h.call(`/orders/${missedOrder.id}/ride/no-show`, { token, body, expect });
+  const epoch = Number((await h.db.one('SELECT assignment_epoch FROM orders WHERE id=?', missedOrder.id)).assignment_epoch);
+  const missed = { reason: 'absent', expectedAssignmentEpoch: epoch };
+  assert.equal((await noShow(who.driver.token, missed, 409)).error, 'ride_grace_active');
+  // RIDE-06/A11Y-08: the rider adds 2 minutes once, during the grace; the captain's no-show waits for the new end.
+  const extend = (token, expect = 200) => h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token, body: { expectedAssignmentEpoch: epoch }, expect });
+  assert.equal((await extend(who.driver.token, 403)).error, 'forbidden');
+  const before = await h.call(`/orders/${missedOrder.id}`, { token: h.customer.token });
+  assert.equal(before.ride.graceExtended, false);
+  assert.equal((await h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token: h.customer.token, body: { expectedAssignmentEpoch: epoch + 1 }, expect: 409 })).error,
+    'assignment_changed', 'a tap from another assignment never extends this one (Sol R2-M2)');
+  const extended = await h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token: h.customer.token, body: { expectedAssignmentEpoch: epoch } });
+  assert.equal(extended.ride.graceExtended, true);
+  assert.equal(extended.ride.graceUntil, before.ride.graceUntil + 120_000);
+  assert.equal((await extend(h.customer.token)).ride.graceUntil, extended.ride.graceUntil, 'a repeated request is a replay, not a second extension');
+  assert.equal(Number((await h.db.one("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='RIDE_GRACE_EXTENDED'", missedOrder.id)).n), 1);
+  assert.equal((await h.call(`/orders/${missedOrder.id}`, { token: who.driver.token })).ride.graceUntil, extended.ride.graceUntil, 'the captain sees the new end time');
+  await h.db.run('UPDATE ride_lifecycle SET arrived_at=? WHERE order_id=?', Date.now() - 302_000, missedOrder.id);
+  assert.equal((await noShow(who.driver.token, missed, 409)).error, 'ride_grace_active', 'the extension holds the no-show past the base 5 minutes');
+  await h.db.run('UPDATE ride_lifecycle SET arrived_at=? WHERE order_id=?', Date.now() - 422_000, missedOrder.id);
+  assert.equal((await noShow(h.d2.token, missed, 404)).error, 'not_found');
+  assert.equal((await noShow(who.driver.token, { ...missed, expectedAssignmentEpoch: epoch - 1 }, 409)).error, 'assignment_changed');
+  assert.equal((await noShow(who.driver.token, missed)).ok, true);
+  assert.equal((await noShow(who.driver.token, missed)).ok, true);
+  const ended = await h.call(`/orders/${missedOrder.id}`, { token: h.customer.token });
+  assert.equal(ended.status, 'cancelled');
+  const replayed = await extend(h.customer.token);
+  assert.equal(replayed.ride.graceExtended, true, 'the previously accepted extension can still be acknowledged after no-show');
+  assert.equal(replayed.ride.graceUntil, ended.ride.graceUntil);
+  assert.equal(replayed.ride.boardingCode, undefined, 'a replay after cancellation never reveals a boarding code');
+  assert.equal(Number((await h.db.one("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='RIDE_GRACE_EXTENDED'", missedOrder.id)).n), 1);
+  assert.equal((await h.db.one('SELECT commission FROM orders WHERE id=?', missedOrder.id)).commission, null);
+  assert.equal(Number((await h.db.one("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='RIDE_NO_SHOW'", missedOrder.id)).n), 1);
+  assert.ok(await h.db.one("SELECT 1 FROM domain_events WHERE order_id=? AND type='order.changed' AND payload->>'status'='cancelled'", missedOrder.id));
+  console.log('WP11 ride-lifecycle: boarding lock, audited recovery, rider grace extension and fee-free no-show passed');
 } finally { await h.close(); }
 
 // --- Release clears custody of the challenge; a stale epoch cannot start ----

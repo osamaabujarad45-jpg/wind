@@ -16,7 +16,7 @@ process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,shop';
 delete process.env.WIND_SHOP_TOWN;
 delete process.env.OSRM_URL;
-const { persistence, shutdown, server, promote } = await import('../server/main.ts');
+const { persistence, shutdown, server, promote, shopSweep, remindOfficeJobs, recoverBlockReviews } = await import('../server/main.ts');
 // One reader for both backends: tests/pg-shop.mjs runs this same file on PostgreSQL.
 const one = (sql, ...args) => persistence.atomic({ purpose: 'test' }, () => persistence.one(sql, ...args));
 await new Promise(resolve => server.listen(0, resolve));
@@ -30,6 +30,7 @@ const err = async (path, options, status, code) => assert.equal((await call(path
 try {
   const admin = await call('/auth/register', { body: { phone: '0599510001', name: 'Admin', password: 'secret1' } });
   await promote('0599510001');
+  admin.token = (await call('/auth/login', { body: { phone: '0599510001', password: 'secret1' } })).token;
   const owner = await call('/auth/register', { body: { phone: '0599510002', name: 'Baker', password: 'secret1' } });
   const customer = await call('/auth/register', { body: { phone: '0599510003', name: 'Maha', password: 'secret1' } });
   const captain = await call('/auth/register', { body: { phone: '0599510004', name: 'Sami', password: 'secret1', role: 'driver', vehicle: 'motorcycle' } });
@@ -85,8 +86,12 @@ try {
   await err('/orders', { token: customer.token, body: { ...placeBody, dropoffCity: 'nablus' } }, 409, 'shop_town_closed');
   const requestId = randomUUID();
   sends.length = 0;
-  let order = await call('/orders', { token: customer.token, body: { ...placeBody, requestId } });
-  assert.equal((await call('/orders', { token: customer.token, body: { ...placeBody, requestId } })).id, order.id, 'a retried place returns the same order');
+  const commandExpiresAt = Date.now() + 60_000;
+  const placement = { ...placeBody, requestId, commandExpiresAt };
+  let order = await call('/orders', { token: customer.token, body: placement });
+  assert.deepEqual(await call(`/orders/commands/${requestId}`, { token: customer.token }), { orderId: order.id }, 'a restarted cart recovers the committed order without posting again');
+  assert.equal((await call('/orders', { token: customer.token, body: placement })).id, order.id, 'a retried place returns the same order');
+  await err('/orders', { token: customer.token, body: { ...placement, requestId: randomUUID(), commandExpiresAt: Date.now() - 1 } }, 409, 'booking_command_expired');
   assert.equal(order.status, 'requested');
   assert.equal(order.shop.state, null);
   assert.equal(order.shop.goodsEstimateAgorot, estimate);
@@ -109,6 +114,12 @@ try {
   assert.equal(mine.handoverCode, null, 'the shop never sees the delivery code');
   assert.equal(mine.dropoffPoint, null, "the shop does not get the customer's address");
   const pickupCode = mine.shop.pickupCode;
+
+  const rejectClock = Date.now;
+  try {
+    Date.now = () => order.shop.acceptDeadline + 1;
+    await err(`/merchant/orders/${order.id}/reject`, { token: owner.token, body: { reason: 'out_of_stock' } }, 409, 'accept_expired');
+  } finally { Date.now = rejectClock; }
 
   // ---- accept and prepare (DLV-07, DLV-08); free cancel ends at acceptance (D-2) ----
   order = await call(`/merchant/orders/${order.id}/accept`, { token: owner.token, body: { prepMinutes: 30 } });
@@ -191,6 +202,41 @@ try {
   assert.equal(order.shop.handoverException, 'missing_item');
   assert.equal(order.status, 'at_pickup');
   await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } } }, 409, 'exception_open');
+  // Inside the owner-set 10 minutes the shop fixes it: support can neither cancel for it nor remove a line, and it is not on the stuck list.
+  await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { action: 'cancel_handover_exception', note: 'Synthetic early decision' } }, 409, 'cancel_refused');
+  await err(`/admin/orders/${order.id}/shop/lines/${breadLine}/remove`, { token: admin.token, body: {} }, 409, 'handover_not_overdue');
+  assert.ok(!(await call('/admin/shop/attention', { token: admin.token })).orders.some(o => o.id === order.id));
+  await shopSweep(Date.now() + 9 * 60_000);
+  assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_HANDOVER_ESCALATED'", order.id)).n), 0, 'nothing escalates before the minutes pass');
+  // Past them, the sweep tells support once per exception and the order joins the stuck list; it never cancels by itself.
+  // Handover checks are append-only, so the clock moves instead of the row (the API runs in this process).
+  const realNow = Date.now;
+  Date.now = () => realNow() + 11 * 60_000;
+  await shopSweep();
+  await shopSweep();
+  assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_HANDOVER_ESCALATED'", order.id)).n), 1, 'one escalation per exception');
+  const stuck = (await call('/admin/shop/attention', { token: admin.token })).orders.find(o => o.id === order.id);
+  const staleCancel = { action: 'cancel_handover_exception', note: 'Synthetic stale decision' };
+  await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { ...staleCancel, reason: 'operational',
+    exceptionAt: stuck.shop.handoverExceptionAt } }, 400, 'invalid_input');
+  await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { reason: 'handover_exception_unresolved',
+    exceptionAt: stuck.shop.handoverExceptionAt, note: staleCancel.note } }, 400, 'invalid_input');
+  await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: staleCancel }, 400, 'invalid_input');
+  await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { ...staleCancel, exceptionAt: stuck.shop.handoverExceptionAt - 1 } }, 409, 'exception_changed');
+  if (persistence.backend === 'postgres') {
+    const duty = role => persistence.atomic({ purpose: 'test' }, () => persistence.run('UPDATE users SET staff_role = ? WHERE id = ?', role, admin.user.id));
+    await duty('finance');
+    try {
+      await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { ...staleCancel, exceptionAt: stuck.shop.handoverExceptionAt } }, 403, 'forbidden');
+    } finally { await duty(null); }
+  }
+  // A removal binds to the exception episode support saw, with a reason (Sol R2-M3).
+  await err(`/admin/orders/${order.id}/shop/lines/${breadLine}/remove`, { token: admin.token, body: { exceptionAt: stuck.shop.handoverExceptionAt - 1, note: 'Synthetic stale decision' } }, 409, 'exception_changed');
+  await err(`/admin/orders/${order.id}/shop/lines/${breadLine}/remove`, { token: admin.token, body: { exceptionAt: stuck.shop.handoverExceptionAt } }, 400, 'invalid_input');
+  assert.equal(stuck?.shop.handoverOverdue, true, 'an overdue exception is on the stuck list, marked for support to decide');
+  assert.equal((await call(`/orders/${order.id}`, { token: owner.token })).shop.handoverOverdue, false, 'only support sees the overdue flag');
+  Date.now = realNow;
+  assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).status, 'at_pickup');
   await call(`/merchant/orders/${order.id}/ready`, { token: owner.token, body: { packages: [{ sealed: true }, { sealed: false, lineIds: [labnehLine, breadLine] }] } });
   order = await call(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } } });
   assert.equal(order.status, 'in_transit');
@@ -245,6 +291,126 @@ try {
   const again = await call(`/orders/${order.id}/shop/again`, { token: customer.token, body: {} });
   assert.deepEqual(again.changes.map(c => c.kind).sort(), ['price', 'unavailable']);
   assert.equal(again.lines.length, 2);
+
+  // ---- DLV-13 removal past the minutes: above the minimum the order goes on, a retry replays, below it cancels (Sol R2-H6) ----
+  const second = [{ itemId: labneh.id, qtyMilli: 1000, policy: 'remove' }, { itemId: cheese.id, qtyMilli: 1000, policy: 'remove' }, { itemId: bread.id, qtyMilli: 2000, policy: 'remove' }];
+  async function stuckAtHandover() {
+    const placed = await call('/orders', { token: customer.token, body: { ...placeBody, lines: second, expectedGoodsAgorot: 2000 + 2500 + 1200, requestId: randomUUID(), commandExpiresAt: Date.now() + 60_000 } });
+    await call(`/merchant/orders/${placed.id}/accept`, { token: owner.token, body: { prepMinutes: 30 } });
+    await call(`/merchant/orders/${placed.id}/preparing`, { token: owner.token, body: {} });
+    await call(`/merchant/orders/${placed.id}/ready`, { token: owner.token, body: { packages: [{ sealed: true }] } });
+    await call(`/jobs/${placed.id}/accept`, { token: captain.token, body: {} });
+    await call(`/orders/${placed.id}/advance`, { token: captain.token, body: { expectedStatus: 'assigned', requestId: randomUUID() } });
+    return call(`/orders/${placed.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), check: { result: 'exception', exception: 'missing_item' } } });
+  }
+  let o2 = await stuckAtHandover();
+  const line2 = id => o2.shop.lines.find(l => l.itemId === id && !l.removed).id;
+  const cheese2 = line2(cheese.id), labneh2 = line2(labneh.id);
+  const realNow2 = Date.now;
+  Date.now = () => realNow2() + 11 * 60_000;
+  try {
+    const episode = (await call(`/orders/${o2.id}`, { token: admin.token })).shop.handoverExceptionAt;
+    const remove = (line, expect) => call(`/admin/orders/${o2.id}/shop/lines/${line}/remove`, { token: admin.token, body: { exceptionAt: episode, note: 'Synthetic: the shop has none left' }, expect });
+    o2 = await remove(cheese2);
+    assert.ok(o2.shop.lines.find(l => l.id === cheese2).removed, 'the line at fault comes off');
+    assert.equal(o2.status, 'at_pickup', 'above the minimum the order goes on');
+    assert.equal((await remove(cheese2)).id, o2.id, 'a retry of the same decision replays');
+    assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_LINE_REMOVED_BY_SUPPORT'", o2.id)).n), 1, 'and records one decision');
+    assert.match((await one("SELECT detail FROM security_events WHERE order_id = ? AND action = 'SHOP_LINE_REMOVED_BY_SUPPORT'", o2.id)).detail, /Synthetic: the shop has none left/, 'with the operator reason');
+    o2 = await remove(labneh2);
+    assert.equal(o2.status, 'cancelled', 'below the minimum the removal cancels (DLV-06)');
+    assert.equal(o2.shop.cancelReason, 'below_minimum');
+  } finally { Date.now = realNow2; }
+
+  const toCancel = await stuckAtHandover();
+  Date.now = () => realNow2() + 11 * 60_000;
+  try {
+    const episode = (await call(`/orders/${toCancel.id}`, { token: admin.token })).shop.handoverExceptionAt;
+    const cancelled = await call(`/admin/orders/${toCancel.id}/shop/cancel`, { token: admin.token,
+      body: { action: 'cancel_handover_exception', exceptionAt: episode, note: 'Synthetic handover could not be resolved' } });
+    assert.equal(cancelled.shop.cancelReason, 'handover_exception_unresolved');
+    const event = await one("SELECT detail FROM security_events WHERE order_id = ? AND action = 'SHOP_CANCELLED'", toCancel.id);
+    assert.equal(JSON.parse(event.detail).exceptionAt, episode);
+  } finally { Date.now = realNow2; }
+
+  async function shopInTransit() {
+    const atShop = await stuckAtHandover();
+    await call(`/merchant/orders/${atShop.id}/ready`, { token: owner.token, body: { packages: [{ sealed: true }] } });
+    const code = (await call(`/orders/${atShop.id}`, { token: admin.token })).shop.pickupCode;
+    return call(`/orders/${atShop.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code, check: { result: 'ok' } } });
+  }
+  const officeOrder = await shopInTransit();
+  const officeId = officeOrder.id;
+  // Old pre-pickup blocks recorded a pool release in the same audit format as a custody block.
+  await persistence.atomic({ purpose: 'test' }, () => persistence.run(
+    "INSERT INTO security_events(actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'COURIER_BLOCKED', ?, ?)",
+    admin.user.id, officeId, JSON.stringify({ driverId: captain.user.id, from: 'assigned' }), Date.now()));
+  await call(`/orders/${officeId}/exception`, { token: captain.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent',
+    seals: [{ no: 1, intact: true }] } });
+  const resolveReturn = `/admin/orders/${officeId}/resolve`;
+  await call(resolveReturn, { token: admin.token, body: { action: 'return', reason: 'Recipient absent' } });
+  await call(resolveReturn, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'captain', reason: 'Shop closed, brought to office' } });
+  const trip = await one("SELECT amount_agorot FROM shop_ledger WHERE business_ref = ?", `shop-trip-${officeId}`);
+  assert.equal(trip.amount_agorot, 3000, 'captain gets the delivery, return and office legs');
+  const officePath = `/admin/orders/${officeId}/office`;
+  assert.equal((await call(officePath, { token: admin.token })).canReceive, true);
+  if (persistence.backend === 'postgres') {
+    for (const account of [owner, customer]) await call('/push/native/register', { token: account.token,
+      body: { expoPushToken: `ExpoPushToken[synthetic-office-${account.user.id}]`, deviceId: randomUUID(), platform: 'android' } });
+    const duty = role => persistence.atomic({ purpose: 'test' }, () => persistence.run('UPDATE users SET staff_role = ? WHERE id = ?', role, admin.user.id));
+    await duty('finance');
+    try {
+      assert.equal((await call(officePath, { token: admin.token })).canManage, false);
+      await err(officePath, { token: admin.token, body: { action: 'received', note: 'Shop order on shelf A' } }, 403, 'forbidden');
+    } finally { await duty(null); }
+  }
+  const kept = await call(officePath, { token: admin.token, body: { action: 'received', perishable: true, note: 'Shop order on shelf A' } });
+  assert.equal(kept.office.until - kept.office.receivedAt, 24 * 3_600_000);
+  const ownerOrder = await call(`/orders/${officeId}`, { token: owner.token });
+  assert.equal(ownerOrder.shop.office.until, kept.office.until);
+  assert.equal(ownerOrder.shop.office.closed, null);
+  assert.ok(!JSON.stringify(ownerOrder.shop.office).includes('shelf A'), 'the shop sees the deadline without the office note');
+  assert.equal((await call(`/orders/${officeId}`, { token: customer.token })).shop.office, undefined);
+  assert.equal(await remindOfficeJobs(kept.office.receivedAt + 24 * 3_600_000), 1);
+  if (persistence.backend === 'postgres') {
+    const notices = await persistence.atomic({ purpose: 'test' }, () => persistence.all(`SELECT q.destination, e.payload->>'path' AS url
+      FROM outbox q JOIN domain_events e ON e.id = q.event_id
+      WHERE e.order_id = ? AND e.type = 'notification.requested' AND e.payload->>'kind' = 'office'
+      AND q.destination LIKE 'expon:%'`, officeId));
+    assert.equal(notices.length, 2);
+    assert.ok(notices.every(notice => notice.destination.startsWith(`expon:${owner.user.id}:`) && notice.url === `/merchant/order/${officeId}`));
+  }
+  assert.equal((await call(officePath, { token: admin.token, body: { action: 'collected' } })).office.closed.action, 'collected');
+
+  const carried = await shopInTransit();
+  const carriedId = carried.id;
+  const reviewPath = `/admin/orders/${carriedId}/block-review`;
+  await call(`/admin/users/${captain.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked', recovery: 'return' } });
+  const returned = await call(`/admin/orders/${carriedId}/resolve`, { token: admin.token,
+    body: { action: 'confirm_office_return', carrier: 'staff', reason: 'Support delivered the recovered goods' } });
+  assert.equal(returned.blockReview.tripPayCents, 1000, 'the block opens a one-leg review on both databases');
+  assert.equal(await one('SELECT 1 FROM shop_ledger WHERE order_id = ? AND kind = ?', carriedId, 'trip_pay'), undefined);
+  // Older releases could leave only the audit and no review row.
+  await persistence.atomic({ purpose: 'test' }, async () => {
+    await persistence.run('DELETE FROM courier_block_reviews WHERE order_id = ?', carriedId);
+    await persistence.run("UPDATE security_events SET detail = ? WHERE order_id = ? AND action = 'COURIER_BLOCKED'",
+      JSON.stringify({ driverId: captain.user.id, from: 'in_transit' }), carriedId);
+    await persistence.run("INSERT INTO security_events(actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'COURIER_BLOCKED', ?, ?)",
+      admin.user.id, officeId, JSON.stringify({ driverId: captain.user.id, from: 'in_transit' }), Date.now());
+  });
+  await recoverBlockReviews();
+  assert.equal((await call(`/orders/${carriedId}`, { token: admin.token })).blockReview.tripPayCents, 1000);
+  assert.equal(await one('SELECT 1 FROM courier_block_reviews WHERE order_id = ?', officeId), undefined, 'an already-paid legacy return cannot be paid again');
+  const verdict = { cleared: true, note: 'Support cleared the captain' };
+  await err(reviewPath, { token: admin.token, body: verdict }, 409, 'second_admin_required');
+  const reviewerPhone = '0599510091';
+  await call('/auth/register', { body: { phone: reviewerPhone, name: 'Second admin', password: 'secret1' } });
+  await promote(reviewerPhone);
+  const reviewer = await call('/auth/login', { body: { phone: reviewerPhone, password: 'secret1' } });
+  const approvedPay = await call(reviewPath, { token: reviewer.token, body: verdict });
+  assert.equal(approvedPay.paidCents, 1000);
+  assert.deepEqual(await call(reviewPath, { token: reviewer.token, body: verdict }), approvedPay);
+  assert.equal(Number((await one("SELECT COUNT(*) n FROM shop_ledger WHERE order_id = ? AND kind IN ('trip_pay','opex_trip')", carriedId)).n), 2);
 
   console.log('Shop flow: place, edit, accept, weighed and substituted lines with consent, ceiling, packing, pickup code lockout and reset, handover exception, sealed delivery with door cash, money rows, captain cash, payout after handover, ratings and order-again passed');
 } finally {

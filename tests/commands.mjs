@@ -31,6 +31,14 @@ try {
   const commandId=randomUUID();
   const booked=await call('/orders',{token:customer.token,body:{commandId,payload:input}});
   assert.equal(booked.status,'searching');
+  for(const [path,payload] of [
+    ['block-review',{}],['shop/lines/1/remove',{}],['office',{action:'received'}],
+    ['resolve',{action:'confirm_office_return'}],['resolve',{action:'confirm_sender_return'}],
+    ['shop/cancel',{action:'cancel_handover_exception'}],
+  ]) {
+    const refused=await call(`/admin/orders/${booked.id}/${path}`,{token:admin.token,body:{commandId:randomUUID(),payload},expect:400});
+    assert.equal(refused.error,'unsupported_command');
+  }
   await db.run("UPDATE settings SET value=90 WHERE key='parcelSmall'");
   assert.deepEqual(await other('/orders',{token:customer.token,body:{commandId,payload:input}}),booked,'replay before current price');
   await call('/orders',{token:customer.token,body:{commandId,payload:{...input,detail:'changed'}},expect:409});
@@ -74,7 +82,7 @@ try {
   assert.equal((await db.one('SELECT version FROM cash_entries WHERE id=?',remittance.id)).version,cashVersion+1);
   // Saved private results cannot retain a role that the authenticated account has lost.
   const adminCommand={commandId:randomUUID(),payload:{driverId:driver.user.id,amountCents:1,currency:'ILS'}};
-  await call('/admin/cash/remittance',{token:admin.token,body:adminCommand});
+  const smallHandover=await call('/admin/cash/remittance',{token:admin.token,body:adminCommand});
   await db.run("UPDATE users SET role='customer' WHERE id=?",admin.user.id);
   await other('/admin/cash/remittance',{token:admin.token,body:adminCommand,expect:403});
   await db.run("UPDATE users SET role='admin' WHERE id=?",admin.user.id);
@@ -83,6 +91,23 @@ try {
     headers:{Authorization:`Bearer ${admin.token}`,'Content-Type':'application/json'},
     body:JSON.stringify({commandId:randomUUID(),payload:{driverId:driver.user.id,amountCents:150,currency:'ILS'}})})));
   assert.deepEqual(cashRaces.map(r=>r.status).sort(),[200,400]);
+  // Sol R25-M3: the captain's versioned decision and the office resolution of one handover lock the captain row first on
+  // both paths, so a race ends in one decision and a domain refusal, never a deadlock (HTTP 500).
+  const bigHandover=await cashRaces.find(r=>r.status===200).json();
+  for(const [handover,amountCents] of [[bigHandover,150],[smallHandover,1]]){
+    const entries=(await call('/driver/cash?protocol=1',{token:driver.token})).protocol.entries;
+    const expectedVersion=entries.find(e=>e.id===handover.id).version;
+    const post=(server,path,token,body)=>fetch(server.base+path,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const decided=await Promise.all([
+      post(a,`/driver/cash/${handover.id}/confirm`,driver.token,{commandId:randomUUID(),expectedVersion,payload:{decision:'confirm',amountCents,currency:'ILS'}}),
+      post(b,`/admin/cash/${handover.id}/resolve`,admin.token,{commandId:randomUUID(),payload:{decision:'dispute',reason:'Office counted a different amount',currency:'ILS'}}),
+    ]);
+    const statuses=decided.map(r=>r.status);
+    assert.ok(statuses.filter(s=>s===200).length===1 && statuses.every(s=>s===200||s===409),`one decision and a refusal, never a deadlock: ${statuses}`);
+    const row=await db.one('SELECT status FROM cash_entries WHERE id=?',handover.id);
+    const journals=(await db.one('SELECT count(*) n FROM ledger_journals WHERE cash_entry_id=?',handover.id)).n;
+    assert.equal(Number(journals),row.status==='confirmed'?1:0,'a confirmed handover posts once, a disputed one never');
+  }
   const releasable=await call('/orders',{token:customer.token,body:{commandId:randomUUID(),payload:input}});
   const previousAccept={commandId:randomUUID(),expectedVersion:await version(releasable.id)};
   await call(`/jobs/${releasable.id}/accept`,{token:driver.token,body:previousAccept});

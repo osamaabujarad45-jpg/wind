@@ -36,18 +36,40 @@ try {
   const newWork=await f.book();await f.assess(newWork,tiny);
   assert.equal((await call(`/jobs/${newWork.id}/accept`,{token:driver.token,body:{},expect:409})).error,'driver_ineligible');
   assert.equal((await db.one('SELECT status FROM orders WHERE id=?',winner.id)).status,'in_transit');
-  const recover=async(action)=>{const version=(await db.one('SELECT version FROM orders WHERE id=?',winner.id)).version;return await f.post(`/orders/${winner.id}/recovery`,{action,expectedVersion:version});};
+  const recover=async(action)=>{const version=(await db.one('SELECT version FROM orders WHERE id=?',winner.id)).version;return await f.post(`/orders/${winner.id}/recovery`,{action,...(action==='confirm_return'&&{carrier:'captain'}),expectedVersion:version});};
   await recover('hold');assert.equal((await db.one('SELECT failures FROM proof_attempts WHERE order_id=?',winner.id)).failures,2);
   await recover('return');const returning=await db.one('SELECT * FROM orders WHERE id=?',winner.id);
   assert.equal(returning.driver_id,snapshot.driver_id);assert.equal(returning.price,snapshot.price);assert.ok(returning.return_code);
   assert.equal((await call(`/orders/${winner.id}`,{token:f.customer.token})).returnCode,returning.return_code);
   await recover('confirm_return');const returned=await db.one('SELECT * FROM orders WHERE id=?',winner.id);
-  assert.equal(returned.status,'returned');assert.ok(returned.completed_at);assert.equal(returned.commission,snapshot.commission);
-  assert.ok(await db.one('SELECT 1 FROM ledger_journals WHERE business_ref=?',`order:${winner.id}:commission`),'the cash screen and the ledger agree on this return');
+  assert.equal(returned.status,'returned');assert.ok(returned.completed_at);assert.equal(Number(returned.commission),0,'a recovered return owes no commission (SRS DRV-17)');
+  assert.equal(await db.one('SELECT 1 FROM ledger_journals WHERE business_ref=?',`order:${winner.id}:commission`),undefined,'the cash screen and the ledger agree on this return');
+  assert.deepEqual(await db.all('SELECT amount_cents, recorded_by FROM cash_entries WHERE note=?', `DRV-17 trip pay order ${winner.id}`),
+    [{amount_cents:-Math.round(Number(snapshot.price)*100),recorded_by:admin.user.id}], 'eligibility close pays only the trip so far');
+  // Old eligibility closures only wrote ELIGIBILITY_CUSTODY_RECOVERY, never EXCEPTION_RESOLVED.
+  await db.run("DELETE FROM security_events WHERE order_id = ? AND action = 'EXCEPTION_RESOLVED'", winner.id);
+  const received = await call(`/admin/orders/${winner.id}/office`, { token: admin.token, body: { action: 'received', note: 'Received at Wind office' } });
+  assert.equal(received.orderId, winner.id);
+  assert.ok(received.office.until > received.office.receivedAt, 'eligibility confirmation opens SHIP-19 intake');
   for (const kind of ['decided','returned']) assert.ok(await db.one("SELECT 1 FROM domain_events WHERE order_id=? AND type='notification.requested' AND payload->>'kind'=?",winner.id,kind),kind+' reaches its party');
   assert.equal((await db.one('SELECT count(*) n FROM capacity_reservations WHERE order_id=?',winner.id)).n,1,'reservation history remains');
   assert.equal((await db.one("SELECT count(*) n FROM security_events WHERE order_id=? AND action='ELIGIBILITY_CUSTODY_RECOVERY'",winner.id)).n,3);
+
+  // Using the eligibility close route does not make a captain-carried return a custody recovery.
+  const officeReturn=await f.book();await f.assess(officeReturn,tiny);
+  await call(`/jobs/${officeReturn.id}/accept`,{token:loserDriver.token,body:{}});
+  for(const expectedStatus of ['assigned','at_pickup'])
+    await call(`/orders/${officeReturn.id}/advance`,{token:loserDriver.token,body:{requestId:randomUUID(),expectedStatus}});
+  await call(`/orders/${officeReturn.id}/exception`,{token:loserDriver.token,body:{requestId:randomUUID(),expectedStatus:'in_transit',reason:'absent'}});
+  const returningToOffice=await call(`/admin/orders/${officeReturn.id}/resolve`,{token:admin.token,body:{action:'return',reason:'Captain carrying return to office'}});
+  const {version}=await db.one('SELECT version FROM orders WHERE id=?',officeReturn.id);
+  await f.post(`/orders/${officeReturn.id}/recovery`,{action:'confirm_return',expectedVersion:version},400); // the carrier is named
+  await f.post(`/orders/${officeReturn.id}/recovery`,{action:'confirm_return',carrier:'captain',expectedVersion:version});
+  assert.deepEqual(await db.all('SELECT amount_cents, recorded_by FROM cash_entries WHERE note=?',`DRV-17 trip pay order ${officeReturn.id}`),
+    [{amount_cents:-3*Math.round(returningToOffice.price*100),recorded_by:admin.user.id}], 'office receipt pays the delivery, return and office legs');
+
   // Vacated shared vehicle no longer blocks a different eligible driver.
+  await call(`/orders/${ride.id}/cancel`, {token:f.customer.token,body:{}});
   const seats=await f.book({service:'ride',option:'1'});await f.assess(seats,{items:[],seats:5});
   assert.equal((await call(`/jobs/${seats.id}/accept`,{token:loserDriver.token,body:{},expect:409})).error,'seats_unavailable');
   await f.assess(seats,{items:[],seats:1});

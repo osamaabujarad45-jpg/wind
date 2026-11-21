@@ -2,18 +2,22 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { cubicBezier, useReducedMotion } from '../../motion';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useApi } from '../../api';
 import { OfficeShelf } from '../../office-ui';
 import { PushRow } from '../../parts';
 import { pushSupported } from '../../push';
-import type { OrderStatus } from '../../model';
+import { isolate, ltr, type Order, type OrderStatus } from '../../model';
 import { Appear, Badge, Card, ErrorText, Header, ListGroup, Loading, palette, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
+import { fill } from '../../copy';
 
 type Stats = {
   gmv: number; commission: number; subscriptions: number; discounts: number; profit: number; completed: number; activeSubscriptions: number;
   statuses: Partial<Record<OrderStatus, number>>; users: Record<string, number>;
-  pendingDrivers: number; pendingSubscriptions: number; openIncidents: number; backupStale: boolean;
+  pendingDrivers: number; pendingSubscriptions: number; openIncidents: number; backupStale: boolean; blockReviewsOverdue?: number;
+  pickupPayReviewsOpen: number;
+  pickupPayReviews?: { orderId: number; orderCode: string; driverName: string | null; suggestedCents: number | null;
+    reason: NonNullable<Order['pickupPayReview']>['reason'] }[];
   daily: { date: string; commission: number; subscriptions: number }[];
 };
 
@@ -34,6 +38,22 @@ export default function Dashboard() {
       {data.backupStale && <View accessibilityLiveRegion="polite"><Card tone="clay">
         <Txt variant="title">{c.backupStaleTitle}</Txt>
         <Txt variant="caption" style={{ marginTop: 4 }}>{c.backupStaleBody}</Txt>
+      </Card></View>}
+      {!!data.blockReviewsOverdue && <View accessibilityLiveRegion="polite"><Card tone="clay">
+        <Txt variant="title">{fill(c.blockReviewsOverdue, { n: data.blockReviewsOverdue })}</Txt>
+        <Txt variant="caption" style={{ marginTop: 4 }}>{c.blockReviewsOverdueBody}</Txt>
+      </Card></View>}
+      {!!data.pickupPayReviewsOpen && <View accessibilityLiveRegion="polite"><Card tone="clay">
+        <Txt variant="title">{fill(c.pickupPayReviewsOpen, { n: data.pickupPayReviewsOpen })}</Txt>
+        <Txt variant="caption" style={{ marginTop: 4 }}>{c.pickupPayReviewsOpenBody}</Txt>
+        {data.pickupPayReviews?.map(review => {
+          const reason = c[`pickup_${review.reason}`];
+          const suggestion = review.suggestedCents == null ? c.pickupPayNoSuggestion
+            : fill(c.pickupPaySuggestion, { pay: money(review.suggestedCents / 100) });
+          return <Link key={review.orderId} href={`/order/${review.orderId}`} style={styles.reviewLink}>
+            {ltr(review.orderCode)}{review.driverName && ` · ${isolate(review.driverName)}`}{` · ${reason} · ${suggestion}`}
+          </Link>;
+        })}
       </Card></View>}
       {data.openIncidents > 0 && <Shortcut label={c.safetyIncidents} count={data.openIncidents}
         onPress={() => router.navigate({ pathname: '/admin/orders', params: { filter: 'safety' } })} />}
@@ -134,6 +154,7 @@ const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
 const GROW = { from: { transform: [{ scaleY: 0.1 }], opacity: 0 }, to: { transform: [{ scaleY: 1 }], opacity: 1 } };
 
 const styles = StyleSheet.create({
+  reviewLink: { color: palette.clayInk, textDecorationLine: 'underline', paddingVertical: 10 },
   count: { minWidth: 30, minHeight: 30, borderRadius: 15, backgroundColor: palette.clayInk, justifyContent: 'center', paddingHorizontal: 6 },
   swatch: { width: 10, height: 10, borderRadius: 3 },
   plot: { height: 150, marginTop: 10, borderBottomWidth: 1, borderBottomColor: palette.line },

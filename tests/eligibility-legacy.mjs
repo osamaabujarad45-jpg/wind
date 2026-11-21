@@ -34,11 +34,13 @@ try {
   d=await db.one('SELECT revision FROM driver_eligibility WHERE driver_id=?',d1.user.id);
   await f.post(`/drivers/${d1.user.id}`,{vehicleId:f.vehicle.id,state:'expired',validUntil:f.now-1,expectedRevision:d.revision});
   assert.equal((await call(`/jobs/${candidate.id}/accept`,{token:d1.token,body:{},expect:409})).error,'driver_ineligible');
-  const recover=async(action)=>f.post(`/orders/${legacy.id}/recovery`,{action,expectedVersion:(await db.one('SELECT version FROM orders WHERE id=?',legacy.id)).version});
+  const recover=async(action)=>f.post(`/orders/${legacy.id}/recovery`,{action,...(action==='confirm_return'&&{carrier:'captain'}),expectedVersion:(await db.one('SELECT version FROM orders WHERE id=?',legacy.id)).version});
   await recover('return');await recover('confirm_return');
   const after=await db.one('SELECT * FROM orders WHERE id=?',legacy.id);
-  assert.equal(after.id,before.id);assert.equal(after.driver_id,before.driver_id);assert.equal(after.status,'returned');assert.equal(after.handover_code,before.handover_code);assert.equal(after.commission,before.commission);assert.equal(after.price,before.price);assert.ok(after.completed_at);
-  assert.deepEqual(await db.all('SELECT * FROM cash_entries'),cash);
+  assert.equal(after.id,before.id);assert.equal(after.driver_id,before.driver_id);assert.equal(after.status,'returned');assert.equal(after.handover_code,before.handover_code);assert.equal(Number(after.commission),0);assert.equal(after.price,before.price);assert.ok(after.completed_at);
+  const tripPay = await db.all("SELECT driver_id, kind, amount_cents, status FROM cash_entries WHERE note=?", `DRV-17 trip pay order ${legacy.id}`);
+  assert.deepEqual(tripPay,[{driver_id:before.driver_id,kind:'adjustment',amount_cents:-Math.round(Number(before.price)*100),status:'confirmed'}]);
+  assert.equal((await db.one('SELECT count(*) n FROM cash_entries')).n,cash.length+1);
   assert.equal((await db.one('SELECT count(*) n FROM capacity_reservations WHERE order_id=?',legacy.id)).n,1);
   console.log('WP05 legacy: unknown load inspection gate, custody/proof/cash preserved, in-place measured overload, shared vehicle accounting, expiry and audited same-order return passed');
 }finally{await f.close();}

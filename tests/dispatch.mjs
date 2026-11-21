@@ -10,6 +10,11 @@ try {
   const far = await addDriver(f, { latitude: 31.99, longitude: 35.19 });
   const third = await addDriver(f, { latitude: 31.95, longitude: 35.20 });
   assert.equal((await call('/driver/presence', { token: near.driver.token })).eligibleForMatching, true, 'test-only dispatch makes a fully eligible idle driver matchable');
+  assert.equal((await call('/me', { token: near.driver.token })).rideOfferSeconds, 20);
+  assert.equal((await call('/driver/ride-offer-settings', { token: f.customer.token, body: { seconds: 40 }, expect: 403 })).error, 'forbidden');
+  assert.equal((await call('/driver/ride-offer-settings', { token: far.driver.token, body: { seconds: 41 }, expect: 400 })).error, 'invalid_input');
+  await call('/driver/ride-offer-settings', { token: far.driver.token, body: { seconds: 40 } });
+  assert.equal((await call('/me', { token: far.driver.token })).rideOfferSeconds, 40);
 
   // Creation starts a round, but an unmeasured ride fails closed (prep A8) instead of broadcasting.
   const booked = await bookRide(f);
@@ -25,6 +30,7 @@ try {
   assert.equal((await db.one('SELECT price FROM orders WHERE id=?', booked.id)).price, booked.price, 'retry never changes the price');
   const nearOffer = await myOffer(f, booked.id, near.driver);
   assert.ok(nearOffer?.leaseNonce, 'the offered driver sees the lease nonce; nobody else does');
+  assert.equal(nearOffer.expiresAt - nearOffer.issuedAt, 20_000);
   assert.equal(await myOffer(f, booked.id, far.driver), null);
   assert.ok(!JSON.stringify(await call(`/orders/${booked.id}`, { token: f.customer.token })).includes(nearOffer.leaseNonce), 'the customer never sees the lease nonce');
   const stored = await db.one('SELECT * FROM dispatch_offers WHERE id=?::uuid', nearOffer.id);
@@ -40,6 +46,7 @@ try {
   assert.equal((await call(`/offers/${nearOffer.id}/decline`, { token: far.driver.token, body: {}, expect: 404 })).error, 'not_found', 'only the owning driver may decline');
   const farOffer = await myOffer(f, booked.id, far.driver);
   assert.ok(farOffer && farOffer.id !== nearOffer.id, 'decline issued the next driver');
+  assert.equal(farOffer.expiresAt - farOffer.issuedAt, 40_000, 'captain preference applies to new offers');
 
   // Atomic acceptance closes the round, revokes competitors and writes history + event.
   const accepted = await acceptOffer(f, booked.id, far.driver, farOffer);
@@ -53,9 +60,10 @@ try {
   assert.ok(await db.one("SELECT 1 FROM domain_events WHERE order_id=? AND type='dispatch.matched'", booked.id), 'the match is a durable domain event');
 
   // Three declines exhaust; a fresh order with no supply exhausts as no_driver.
-  const second = await bookRide(f);
+  const secondRider = await f.account();
+  const second = await bookRide(f, {}, secondRider);
   await assessRide(f, second, [near.vehicle, far.vehicle, third.vehicle]);
-  await call(`/orders/${second.id}/dispatch/retry`, { token: f.customer.token, body: {} });
+  await call(`/orders/${second.id}/dispatch/retry`, { token: secondRider.token, body: {} });
   for (const candidate of [near, third, far]) {
     const offer = await myOffer(f, second.id, candidate.driver);
     if (offer) await call(`/offers/${offer.id}/decline`, { token: candidate.driver.token, body: {} });
@@ -64,10 +72,42 @@ try {
   assert.equal(round.state, 'exhausted', 'all reachable drivers declining exhausts the round');
   assert.equal(Number(round.offers_issued), 2, 'the busy winner of the first trip is never offered the second');
 
-  const lonely = await bookRide(f);
+  await call('/driver/ride-offer-settings', { token: third.driver.token, body: { seconds: 40 } });
+  const lateOfferRider = await f.account();
+  const lateOrder = await bookRide(f, {}, lateOfferRider);
+  await assessRide(f, lateOrder, [near.vehicle, third.vehicle]);
+  await call(`/orders/${lateOrder.id}/dispatch/retry`, { token: lateOfferRider.token, body: {} });
+  const firstOffer = await myOffer(f, lateOrder.id, near.driver);
+  await db.run("UPDATE dispatch_rounds SET deadline_at=? WHERE order_id=? AND state='open'", Date.now() + 30_000, lateOrder.id);
+  const lateDecline = await call(`/offers/${firstOffer.id}/decline`, { token: near.driver.token, body: {} });
+  assert.equal(lateDecline.dispatch.closeReason, 'deadline', 'the round never shortens a captain’s chosen window');
+  assert.equal(Number(lateDecline.dispatch.offersIssued), 1);
+
+  // Rollout order: the API never migrates PostgreSQL, so a new API can run on a schema-36 database without
+  // users.ride_offer_seconds. Dispatch must keep the fixed 20 s window there, not fail every round.
+  await db.run('DELETE FROM schema_migrations WHERE version=37');
+  await db.run('ALTER TABLE users DROP COLUMN ride_offer_seconds');
+  try {
+    assert.equal((await call('/me', { token: third.driver.token })).rideOfferSeconds, undefined, 'no setting is offered before migration 37');
+    assert.equal((await call('/driver/ride-offer-settings', { token: third.driver.token, body: { seconds: 30 }, expect: 409 })).error, 'dispatch_unavailable');
+    const oldSchemaRider = await f.account();
+    const oldSchemaOrder = await bookRide(f, {}, oldSchemaRider);
+    await assessRide(f, oldSchemaOrder, [third.vehicle]);
+    const oldSchemaRound = await call(`/orders/${oldSchemaOrder.id}/dispatch/retry`, { token: oldSchemaRider.token, body: {} });
+    assert.equal(oldSchemaRound.dispatch.offersIssued, 1);
+    const oldSchemaOffer = await myOffer(f, oldSchemaOrder.id, third.driver);
+    assert.equal(oldSchemaOffer.expiresAt - oldSchemaOffer.issuedAt, 20_000, 'schema 36 keeps the default window');
+    await call(`/offers/${oldSchemaOffer.id}/decline`, { token: third.driver.token, body: {} });
+  } finally {
+    await db.run('ALTER TABLE users ADD COLUMN ride_offer_seconds INTEGER NOT NULL DEFAULT 20 CHECK(ride_offer_seconds IN (20,30,40))');
+    await db.run('INSERT INTO schema_migrations(version,applied_at) VALUES(37,?)', Date.now());
+  }
+
+  const lonelyRider = await f.account();
+  const lonely = await bookRide(f, {}, lonelyRider);
   await assessRide(f, lonely, []);
   await db.run("UPDATE driver_presence_sessions SET state='offline' WHERE state='online'");
-  const noSupply = await call(`/orders/${lonely.id}/dispatch/retry`, { token: f.customer.token, body: {} });
+  const noSupply = await call(`/orders/${lonely.id}/dispatch/retry`, { token: lonelyRider.token, body: {} });
   assert.equal(noSupply.dispatch.state, 'exhausted');
   assert.equal(noSupply.dispatch.closeReason, 'no_driver');
   console.log('WP10 dispatch: creation fail-closed, retry, ranked sequential offers, decline->next, atomic accept, exhaustion and no-supply passed');

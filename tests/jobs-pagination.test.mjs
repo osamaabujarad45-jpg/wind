@@ -15,6 +15,7 @@ const call = apiCaller(() => `http://127.0.0.1:${server.address().port}/api`);
 try {
   const admin = await call('/auth/register', { body: { phone: '0599700101', name: 'Admin', password: 'secret1' } });
   await promote('0599700101');
+  admin.token = (await call('/auth/login', { body: { phone: '0599700101', password: 'secret1' } })).token;
   const customer = await call('/auth/register', { body: { phone: '0599700102', name: 'Customer', password: 'secret1' } });
   const driver = await call('/auth/register', { body: { phone: '0599700103', name: 'Driver', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const otherCustomer = await call('/auth/register', { body: { phone: '0599700104', name: 'Other customer', password: 'secret1' } });
