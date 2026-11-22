@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
+import { themeModules } from './theme-mock.mjs';
 
 const require = createRequire(import.meta.url), model = require('../src/model.ts'), copy = require('../src/copy.ts');
 const slots = []; let cursor = 0, calls = [], confirmCount = 0, complete;
@@ -30,6 +31,7 @@ const modules = {
   '@expo/vector-icons': { Ionicons: 'Ionicons' },
   '../../ui': { ...ui, fill: copy.fill, useCopy: () => ({ c: copy.copy.en, err: e => e.message }), palette: {}, tones: { active: {} },
     haptic: { success() {}, error() {} }, confirm: (_message, yes) => { confirmCount++; yes(); } },
+  ...themeModules('../../'),
 };
 const source = ts.transpileModule(readFileSync(new URL('../src/app/admin/users.tsx', import.meta.url), 'utf8'),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
