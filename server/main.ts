@@ -1494,15 +1494,22 @@ rideLifecycle.onBoardingLocked = async orderId => { await queuePush((await admin
 rideLifecycle.onNoShow = async (orderId, customerId) => { await queuePush([customerId], 'cancelled', orderId); };
 const adminIds = async () => (await all("SELECT id FROM users WHERE role = 'admin' AND status = 'active'")).map(a => a.id as number);
 const flushPush = () => persistence.flushEffects();
-// T46: the nightly job touches this marker after its off-VM copy succeeds. Silence is the failure, so the API watches for it.
+// T46: the backup job touches this marker after its off-VM copy succeeds. Silence is the failure, so the API watches for it.
 const backupMarker = process.env.WIND_BACKUP_MARKER ?? (production && persistence.backend === 'sqlite' ? resolve(dirname(process.env.DB_PATH!), 'backups', 'last-ok') : null);
+// How old the marker may get before admins are told: 26 hours (a day plus slack) suits a nightly job; a host that backs up
+// hourly sets a few hours (WIND_BACKUP_MAX_AGE_HOURS), so a broken backup is noticed the same morning. Unset means 26; any other
+// value that is not 1 to 336 hours, an empty one included, stops startup rather than quietly changing the alarm (Haiku PR #103 L4, L5).
+const backupMaxAgeHours = process.env.WIND_BACKUP_MAX_AGE_HOURS === undefined ? 26 : Number(process.env.WIND_BACKUP_MAX_AGE_HOURS);
+if (!(backupMaxAgeHours >= 1 && backupMaxAgeHours <= 14 * 24)) throw new Error('WIND_BACKUP_MAX_AGE_HOURS must be a number of hours from 1 to 336');
 const backupStale = (now = Date.now()) => {
   if (!backupMarker) return false;
-  try { return now - statSync(backupMarker).mtimeMs > 26 * 60 * 60_000; } catch { return true; } // a day plus slack for the job's own run time
+  try { return now - statSync(backupMarker).mtimeMs > backupMaxAgeHours * 60 * 60_000; } catch { return true; }
 };
-/** At most one alert a day. The dashboard keeps saying it until a backup succeeds, because a push can be missed. */
+/** One alert per outage, at most one a day. The dashboard keeps saying it until a backup succeeds, because a push can be missed. */
 export async function alertMissedBackup(now = Date.now()) {
-  if (!backupStale(now)) return false;
+  // A backup that succeeded ends the outage, so the next one alerts again the same day instead of waiting out the first one's
+  // daily allowance (Haiku PR #103 M1; with an hourly job, two outages in a day are no longer rare).
+  if (!backupStale(now)) { if (backupMarker) await run('DELETE FROM request_limits WHERE key = ?', identityKey('backup-alert', 'system')); return false; }
   const sent = await persistence.atomic({ purpose: 'backup_alert' }, async () => {
     const admins = await adminIds();
     if (!admins.length) return false; // an admin added later today still gets the day's alert

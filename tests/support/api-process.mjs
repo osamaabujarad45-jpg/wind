@@ -20,7 +20,7 @@ export async function startApiProcess(storage) {
   if (!storage?.DB_PATH) throw new Error('Test API requires an explicit isolated database path');
   const env = { ...process.env };
   // Inherited credentials must never redirect a local test to a real database.
-  for (const key of ['DATABASE_URL', 'WIND_DATABASE_URL', 'PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGDATABASE', 'PGSERVICE', 'PGSERVICEFILE', 'WIND_DISPATCH_TEST_ONLY']) delete env[key];
+  for (const key of ['DATABASE_URL', 'WIND_DATABASE_URL', 'PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGDATABASE', 'PGSERVICE', 'PGSERVICEFILE', 'WIND_DISPATCH_TEST_ONLY', 'WIND_BACKUP_MAX_AGE_HOURS']) delete env[key]; // a suite passes its own
   // A phone fixture must explicitly supply its isolated provider settings, never inherit live SMS access.
   for (const key of Object.keys(env)) if (/^WIND_(?:PHONE|OOREDOO|OTP)/.test(key)) delete env[key];
   Object.assign(env, storage, { NODE_ENV: 'test', WIND_ENABLED_SERVICES: 'parcel,ride,freight', WIND_IDENTITY_MODE: 'operator-verified' });
@@ -33,13 +33,14 @@ export async function startApiProcess(storage) {
   const capture = chunk => { diagnostics = (diagnostics + chunk).slice(-12_000); };
   child.stdout.on('data', capture);
   child.stderr.on('data', capture);
-  const closed = new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
+  // 'close' comes after the child's output has been read, so a startup failure's message is in the diagnostics (Haiku PR #103 L9).
+  const closed = new Promise(resolve => child.once('close', (code, signal) => resolve({ code, signal })));
   let timeout;
   try {
     const ready = await new Promise((resolve, reject) => {
       timeout = setTimeout(() => reject(new Error(`Test API startup timed out: ${diagnostics}`)), 20_000);
       child.once('error', reject);
-      child.once('exit', code => reject(new Error(`Test API exited (${code}): ${diagnostics}`)));
+      void closed.then(({ code }) => reject(new Error(`Test API exited (${code}): ${diagnostics}`)));
       child.on('message', message => { if (message?.type === 'ready') resolve(message); });
     });
     return { base: `http://127.0.0.1:${ready.port}/api`, child,
