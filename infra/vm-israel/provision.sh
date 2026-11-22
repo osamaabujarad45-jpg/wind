@@ -1,6 +1,7 @@
 #!/bin/bash
 # Provision the Wind production VM (Ubuntu 24.04) the way docs/operations/deploy.md describes the host: Node 24 in /opt/node,
-# the API under systemd on 127.0.0.1:4000, Caddy for TLS, SQLite at /data/wind.db, hourly backups. Idempotent.
+# the API under systemd on 127.0.0.1:4000, Caddy for TLS, SQLite at /data/wind.db, hourly backups, and West Bank road routing
+# (OSRM in Docker on 127.0.0.1:5000) once a graph has been built into /srv/osrm. Idempotent.
 # Hardening over the student host: the API runs as the unprivileged user `wind`, not root.
 set -euo pipefail
 HOST=${1:?public host name, e.g. 20.217.202.98.sslip.io}
@@ -78,6 +79,8 @@ ExecStartPre=/bin/sh -c 'if [ -e /data/.wind-db-expected ] && [ ! -s /data/wind.
 ExecStart=/opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts
 Restart=always
 RestartSec=3
+# A graph build beside it (osmium, up to 2 GiB) is killed before the API under memory pressure (Haiku PR #104 L3).
+OOMScoreAdjust=-500
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/data
@@ -156,4 +159,60 @@ systemctl reload caddy
 systemctl enable --now wind-backup.timer >/dev/null
 # Enabled so a reboot brings the API back; started by install-release.sh once a release is in /opt/windapi (Haiku PR #98 H-1).
 systemctl enable wind-api >/dev/null
+
+# Road routing (SPEC-routing-eta.md). Last, so a Docker failure can never stop the Caddy, backup and API steps above (Haiku PR #104
+# M1). The graph is built beside the live one with infra/osrm/build-west-bank.sh and promoted by pointing the /srv/osrm link at it
+# (docs/operations/deploy.md). The container listens on loopback only, read-only, unprivileged, with the image pinned to the digest
+# the build used, and memory capped so the API keeps its RAM on this 4 GiB VM. Without a graph the unit does not start and the API
+# is not pointed at it, so it keeps its marked straight-line estimates; with one, an OSRM outage still falls back to them within
+# OSRM_TIMEOUT_MS (3 s). A re-run restarts it only when the unit or the promoted graph changed, or it is down, so quotes do not
+# fall back to estimates for no reason (L4).
+# Docker runs only the road-routing container and the graph build (infra/osrm/build-west-bank.sh); Ubuntu's own package, here so
+# a failed install leaves routing off and nothing else (Haiku PR #104 recheck M-1).
+command -v docker >/dev/null || apt-get install -y -q docker.io || echo "docker.io did not install: routing stays off" >&2
+OSRM_NEW=$(mktemp)
+cat > "$OSRM_NEW" <<'EOF'
+[Unit]
+Description=Wind road routing (OSRM, West Bank graph in /srv/osrm)
+After=docker.service
+Requires=docker.service
+ConditionPathExists=/srv/osrm/BUILD-MANIFEST
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+ExecStartPre=-/usr/bin/docker rm -f wind-osrm
+ExecStart=/usr/bin/docker run --rm --name wind-osrm --read-only --user 65534:65534 --cap-drop=ALL --security-opt no-new-privileges --pids-limit 256 --memory=1g --memory-swap=1g -p 127.0.0.1:5000:5000 -v /srv/osrm/:/data:ro ghcr.io/project-osrm/osrm-backend@sha256:ef49d1a83c0aa0707aad2338127f96f39af78374bb6c1b3ffa07cf13b92ac572 osrm-routed --algorithm mld --max-table-size 100 /data/region.osrm
+ExecStop=/usr/bin/docker stop wind-osrm
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+OSRM_CHANGED=0
+cmp -s "$OSRM_NEW" /etc/systemd/system/wind-osrm.service || { install -m 644 "$OSRM_NEW" /etc/systemd/system/wind-osrm.service; OSRM_CHANGED=1; }
+rm -f "$OSRM_NEW"
+systemctl daemon-reload
+# A graph counts once its build finished: BUILD-MANIFEST is written only after the route corpus passed (recheck L-7). Its checksum
+# names the build, so a rebuild into the same directory is still picked up (L-6).
+if [ -e /srv/osrm/BUILD-MANIFEST ] && command -v docker >/dev/null; then
+  systemctl enable wind-osrm >/dev/null
+  GRAPH=$(sha256sum /srv/osrm/BUILD-MANIFEST | cut -d' ' -f1)
+  if [ "$OSRM_CHANGED" = 1 ] || [ "$GRAPH" != "$(cat /etc/wind-osrm.graph 2>/dev/null)" ] || ! systemctl is-active --quiet wind-osrm; then
+    systemctl reset-failed wind-osrm 2>/dev/null || true # a crash loop that hit the start limit gets a fresh start (L-4)
+    # The unit is up as soon as docker run forks, so the state is recorded only once OSRM answers a route request (L-5).
+    if systemctl restart wind-osrm && for i in $(seq 1 30); do curl -fsS -m 2 -o /dev/null 'http://127.0.0.1:5000/nearest/v1/driving/35.2034,31.9038' && break; sleep 1; [ "$i" -lt 30 ] || false; done; then
+      echo "$GRAPH" > /etc/wind-osrm.graph
+    else echo "wind-osrm is not answering: the API keeps its straight-line estimates (journalctl -u wind-osrm)" >&2; fi
+  fi
+  if ! grep -q '^OSRM_URL=' /etc/wind-api.env; then
+    [ -z "$(tail -c1 /etc/wind-api.env)" ] || echo >> /etc/wind-api.env
+    echo 'OSRM_URL=http://127.0.0.1:5000' >> /etc/wind-api.env
+    echo "OSRM_URL added: the API uses it from its next start (sudo systemctl restart wind-api)" >&2 # recheck L-8
+  fi
+else
+  if [ -e /srv/osrm/BUILD-MANIFEST ]; then echo "Docker is not installed: routing stays off (re-run provision.sh)" >&2
+  else echo "no road graph in /srv/osrm yet: routing stays off (see docs/operations/deploy.md, Road routing)" >&2; fi
+fi
 echo "provisioned for $HOST"

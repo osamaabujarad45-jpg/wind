@@ -4,9 +4,10 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 if (process.platform === 'win32') { console.log('israel-scripts: skipped on Windows (no bash/flock); the gate runs it'); process.exit(0); }
@@ -16,6 +17,7 @@ const bin = join(root, 'bin'), state = join(root, 'state'), data = join(root, 'd
 const releases = join(opt, 'wind-releases'), live = join(opt, 'windapi'), db = join(data, 'wind.db'), calls = join(root, 'calls.log');
 for (const d of [bin, state, join(data, 'backups'), opt]) mkdirSync(d, { recursive: true });
 const node = process.execPath;
+const realSleep = spawnSync('sh', ['-c', 'command -v sleep'], { encoding: 'utf8' }).stdout.trim() || '/bin/sleep'; // before the stub hides it
 const helper = join(root, 'helper.mjs');
 writeFileSync(helper, `import { DatabaseSync } from 'node:sqlite';
 const [cmd, file, tag] = process.argv.slice(2);
@@ -57,7 +59,11 @@ case "$*" in *" -w "*) probe=1 ;; *) probe="" ;; esac
 case "$url" in
   *169.254.169.254*) echo '{"access_token":"tok"}'; exit 0 ;;
   *blob.core.windows.net*) [ -z "$FAKE_PUT_FAIL" ] || exit 22; exit 0 ;;
-  *:4010/*) if [ -n "$probe" ]; then echo 000; exit 7; fi; [ -z "$FAKE_DRY_FAIL" ] && [ -e "$DRY_ENV_OUT" ] || exit 7; echo '{"ready":true}' ;; # ready once the dry run is up
+  # Ready once the dry run is up. sleep is stubbed out, so the script's 60 tries take no time: wait here (up to 5 s) for the
+  # stand-in API to start, or a slow node start fails the dry run (seen 22 Nov in the sandbox).
+  *:4010/*) if [ -n "$probe" ]; then echo 000; exit 7; fi; [ -z "$FAKE_DRY_FAIL" ] || exit 7
+    i=0; while [ ! -e "$DRY_ENV_OUT" ] && [ $i -lt 50 ]; do ${realSleep} 0.1; i=$((i + 1)); done
+    [ -e "$DRY_ENV_OUT" ] || exit 7; echo '{"ready":true}' ;;
   *:4000/*) up=""; [ "$(cat "$STATE/wind-api" 2>/dev/null)" = active ] && up=1
     if [ -n "$probe" ]; then if [ -n "$up" ]; then echo 200; exit 0; fi; echo 000; exit 7; fi
     [ -n "$up" ] && [ ! -e "$LIVE/BAD" ] && ! "$NODE" "$HELPER" poison "$DB" || exit 7; echo '{"ready":true}' ;;
@@ -414,6 +420,104 @@ ${r.err}`);
   assert.deepEqual(notes(db), ['first'], 'the original database is live again');
   assert.equal(count(db, 'sessions'), 1);
   assert.deepEqual([unit('caddy'), unit('wind-api'), existsSync(hold)], ['active', 'active', false]);
+  // 12. Road routing: the container is reachable from this host only, read-only and unprivileged, on the same pinned image as
+  //     the graph build; the API is pointed at it only once a graph exists; a re-run restarts it only when something changed.
+  {
+    const provision = readFileSync(new URL('../infra/vm-israel/provision.sh', import.meta.url), 'utf8');
+    const build = readFileSync(new URL('../infra/osrm/build-west-bank.sh', import.meta.url), 'utf8');
+    const exec = provision.match(/^ExecStart=\/usr\/bin\/docker run (.*)$/m)[1];
+    assert.match(exec, /-p 127\.0\.0\.1:5000:5000 /, 'loopback only');
+    assert.ok(!/ -P | --publish-all|--net(work)?[ =]host|-p (0\.0\.0\.0:)?5000/.test(` ${exec} `), 'never on a public interface or the host network');
+    for (const flag of ['--read-only', '--user 65534:65534', '--cap-drop=ALL', '--security-opt no-new-privileges', '-v /srv/osrm/:/data:ro '])
+      assert.ok(exec.includes(flag), flag);
+    const image = exec.match(/(ghcr\.io\/project-osrm\/osrm-backend@sha256:[0-9a-f]{64})/)[1];
+    assert.ok(build.includes(`image=${image} `), 'the graph and the server come from the same image');
+    const corpus = build.match(/^docker run -d --rm --name osrm-corpus (.*)$/m)[1];
+    for (const flag of ['--read-only', '--user 65534:65534', '--cap-drop=ALL', '--memory=1g --memory-swap=1g', ':/data:ro"', '--max-table-size 100']) assert.ok(corpus.includes(flag), `corpus ${flag}`);
+    assert.ok(provision.indexOf('# Road routing (SPEC-routing-eta.md)') > provision.indexOf('systemctl enable wind-api'), 'after every other step');
+    assert.ok(provision.indexOf('apt-get install -y -q docker.io') > provision.indexOf('systemctl enable wind-api'), 'Docker is installed there too');
+    assert.match(provision, /^OOMScoreAdjust=-500$/m);
+
+    // The routing block itself, run against a scratch root with stub systemctl and docker.
+    const block = provision.slice(provision.indexOf('OSRM_NEW=$(mktemp)'), provision.indexOf('\nfi\n', provision.indexOf('if [ -e /srv/osrm/BUILD-MANIFEST ]')) + 4);
+    const r12 = mkdtempSync(join(root, 'osrm-')), b12 = join(r12, 'bin'), srv = join(r12, 'srv'), etc = join(r12, 'etc');
+    for (const d of [b12, srv, join(etc, 'systemd', 'system')]) mkdirSync(d, { recursive: true });
+    const log = join(r12, 'calls.log');
+    writeFileSync(join(b12, 'systemctl'), `#!/bin/sh\necho "systemctl $*" >> "${log}"\ncase "$*" in "is-active --quiet wind-osrm") [ -e "${r12}/active" ] ;; "restart wind-osrm") [ -z "$FAIL_RESTART" ] && touch "${r12}/active" ;; *) exit 0 ;; esac\n`);
+    // OSRM answers once the container runs, unless told it crashed after the fork; docker is present; no real sleeps.
+    // OSRM needs a few tries after a start (a counter), like a graph loading.
+    writeFileSync(join(b12, 'curl'), `#!/bin/sh\nn=$(cat "${r12}/tries" 2>/dev/null || echo 0); echo $((n + 1)) > "${r12}/tries"\n[ -e "${r12}/active" ] && [ -z "$OSRM_DEAD" ] && [ "$n" -ge 2 ]\n`);
+    writeFileSync(join(b12, 'docker'), '#!/bin/sh\nexit 0\n'); writeFileSync(join(b12, 'sleep'), '#!/bin/sh\nexit 0\n');
+    for (const f of ['systemctl', 'curl', 'docker', 'sleep']) chmodSync(join(b12, f), 0o755);
+    const script = block.replaceAll('/etc/', `${etc}/`).replaceAll('/srv/osrm', `${srv}/osrm`);
+    const runBlock = (extra = {}) => { rmSync(log, { force: true }); rmSync(join(r12, 'tries'), { force: true });
+      const res = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { encoding: 'utf8', env: { PATH: `${b12}:${process.env.PATH}`, ...extra } });
+      return { status: res.status, err: res.stderr, calls: existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : [] }; };
+    const envFile = join(etc, 'wind-api.env');
+    writeFileSync(envFile, 'A=1'); // no final newline
+    let o = runBlock();
+    assert.equal(o.status, 0, o.err);
+    assert.equal(readFileSync(envFile, 'utf8'), 'A=1', 'no graph: the API is not pointed at OSRM');
+    assert.ok(!o.calls.some(c => /enable|restart/.test(c)), 'and nothing starts');
+    assert.match(o.err, /no road graph/);
+    mkdirSync(join(srv, 'osrm-1')); writeFileSync(join(srv, 'osrm-1', 'region.osrm.mldgr'), '');
+    symlinkSync(join(srv, 'osrm-1'), join(srv, 'osrm'));
+    o = runBlock();
+    assert.ok(!o.calls.some(c => /enable|restart/.test(c)) && readFileSync(envFile, 'utf8') === 'A=1', 'an unfinished build (no manifest) is not served');
+    unlinkSync(join(srv, 'osrm'));
+    writeFileSync(join(srv, 'osrm-1', 'BUILD-MANIFEST'), 'built_at=1\n');
+    symlinkSync(join(srv, 'osrm-1'), join(srv, 'osrm'));
+    o = runBlock();
+    assert.equal(o.status, 0, o.err);
+    assert.equal(readFileSync(envFile, 'utf8'), 'A=1\nOSRM_URL=http://127.0.0.1:5000\n', 'a graph: OSRM_URL once, on its own line');
+    assert.ok(o.calls.includes('systemctl restart wind-osrm'));
+    assert.match(o.err, /OSRM_URL added: .*restart wind-api/, 'and the operator is told the API needs a restart');
+    o = runBlock();
+    assert.ok(!o.calls.includes('systemctl restart wind-osrm'), 'a re-run with nothing changed does not restart it');
+    assert.equal(readFileSync(envFile, 'utf8').match(/OSRM_URL=/g).length, 1);
+    // A unit that changed, and a container that is down, are restarted; one that crashed after the fork is not recorded as served.
+    writeFileSync(join(etc, 'systemd', 'system', 'wind-osrm.service'), '[Unit]\nDescription=older\n');
+    o = runBlock();
+    assert.ok(o.calls.includes('systemctl restart wind-osrm'), 'a changed unit restarts it');
+    rmSync(join(r12, 'active'));
+    o = runBlock();
+    assert.ok(o.calls.includes('systemctl reset-failed wind-osrm') && o.calls.includes('systemctl restart wind-osrm'), 'a stopped one is reset and started');
+    const servedBefore = readFileSync(join(etc, 'wind-osrm.graph'), 'utf8');
+    writeFileSync(join(srv, 'osrm-1', 'BUILD-MANIFEST'), 'built_at=2\n'); // rebuilt in place
+    o = runBlock({ OSRM_DEAD: '1' });
+    assert.ok(o.calls.includes('systemctl restart wind-osrm'), 'a rebuild into the same directory is picked up');
+    assert.match(o.err, /not answering/);
+    assert.equal(readFileSync(join(etc, 'wind-osrm.graph'), 'utf8'), servedBefore, 'a server that never answered is not recorded');
+    o = runBlock();
+    assert.ok(o.calls.includes('systemctl restart wind-osrm'), 'so the next run tries again');
+    // Without Docker nothing is started and the operator is told why.
+    rmSync(join(b12, 'docker'));
+    // A PATH with only the tools the block uses (a host image may have Docker in /usr/bin, like this sandbox).
+    const tools = join(r12, 'tools'); mkdirSync(tools);
+    for (const tool of ['bash', 'mktemp', 'cat', 'cmp', 'install', 'rm', 'sha256sum', 'cut', 'grep', 'tail', 'readlink', 'seq', 'touch'])
+      symlinkSync(spawnSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).stdout.trim(), join(tools, tool));
+    o = runBlock({ PATH: `${b12}:${tools}` });
+    assert.ok(!o.calls.includes('systemctl restart wind-osrm'));
+    assert.match(o.err, /Docker is not installed/);
+    writeFileSync(join(b12, 'docker'), '#!/bin/sh\nexit 0\n'); chmodSync(join(b12, 'docker'), 0o755);
+    mkdirSync(join(srv, 'osrm-2')); writeFileSync(join(srv, 'osrm-2', 'region.osrm.mldgr'), ''); writeFileSync(join(srv, 'osrm-2', 'BUILD-MANIFEST'), 'built_at=3\n');
+    unlinkSync(join(srv, 'osrm')); symlinkSync(join(srv, 'osrm-2'), join(srv, 'osrm')); // the link, not its target
+    o = runBlock({ FAIL_RESTART: '1' });
+    assert.equal(o.status, 0, 'a failed restart does not fail provisioning');
+    assert.ok(o.calls.includes('systemctl restart wind-osrm'), 'a newly promoted graph is picked up');
+    assert.match(o.err, /not answering/);
+    o = runBlock();
+    assert.ok(o.calls.includes('systemctl restart wind-osrm'), 'and tried again on the next run');
+
+    // build-west-bank.sh refuses the live graph through its link, and any directory that already holds a graph, before any work.
+    for (const [out, why, message] of [[join(srv, 'osrm'), 'the live link', /refusing to build into the live graph/],
+      [join(srv, 'osrm-2'), 'the live target', /refusing to build into the live graph/], [join(srv, 'osrm-1'), 'a directory with a graph', /already holds a graph/]]) {
+      const res = spawnSync('sh', [fileURLToPath(new URL('../infra/osrm/build-west-bank.sh', import.meta.url)), '/dev/null', out],
+        { encoding: 'utf8', env: { PATH: `${b12}:${process.env.PATH}`, WIND_OSRM_LIVE: join(srv, 'osrm') } });
+      assert.equal(res.status, 2, `${why}: ${res.stderr}`);
+      assert.match(res.stderr, message, why);
+    }
+  }
   console.log('israel-scripts: install, backup and restore failure paths passed');
 } finally {
   rmSync(root, { recursive: true, force: true });

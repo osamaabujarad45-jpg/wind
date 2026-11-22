@@ -14,7 +14,11 @@ set -eu
 boundary=$1
 out=$2
 source=${3:-}
-case $(realpath -m "$out") in /srv/osrm|/srv/osrm/) echo "refusing to build into the live graph /srv/osrm" >&2; exit 2;; esac
+# The live graph is whatever the /srv/osrm link points at (Israel host), so the guard compares resolved paths, and an output that
+# already holds a graph is refused too: osrm-extract would rewrite files under a running server (Haiku PR #104 H1).
+live_link=${WIND_OSRM_LIVE:-/srv/osrm}
+case $(realpath -m "$out") in "$(realpath -m "$live_link")"|/srv/osrm|/srv/osrm/) echo "refusing to build into the live graph $live_link" >&2; exit 2;; esac
+[ ! -e "$out/region.osrm.mldgr" ] || { echo "refusing: $out already holds a graph; build into a new directory" >&2; exit 2; }
 image=ghcr.io/project-osrm/osrm-backend@sha256:ef49d1a83c0aa0707aad2338127f96f39af78374bb6c1b3ffa07cf13b92ac572 # v26.6.1-amd64-alpine
 url=https://download.geofabrik.de/asia/israel-and-palestine-latest.osm.pbf
 mkdir -p "$out"
@@ -44,7 +48,8 @@ graph=$(cd "$out" && LC_ALL=C sha256sum region.osrm* | LC_ALL=C sort -k2)
 
 # Route corpus: fixed West Bank pairs served from this graph on a loopback port, then the server is removed.
 port=5199
-docker run -d --rm --name osrm-corpus --memory=1g -p 127.0.0.1:$port:5000 -v "$out:/data" "$image" osrm-routed --algorithm mld /data/region.osrm >/dev/null
+# The same flags as production's wind-osrm unit, so the corpus proves the way the graph is served (Haiku PR #104 L1).
+docker run -d --rm --name osrm-corpus --read-only --user 65534:65534 --cap-drop=ALL --security-opt no-new-privileges --pids-limit 256 --memory=1g --memory-swap=1g -p 127.0.0.1:$port:5000 -v "$out:/data:ro" "$image" osrm-routed --algorithm mld --max-table-size 100 /data/region.osrm >/dev/null
 trap 'docker rm -f osrm-corpus >/dev/null 2>&1 || true' EXIT
 for i in $(seq 1 30); do curl -fs "http://127.0.0.1:$port/nearest/v1/driving/35.2034,31.9038" >/dev/null && break; sleep 1; done
 routes=$(for pair in "tulkarm-ramallah 35.0279,32.3116;35.2034,31.9038" "nablus-ramallah 35.2544,32.2211;35.2034,31.9038" \
@@ -67,5 +72,6 @@ done)
   echo "profile=/opt/car.lua (in osrm_image)"
   printf '%s\n' "$graph" | sed 's/^/graph /'
   printf '%s\n' "$routes" | sed 's/^/route /'
-} > "$out/BUILD-MANIFEST"
+} > "$out/BUILD-MANIFEST.part"
+mv -f "$out/BUILD-MANIFEST.part" "$out/BUILD-MANIFEST" # whole or absent: the host serves a graph only once this exists
 echo "built $out"; grep -E '^source_osm_timestamp=|^route ' "$out/BUILD-MANIFEST"

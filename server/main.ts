@@ -3284,6 +3284,8 @@ const ROAD_CACHE_POINTS = 200_000; // a budget, not an entry count: 2000 full-ge
 const CHECKPOINT_RADIUS = 200; // metres: a route this close to a closed checkpoint is taken to pass through it
 const DETOUR_KM = [1, 2, 3, 5, 8]; // via points either side of a blocking checkpoint (10 parallel OSRM calls, cached)
 
+const OUTSIDE_GRAPH_METRES = 2000; // a West Bank address is rarely 2 km from a mapped road; a point inside Israel is far more
+class OutsideGraph extends Error {}
 async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
   try {
     const res = await fetch(`${osrmUrl}/route/v1/driving/${points.map(p => `${p.longitude},${p.latitude}`).join(';')}?overview=full&geometries=geojson&steps=true${extra}`,
@@ -3301,6 +3303,13 @@ async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
       && r.geometry.coordinates.every((p: unknown) => Array.isArray(p) && p.length >= 2 && finite(p[0], 180) && finite(p[1], 90));
     if (j?.code !== 'Ok' || !Array.isArray(j.routes) || !j.routes.length || !j.routes.every(valid)) fail(503, 'route_unavailable');
     routingHealth = { healthy: true, checkedAt: Date.now(), reason: null };
+    // The graph holds West Bank roads only, and OSRM snaps any point to its nearest road: a start or end it had to move this far
+    // is outside the graph (Tel Aviv lands kilometres away), so the answer is no road route rather than a confident wrong one.
+    // Only the two ends: detour via points are placed off the road on purpose. OSRM itself is healthy (Haiku PR #104 M-2).
+    // With a bearing hint OSRM may only snap the start to a segment facing that way, so a driver's start is not judged by it (third
+    // pass 3). OSRM always returns waypoints for /route; an answer without them is judged by the checks above alone.
+    const snapped = Array.isArray(j.waypoints) ? [...(extra.includes('bearings=') ? [] : [j.waypoints[0]]), j.waypoints.at(-1)] : [];
+    if (snapped.some((w: any) => typeof w?.distance === 'number' && w.distance > OUTSIDE_GRAPH_METRES)) throw new OutsideGraph();
     return j.routes
       .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]),
         // Turn-by-turn for the driver's banner; only /api/route?steps=1 sends them.
@@ -3312,6 +3321,7 @@ async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
             ...(step.maneuver.modifier && { modifier: String(step.maneuver.modifier) }), ...(step.name && { name: String(step.name).slice(0, 80) }), ...(Number.isInteger(step.maneuver.exit) && { exit: step.maneuver.exit }) }] : [];
         }) }));
   } catch (error) {
+    if (error instanceof OutsideGraph) fail(503, 'route_unavailable');
     routingHealth = { healthy: false, checkedAt: Date.now(), reason: 'route_unavailable' };
     throw error;
   }
