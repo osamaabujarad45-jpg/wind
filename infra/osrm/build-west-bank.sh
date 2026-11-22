@@ -20,7 +20,7 @@ live_link=${WIND_OSRM_LIVE:-/srv/osrm}
 case $(realpath -m "$out") in "$(realpath -m "$live_link")"|/srv/osrm|/srv/osrm/) echo "refusing to build into the live graph $live_link" >&2; exit 2;; esac
 [ ! -e "$out/region.osrm.mldgr" ] || { echo "refusing: $out already holds a graph; build into a new directory" >&2; exit 2; }
 image=ghcr.io/project-osrm/osrm-backend@sha256:ef49d1a83c0aa0707aad2338127f96f39af78374bb6c1b3ffa07cf13b92ac572 # v26.6.1-amd64-alpine
-url=https://download.geofabrik.de/asia/israel-and-palestine/israel-and-palestine-latest.osm.pbf # Geofabrik's current path (22 Nov)
+url=https://download.geofabrik.de/asia/israel-and-palestine/israel-and-palestine-latest.osm.pbf # Geofabrik's region folder; the old top-level name redirects here
 mkdir -p "$out"
 cp "$boundary" "$out/boundary.geojson"
 if [ -n "$source" ]; then
@@ -43,7 +43,7 @@ done
 rm -f "$out/region.osm.pbf"
 # osrm-extract writes region.osrm.fileIndex as 0700 root; the server runs as nobody (wind-osrm unit and the corpus below), so the
 # graph is made world-readable, never writable (22 Nov: the first build on the Israel host failed its corpus on exactly this).
-chmod a+rX "$out" "$out"/region.osrm*
+chmod a+rX "$out"; find "$out" -maxdepth 1 -type f -name 'region.osrm*' -exec chmod a+r {} + # read only, no execute; links are not followed
 
 # Every value is computed before the manifest is written, so a failure stops the script instead of writing an empty field.
 ls "$out"/region.osrm.* >/dev/null
