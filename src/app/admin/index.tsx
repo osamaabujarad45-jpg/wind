@@ -1,3 +1,4 @@
+import { useSession } from '../../session';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { cubicBezier, useReducedMotion } from '../../motion';
@@ -27,6 +28,7 @@ type Stats = {
 const SERIES = { commission: '#2F6DB5', subscriptions: '#C77420' };
 
 export default function Dashboard() {
+  const shopOn = !!useSession().me?.capabilities?.enabledServices?.includes('shop'); // the shop shortcut only with the shop service
   const { c, money, err } = useCopy();
   const { data, error, reload } = useApi<Stats>('/admin/stats', 30_000);
 
@@ -75,7 +77,7 @@ export default function Dashboard() {
         {/* every approval opens the one Approvals queue */}
         {data.pendingDrivers > 0 && <Shortcut label={c.pendingDrivers} count={data.pendingDrivers} onPress={() => router.navigate('/admin/approvals')} />}
         {data.pendingSubscriptions > 0 && <Shortcut label={c.pendingSubs} count={data.pendingSubscriptions} onPress={() => router.navigate('/admin/approvals')} />}
-        {!!data.pendingShops && <Shortcut label={c.approvalsShops} count={data.pendingShops} onPress={() => router.navigate('/admin/approvals')} />}
+        {!!data.pendingShops && shopOn && <Shortcut label={c.approvalsShops} count={data.pendingShops} onPress={() => router.navigate('/admin/approvals')} />}
       </Appear>}
 
       <OfficeShelf />
