@@ -1,7 +1,7 @@
 // Design system v2: Day and Night for the whole app. Day by default; captains go Night after sunset (afterDark), and a Day,
 // Night or Automatic choice is saved on this device (Account offers it to captains until every screen reads the theme).
 // The swap is instant, with no animated transition, so reduced motion has nothing to stop and the new theme reads at once.
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, type ViewStyle } from 'react-native';
 import { storage } from './storage';
 import { useSession } from './session';
@@ -9,7 +9,7 @@ import { afterDark, colors, journeyState, resolveTheme, themeChoices, type Theme
 import type { OrderStatus } from './model';
 
 export { themeChoices, type ThemeChoice } from './theme';
-const THEME_KEY = 'theme';
+const THEME_KEY = 'theme', THEME_READ_MS = 1500;
 
 /** Everything a screen colours itself with, for one theme. */
 export interface ThemeKit {
@@ -55,11 +55,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const captain = me?.user.role === 'driver';
   const [choice, setChoiceState] = useState<ThemeChoice>('auto');
   const [ready, setReady] = useState(false);
+  const chosen = useRef(false); // a choice made on this launch wins over a saved one that arrives late
   useEffect(() => {
     let live = true;
-    storage.get(THEME_KEY).then(saved => { if (live && themeChoices.includes(saved as ThemeChoice)) setChoiceState(saved as ThemeChoice); })
-      .catch(() => {}).finally(() => { if (live) setReady(true); });
-    return () => { live = false; };
+    // Storage that never answers must not hold the launch intro: after a moment the app opens on the default.
+    const timeout = setTimeout(() => { if (live) setReady(true); }, THEME_READ_MS);
+    storage.get(THEME_KEY).then(saved => { if (live && !chosen.current && themeChoices.includes(saved as ThemeChoice)) setChoiceState(saved as ThemeChoice); })
+      .catch(() => {}).finally(() => { if (live) { clearTimeout(timeout); setReady(true); } });
+    return () => { live = false; clearTimeout(timeout); };
   }, []);
   // Whether the sun is down, kept current all the time (a minute timer, and the return to the app, since timers sleep in the
   // background): turning Automatic on or a captain signing in then uses the time now, not the time of launch. An unchanged
@@ -72,6 +75,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return () => { clearInterval(timer); sub.remove(); };
   }, []);
   const setChoice = useCallback((next: ThemeChoice) => {
+    chosen.current = true;
     setChoiceState(next);
     void storage.set(THEME_KEY, next).catch(() => {});
   }, []);
