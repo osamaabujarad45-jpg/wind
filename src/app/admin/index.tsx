@@ -1,3 +1,4 @@
+import { useSession } from '../../session';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { cubicBezier, useReducedMotion } from '../../motion';
@@ -15,7 +16,7 @@ import { fill } from '../../copy';
 type Stats = {
   gmv: number; commission: number; subscriptions: number; discounts: number; profit: number; completed: number; activeSubscriptions: number;
   statuses: Partial<Record<OrderStatus, number>>; users: Record<string, number>;
-  pendingDrivers: number; pendingSubscriptions: number; openSupport?: number | null; openIncidents: number; backupStale: boolean; blockReviewsOverdue?: number;
+  pendingDrivers: number; pendingSubscriptions: number; pendingShops?: number; openSupport?: number | null; openIncidents: number; backupStale: boolean; blockReviewsOverdue?: number;
   pickupPayReviewsOpen: number;
   pickupPayReviews?: { orderId: number; orderCode: string; driverName: string | null; suggestedCents: number | null;
     reason: NonNullable<Order['pickupPayReview']>['reason'] }[];
@@ -27,6 +28,7 @@ type Stats = {
 const SERIES = { commission: '#2F6DB5', subscriptions: '#C77420' };
 
 export default function Dashboard() {
+  const shopOn = !!useSession().me?.capabilities?.enabledServices?.includes('shop'); // the shop shortcut only with the shop service
   const { c, money, err } = useCopy();
   const { data, error, reload } = useApi<Stats>('/admin/stats', 30_000);
 
@@ -70,10 +72,12 @@ export default function Dashboard() {
 
       <Appear index={7}><ProfitChart daily={data.daily} /></Appear>
 
-      {(data.pendingDrivers > 0 || data.pendingSubscriptions > 0 || !!data.openSupport) && <Appear index={8}>
+      {(data.pendingDrivers > 0 || data.pendingSubscriptions > 0 || !!data.pendingShops || !!data.openSupport) && <Appear index={8}>
         {!!data.openSupport && <Shortcut label={c.supportOpenCount} count={data.openSupport} onPress={() => router.navigate('/admin/support')} />}
-        {data.pendingDrivers > 0 && <Shortcut label={c.pendingDrivers} count={data.pendingDrivers} onPress={() => router.navigate('/admin/users')} />}
-        {data.pendingSubscriptions > 0 && <Shortcut label={c.pendingSubs} count={data.pendingSubscriptions} onPress={() => router.navigate('/admin/subscriptions')} />}
+        {/* every approval opens the one Approvals queue */}
+        {data.pendingDrivers > 0 && <Shortcut label={c.pendingDrivers} count={data.pendingDrivers} onPress={() => router.navigate('/admin/approvals')} />}
+        {data.pendingSubscriptions > 0 && <Shortcut label={c.pendingSubs} count={data.pendingSubscriptions} onPress={() => router.navigate('/admin/approvals')} />}
+        {!!data.pendingShops && shopOn && <Shortcut label={c.approvalsShops} count={data.pendingShops} onPress={() => router.navigate('/admin/approvals')} />}
       </Appear>}
 
       <OfficeShelf />
