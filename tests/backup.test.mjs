@@ -110,6 +110,25 @@ try {
     assert.ok(added.id > order.id, 'and the restored service takes new work');
   } finally { await api.stop(); }
 
+  // An hourly host sets WIND_BACKUP_MAX_AGE_HOURS: 3 hours late is an alarm there, though not for a nightly job.
+  const hourlyMarker = join(dir, 'hourly-last-ok');
+  writeFileSync(hourlyMarker, '');
+  const hourly = await startApiProcess({ DB_PATH: restored, WIND_BACKUP_MARKER: hourlyMarker, WIND_BACKUP_MAX_AGE_HOURS: '3' });
+  try {
+    const remote = apiCaller(() => hourly.base, realFetch);
+    const admin = await remote('/auth/login', { body: { phone: '0599170001', password: 'secret1' } });
+    const hourlyAge = hours => { const t = (Date.now() - hours * 3_600_000) / 1000; utimesSync(hourlyMarker, t, t); };
+    hourlyAge(3 - 1 / 60); assert.equal((await remote('/admin/stats', { token: admin.token })).backupStale, false, 'inside the hourly limit');
+    hourlyAge(3 + 1 / 60); assert.equal((await remote('/admin/stats', { token: admin.token })).backupStale, true, 'past it');
+  } finally { await hourly.stop(); }
+  for (const bad of ['0', '-1', 'soon', '400'])
+    await assert.rejects(startApiProcess({ DB_PATH: join(dir, `bad-${bad}.db`), WIND_BACKUP_MAX_AGE_HOURS: bad }), /WIND_BACKUP_MAX_AGE_HOURS/, `${bad} stops startup`);
+  // The Israel host backs up hourly and alerts after 3 hours.
+  const provision = readFileSync(new URL('../infra/vm-israel/provision.sh', import.meta.url), 'utf8');
+  assert.match(provision, /^OnCalendar=\*-\*-\* \*:00:00 UTC$/m, 'the backup timer is hourly');
+  assert.match(provision, /^grep -q '\^WIND_BACKUP_MAX_AGE_HOURS=' \/etc\/wind-api\.env \|\| echo 'WIND_BACKUP_MAX_AGE_HOURS=3' >> \/etc\/wind-api\.env$/m,
+    'and its alert limit is set even on a host provisioned before');
+
   console.log('Backup: missed backup alerts admins once a day, dashboard holds until a success, restore runs the service');
 } finally {
   await shutdown();

@@ -1496,9 +1496,13 @@ const adminIds = async () => (await all("SELECT id FROM users WHERE role = 'admi
 const flushPush = () => persistence.flushEffects();
 // T46: the nightly job touches this marker after its off-VM copy succeeds. Silence is the failure, so the API watches for it.
 const backupMarker = process.env.WIND_BACKUP_MARKER ?? (production && persistence.backend === 'sqlite' ? resolve(dirname(process.env.DB_PATH!), 'backups', 'last-ok') : null);
+// How old the marker may get before admins are told: 26 hours (a day plus slack) suits a nightly job; a host that backs up
+// hourly sets a few hours (WIND_BACKUP_MAX_AGE_HOURS), so a broken backup is noticed the same morning. A bad value stops startup.
+const backupMaxAgeHours = Number(process.env.WIND_BACKUP_MAX_AGE_HOURS || 26);
+if (!(backupMaxAgeHours > 0 && backupMaxAgeHours <= 14 * 24)) throw new Error('WIND_BACKUP_MAX_AGE_HOURS must be a number of hours from above 0 to 336');
 const backupStale = (now = Date.now()) => {
   if (!backupMarker) return false;
-  try { return now - statSync(backupMarker).mtimeMs > 26 * 60 * 60_000; } catch { return true; } // a day plus slack for the job's own run time
+  try { return now - statSync(backupMarker).mtimeMs > backupMaxAgeHours * 60 * 60_000; } catch { return true; }
 };
 /** At most one alert a day. The dashboard keeps saying it until a backup succeeds, because a push can be missed. */
 export async function alertMissedBackup(now = Date.now()) {

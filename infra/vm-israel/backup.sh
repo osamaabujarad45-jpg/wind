@@ -1,14 +1,15 @@
 #!/bin/bash
-# Daily SQLite backup for the Israel Central host (wind-backup.timer, as the service user).
+# Hourly SQLite backup for the Israel Central host (wind-backup.timer, as the service user).
 # 1. It waits for the database lock that install-release.sh and restore.sh hold while they move /data/wind.db (the /data
 #    directory itself), so it never reads a file in the middle of a swap (Sol recheck of PR #101, HIGH 3).
 # 2. A missing or empty database is an error that changes nothing: the source is opened read-only, so the backup can never
 #    create an empty file in its place, and the day's good copy and last-ok stay as they were.
 # 3. A local snapshot, checked with PRAGMA quick_check and for the Wind tables, is published under its day's name only after the
-#    checks (14 days kept on the VM).
+#    checks (14 days kept on the VM: each run replaces its day's file, so the newest copy of each day stays).
 # 4. The same file is uploaded off the VM to private Azure Blob storage with the VM's managed identity (no key on the VM; the
-#    container keeps 30 days by lifecycle policy). Configured by WIND_BACKUP_ACCOUNT / WIND_BACKUP_CONTAINER (/etc/wind-backup.env).
-# 5. Only after the off-host copy succeeds is /data/backups/last-ok touched: the API warns admins when it is older than 26 hours,
+#    container keeps 30 days by lifecycle policy, one blob per run). Configured by WIND_BACKUP_ACCOUNT / WIND_BACKUP_CONTAINER (/etc/wind-backup.env).
+# 5. Only after the off-host copy succeeds is /data/backups/last-ok touched: the API warns admins when it is older than
+#    WIND_BACKUP_MAX_AGE_HOURS (3 on this host),
 #    so a lost disk can never hide behind a good local copy (Sol ops review 21 Nov, HIGH 2; full review item 6).
 set -euo pipefail
 DIR=/data/backups; DB=/data/wind.db

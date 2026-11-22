@@ -1,6 +1,6 @@
 #!/bin/bash
 # Provision the Wind production VM (Ubuntu 24.04) the way docs/operations/deploy.md describes the host: Node 24 in /opt/node,
-# the API under systemd on 127.0.0.1:4000, Caddy for TLS, SQLite at /data/wind.db, daily backups. Idempotent.
+# the API under systemd on 127.0.0.1:4000, Caddy for TLS, SQLite at /data/wind.db, hourly backups. Idempotent.
 # Hardening over the student host: the API runs as the unprivileged user `wind`, not root.
 set -euo pipefail
 HOST=${1:?public host name, e.g. 20.217.202.98.sslip.io}
@@ -57,6 +57,8 @@ WEB_ROOT=/opt/windapi/web
 EOF
   )
 fi
+# Backups run hourly, so admins hear of a broken one after 3 hours instead of a day (added to an existing file too).
+grep -q '^WIND_BACKUP_MAX_AGE_HOURS=' /etc/wind-api.env || echo 'WIND_BACKUP_MAX_AGE_HOURS=3' >> /etc/wind-api.env
 # The off-host backup target (no secret: the VM's managed identity authenticates).
 if [ -n "$BACKUP_ACCOUNT" ]; then printf 'WIND_BACKUP_ACCOUNT=%s\nWIND_BACKUP_CONTAINER=wind-backups\n' "$BACKUP_ACCOUNT" > /etc/wind-backup.env; chmod 644 /etc/wind-backup.env; fi
 
@@ -90,7 +92,7 @@ EOF
 
 cat > /etc/systemd/system/wind-backup.service <<'EOF'
 [Unit]
-Description=Wind daily database backup
+Description=Wind hourly database backup
 # The upload needs the network (Sol recheck L6).
 After=network-online.target
 Wants=network-online.target
@@ -111,10 +113,10 @@ EOF
 
 cat > /etc/systemd/system/wind-backup.timer <<'EOF'
 [Unit]
-Description=Wind daily database backup at 00:00 UTC
+Description=Wind database backup every hour, on the hour (UTC)
 
 [Timer]
-OnCalendar=*-*-* 00:00:00 UTC
+OnCalendar=*-*-* *:00:00 UTC
 Persistent=true
 
 [Install]
