@@ -3306,7 +3306,9 @@ async function osrmRoutes(points: Point[], extra = ''): Promise<OsrmRoute[]> {
     // The graph holds West Bank roads only, and OSRM snaps any point to its nearest road: a start or end it had to move this far
     // is outside the graph (Tel Aviv lands kilometres away), so the answer is no road route rather than a confident wrong one.
     // Only the two ends: detour via points are placed off the road on purpose. OSRM itself is healthy (Haiku PR #104 M-2).
-    const snapped = Array.isArray(j.waypoints) ? [j.waypoints[0], j.waypoints.at(-1)] : [];
+    // With a bearing hint OSRM may only snap the start to a segment facing that way, so a driver's start is not judged by it (third
+    // pass 3). OSRM always returns waypoints for /route; an answer without them is judged by the checks above alone.
+    const snapped = Array.isArray(j.waypoints) ? [...(extra.includes('bearings=') ? [] : [j.waypoints[0]]), j.waypoints.at(-1)] : [];
     if (snapped.some((w: any) => typeof w?.distance === 'number' && w.distance > OUTSIDE_GRAPH_METRES)) throw new OutsideGraph();
     return j.routes
       .map((r: any) => ({ distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(([x, y]: number[]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5]),

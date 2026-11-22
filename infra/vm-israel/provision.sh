@@ -212,6 +212,7 @@ if [ -e /srv/osrm/BUILD-MANIFEST ] && command -v docker >/dev/null; then
     echo "OSRM_URL added: the API uses it from its next start (sudo systemctl restart wind-api)" >&2 # recheck L-8
   fi
 else
-  echo "no road graph in /srv/osrm yet: routing stays off (see docs/operations/deploy.md, Road routing)" >&2
+  if [ -e /srv/osrm/BUILD-MANIFEST ]; then echo "Docker is not installed: routing stays off (re-run provision.sh)" >&2
+  else echo "no road graph in /srv/osrm yet: routing stays off (see docs/operations/deploy.md, Road routing)" >&2; fi
 fi
 echo "provisioned for $HOST"

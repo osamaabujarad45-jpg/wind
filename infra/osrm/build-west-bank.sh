@@ -72,5 +72,6 @@ done)
   echo "profile=/opt/car.lua (in osrm_image)"
   printf '%s\n' "$graph" | sed 's/^/graph /'
   printf '%s\n' "$routes" | sed 's/^/route /'
-} > "$out/BUILD-MANIFEST"
+} > "$out/BUILD-MANIFEST.part"
+mv -f "$out/BUILD-MANIFEST.part" "$out/BUILD-MANIFEST" # whole or absent: the host serves a graph only once this exists
 echo "built $out"; grep -E '^source_osm_timestamp=|^route ' "$out/BUILD-MANIFEST"

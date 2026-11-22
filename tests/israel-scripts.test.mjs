@@ -445,11 +445,12 @@ ${r.err}`);
     const log = join(r12, 'calls.log');
     writeFileSync(join(b12, 'systemctl'), `#!/bin/sh\necho "systemctl $*" >> "${log}"\ncase "$*" in "is-active --quiet wind-osrm") [ -e "${r12}/active" ] ;; "restart wind-osrm") [ -z "$FAIL_RESTART" ] && touch "${r12}/active" ;; *) exit 0 ;; esac\n`);
     // OSRM answers once the container runs, unless told it crashed after the fork; docker is present; no real sleeps.
-    writeFileSync(join(b12, 'curl'), `#!/bin/sh\n[ -e "${r12}/active" ] && [ -z "$OSRM_DEAD" ]\n`);
+    // OSRM needs a few tries after a start (a counter), like a graph loading.
+    writeFileSync(join(b12, 'curl'), `#!/bin/sh\nn=$(cat "${r12}/tries" 2>/dev/null || echo 0); echo $((n + 1)) > "${r12}/tries"\n[ -e "${r12}/active" ] && [ -z "$OSRM_DEAD" ] && [ "$n" -ge 2 ]\n`);
     writeFileSync(join(b12, 'docker'), '#!/bin/sh\nexit 0\n'); writeFileSync(join(b12, 'sleep'), '#!/bin/sh\nexit 0\n');
     for (const f of ['systemctl', 'curl', 'docker', 'sleep']) chmodSync(join(b12, f), 0o755);
     const script = block.replaceAll('/etc/', `${etc}/`).replaceAll('/srv/osrm', `${srv}/osrm`);
-    const runBlock = (extra = {}) => { rmSync(log, { force: true });
+    const runBlock = (extra = {}) => { rmSync(log, { force: true }); rmSync(join(r12, 'tries'), { force: true });
       const res = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { encoding: 'utf8', env: { PATH: `${b12}:${process.env.PATH}`, ...extra } });
       return { status: res.status, err: res.stderr, calls: existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : [] }; };
     const envFile = join(etc, 'wind-api.env');
@@ -489,6 +490,16 @@ ${r.err}`);
     assert.equal(readFileSync(join(etc, 'wind-osrm.graph'), 'utf8'), servedBefore, 'a server that never answered is not recorded');
     o = runBlock();
     assert.ok(o.calls.includes('systemctl restart wind-osrm'), 'so the next run tries again');
+    // Without Docker nothing is started and the operator is told why.
+    rmSync(join(b12, 'docker'));
+    // A PATH with only the tools the block uses (a host image may have Docker in /usr/bin, like this sandbox).
+    const tools = join(r12, 'tools'); mkdirSync(tools);
+    for (const tool of ['bash', 'mktemp', 'cat', 'cmp', 'install', 'rm', 'sha256sum', 'cut', 'grep', 'tail', 'readlink', 'seq', 'touch'])
+      symlinkSync(spawnSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).stdout.trim(), join(tools, tool));
+    o = runBlock({ PATH: `${b12}:${tools}` });
+    assert.ok(!o.calls.includes('systemctl restart wind-osrm'));
+    assert.match(o.err, /Docker is not installed/);
+    writeFileSync(join(b12, 'docker'), '#!/bin/sh\nexit 0\n'); chmodSync(join(b12, 'docker'), 0o755);
     mkdirSync(join(srv, 'osrm-2')); writeFileSync(join(srv, 'osrm-2', 'region.osrm.mldgr'), ''); writeFileSync(join(srv, 'osrm-2', 'BUILD-MANIFEST'), 'built_at=3\n');
     unlinkSync(join(srv, 'osrm')); symlinkSync(join(srv, 'osrm-2'), join(srv, 'osrm')); // the link, not its target
     o = runBlock({ FAIL_RESTART: '1' });
