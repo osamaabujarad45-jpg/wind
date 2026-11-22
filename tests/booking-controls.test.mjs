@@ -40,7 +40,7 @@ const styles = runInNewContext(`(() => { const palette = ${JSON.stringify(palett
   return (${literal(ui, 'StyleSheet.create(')}); })()`);
 const motion = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const size = ${JSON.stringify(size)};
   const cubicBezier = () => 'ease'; const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
-  return (${literal(ui, 'css.create(')}); })()`);
+  return (${literal(ui, 'themedStyles(palette => css.create(')}); })()`);
 const partStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)};
   return (${literal(parts, 'StyleSheet.create(')}); })()`);
 const bookStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const sheetShadow = {};

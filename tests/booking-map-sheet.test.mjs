@@ -163,12 +163,12 @@ check('map Retry is 48dp and translates into the inset-visible map region', () =
   assert.deepEqual(style.transform, [{ translateX: -170 }, { translateY: -70 }], 'top/bottom/right booking overlays cannot cover Retry');
   retry.props.onPress();
   tree = view.render(view.exports.SceneMap, props);
-  assert.equal(find(tree, node => node.type === 'MapPage').key, 'en:1', 'Retry advances only the map attempt generation');
+  assert.equal(find(tree, node => node.type === 'MapPage').key, 'en:day:1', 'Retry advances only the map attempt generation');
 
   view.state.rtl = true; view.state.language = 'ar';
   const arabic = { ...props, insets: { top: 80, bottom: 0, left: 340 } };
   tree = view.render(view.exports.SceneMap, arabic);
-  assert.equal(find(tree, node => node.type === 'MapPage').key, 'ar:1', 'language remains part of the map generation');
+  assert.equal(find(tree, node => node.type === 'MapPage').key, 'ar:day:1', 'language remains part of the map generation');
   find(tree, node => node.type === 'MapPage').props.onFail();
   tree = view.render(view.exports.SceneMap, arabic);
   assert.deepEqual(flatten(find(tree, node => node.type === 'Pressable').props.style).transform, [{ translateX: 170 }, { translateY: 40 }], 'a left-side Arabic sheet leaves Retry on its right');

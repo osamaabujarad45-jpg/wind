@@ -3,9 +3,10 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useMapBridge, type MapEvents } from './map-bridge';
 import { mapReadyMs } from './runtime-config';
-import { palette } from './ui';
+import { palettes } from './theme';
 
-const colors = { forest: palette.forest, olive: palette.olive, clay: palette.clay, blue: palette.blue };
+// The brand colours map.html draws its Day markers with; it draws Night from config.theme itself.
+const day = palettes.day, colors = { forest: day.forest, olive: day.olive, clay: day.clay, blue: day.blue };
 export const MAP_GROUND = '#EEEFEC';
 /** The Night map's land (public/map.html), shown before its tiles draw so a Night screen never flashes light. */
 export const MAP_GROUND_NIGHT = '#0F1B17';

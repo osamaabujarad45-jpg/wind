@@ -263,7 +263,6 @@ export function Press({ children, onPress, style, containerStyle, disabled, acce
   dim?: boolean; // false when the control draws its own disabled colours: a 50% wash turns white labels on forest into grey
 }) {
   const [pressed, setPressed] = useState(false);
-  const motion = useMotion();
   return <Pressable style={containerStyle} onPress={onPress} disabled={!!disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
     aria-disabled={!!disabled} aria-busy={!!accessibilityState?.busy} aria-checked={accessibilityState?.checked} aria-expanded={accessibilityState?.expanded} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
     <Animated.View style={[motion.pressable, style, pressed && motion.pressed, disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
@@ -332,14 +331,14 @@ export function Choices<K extends string>({ items, value, onChange, disabled, la
   const { palette } = useTheme();
   const styles = useStyles();
   const { row } = useCopy();
-  const motion = useMotion();
+  const choiceMotion = useChoiceMotion();
   const wraps = items.length > 3; // five vehicles in one row split words: "Motorc/ycle"
   return <View style={[styles.choices, { flexDirection: row }, wraps && { flexWrap: 'wrap' }]} accessibilityRole="radiogroup" accessibilityLabel={label}>
     {items.map(item => {
       const on = item.key === value, off = !!disabled || !!item.disabled;
       return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} accessibilityState={{ checked: on, disabled: off }} disabled={off} aria-checked={on}
         onPress={() => onChange(item.key)} style={wraps ? { flexGrow: 1, flexBasis: '30%' } : { flex: 1 }}>
-        <Animated.View style={[motion.choice, on && motion.choiceOn]}>
+        <Animated.View style={[choiceMotion.choice, on && choiceMotion.choiceOn]}>
           <Text maxFontSizeMultiplier={maxScale} style={[styles.choiceText, on && { color: palette.onFill }, off && !on && { color: palette.faint }]}>{item.label}</Text>
         </Animated.View>
       </Pressable>;
@@ -691,10 +690,12 @@ export const tabIcon =(name: IconName) => function TabIcon({ color, size: s, foc
   return <Ionicons name={focused && filled in Ionicons.glyphMap ? filled : name} size={s} color={color as string} />;
 };
 
-// Reanimated CSS transitions: run on the UI thread.
-const useMotion = themedStyles(palette => css.create({
+// Reanimated CSS transitions: run on the UI thread. Press feedback is the same in both themes; choice tiles take the theme's colours.
+const motion = css.create({
   pressable: { transform: [{ scale: 1 }], transitionProperty: 'transform', transitionDuration: '120ms', transitionTimingFunction: EASE_OUT },
   pressed: { transform: [{ scale: 0.97 }] },
+});
+const useChoiceMotion = themedStyles(palette => css.create({
   choice: {
     minHeight: 48, borderRadius: 12, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 6,
     borderWidth: 1.5, borderColor: palette.field,
