@@ -2727,7 +2727,7 @@ const en: Copy = {
   trackDelayed: 'A checkpoint on this route is reported slow or closed',
   lastDriver: 'Last known location, {s} ago',
   driverSignalWeak: 'Weak signal. Last update {s} ago',
-  noDriverLocation: 'Waiting for the driver’s location. They show on the map once their phone sends it.',
+  noDriverLocation: 'Waiting for the driver’s location. It shows on the map once their phone sends it.',
   noYourLocation: 'Waiting for your location update',
   updatesPaused: 'Updates paused. Pull down to refresh.',
   chatPaused: 'Messages could not refresh; there may be new ones.',

@@ -43,7 +43,7 @@ done
 rm -f "$out/region.osm.pbf"
 # osrm-extract writes region.osrm.fileIndex as 0700 root; the server runs as nobody (wind-osrm unit and the corpus below), so the
 # graph is made world-readable, never writable (22 Nov: the first build on the Israel host failed its corpus on exactly this).
-chmod a+rX "$out"; find "$out" -maxdepth 1 -type f -name 'region.osrm*' -exec chmod a+r {} + # read only, no execute; links are not followed
+chmod a+rX "$out"; find "$(realpath "$out")" -maxdepth 1 -type f -name 'region.osrm*' -exec chmod a+r {} + # read only, no execute; links are not followed
 
 # Every value is computed before the manifest is written, so a failure stops the script instead of writing an empty field.
 ls "$out"/region.osrm.* >/dev/null

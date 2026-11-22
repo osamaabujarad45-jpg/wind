@@ -433,7 +433,7 @@ ${r.err}`);
     const image = exec.match(/(ghcr\.io\/project-osrm\/osrm-backend@sha256:[0-9a-f]{64})/)[1];
     assert.ok(build.includes(`image=${image} `), 'the graph and the server come from the same image');
     const corpus = build.match(/^docker run -d --rm --name osrm-corpus (.*)$/m)[1];
-    const readable = build.indexOf(`find "$out" -maxdepth 1 -type f -name 'region.osrm*' -exec chmod a+r {} +`);
+    const readable = build.indexOf(`find "$(realpath "$out")" -maxdepth 1 -type f -name 'region.osrm*' -exec chmod a+r {} +`);
     assert.ok(readable > build.indexOf('osrm-customize') && readable < build.indexOf('--name osrm-corpus'),
       'the graph is readable by the unprivileged server before the corpus runs');
     for (const flag of ['--read-only', '--user 65534:65534', '--cap-drop=ALL', '--memory=1g --memory-swap=1g', ':/data:ro"', '--max-table-size 100']) assert.ok(corpus.includes(flag), `corpus ${flag}`);
