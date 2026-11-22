@@ -24,6 +24,18 @@ cd / # the service user's commands never start in a directory it cannot read
 RELEASES=/opt/wind-releases; LIVE=/opt/windapi; DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold
 exec 8<"$DATA"
 flock -n 8 || { echo "another install, restore or backup is running" >&2; exit 1; }
+API_ENV=/etc/wind-api.env
+[ -r "$API_ENV" ] || { echo "cannot read the API environment" >&2; exit 1; }
+if grep -Eq '^[[:blank:]]*(export[[:blank:]]+)?(WIND_DATABASE_URL|WIND_POSTGRES_STAGING)[[:blank:]]*=' "$API_ENV"; then
+  echo "the SQLite procedure refuses PostgreSQL configuration" >&2; exit 1
+fi
+pid=$(systemctl show -p MainPID --value wind-api)
+[[ "$pid" =~ ^[0-9]+$ ]] || { echo "cannot determine the live API process" >&2; exit 1; }
+if [ "$pid" != 0 ]; then
+  pg=0
+  grep -zEq '^(WIND_DATABASE_URL|WIND_POSTGRES_STAGING)=.' "/proc/$pid/environ" || pg=$?
+  [ "$pg" = 1 ] || { echo "cannot prove the live API uses SQLite" >&2; exit 1; }
+fi
 # Both unit guards (provision.sh) must be in place first: the Caddy hold check and the API's missing-database check (Haiku M1).
 # The loaded units, not just the files on disk (Haiku N4), matched without a pipe.
 case "$(systemctl show -p ExecStartPre --value caddy 2>/dev/null)" in *wind-ingress-hold*) ;; *) echo "re-run provision.sh first: the Caddy hold check is not loaded" >&2; exit 1 ;; esac
@@ -40,9 +52,13 @@ PHASE=prepare # prepare -> frozen -> switched -> started -> live (committed)
 # could be steered by a symlink or a swapped directory; as wind it can only reach what wind already can (Haiku H1, N1, N5).
 as_wind() { sudo -u wind "$@" 8<&-; }
 say() { echo "install-release: $*" >&2; }
+sqlite_response() {
+  /opt/node/bin/node -e 'try {const body = JSON.parse(require("node:fs").readFileSync(0, "utf8")); process.exit(body.ok === true && body.schema === 3 && body.backend !== "postgres" ? 0 : 1)} catch {process.exit(1)}'
+}
 ready() { # $1 port: the API answers /api/ready within $2 seconds
   local i; for i in $(seq 1 "$2"); do
-    curl -fsS -m 3 "http://127.0.0.1:$1/api/ready" > "$WORK/ready.json" 2>/dev/null && return 0; sleep 1
+    curl -fsS -m 3 "http://127.0.0.1:$1/api/ready" > "$WORK/ready.json" 2>/dev/null &&
+      sqlite_response < "$WORK/ready.json" && return 0; sleep 1
   done; return 1
 }
 port_free() { [ "$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$1/" || true)" = "000" ]; }
@@ -163,7 +179,8 @@ db.close();" 8<&-
 fi
 # The dry run must be the only thing answering on :4010, or the check below would pass against something else.
 port_free 4010 || { say "port 4010 is already in use"; exit 1; }
-set -a; . /etc/wind-api.env; set +a
+set -a; . "$API_ENV"; set +a
+unset WIND_DATABASE_URL WIND_POSTGRES_STAGING WIND_POSTGRES_TEST_ONLY WIND_POSTGRES_TEST_SCHEMA
 # The dry run talks to nothing outside the VM: no Firebase, email or SMS provider keys (Haiku PR #101 M2).
 for v in $(compgen -e | grep -E '^(WIND_FIREBASE|FIREBASE|GOOGLE_|WIND_EMAIL|WIND_SMTP|WIND_SMS|WIND_OTP|WIND_PHONE|CLOUDFLARE)' || true); do unset "$v"; done
 cd "$REL"
@@ -174,7 +191,8 @@ PID=$! # sudo relays the kill to node
 cd /
 ok=0; for i in $(seq 1 60); do
   kill -0 "$PID" 2>/dev/null || break
-  curl -fsS -m 3 http://127.0.0.1:4010/api/ready > "$WORK/ready.json" 2>/dev/null && { ok=1; break; }; sleep 1
+  curl -fsS -m 3 http://127.0.0.1:4010/api/ready > "$WORK/ready.json" 2>/dev/null &&
+    sqlite_response < "$WORK/ready.json" && { ok=1; break; }; sleep 1
 done
 kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; PID=""
 [ "$ok" -eq 1 ] || { say "dry run failed on a copy of the live data; the live service is untouched"; tail -20 "$WORK/dry.log" >&2; exit 1; }

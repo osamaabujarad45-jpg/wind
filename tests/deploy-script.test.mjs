@@ -14,6 +14,7 @@ const stub = (name, body) => { writeFileSync(join(dir, name), `#!/bin/sh\n${body
 stub('docker', `echo "docker $*" >> "$CALLS"
 case "$1 $2" in
   "image inspect") case "$*" in *revision*) echo "$FAKE_REVISION" ;; *) echo sha256:pulled ;; esac ;;
+  "inspect --type") [ -z "$FAKE_LIVE_INSPECT_FAIL" ] || exit 1; printf '%s' "$FAKE_LIVE_BACKEND" ;;
   "inspect --format") echo "\${FAKE_RUNNING:-sha256:pulled}" ;;
   "inspect wind-api-pre-"*) exit "\${FAKE_OLD_EXISTS:-1}" ;;
   "rename wind-api") exit "\${FAKE_RENAME_STATUS:-0}" ;;
@@ -26,9 +27,10 @@ stub('sleep', 'exit 0');
 stub('azure-token', 'echo "azure-token $*" >> "$CALLS"; [ -z "$FAKE_TOKEN_FAIL" ] || exit 1; echo token');
 stub('backup', 'echo backup >> "$CALLS"');
 const source = readFileSync(new URL('../infra/vm/deploy.sh', import.meta.url), 'utf8');
+const envFile = join(dir, 'wind-api.env');
 assert.equal(source.split('/srv/wind-backup.sh').length, 2, 'the script calls the backup exactly once');
 assert.equal(source.split('/srv/azure-token.sh').length, 2, 'the script asks for one registry token');
-writeFileSync(join(dir, 'deploy.sh'), source.replace('/srv/wind-backup.sh', join(dir, 'backup')).replace('/srv/azure-token.sh', join(dir, 'azure-token')));
+writeFileSync(join(dir, 'deploy.sh'), source.replace('/srv/wind-backup.sh', join(dir, 'backup')).replace('/srv/azure-token.sh', join(dir, 'azure-token')).replaceAll('/srv/wind-api.env', envFile));
 
 const tag = '20261110-test', digest = `sha256:${'a'.repeat(64)}`, revision = 'b'.repeat(40);
 const registry = 'windpsacr.azurecr.io';
@@ -45,7 +47,7 @@ try {
   // The gated release: pulled and run by digest, never by tag, with the backup taken before the old container stops.
   let r = deploy([tag, digest, revision]);
   assert.equal(r.status, 0, r.err);
-  assert.deepEqual(r.calls.slice(1, 5), [`azure-token acr ${registry}`,
+  assert.deepEqual(r.calls.slice(2, 6), [`azure-token acr ${registry}`,
     `docker login --username 00000000-0000-0000-0000-000000000000 --password-stdin ${registry}`, `docker pull ${image}`, `docker logout ${registry}`]);
   assert.ok(r.calls.find(c => c.startsWith('docker run -d'))?.endsWith(` ${image}`), 'runs the digest');
   assert.ok(!r.calls.some(c => c.includes(`wind-api:${tag}`)), 'the tag is never pulled or run');
@@ -100,5 +102,22 @@ try {
   assert.notEqual(r.status, 0);
   assert.equal(r.calls.at(-1), `docker logout ${registry}`, 'the registry login is dropped when the pull fails');
   assert.ok(!r.calls.some(c => /backup|docker (stop|rename|run)/.test(c)));
+
+  // PostgreSQL needs a reviewed backend-aware migration and forward-recovery path, never this SQLite container rollback.
+  writeFileSync(envFile, 'DB_PATH=/data/wind.db\nWIND_DATABASE_URL=postgresql://db.internal/fastship\n');
+  r = deploy([tag, digest, revision]);
+  assert.equal(r.status, 2);
+  assert.match(r.err, /PostgreSQL.*backend-aware/);
+  assert.deepEqual(r.calls, [], 'PostgreSQL is refused before registry or container changes');
+  writeFileSync(envFile, 'DB_PATH=/data/wind.db\nWIND_DATABASE_URL=\n');
+  r = deploy([tag, digest, revision], { FAKE_LIVE_BACKEND: 'postgres' });
+  assert.equal(r.status, 2);
+  assert.match(r.err, /PostgreSQL.*backend-aware/);
+  assert.equal(r.calls.length, 2, 'an old SQLite env file cannot hide a live PostgreSQL container');
+  r = deploy([tag, digest, revision], { FAKE_LIVE_INSPECT_FAIL: '1' });
+  assert.equal(r.status, 2);
+  assert.match(r.err, /cannot determine the live container database backend/);
+  assert.equal(r.calls.length, 2, 'an unknown live backend is refused before mutation');
+  rmSync(envFile, { force: true });
   console.log('deploy-script: ok');
 } finally { rmSync(dir, { recursive: true, force: true }); }

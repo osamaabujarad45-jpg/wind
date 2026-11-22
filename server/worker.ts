@@ -2,6 +2,7 @@ import { createPrivateKey, generateKeyPairSync, randomInt, randomUUID } from 'no
 import { setTimeout as delay } from 'node:timers/promises';
 import { Persistence, type Row } from './db/persistence.ts';
 import { runtimePersistence } from './db/runtime.ts';
+import { postgresSchemaVersion } from './db/postgres-schema.ts';
 import { encrypt, isDeviceNotRegistered, pushEndpoint, sendExpoPush, vapid, webPushKind } from './push.ts';
 import { durableProtocolAvailable, subscriptionKey } from './domain/events.ts';
 import { nativeSuppression, PUSH_KINDS, URGENT_KINDS } from './domain/native-push.ts';
@@ -220,6 +221,7 @@ if (import.meta.main) {
   const abort=new AbortController();
   process.once('SIGTERM',()=>abort.abort()); process.once('SIGINT',()=>abort.abort());
   try {
+    if (await postgresSchemaVersion(db) === null) throw new Error('Durable worker requires the complete PostgreSQL migration ledger');
     if (!(await durableProtocolAvailable(db))) throw new Error('Durable worker requires migration 4');
     await new DurableWorker(db).run(abort.signal);
   } finally { await db.close(); }

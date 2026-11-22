@@ -71,8 +71,24 @@ try {
   assert.equal(sent.length, 1);
   assert.equal(await alertMissedBackup(), false, 'and still once per outage');
 
+  // A success and the next failure can both happen between maintenance sweeps. The marker is newer than the last alert,
+  // so that allowance must be cleared even though no sweep observed the marker while it was fresh.
+  const allowance = db.prepare("SELECT until FROM request_limits WHERE key LIKE 'backup-alert:%'").get();
+  db.prepare("UPDATE request_limits SET until = ? WHERE key LIKE 'backup-alert:%'")
+    .run(Date.now() - 3 * 3_600_000 + 24 * 3_600_000);
+  age(2);
+  sent.length = 0;
+  const secondOutage = Date.now() + 27 * 3_600_000;
+  const alerts = await Promise.all([alertMissedBackup(secondOutage), alertMissedBackup(secondOutage)]);
+  assert.equal(alerts.filter(Boolean).length, 1, `a second outage alerts once, even with overlapping sweeps (last alert ${allowance.until})`);
+  await settle();
+  assert.equal(sent.length, 1);
+
   // The customer never sees this.
   await call('/admin/stats', { token: customer.token, expect: 403 });
+
+  const mainSource = readFileSync(new URL('../server/main.ts', import.meta.url), 'utf8');
+  assert.match(mainSource, /setTimeout\(maintenance, 5 \* 60_000\)/, 'the first backup check runs five minutes after start');
 
   // The script moves the marker only after its upload, so a failed off-VM copy also goes stale.
   const script = readFileSync(new URL('../infra/vm/wind-backup.sh', import.meta.url), 'utf8');

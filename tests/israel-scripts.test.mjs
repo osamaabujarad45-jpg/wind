@@ -58,16 +58,28 @@ url=""; for a; do case "$a" in http*) url=$a ;; esac; done
 case "$*" in *" -w "*) probe=1 ;; *) probe="" ;; esac
 case "$url" in
   *169.254.169.254*) echo '{"access_token":"tok"}'; exit 0 ;;
-  *blob.core.windows.net*) [ -z "$FAKE_PUT_FAIL" ] || exit 22; exit 0 ;;
+  *blob.core.windows.net*)
+    create_only=0
+    for a; do case "$a" in @*) grep -Fqx 'If-None-Match: *' "\${a#@}" && create_only=1 ;; esac; done
+    [ "$create_only" = 1 ] || exit 23
+    [ -z "$FAKE_PUT_FAIL" ] || exit 22; exit 0 ;;
   # Ready once the dry run is up. sleep is stubbed out, so the script's 60 tries take no time: wait here (up to 5 s) for the
   # stand-in API to start, or a slow node start fails the dry run (seen 22 Nov in the sandbox).
   *:4010/*) if [ -n "$probe" ]; then echo 000; exit 7; fi; [ -z "$FAKE_DRY_FAIL" ] || exit 7
     i=0; while [ ! -e "$DRY_ENV_OUT" ] && [ $i -lt 50 ]; do ${realSleep} 0.1; i=$((i + 1)); done
-    [ -e "$DRY_ENV_OUT" ] || exit 7; echo '{"ready":true}' ;;
+    [ -e "$DRY_ENV_OUT" ] || exit 7; echo '{"ok":true,"schema":3}' ;;
   *:4000/*) up=""; [ "$(cat "$STATE/wind-api" 2>/dev/null)" = active ] && up=1
     if [ -n "$probe" ]; then if [ -n "$up" ]; then echo 200; exit 0; fi; echo 000; exit 7; fi
-    [ -n "$up" ] && [ ! -e "$LIVE/BAD" ] && ! "$NODE" "$HELPER" poison "$DB" || exit 7; echo '{"ready":true}' ;;
+    if [ -n "$FAKE_FOREIGN_API" ]; then echo '{"ok":true,"schema":3}'; exit 0; fi
+    [ -n "$up" ] && [ ! -e "$LIVE/BAD" ] && ! "$NODE" "$HELPER" poison "$DB" || exit 7
+    if [ -n "$FAKE_PG_READY" ]; then echo '{"ok":true,"schema":42,"backend":"postgres"}'
+    else echo '{"ok":true,"schema":3}'; fi ;;
 esac`);
+stub('ss', `if [ -n "$FAKE_FOREIGN_API" ]; then pid=8080
+elif [ "$(cat "$STATE/wind-api" 2>/dev/null)" = active ]; then pid=4242
+else exit 0
+fi
+printf 'LISTEN 0 511 127.0.0.1:4000 0.0.0.0:* users:(("node",pid=%s,fd=23))\\n' "$pid"`);
 // A signal right after a given rename, such as restore's move of the replacement into place.
 stub('mv', '/bin/mv "$@"; rc=$?; if [ -n "$FAKE_TERM_AFTER_MV_FROM" ]; then case "$*" in *"$FAKE_TERM_AFTER_MV_FROM"*) kill -TERM "$PPID" ;; esac; fi; exit $rc');
 stub('sudo', 'w=""; while [ $# -gt 0 ]; do case "$1" in -u) w=$2; shift 2 ;; -E) shift ;; *) break ;; esac; done; if [ "$w" = wind ] && [ -n "$FAKE_WIND_UNREADABLE" ]; then for a; do case "$a" in *"$FAKE_WIND_UNREADABLE") echo "Permission denied" >&2; exit 1 ;; esac; done; fi; exec "$@"');
@@ -88,12 +100,17 @@ const script = (name, swaps) => {
 };
 const nodeSwap = ['/opt/node/bin/node', node];
 const hold = join(root, 'wind-ingress-hold');
+const configPath = join(root, 'wind-api.env'), processEnvPath = join(root, 'process-env');
+const configSwap = ['API_ENV=/etc/wind-api.env', `API_ENV=${configPath}`];
+const processSwap = ['"/proc/$pid/environ"', `"${processEnvPath}"`];
 const install = script('install-release.sh', [nodeSwap,
   ['RELEASES=/opt/wind-releases; LIVE=/opt/windapi; DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold', `RELEASES=${releases}; LIVE=${live}; DATA=${data}; DB=${db}; HOLD=${hold}`],
-  ['. /etc/wind-api.env', `. ${join(root, 'wind-api.env')}`], ["prune /opt 'windapi-old-*'", `prune ${opt} 'windapi-old-*'`]]);
+  configSwap, processSwap, ["prune /opt 'windapi-old-*'", `prune ${opt} 'windapi-old-*'`]]);
 const backup = script('backup.sh', [nodeSwap, ['DIR=/data/backups; DB=/data/wind.db', `DIR=${data}/backups; DB=${db}`], ['exec 8</data', `exec 8<${data}`]]);
-const restore = script('restore.sh', [nodeSwap, ['DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold', `DATA=${data}; DB=${db}; HOLD=${hold}`]]);
-writeFileSync(join(root, 'wind-api.env'), 'SUPPORT_CONTACT=+972597127547\nWIND_FIREBASE_API_KEY=secret\n');
+const restore = script('restore.sh', [nodeSwap, configSwap, processSwap, ['DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold', `DATA=${data}; DB=${db}; HOLD=${hold}`]]);
+const sqliteConfig = 'SUPPORT_CONTACT=+972597127547\nWIND_FIREBASE_API_KEY=secret\n';
+writeFileSync(configPath, sqliteConfig);
+writeFileSync(processEnvPath, 'NODE_ENV=production\0');
 
 const dryEnv = join(root, 'dry-env.json');
 const env = extra => ({ PATH: `${bin}:${process.env.PATH}`, CALLS: calls, DRY_ENV_OUT: dryEnv, STATE: state, NODE: node, HELPER: helper, DB: db, LIVE: live, HOLD: hold, ...extra });
@@ -132,6 +149,21 @@ const release = (markers = []) => {
 const active = () => readlinkSync(live);
 
 try {
+  freshDb(db); setUnits();
+  for (const [file, args] of [[install, release()], [restore, [db]]]) {
+    writeFileSync(configPath, sqliteConfig + 'WIND_DATABASE_URL=postgresql://invalid.invalid/db\n');
+    let refused = run(file, args);
+    assert.equal(refused.status, 1, refused.err);
+    assert.match(refused.err, /refuses PostgreSQL configuration/);
+    assert.ok(!refused.calls.some(line => line.includes('systemctl stop')));
+    writeFileSync(configPath, sqliteConfig);
+    writeFileSync(processEnvPath, 'WIND_DATABASE_URL=postgresql://invalid.invalid/db\0');
+    refused = run(file, args);
+    assert.equal(refused.status, 1, refused.err);
+    assert.match(refused.err, /cannot prove the live API uses SQLite/);
+    assert.ok(!refused.calls.some(line => line.includes('systemctl stop')));
+    writeFileSync(processEnvPath, 'NODE_ENV=production\0');
+  }
   // 1. A host from before the symlink: its /opt/windapi directory becomes legacy-<time>, the checkpoint follows the freeze.
   freshDb(db); setUnits();
   mkdirSync(join(live, 'server'), { recursive: true }); writeFileSync(join(live, 'server', 'main.ts'), '');
@@ -394,6 +426,22 @@ ${r.err}`);
   assert.deepEqual([unit('caddy'), unit('wind-api')], ['active', 'active']);
   assert.match(r.err, /previous database is live again/);
   assert.ok(!existsSync(hold));
+
+  // A foreign listener can answer the readiness URL even though the systemd API never bound the socket.
+  setUnits(); freshDb(db);
+  r = run(restore, [copy, '--open'], { FAKE_FOREIGN_API: '1' });
+  assert.equal(r.status, 2, r.err);
+  assert.match(r.err, /API did not become ready on the previous database/);
+  assert.deepEqual(notes(db), ['first'], 'a foreign readiness answer cannot commit the replacement');
+  assert.deepEqual([unit('caddy'), existsSync(hold)], ['inactive', true]);
+  rmSync(hold);
+
+  setUnits(); freshDb(db);
+  r = run(restore, [copy, '--open'], { FAKE_PG_READY: '1' });
+  assert.equal(r.status, 2, r.err);
+  assert.deepEqual(notes(db), ['first'], 'a ready PostgreSQL service cannot commit a SQLite restore');
+  assert.deepEqual([unit('caddy'), existsSync(hold)], ['inactive', true]);
+  rmSync(hold);
 
   // 10. A failed restore while an earlier restore's hold is still owed its reconciliation keeps that hold and stays closed.
   setUnits(); writeFileSync(hold, 'restored earlier: re-apply\n');
