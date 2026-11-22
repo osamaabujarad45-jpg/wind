@@ -310,7 +310,10 @@ const screens = [
   { id: 'driver-account', group: 'Driver', name: 'Account', route: '/driver/account', file: 'src/parts.tsx (AccountScreen)', role: 'driver' },
   { id: 'driver-offer-range', group: 'Driver', name: 'Jobs · offer price outside the band (Send offer disabled, band shown)', route: '/driver', file: 'src/app/driver/index.tsx', role: 'freshDriver', state: 'offer-range' },
 
+  { id: 'support', group: 'Customer', name: 'Message Wind support (in-app conversation)', route: '/support', file: 'src/app/support.tsx', role: 'customer' },
   { id: 'admin-dashboard', group: 'Admin', name: 'Dashboard', route: '/admin', file: 'src/app/admin/index.tsx', role: 'admin' },
+  { id: 'admin-support', group: 'Admin', name: 'Support inbox (conversations waiting first)', route: '/admin/support', file: 'src/app/admin/support.tsx', role: 'admin' },
+  { id: 'admin-support-desktop', group: 'Admin', name: 'Support inbox on a desktop: list and conversation side by side', route: '/admin/support', file: 'src/app/admin/support.tsx', role: 'admin', desktop: true, tap: 'ليلى حداد' },
   { id: 'admin-desktop', group: 'Admin', name: 'Dashboard on a desktop (1280 px): side rail instead of bottom tabs', route: '/admin', file: 'src/app/admin/_layout.tsx', role: 'admin', desktop: true },
   { id: 'admin-orders', group: 'Admin', name: 'All orders', route: '/admin/orders', file: 'src/app/admin/orders.tsx', role: 'admin' },
   { id: 'admin-order', group: 'Admin', name: 'Parcel · delivery code recovery', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'admin' },
@@ -318,6 +321,13 @@ const screens = [
   { id: 'admin-subscriptions', group: 'Admin', name: 'Subscriptions', route: '/admin/subscriptions', file: 'src/app/admin/subscriptions.tsx', role: 'admin' },
   { id: 'admin-settings', group: 'Admin', name: 'Tariffs & settings', route: '/admin/settings', file: 'src/app/admin/settings.tsx', role: 'admin' },
 ].filter(s => !only || only.includes(s.id));
+// In-app support inbox (SPEC-support-inbox.md): Layla writes about her ride, support answers; the admin sees it waiting first.
+{
+  const first = await call('/support/messages', layla.token, { body: 'الرحلة تأخرت والسائق لا يرد على الهاتف', orderId: searching.id, requestId: randomUUID() });
+  await call(`/admin/support/${first.thread.id}/reply`, boss.token, { body: 'السائق عالق عند حاجز، الوصول خلال 15 دقيقة تقريباً. نتابع معه.', requestId: randomUUID() });
+  await call(`/admin/support/${first.thread.id}/tags`, boss.token, { tags: ['checkpoints', 'eta'] });
+  await call('/support/messages', layla.token, { body: 'تمام، شكراً كتير', requestId: randomUUID() });
+}
 const tokens = { customer: layla.token, rider: nour.token, driver: ahmad.token, courier: recoveryDriver.token, idle: idleDriver.token, pending: sami.token, admin: boss.token, merchant: baker.token };
 
 // ---------- 4. capture ----------
@@ -397,6 +407,7 @@ for (const language of ['ar', 'en']) {
     await page.goto(base + screen.route, { waitUntil: 'load' });
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => console.log(`no network idle on ${screen.route}, capturing anyway`)); // a live screen holds a long-poll open
     await page.waitForTimeout(screen.fresh || screen.motion ? 2600 : 1200); // intro + first data load
+    if (screen.tap) { await page.getByText(screen.tap, { exact: true }).first().click(); await page.waitForTimeout(900); } // literal text, e.g. a seeded name
     for (const click of screen.clicks ?? []) {
       await page.getByText(copy[language][click], { exact: true }).first().click();
       await page.waitForTimeout(700);
