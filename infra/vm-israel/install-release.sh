@@ -194,12 +194,16 @@ port_free 4010 || { say "port 4010 is already in use"; exit 1; }
 . "$API_ENV"
 cd "$REL"
 # Pass only the production settings needed for startup. Provider credentials, endpoints and switches stay in the live service.
+backup_age=()
+if [[ -v WIND_BACKUP_MAX_AGE_HOURS ]]; then
+  backup_age+=("WIND_BACKUP_MAX_AGE_HOURS=$WIND_BACKUP_MAX_AGE_HOURS")
+fi
 # 8<&-: the dry run never holds the database lock (Sol recheck L2).
 sudo -u wind env -i PATH=/opt/node/bin:/usr/bin:/bin \
   NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DRY/wind.db" TZ=Asia/Hebron WEB_ROOT="$REL/web" \
   SUPPORT_CONTACT="${SUPPORT_CONTACT:-}" WIND_PUSH_SUBJECT="${WIND_PUSH_SUBJECT:-}" \
   WIND_TRUST_PROXY="${WIND_TRUST_PROXY:-}" WIND_IDENTITY_MODE="${WIND_IDENTITY_MODE:-}" \
-  WIND_ENABLED_SERVICES="${WIND_ENABLED_SERVICES-parcel}" \
+  WIND_ENABLED_SERVICES="${WIND_ENABLED_SERVICES-parcel}" "${backup_age[@]}" \
   /opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts > "$WORK/dry.log" 2>&1 8<&- &
 PID=$! # sudo relays the kill to node
 cd /

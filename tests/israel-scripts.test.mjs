@@ -114,6 +114,7 @@ const sqliteConfig = [
   'WIND_PUSH_SUBJECT=mailto:fixture@example.invalid',
   'WIND_TRUST_PROXY=1',
   'WIND_IDENTITY_MODE=operator-verified',
+  'WIND_BACKUP_MAX_AGE_HOURS=3',
   'WIND_FIREBASE_API_KEY=placeholder',
   'WIND_PUBSUB_ENABLED=true',
   'WIND_PUBSUB_ENDPOINT=https://fixture.invalid',
@@ -153,7 +154,13 @@ const release = (markers = []) => {
   const dir = mkdtempSync(join(root, 'rel-')), t = join(dir, 'windapi');
   mkdirSync(join(t, 'server'), { recursive: true }); mkdirSync(join(t, 'web'));
   // The dry run only has to stay up; it records the environment it was given.
-  writeFileSync(join(t, 'server', 'main.ts'), `if (process.env.PORT === '4010') process.getBuiltinModule('node:fs').writeFileSync(${JSON.stringify(dryEnv)}, JSON.stringify(process.env));\nsetInterval(() => {}, 1000);\n`);
+  writeFileSync(join(t, 'server', 'main.ts'), `
+if (process.env.PORT === '4010') {
+  if (process.env.WIND_BACKUP_MAX_AGE_HOURS === '') throw Error('invalid backup age');
+  process.getBuiltinModule('node:fs').writeFileSync(${JSON.stringify(dryEnv)}, JSON.stringify(process.env));
+}
+setInterval(() => {}, 1000);
+`);
   for (const f of ['backup.sh', 'restore.sh']) { writeFileSync(join(t, f), '#!/bin/sh\n'); chmodSync(join(t, f), 0o755); }
   for (const m of markers) writeFileSync(join(t, m), '');
   const tar = join(root, `release-${++tarN}.tar.gz`);
@@ -202,6 +209,7 @@ try {
   assert.equal(dry.WIND_IDENTITY_MODE, 'operator-verified');
   assert.equal(dry.WIND_TRUST_PROXY, '1');
   assert.equal(dry.WIND_PUSH_SUBJECT, 'mailto:fixture@example.invalid');
+  assert.equal(dry.WIND_BACKUP_MAX_AGE_HOURS, '3');
   assert.equal(dry.SUPPORT_CONTACT, '+972597127547', 'the dry run gets the service environment');
 
   // 2. A candidate that migrates the live file and then fails readiness: the pointer and the checkpoint go back, keeping
@@ -332,6 +340,14 @@ ${r.err}`);
   r = run(install, release(), { FAKE_DRY_FAIL: '1' });
   assert.equal(r.status, 1, r.err);
   assert.ok(!r.calls.some(c => /systemctl stop/.test(c)), 'nothing was stopped');
+  assert.equal(active(), first);
+
+  writeFileSync(configPath, sqliteConfig.replace('WIND_BACKUP_MAX_AGE_HOURS=3', 'WIND_BACKUP_MAX_AGE_HOURS='));
+  r = run(install, release());
+  writeFileSync(configPath, sqliteConfig);
+  assert.equal(r.status, 1, r.err);
+  assert.match(r.err, /invalid backup age/);
+  assert.ok(!r.calls.some(c => /systemctl stop/.test(c)), 'an invalid startup value is caught before freeze');
   assert.equal(active(), first);
 
   // 5. The candidate fails and so does the previous release: everything stays closed for a person (exit 2).
