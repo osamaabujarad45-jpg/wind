@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Linking, Platform, StyleSheet, View } from 'react-native';
-import { Stack } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider as NavigationTheme } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Font from 'expo-font';
@@ -109,7 +109,7 @@ function Routes() {
   </View>;
   const role = me?.user.role;
   // Each role only has its own screens; landing on another role's route redirects to the first allowed one.
-  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.paper } }}>
+  return <NavigationThemed><Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.paper } }}>
     <Stack.Protected guard={!me && !onboarded}>
       <Stack.Screen name="welcome" options={{ animation: 'fade' }} />
     </Stack.Protected>
@@ -143,5 +143,17 @@ function Routes() {
     <Stack.Screen name="help" />
     {/* A shared trip link opens for anyone, signed in or not. */}
     <Stack.Screen name="track/[token]" />
-  </Stack>;
+  </Stack></NavigationThemed>;
+}
+
+// The navigators paint their own ground (tab scenes, transitions) from the navigation theme: without it a Night screen showed
+// the library's light grey behind it.
+function NavigationThemed({ children }: { children: React.ReactNode }) {
+  const { name, palette } = useTheme();
+  const value = useMemo(() => {
+    const base = name === 'night' ? DarkTheme : DefaultTheme;
+    return { ...base, dark: name === 'night', colors: { ...base.colors, primary: palette.forest, background: palette.paper, card: palette.card,
+      text: palette.ink, border: palette.hair, notification: palette.warn } };
+  }, [name, palette]);
+  return <NavigationTheme value={value}>{children}</NavigationTheme>;
 }
