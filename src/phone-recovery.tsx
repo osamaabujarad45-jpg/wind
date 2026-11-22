@@ -6,12 +6,14 @@ import { keyValue, newUuid, phoneApi } from './phone/client';
 import { commandSlot, memorySlot, stableDeviceId, storedSlot, type Commands, type Slot } from './phone/command';
 import { clock, codeInput, issueKey, normalizePhoneInput, phoneInputOk, secondsUntil, type Gate } from './phone/flow';
 import { recoveryIssueBody, recoveryProveBody } from './phone/requests';
-import { Button, ErrorText, Field, fill, haptic, palette, Press, Txt, useCopy } from './ui';
+import { Button, ErrorText, Field, fill, haptic, Press, Txt, useCopy } from './ui';
 import type { CopyKey } from './copy';
+import { useTheme } from './theme-context';
 
 const RECOVERY_SLOT = 'wp06.phone.issue.recovery';
 
 export function PhoneRecovery({ gate, onBack, onDone }: { gate: Gate; onBack: () => void; onDone: (notice: string) => void }) {
+  const { palette } = useTheme();
   const { c, err } = useCopy();
   const alive = useRef(true);
   const proof = useRef<Slot>(memorySlot()); // proof commands stay in memory, so a lost reply can be retried with the same ID

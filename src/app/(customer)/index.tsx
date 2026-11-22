@@ -15,11 +15,14 @@ import { SceneMap } from '../../scene-map';
 import { OrderRow, ServiceIcon, tripTitle, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
 import { storage } from '../../storage';
-import { Appear, ErrorText, fill, IconButton, iconSize, ListGroup, Loading, Logo, maxScale, palette, Press, Rail, Row, Section, shadow, Txt, useCopy, useLines, type IconName } from '../../ui';
+import { Appear, ErrorText, fill, IconButton, iconSize, ListGroup, Loading, Logo, maxScale, Press, Rail, Row, Section, Txt, useCopy, useLines, type IconName } from '../../ui';
+import { themedStyles, useTheme } from '../../theme-context';
 
 const book = (params: { service: Service; from?: string; to?: string; pick?: 'to'; when?: 'later'; again?: string }) => router.push({ pathname: '/book', params });
 
 export default function Home() {
+  const { palette, shadow } = useTheme();
+  const styles = useStyles();
   const { me } = useSession();
   const { c, row, rtl, language } = useCopy();
   // Past the wrap threshold a tile stacks its icon over the label: beside it, a third of the width cut أغراض mid-word (A53, 200%).
@@ -171,7 +174,9 @@ export default function Home() {
 }
 
 function Promo({ tone, icon, title, body, onPress, wide }: { tone: 'forest' | 'olive'; icon: IconName; title: string; body: string; onPress: () => void; wide?: boolean }) {
-  const t = { forest: [palette.forest, palette.lime, 'rgba(255,255,255,0.78)'], olive: [palette.olivePale, palette.olive, palette.ink] }[tone];
+  const { palette } = useTheme();
+  const styles = useStyles();
+  const t = { forest: [palette.forest, palette.lime, `${palette.onFill}C7` /* 78%: white by day, ink on the Night lime */], olive: [palette.olivePale, palette.olive, palette.ink] }[tone];
   return <Press accessibilityLabel={`${title}. ${body}`} onPress={onPress} style={[styles.promo, wide && styles.wide, { backgroundColor: t[0] }]}>
     <Ionicons name={icon} size={20} color={t[1]} />
     <Txt variant="title" numberOfLines={2} style={{ color: tone === 'forest' ? palette.lime : palette.ink, marginTop: 8 }}>{title}</Txt>
@@ -179,7 +184,7 @@ function Promo({ tone, icon, title, body, onPress, wide }: { tone: 'forest' | 'o
   </Press>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   top: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8 },
   topRow: { alignItems: 'center', justifyContent: 'space-between' },
   hello: { alignItems: 'center', gap: 8, flexShrink: 1, backgroundColor: palette.card, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 },
@@ -205,12 +210,14 @@ const styles = StyleSheet.create({
   clock: { width: 32, height: 32, borderRadius: 16, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center' },
   promo: { width: 224, borderRadius: 16, padding: 14, minHeight: 118 },
   wide: { width: 'auto', minHeight: 0, marginTop: 20 },
-});
+}));
 
 // First order: how Wind works in three facts (price first, cash to the driver, the handover code), and one button that
 // starts it. Shown until the first order exists or the customer hides it (product audit 21 Nov; Careem/Talabat pattern).
 const GUIDE_KEY = 'wind.firstOrderGuide.hidden';
 function FirstOrderGuide({ onStart, onHide }: { onStart: () => void; onHide: () => void }) {
+  const { palette, shadow } = useTheme();
+  const styles = useStyles();
   const { c, row } = useCopy();
   const steps: [IconName, string][] = [['location-outline', c.guideStepPlace], ['pricetag-outline', c.guideStepPrice], ['cash-outline', c.guideStepCash]];
   return <Appear index={0}>

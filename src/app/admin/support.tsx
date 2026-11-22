@@ -8,8 +8,9 @@ import { newRequestId } from '../../command-id';
 import { city, isCity } from '../../model';
 import { useFormat } from '../../parts';
 import {
-  Badge, Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, Header, Loading, palette, Press, Row, Screen, tones, Txt, useCopy, WideContext,
+  Badge, Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, Header, Loading, Press, Row, Screen, Txt, useCopy, WideContext,
 } from '../../ui';
+import { themedStyles, useTheme } from '../../theme-context';
 
 const TAGS = ['checkpoints', 'eta', 'pricing', 'captain', 'app_bug', 'payment', 'safety', 'other'] as const;
 type Tag = typeof TAGS[number];
@@ -23,6 +24,8 @@ type Detail = { id: number; status: 'open' | 'closed'; orderId: number | null; t
 const code = (id: number) => `W-${String(id).padStart(5, '0')}`;
 
 export default function AdminSupport() {
+  const { palette, tones } = useTheme();
+  const styles = useStyles();
   const { c, err, row, rtl, language } = useCopy();
   const wide = useContext(WideContext);
   const town = (place: string) => isCity(place) ? city(place)[language] : place;
@@ -93,6 +96,8 @@ export default function AdminSupport() {
 }
 
 function Conversation({ id, onBack, onChanged }: { id: number; onBack?: () => void; onChanged: () => unknown }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c, err, rtl, language } = useCopy();
   const { stamp } = useFormat();
   const { data, error, setData, reload } = useApi<Detail>(`/admin/support/${id}`, 15_000);
@@ -181,7 +186,7 @@ function Conversation({ id, onBack, onChanged }: { id: number; onBack?: () => vo
   </View>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   split: { gap: 16, alignItems: 'flex-start' },
   listPane: { width: 340 },
   threadPane: { flex: 1, minWidth: 0 },
@@ -190,4 +195,4 @@ const styles = StyleSheet.create({
   bubble: { maxWidth: '85%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
   tag: { minHeight: 44, paddingHorizontal: 14, borderRadius: 22, borderWidth: 1, borderColor: palette.field, backgroundColor: palette.card, justifyContent: 'center' },
   tagOn: { backgroundColor: palette.forest, borderColor: palette.forest },
-});
+}));

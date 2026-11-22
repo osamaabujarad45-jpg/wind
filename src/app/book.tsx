@@ -21,7 +21,8 @@ import { RouteCheckpoints, type RoadRoute } from '../road';
 import { useSession } from '../session';
 import { emptyFreightDraft, freightDraftFromScope, freightScope } from '../freight-scope';
 import { FreightScopeForm } from '../freight-details';
-import { Button, Card, Check, Choices, confirm, ErrorText, fill, Field, haptic, IconButton, palette, Press, Reason, Row, shadow, sheetShadow, Stepper, Txt, useCopy } from '../ui';
+import { Button, Card, Check, Choices, confirm, ErrorText, fill, Field, haptic, IconButton, Press, Reason, Row, Stepper, Txt, useCopy } from '../ui';
+import { themedStyles, useTheme } from '../theme-context';
 
 export default function Book() {
   const { me } = useSession();
@@ -30,6 +31,8 @@ export default function Book() {
 }
 
 function BookForm() {
+  const { palette, shadow } = useTheme();
+  const styles = useStyles();
   const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; when?: string; again?: string; keep?: string }>();
   const { me, refresh } = useSession();
   const { c, language, money, err, row, rtl } = useCopy();
@@ -854,6 +857,8 @@ const placeIcons = { home: 'home-outline', work: 'briefcase-outline', other: 'st
 
 // "Save to my places" under a landmark field: one tap reveals Home / Work / Other.
 function SavePlace({ city: placeCity, note, point, saved, onSave }: { city: CityId; note: string; point: Point | null; saved: SavedPlace[]; onSave: (label: SavedPlace['label'], city: CityId, note: string, point: Point | null, pinOnly?: boolean) => Promise<void> }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c, row } = useCopy();
   const [open, setOpen] = useState(false);
   const trimmed = note.trim();
@@ -876,7 +881,7 @@ function SavePlace({ city: placeCity, note, point, saved, onSave }: { city: City
   </View>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((palette, { sheetShadow }) => StyleSheet.create({
   service: { alignItems: 'center', gap: 12, minHeight: 58, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 6, borderWidth: 2, borderColor: 'transparent' },
   serviceOn: { backgroundColor: palette.card, borderColor: palette.forest },
   chip: { backgroundColor: palette.olivePale, borderRadius: 99, paddingHorizontal: 12, minHeight: 48 },
@@ -888,4 +893,4 @@ const styles = StyleSheet.create({
   locate: { position: 'absolute', gap: 8 },
   pinPanel: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: palette.paper, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     ...sheetShadow },
-});
+}));

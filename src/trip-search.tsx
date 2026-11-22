@@ -9,7 +9,8 @@ import { city, cities, servedCity, type CityId, type Places, type Point } from '
 import { searchPlaces, type MapHit } from './place-search';
 import { parseSharedLocation, type SharedLocationError } from './shared-location';
 import type { CopyKey } from './copy';
-import { Button, ErrorText, haptic, IconButton, iconSize, maxScale, palette, Press, Txt, useCopy, type IconName } from './ui';
+import { Button, ErrorText, haptic, IconButton, iconSize, maxScale, Press, Txt, useCopy, type IconName } from './ui';
+import { themedStyles, useTheme } from './theme-context';
 
 export type TripPlace = { city: CityId; point: Point | null; note: string };
 export type TripField = 'pickup' | 'dropoff';
@@ -23,6 +24,8 @@ export const sharedMessage = { out_of_range: 'sharedLocationRange', outside_area
   bad_plus_code: 'sharedLocationBadCode', bad_link: 'sharedLocationNoLink' } as const satisfies Record<SharedLocationError, CopyKey>;
 
 function Row({ icon, title, detail, onPress, onForget }: { icon: IconName; title: string; detail?: string; onPress: () => void; onForget?: () => void }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c, row, align } = useCopy();
   return <View style={[styles.rowWrap, { flexDirection: row }]}>
     <Press containerStyle={{ flex: 1 }} accessibilityLabel={detail ? `${title}, ${detail}` : title} onPress={onPress} style={[styles.row, { flexDirection: row }]}>
@@ -42,6 +45,8 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
   locating: boolean; locationError?: string; notice?: string; onRetry?: () => void;
   onPick: (field: TripField, place: TripPlace) => void; onMap: (field: TripField, at?: Point) => void; onLocate: () => void; onClose: () => void; onForget: (id: number) => void;
 }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c, language, row, rtl, align } = useCopy();
   const [query, setQuery] = useState({ pickup: '', dropoff: '' });
   const term = query[field].trim();
@@ -150,9 +155,9 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
   </SafeAreaView>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((palette, theme) => StyleSheet.create({
   screen: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: palette.paper },
-  top: { gap: 10, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 12, backgroundColor: palette.card, boxShadow: '0px 2px 10px rgba(14,31,25,0.08)' },
+  top: { gap: 10, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 12, backgroundColor: palette.card, ...(theme.name === 'night' ? theme.shadow : { boxShadow: '0px 2px 10px rgba(14,31,25,0.08)' }) },
   fieldRow: { alignItems: 'center', gap: 10 },
   dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 3, borderColor: palette.forest, backgroundColor: palette.card },
   square: { width: 12, height: 12, borderRadius: 2, backgroundColor: palette.forest },
@@ -163,4 +168,4 @@ const styles = StyleSheet.create({
   rowLine: { borderBottomWidth: 1, borderBottomColor: palette.hair },
   rowIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center' },
   wait: { paddingVertical: 16, alignItems: 'center' },
-});
+}));

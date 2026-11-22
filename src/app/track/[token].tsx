@@ -11,13 +11,15 @@ import { etaRange, fromDriver } from '../../map-math';
 import { city, isolate, ltr, type CityId, type OrderStatus, type Service, type Vehicle } from '../../model';
 import { EtaLine, RouteLine, ServiceIcon, statusText } from '../../parts';
 import RouteMap from '../../route-map';
-import { Button, Card, Empty, fill, Header, Loading, Logo, palette, Row, Screen, Txt, useCopy } from '../../ui';
+import { Button, Card, Empty, fill, Header, Loading, Logo, Row, Screen, Txt, useCopy } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 type Tracking = { orderCode: string; status: OrderStatus; service: Service; pickupCity: CityId; dropoffCity: CityId; updatedAt: number; scheduledFor?: number | null;
   driver: { firstName: string; vehicle: Vehicle | null; ref: string } | null;
   driverLocation: { latitude: number; longitude: number; updatedAt: number; ageSeconds?: number; heading?: number | null } | null };
 
 export default function TrackScreen() {
+  const { palette } = useTheme();
   const { token } = useLocalSearchParams<{ token: string }>();
   const { c, language, rtl } = useCopy();
   const valid = /^[a-f0-9]{64}$/.test(token ?? '');

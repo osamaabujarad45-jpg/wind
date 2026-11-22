@@ -6,9 +6,11 @@ import type { Merchant, MerchantItem } from '../../model';
 import { cartGoods, clearCart, otherShop, qtyOf, setQuantity, useCart } from '../../shop-cart';
 import { QtyControl, todayHours } from '../../shop-ui';
 import { View } from 'react-native';
-import { Button, Card, confirm, Empty, fill, Header, IconButton, Loading, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
+import { Button, Card, confirm, Empty, fill, Header, IconButton, Loading, Row, Screen, Section, Txt, useCopy } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 export default function ShopStore() {
+  const { palette } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { c, language, money } = useCopy();
   const { data, error, reload } = useApi<{ merchant: Merchant; items: MerchantItem[] }>(`/shop/merchants/${Number(id)}`, 60_000);
