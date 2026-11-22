@@ -222,7 +222,8 @@ try {
   // Approval may revoke the pending session; the same credentials must still work.
   await until(() => driverPage.url(), url => /\/(driver|auth)/.test(url), 'Driver did not refresh after approval');
   if (new URL(driverPage.url()).pathname === '/auth') await login(driverPage, '0599000702');
-  await driverPage.getByText(c.presence_offline_title, { exact: true }).waitFor(); // approved drivers land on the jobs screen with the presence card offline (SPEC-driver-presence)
+  await driverPage.getByRole('tab', { name: c.jobs, exact: true }).waitFor();
+  assert.equal(await button(driverPage, c.presence_go_online).count(), 0, 'the production jobs board does not require going online');
   const driverToken = await driverPage.evaluate(() => localStorage.getItem('token'));
   pass('customer and driver UI registration, pending gate, admin approval, driver login');
 
