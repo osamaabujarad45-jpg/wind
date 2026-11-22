@@ -73,6 +73,16 @@ assert.match(backupMonitor.variables.freshnessQuery, /StorageBlobLogs.*Requester
 for (const name of ['accountLiteral', 'pathLiteral', 'uploaderLiteral']) {
   assert.ok(backupMonitor.variables.freshnessQuery.includes(`variables('${name}')`), `the compiled query binds ${name}`);
 }
+const availability = JSON.parse(readFileSync(path.join(root, '.expo/implementation/azure-api-availability.json'), 'utf8'));
+const readinessTest = availability.resources.find(resource => resource.type.toLowerCase() === 'microsoft.insights/webtests');
+assert.equal(readinessTest.kind, 'standard');
+assert.equal(readinessTest.properties.Request.RequestUrl, "[parameters('readinessUrl')]");
+assert.equal(readinessTest.properties.ValidationRules.SSLCheck, true);
+assert.equal(readinessTest.properties.ValidationRules.ContentValidation.ContentMatch, '"ok":true');
+const outage = availability.resources.find(resource => resource.type === 'Microsoft.Insights/metricAlerts');
+assert.equal(outage.properties.criteria.failedLocationCount, 2);
+assert.equal(readinessTest.properties.Locations.length, 3);
+assert.equal(outage.properties.actions[0].actionGroupId, "[parameters('actionGroupResourceId')]");
 const deployment=name=>compiled.resources.find(resource=>resource.type==='Microsoft.Resources/deployments' && resource.name===name);
 const api=deployment('api').properties.parameters,worker=deployment('worker').properties.parameters;
 assert.equal(api.minReplicas.value, 1, 'process-local quota and presence state still require one API replica');

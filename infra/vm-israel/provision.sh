@@ -6,6 +6,10 @@
 set -euo pipefail
 HOST=${1:?public host name, e.g. 20.217.202.98.sslip.io}
 BACKUP_ACCOUNT=${2:-}   # private Azure Blob account for the off-host backup copy (deploy.md)
+TLS_ALIAS=${3:-}
+for name in "$HOST" "$TLS_ALIAS"; do
+  [ -z "$name" ] || [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z0-9]+$ ]] || { echo "invalid TLS host name: $name" >&2; exit 1; }
+done
 # Azure's storage account naming rule, checked before the name is written anywhere (Sol recheck L5).
 [ -z "$BACKUP_ACCOUNT" ] || [[ "$BACKUP_ACCOUNT" =~ ^[a-z0-9]{3,24}$ ]] || { echo "invalid storage account name: $BACKUP_ACCOUNT" >&2; exit 1; }
 NODE_VERSION=24.12.0
@@ -137,7 +141,7 @@ fi
 # Validated before it replaces the working configuration; a bad one leaves Caddy as it was (Sol ops review 21 Nov).
 CADDY_NEW=$(mktemp /etc/caddy/Caddyfile.new.XXXXXX)
 cat > "$CADDY_NEW" <<EOF
-$HOST {
+$HOST${TLS_ALIAS:+, $TLS_ALIAS} {
   encode zstd gzip
   reverse_proxy 127.0.0.1:4000
 }

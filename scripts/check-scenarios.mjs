@@ -20,6 +20,8 @@ process.env.WEB_ROOT = join(root, '.expo/location-review-web');
 process.env.WIND_LOCAL_TEST = '1';
 process.env.WIND_IDENTITY_MODE = 'self-service';
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
+// These journeys exercise the same SQLite jobs-board mode as the production VM.
+process.env.WIND_DRIVER_PRESENCE = 'off';
 if (!process.argv.includes('--no-build')) {
   // --clear: Metro's cache does not key on EXPO_PUBLIC_* values, so another build's API URL could be baked in.
   const build = spawnSync(process.execPath, [join(root, 'node_modules/expo/bin/cli'), 'export', '-p', 'web', '--max-workers', '1', '--clear', '--output-dir', process.env.WEB_ROOT], {
