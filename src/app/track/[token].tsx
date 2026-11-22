@@ -85,7 +85,7 @@ export default function TrackScreen() {
       {data.driver && <Txt style={{ marginTop: 10 }}>{data.driver.vehicle ? `${rtl ? '\u200f' : '\u200e'}${isolate(data.driver.firstName)} · ${c[data.driver.vehicle]}` : data.driver.firstName}</Txt>}
       {location && !freshness?.stale && eta != null && <View style={{ marginTop: 10 }}><EtaLine eta={etaData?.eta ? [Math.ceil(etaData.eta.minSeconds / 60), Math.ceil(etaData.eta.maxSeconds / 60)] : etaRange(eta)} now={now} slow={delayed} toPickup={toPickup} /></View>}
       {location && etaData?.sharedRun && <Txt variant="caption" style={{ marginTop: 10 }}>{c.courierRun}</Txt>}
-      {location && !freshness?.stale && eta != null && delayed && <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{c.trackDelayed}</Txt>}
+      {location && !freshness?.stale && eta != null && delayed && <Txt variant="caption" style={{ marginTop: 4, color: palette.warn }}>{c.trackDelayed}</Txt>}
       {location && <Txt variant="caption" style={{ marginTop: 6, marginBottom: 12 }}>{fill(freshness?.stale ? c.lastDriver : c.trackUpdated, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })}</Txt>}
       {location && !freshness?.stale && <Button title={c.navigate} icon="map-outline" variant="soft"
         onPress={() => { void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`).catch(() => undefined); }} />}

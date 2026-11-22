@@ -27,7 +27,7 @@ export default function ShopStore() {
   return <Screen onRefresh={reload} footer={footer}>
     <Header title={m.name} back subtitle={[m.open ? c.shopOpen : c.shopClosed, fill(c.shopMinimum, { r: money(m.minOrderAgorot / 100) }),
       fill(c.shopDeliveryFee, { r: money(m.deliveryFeeAgorot / 100) })].join(' · ')} />
-    {!m.open && <Card tone="clay"><Txt>{c.shopClosedBody}</Txt>{!!todayHours(m, c) && <Txt style={{ marginTop: 4, fontWeight: '700' }}>{todayHours(m, c)}</Txt>}</Card>}
+    {!m.open && <Card tone="warn"><Txt>{c.shopClosedBody}</Txt>{!!todayHours(m, c) && <Txt style={{ marginTop: 4, fontWeight: '700' }}>{todayHours(m, c)}</Txt>}</Card>}
     {!data.items.length && <Empty icon="basket-outline" title={c.shopNoItems} />}
     {sections.map(section => <Card key={section}>
       <Section title={section} />

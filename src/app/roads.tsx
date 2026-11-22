@@ -10,7 +10,7 @@ import { canPin } from '../route-map';
 import { useSession } from '../session';
 import { Badge, Button, Card, confirm, Empty, ErrorText, Field, fill, haptic, Header, Loading, palette, Press, Row, Screen, Txt, useCopy } from '../ui';
 
-const roadTone = { open: { bg: palette.olivePale, fg: palette.olive }, slow: { bg: palette.clayPale, fg: palette.clayInk }, closed: { bg: palette.errorPale, fg: palette.error } } as const;
+const roadTone = { open: { bg: palette.olivePale, fg: palette.olive }, slow: { bg: palette.warnPale, fg: palette.warn }, closed: { bg: palette.errorPale, fg: palette.error } } as const;
 
 export default function Roads() {
   const { me } = useSession();
@@ -65,7 +65,7 @@ export default function Roads() {
               onPress={() => send(`${road.id}${status}`, `/roads/${road.id}/report`, { status }, c.roadReported)} />
           </View>)}
         </Row>}
-        {isAdmin && <Txt variant="caption" style={{ marginTop: 8, color: road.point ? palette.olive : palette.clayInk }}>{road.point ? c.roadPlaced : c.roadUnplaced}</Txt>}
+        {isAdmin && <Txt variant="caption" style={{ marginTop: 8, color: road.point ? palette.olive : palette.warn }}>{road.point ? c.roadPlaced : c.roadUnplaced}</Txt>}
         {isAdmin && canPin && <Button title={road.point ? c.roadMove : c.roadPlace} icon="location-outline" variant="ghost" size="sm" disabled={!!busy} reason={c.wait_busy}
           loading={busy === `pin${road.id}`} onPress={() => setPinFor({ id: road.id, start: pinRetry[road.id] ?? road.point ?? city(road.cities[0]) })} />}
         {isAdmin && <Button title={c.roadRemove} variant="ghost" size="sm" disabled={!!busy} reason={c.wait_busy}

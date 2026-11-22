@@ -9,7 +9,7 @@ type Bucket = { jobs: number; gross: number; commission: number; net: number; ea
 type CashEntry = { id: number; kind: 'remittance' | 'adjustment'; amountCents: number; note: string; source?: 'trip_pay' | 'pickup_pay' | 'payout';
   status: 'pending' | 'confirmed' | 'disputed'; reference: string | null; createdAt: number };
 type Cash = CashBalance & { pendingCents: number; capCents?: number; exposureCents?: number; entries: CashEntry[] };
-const entryTone = { pending: tones.clay, confirmed: tones.olive, disputed: tones.error };
+const entryTone = { pending: tones.warn, confirmed: tones.olive, disputed: tones.error };
 
 export default function Earnings() {
   const { c, money, err } = useCopy();
@@ -55,7 +55,7 @@ function CashCard() {
     try { await api(`/driver/cash/${entry.id}/confirm`, { decision }); haptic.success(); reload(); }
     catch (e) { setFailure(err(e)); } finally { setBusy(null); }
   }
-  return <Card tone={data.owedCents > 0 ? 'clay' : 'card'}>
+  return <Card tone={data.owedCents > 0 ? 'warn' : 'card'}>
     <Txt variant="micro">{c.cashSettlement}</Txt>
     <Row style={{ justifyContent: 'space-between' }}>
       <Txt variant="title">{data.owedCents < 0 ? c.windOwesYou : c.cashOwed}</Txt>

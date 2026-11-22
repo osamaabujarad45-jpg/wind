@@ -47,7 +47,7 @@ export default function Subscriptions() {
                 <Txt variant="caption">{sub.userPhone} · {money(sub.price)} · {date(sub.createdAt)}</Txt>
                 {sub.status === 'active' && sub.endsAt && <Txt variant="caption">{fill(c.subActive, { date: date(sub.endsAt) })}</Txt>}
               </View>
-              {!(sub.status === 'active' && sub.endsAt) && <Badge label={c[sub.status]} tone={sub.status === 'active' ? tones.olive : sub.status === 'pending' ? tones.clay : tones.muted} />}{/* "active until" below already says it */}
+              {!(sub.status === 'active' && sub.endsAt) && <Badge label={c[sub.status]} tone={sub.status === 'active' ? tones.olive : sub.status === 'pending' ? tones.warn : tones.muted} />}{/* "active until" below already says it */}
             </Row>
             {sub.status === 'pending' && <Row gap={8} style={{ marginTop: 12 }}>
               {/* T22: while any decision is in flight both controls wait — the server CAS makes the loser

@@ -14,6 +14,7 @@ import { copy, errorText, fill } from './copy';
 import { ApiError, errorCode } from './api';
 import { useSession } from './session';
 import { ltr, type OrderStatus } from './model';
+import { colors, journeyState, stateLook, type JourneyState, type StateLook } from './theme';
 
 // Shared with the Souq app (client/src/styles/index.css): same ground, ink, forest, lime and clay.
 export const palette = {
@@ -31,6 +32,8 @@ export const palette = {
   clayPale: '#F9E9E1',
   blue: '#2F5E8C',
   bluePale: '#E6EDF6',
+  shop: '#8A3D6A', // Shop line accent (design system v2): icon and badge only, never a state or an action
+  shopPale: '#F5E6EE',
   line: '#E2E1D8', // dividers only: 1.2:1, too faint to mark a control's edge
   field: '#7D867F', // control edges (inputs, outline buttons, chips, unselected choices): 3.3:1 on paper, 3.8:1 on white (WCAG 1.4.11)
   hair: '#ECEBE4',
@@ -131,6 +134,9 @@ export function Logo({ size: s = 36, decorative }: { size?: number; decorative?:
 
 // ---------- layout ----------
 
+// Design system v2: a desktop layout (Wind Control beside its side rail) lets pages use more than the phone column.
+export const WideContext = React.createContext(false);
+
 export function Screen({ children, onRefresh, footer, scrollRef }: {
   children: React.ReactNode; onRefresh?: () => Promise<unknown>; footer?: React.ReactNode;
   scrollRef?: React.RefObject<ScrollView | null>;
@@ -139,9 +145,10 @@ export function Screen({ children, onRefresh, footer, scrollRef }: {
   const refresh = onRefresh && (async () => { setRefreshing(true); await onRefresh(); setRefreshing(false); });
   // Inside tabs the TabBar already clears the system navigation bar; a second bottom inset left a dead band (A53).
   const inTabs = useContext(BottomTabBarHeightContext) !== undefined;
+  const wide = useContext(WideContext);
   // Android is edge-to-edge, so the keyboard no longer resizes the window: pad by the overlap instead. The ScrollView then
   // shrinks and Android scrolls the focused field into view, and the footer rides on the keyboard. iOS screens wrap their own.
-  return <SafeAreaView edges={inTabs ? ['top'] : ['top', 'bottom']} style={styles.safe}>
+  return <SafeAreaView edges={inTabs ? ['top'] : ['top', 'bottom']} style={[styles.safe, wide && styles.safeWide]}>
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'android' ? 'padding' : undefined}>
       <ScrollView ref={scrollRef} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
         refreshControl={refresh && <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={palette.olive} />}>
@@ -233,8 +240,9 @@ export function Section({ title, action, onAction }: { title: string; action?: s
   </Row>;
 }
 
-export function Card({ children, style, tone = 'card' }: { children: React.ReactNode; style?: StyleProp<ViewStyle>; tone?: 'card' | 'muted' | 'olive' | 'clay' | 'forest' }) {
-  const bg = { card: palette.card, muted: palette.muted, olive: palette.olivePale, clay: palette.clayPale, forest: palette.forest }[tone];
+export function Card({ children, style, tone = 'card' }: { children: React.ReactNode; style?: StyleProp<ViewStyle>; tone?: 'card' | 'muted' | 'olive' | 'forest' | 'warn' }) {
+  // warn: something waiting on a person (attention). Clay is not a card tone: it means only the logo pin and the destination.
+  const bg = { card: palette.card, muted: palette.muted, olive: palette.olivePale, forest: palette.forest, warn: palette.warnPale }[tone];
   return <View style={[styles.card, { backgroundColor: bg }, tone === 'card' && shadow, style]}>{children}</View>;
 }
 
@@ -487,35 +495,34 @@ export function ErrorText({ children }: { children?: string }) {
 
 // ---------- display ----------
 
-// One colour per state everywhere (badge, sheet dot, route, ETA). Waiting states are ochre `warn`, apart from brand clay and error red.
-export const statusTone: Record<OrderStatus, { bg: string; fg: string }> = {
-  requested: { bg: palette.warnPale, fg: palette.warn }, // a shop order waiting on the merchant reads like a search
-  searching: { bg: palette.warnPale, fg: palette.warn },
-  assigned: { bg: palette.bluePale, fg: palette.blue },
-  at_pickup: { bg: palette.bluePale, fg: palette.blue },
-  in_transit: { bg: palette.olivePale, fg: palette.olive },
-  completed: { bg: palette.muted, fg: palette.secondary },
-  cancelled: { bg: palette.errorPale, fg: palette.error },
-  on_hold: { bg: palette.warnPale, fg: palette.warn },
-  returning: { bg: palette.warnPale, fg: palette.warn },
-  returned: { bg: palette.muted, fg: palette.secondary },
+// Design system v2: every status is one of five journey states (wait, live, attention, problem, done), each with a word and an
+// icon or pulse, never colour alone. `fg` is the badge text on `bg`; `mark` is the state's colour on a plain card (dots, the ETA).
+// Live is the brand pair (lime on forest); waiting is an outline; only a real problem is solid red.
+export const statusTone = Object.fromEntries(
+  (Object.entries(journeyState) as [OrderStatus, JourneyState][]).map(([status, state]) => [status, stateLook.day[state]] as const),
+) as Record<OrderStatus, StateLook>;
+const stateIcon: Record<JourneyState, IconName | undefined> = {
+  wait: 'hourglass-outline', live: undefined, attention: 'alert-circle-outline', problem: 'close-circle-outline', done: 'checkmark',
 };
-const live: OrderStatus[] = ['searching', 'assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning'];
 
-export function Badge({ label, status, tone, icon }: { label: string; status?: OrderStatus; tone?: { bg: string; fg: string }; icon?: IconName }) {
+export function Badge({ label, status, tone, icon }: { label: string; status?: OrderStatus; tone?: { bg: string; fg: string; edge?: string }; icon?: IconName }) {
   const t = tone ?? statusTone[status ?? 'completed'] ?? statusTone.completed; // a status newer than this build still renders
-  const { row } = useCopy(); // the live dot leads the label in both languages
-  return <View style={[styles.badge, { backgroundColor: t.bg, flexDirection: row }]}>
-    {status && live.includes(status) && <Pulse color={t.fg} size={6} />}
-    {icon && <Ionicons name={icon} size={12} color={t.fg} />}
+  // the state comes from the status even when a caller recolours it; a status newer than this build gets no glyph, never a check
+  const state = status ? journeyState[status] : undefined;
+  const glyph = icon ?? (state ? stateIcon[state] : undefined);
+  const { row } = useCopy(); // the live dot or state icon leads the label in both languages
+  return <View style={[styles.badge, { backgroundColor: t.bg, flexDirection: row }, !!t.edge && { borderWidth: 1, borderColor: t.edge, paddingVertical: 2 }]}>
+    {state === 'live' && <Pulse color={t.fg} size={6} />}
+    {glyph && <Ionicons name={glyph} size={12} color={t.fg} />}
     <Text maxFontSizeMultiplier={maxScale} style={[styles.badgeText, { color: t.fg }]}>{label}</Text>
   </View>;
 }
 
 export const tones = {
-  olive: { bg: palette.olivePale, fg: palette.olive }, clay: { bg: palette.clayPale, fg: palette.clayInk },
+  olive: { bg: palette.olivePale, fg: palette.olive },
   blue: { bg: palette.bluePale, fg: palette.blue }, muted: { bg: palette.muted, fg: palette.secondary },
   error: { bg: palette.errorPale, fg: palette.error }, warn: { bg: palette.warnPale, fg: palette.warn },
+  shop: { bg: palette.shopPale, fg: palette.shop },
 };
 
 // Settings list: one card per group, hairline between rows. Destructive rows go in their own group at the end.
@@ -577,7 +584,7 @@ export function Empty({ icon, title, body, action }: { icon: IconName; title: st
 }
 
 // One figure with its name; `detail` is an optional plain count beneath it (never a "label · count" string).
-export function Stat({ label, value, tone = 'card', index = 0, detail }: { label: string; value: string; tone?: 'card' | 'olive' | 'clay' | 'muted'; index?: number; detail?: string }) {
+export function Stat({ label, value, tone = 'card', index = 0, detail }: { label: string; value: string; tone?: 'card' | 'olive' | 'warn' | 'muted'; index?: number; detail?: string }) {
   // Tiles in a row stretch to the same height (one with a detail line made its neighbour look short), and the figure leads.
   return <Appear index={index} style={{ flexGrow: 1, flexBasis: 140, alignSelf: 'stretch' }}>
     <Card tone={tone} style={{ marginBottom: 0, paddingVertical: 12, flex: 1 }}>
@@ -628,8 +635,42 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   </View></SafeAreaView>;
 }
 
+// Design system v2 (Wind Control on a desktop): the same tabs as a rail on the reading-start side. Labels beside icons,
+// the current page on action-soft, counts as pills at the end. The navigator places it (tabBarPosition left/right).
+export function SideRail({ state, descriptors, navigation, title }: BottomTabBarProps & { title: string }) {
+  const { row, align } = useCopy();
+  const hidden = (key: string) => StyleSheet.flatten(descriptors[key].options.tabBarItemStyle)?.display === 'none';
+  return <SafeAreaView edges={['top', 'bottom']} style={styles.rail}>
+    <View style={[styles.railBrand, { flexDirection: row }]}>
+      <Logo size={32} decorative />
+      <Text maxFontSizeMultiplier={maxScale} accessibilityRole="header" style={styles.railTitle}>{title}</Text>
+    </View>
+    <View accessibilityRole="tablist" style={{ gap: 2 }}>
+      {state.routes.map((route, index) => {
+        const { options } = descriptors[route.key];
+        if (hidden(route.key)) return null;
+        const focused = state.index === index;
+        const color = focused ? railOn : palette.secondary;
+        const label = String(options.title ?? route.name);
+        return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={options.tabBarBadge ? `${label}, ${options.tabBarBadge}` : label} aria-selected={focused}
+          onPress={() => {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!focused && !event.defaultPrevented) navigation.navigate(route.name, route.params);
+          }}
+          style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [styles.railItem, { flexDirection: row },
+            focused ? { backgroundColor: palette.olivePale } : (hovered || pressed) && { backgroundColor: palette.paper }]}>
+          {options.tabBarIcon?.({ focused, color, size: 20 })}
+          <Text maxFontSizeMultiplier={maxScale} numberOfLines={1} style={[styles.railText, { color, textAlign: align }, focused && { fontWeight: '800' }]}>{label}</Text>
+          {!!options.tabBarBadge && <View style={styles.railCount}><Text maxFontSizeMultiplier={maxScale} style={styles.railCountText}>{options.tabBarBadge}</Text></View>}
+        </Pressable>;
+      })}
+    </View>
+  </SafeAreaView>;
+}
+const railOn = colors.day.onActionSoft; // 7.2:1 on olivePale (action-soft)
+
 // Outline icon normally, filled when the tab is current.
-export const tabIcon = (name: IconName) => function TabIcon({ color, size: s, focused }: { color: ColorValue; size: number; focused: boolean }) {
+export const tabIcon =(name: IconName) => function TabIcon({ color, size: s, focused }: { color: ColorValue; size: number; focused: boolean }) {
   const filled = String(name).replace(/-outline$/, '') as IconName;
   return <Ionicons name={focused && filled in Ionicons.glyphMap ? filled : name} size={s} color={color as string} />;
 };
@@ -648,6 +689,7 @@ const motion = css.create({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: palette.paper },
+  safeWide: { maxWidth: 1120, paddingHorizontal: 8 },
   content: { paddingHorizontal: size.gutter, paddingTop: 8, paddingBottom: 28 },
   footer: { paddingHorizontal: size.gutter, paddingTop: 10, paddingBottom: 8, backgroundColor: palette.card, borderTopWidth: 1, borderTopColor: palette.hair },
   logo: { backgroundColor: palette.forest, overflow: 'hidden' },
@@ -690,6 +732,13 @@ const styles = StyleSheet.create({
   listValue: { fontSize: 13, color: palette.secondary },
   empty: { alignItems: 'center', gap: 8, paddingVertical: 32, paddingHorizontal: 10 },
   emptyIcon: { width: 56, height: 56, borderRadius: 18, backgroundColor: palette.olivePale, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  rail: { width: 248 /* admin-rail token (theme.ts sizes.adminRail) */, backgroundColor: palette.card, borderEndWidth: 1, borderEndColor: palette.hair, paddingHorizontal: 12, paddingVertical: 16 },
+  railBrand: { alignItems: 'center', gap: 10, paddingHorizontal: 8, paddingBottom: 18 },
+  railTitle: { fontSize: 16, fontWeight: '800', color: palette.ink, flexShrink: 1 },
+  railItem: { alignItems: 'center', gap: 10, minHeight: 44, paddingHorizontal: 10, borderRadius: 10 },
+  railText: { flex: 1, fontSize: 14, fontWeight: '600' },
+  railCount: { minWidth: 22, minHeight: 22, borderRadius: 11, backgroundColor: palette.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  railCountText: { color: palette.onFill, fontSize: 12, fontWeight: '800' },
   bar: { backgroundColor: palette.card, borderTopWidth: 1, borderTopColor: palette.hair, width: '100%' },
   barRow: { maxWidth: 640, width: '100%', alignSelf: 'center', paddingHorizontal: 8, paddingTop: 6, paddingBottom: 4 },
   barItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 50, gap: 3 },

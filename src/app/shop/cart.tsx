@@ -128,7 +128,7 @@ export default function ShopCart() {
   const footer = <Button title={fill(c.shopPlace, { r: money((goods + fees) / 100) })} icon="checkmark" loading={busy} disabled={!!reason} reason={reason || undefined} onPress={place} />;
   return <Screen footer={footer}>
     <Header title={c.shopCart} back subtitle={cart.merchantName} />
-    {!!changes && <Card tone="clay"><Txt variant="label">{c.shopAgainChanged}</Txt><Txt style={{ marginTop: 4 }}>{changes}</Txt></Card>}
+    {!!changes && <Card tone="warn"><Txt variant="label">{c.shopAgainChanged}</Txt><Txt style={{ marginTop: 4 }}>{changes}</Txt></Card>}
     <Card>
       <Section title={c.shopItems} />
       {cart.lines.map(l => {

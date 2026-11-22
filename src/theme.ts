@@ -1,0 +1,99 @@
+// Wind design system v2 — the tokens of the published "Wind" design system, as code.
+// One app, three service lines (ride, send, shop), one journey with five states, Day and Night themes.
+// `palette` in ./ui stays the v1 source for existing screens; new and migrated code reads these roles.
+// Values are exact copies of the design system's tokens.json; change both together.
+
+import type { OrderStatus, Service } from './model';
+
+export type ThemeName = 'day' | 'night';
+
+const brand = { forest: '#12342A', lime: '#D3F27A', clay: '#CB6845' } as const;
+
+export const colors = {
+  day: {
+    ...brand,
+    ground: '#F3F2EC', surface: '#FFFFFF', surfaceSunken: '#EAE8DF', surfaceHover: '#F6F5F0',
+    inverse: '#0E1F19', onInverse: '#F3F2EC',
+    ink: '#0E1F19', inkSecondary: '#56635C', inkFaint: '#66716B',
+    line: '#E2E1D8', hairline: '#ECEBE4', lineStrong: '#7D867F', cardEdge: 'rgba(14,31,25,0)', focus: '#1D5FA8',
+    action: brand.forest, onAction: '#FFFFFF', actionAccent: brand.lime, actionPressed: '#0B2A20',
+    actionSoft: '#E2EEE5', onActionSoft: '#24543F', accent: brand.lime, onAccent: brand.forest,
+    danger: '#C2412D', dangerTint: '#F8E6E2', // error text, 3:1 apart from ink in lightness; palette.error stays for v1 screens
+    route: brand.forest, routeCasing: '#FFFFFF', routeAlt: '#78827C', markerMe: '#1D5FA8',
+  },
+  night: {
+    ...brand,
+    ground: '#0C1713', surface: '#121F1A', surfaceSunken: '#1B2B25', surfaceHover: '#18271F',
+    inverse: '#EEF1EA', onInverse: '#0E1F19',
+    ink: '#EEF1EA', inkSecondary: '#AAB6AF', inkFaint: '#8D9A93',
+    line: '#2A3B35', hairline: '#22332D', lineStrong: '#6E7C75', cardEdge: '#22332D', focus: '#8EC1FF',
+    action: brand.lime, onAction: '#0E1F19', actionAccent: brand.forest, actionPressed: '#BFE05F',
+    actionSoft: '#1D3A2E', onActionSoft: '#CFE9A0', accent: brand.lime, onAccent: brand.forest,
+    danger: '#DC6450', dangerTint: '#2E1814',
+    route: brand.lime, routeCasing: '#0C1713', routeAlt: '#6A7A73', markerMe: '#8EC1FF',
+  },
+} as const;
+export type Colors = { [K in keyof typeof colors.day]: string };
+
+// ---------- service lines (SRS ONE-12: an accent on the icon and badge only, never on primary actions) ----------
+export type Line = 'ride' | 'send' | 'shop';
+export const lineOf: Record<Service, Line> = { ride: 'ride', parcel: 'send', freight: 'send', shop: 'shop' };
+export const lines: Record<ThemeName, Record<Line, { color: string; tint: string }>> = {
+  day: { ride: { color: '#2F5E8C', tint: '#E6EDF6' }, send: { color: '#34765A', tint: '#E2EEE5' }, shop: { color: '#8A3D6A', tint: '#F5E6EE' } },
+  night: { ride: { color: '#8DB8E6', tint: '#19283A' }, send: { color: '#7FC79F', tint: '#16302A' }, shop: { color: '#E3A3CB', tint: '#331E2B' } },
+};
+
+// ---------- journey states: every order status is one of five, told apart by a word and an icon, never colour alone ----------
+export type JourneyState = 'wait' | 'live' | 'attention' | 'problem' | 'done';
+export const journeyState: Record<OrderStatus, JourneyState> = {
+  requested: 'wait', searching: 'wait',
+  assigned: 'live', at_pickup: 'live', in_transit: 'live',
+  on_hold: 'attention', returning: 'attention',
+  cancelled: 'problem',
+  completed: 'done', returned: 'done',
+};
+/** bg/fg: the badge. edge: an outline when the fill is the surface. mark: the state's colour on a plain surface (dots, the ETA figure). */
+export interface StateLook { bg: string; fg: string; edge?: string; mark: string }
+export const stateLook: Record<ThemeName, Record<JourneyState, StateLook>> = {
+  day: {
+    wait: { bg: '#FFFFFF', fg: '#56635C', edge: '#7D867F', mark: '#56635C' },
+    live: { bg: brand.forest, fg: brand.lime, mark: brand.forest },
+    attention: { bg: '#FBF0D9', fg: '#8A5A00', mark: '#8A5A00' },
+    problem: { bg: '#A3392A', fg: '#FFFFFF', mark: '#A3392A' },
+    done: { bg: '#EAE8DF', fg: '#56635C', mark: '#56635C' },
+  },
+  night: {
+    wait: { bg: '#121F1A', fg: '#AAB6AF', edge: '#6E7C75', mark: '#AAB6AF' },
+    live: { bg: brand.lime, fg: brand.forest, mark: brand.lime },
+    attention: { bg: '#3A2E0E', fg: '#F5CF6B', mark: '#F5CF6B' },
+    problem: { bg: '#9E2F21', fg: '#FFFFFF', mark: '#DC6450' },
+    done: { bg: '#1B2B25', fg: '#AAB6AF', mark: '#AAB6AF' },
+  },
+};
+
+// ---------- scales ----------
+export const space = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 8: 32, 12: 48 } as const;
+export const radius = { sm: 8, md: 12, lg: 16, xl: 24, pill: 999 } as const;
+export const sizes = { touchMin: 44, control: 48, controlSm: 40, row: 56, tabbar: 64, sheetPeek: 176, adminRail: 248, contentMax: 640 } as const;
+
+// ---------- Night for captains: after sunset, before sunrise (design system v2) ----------
+// The standard sunrise equation; Ramallah by default. Accurate to a few minutes, which is all a map colour needs.
+const J2000 = 2451545, DAY_MS = 86_400_000, UNIX_JD = 2440587.5;
+export function sunTimes(ms: number, latitude = 31.9, longitude = 35.2): { sunrise: number; sunset: number } {
+  const rad = Math.PI / 180;
+  const n = Math.round(ms / DAY_MS + UNIX_JD - J2000 - 0.0009 + longitude / 360); // the solar day containing ms (east longitude positive)
+  const jStar = n + 0.0009 - longitude / 360;
+  const M = (357.5291 + 0.98560028 * jStar) % 360;
+  const C = 1.9148 * Math.sin(M * rad) + 0.02 * Math.sin(2 * M * rad) + 0.0003 * Math.sin(3 * M * rad);
+  const lambda = (M + C + 180 + 102.9372) % 360;
+  const transit = J2000 + jStar + 0.0053 * Math.sin(M * rad) - 0.0069 * Math.sin(2 * lambda * rad);
+  const sinDecl = Math.sin(lambda * rad) * Math.sin(23.4397 * rad), cosDecl = Math.cos(Math.asin(sinDecl));
+  const cosHour = (Math.sin(-0.833 * rad) - Math.sin(latitude * rad) * sinDecl) / (Math.cos(latitude * rad) * cosDecl);
+  const half = Math.acos(Math.max(-1, Math.min(1, cosHour))) / rad / 360;
+  const toMs = (jd: number) => Math.round((jd - UNIX_JD) * DAY_MS);
+  return { sunrise: toMs(transit - half), sunset: toMs(transit + half) };
+}
+export const afterDark = (ms: number, latitude?: number, longitude?: number) => {
+  const { sunrise, sunset } = sunTimes(ms, latitude, longitude);
+  return ms < sunrise || ms > sunset;
+};

@@ -14,7 +14,7 @@ import { AdminAssign } from '../../admin-assign';
 import { acceptPosition, useDriverWork } from '../../driver-work';
 import { activeStatuses, bookedAhead, pickupPayCents, canTake, city, commissionOn, crowKm, doorCashMaxCents, exceptionReasons, isolate, pickupRefusal, pickupRefusalDetails, shopExceptionReasons, suggestedNextAction, finishedStatuses, minorFromText, orderCode, roadAlerts, safetyKinds, statusFlow, typedNumber, varianceAllowed, varianceReasons, type ExceptionReason, type Order, type PickupRefusalDetail, type Point, type Road, type SafetyKind, type VarianceReason } from '../../model';
 import { SealToggles, sealsBody, sealsReady, ShopAdminPanel, ShopCustomerPanel, ShopHandover } from '../../shop-ui';
-import { EtaLine, etaShort, RouteLine, ServiceIcon, serviceMeta, SlotPicker, statusText, useFormat } from '../../parts';
+import { EtaLine, etaShort, RouteLine, ServiceIcon, SlotPicker, statusText, useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import { locationState, newerFix } from '../../location-state';
 import { DestinationChangeCard } from '../../destination-change';
@@ -33,6 +33,7 @@ import { CustodyChain } from '../../custody';
 import { OfficePanel } from '../../office-ui';
 import { registerNativePush } from '../../native-push';
 import { useSession } from '../../session';
+import { journeyState } from '../../theme';
 import {
   Appear, Avatar, Badge, BoundedFooter, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, iconSize, Loading, maxScale, palette, Press, Pulse, Radar, Row, Screen, shadow, statusTone, Txt, useCopy,
 } from '../../ui';
@@ -300,7 +301,7 @@ export default function OrderScreen() {
   const codeAtDoor = live && ['in_transit', 'on_hold', 'returning'].includes(order.status);
   const codes = <>
     {isCustomer && order.handoverCode && live && order.status !== 'returning' && order.status !== 'on_hold' && <Appear index={4}>{/* no captain is coming while support decides (H-10) */}
-      <Card tone="clay">
+      <Card tone="muted">{/* a code to give, not a warning: neutral, like the design system HandoverCode */}
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
             <Txt variant="title">{c.handoverCode}</Txt>
@@ -314,7 +315,7 @@ export default function OrderScreen() {
     </Appear>}
 
     {isCustomer && order.returnCode && <Appear index={4}>
-      <Card tone="clay">
+      <Card tone="muted">
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
             <Txt variant="title">{c.returnCode}</Txt>
@@ -391,7 +392,7 @@ export default function OrderScreen() {
     {live && <>
         {live && order.driverId && <Row gap={8} style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
           {/* The icon follows the fix, not the poll: a dropped request must not make a live car look stale. */}
-          <Ionicons name={!location || location.stale || location.reconnecting ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || location?.reconnecting ? palette.clayInk : palette.blue} />
+          <Ionicons name={!location || location.stale || location.reconnecting ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || location?.reconnecting ? palette.warn : palette.blue} />
           <Txt variant="caption" style={{ flex: 1 }}>{location
             ? fill(location.stale ? c.lastDriver : location.reconnecting ? c.driverSignalWeak : mine ? c.liveYou : c.liveDriver, { s: age < 60 ? fill(c.agoSeconds, { n: age }) : fill(c.agoMinutes, { n: Math.floor(age / 60) }) })
             : mine ? c.noYourLocation : c.noDriverLocation}</Txt>
@@ -413,8 +414,8 @@ export default function OrderScreen() {
         {live && eta && location && !location.stale && alerts.length > 0 && <Press accessibilityRole="link" accessibilityLabel={`${c.roadAlert}: ${c.roads}`}
           onPress={() => router.push('/roads')} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Row gap={8}>
-            <Ionicons name="warning-outline" size={16} color={palette.clayInk} />
-            <Txt variant="caption" style={{ flex: 1, color: palette.clayInk }}>{(rtl ? '\u200f' : '\u200e') + alerts.map(r => `${isolate(r.name)}: ${c[`road_${r.status!}`]}`).join(' · ')}</Txt>
+            <Ionicons name="warning-outline" size={16} color={palette.warn} />
+            <Txt variant="caption" style={{ flex: 1, color: palette.warn }}>{(rtl ? '\u200f' : '\u200e') + alerts.map(r => `${isolate(r.name)}: ${c[`road_${r.status!}`]}`).join(' · ')}</Txt>
           </Row>
         </Press>}
         {live && <RouteCheckpoints avoids={avoids} through={through} />}
@@ -424,10 +425,10 @@ export default function OrderScreen() {
       <Row gap={8}><Ionicons name="calendar-outline" size={18} color={palette.olive} /><Txt variant="title">{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt></Row>
     </Card>}
     {order.status === 'searching' && order.scheduledFor && !bookedAhead(order, now) && <Txt variant="caption" center>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>}
-    {order.status === 'cancelled' && order.exceptionReason && <Card tone="clay" style={{ paddingVertical: 12 }}>
+    {order.status === 'cancelled' && order.exceptionReason && <Card tone="warn" style={{ paddingVertical: 12 }}>
       {/* only a failed pickup cancels with a reason; the status card is gone once cancelled */}
-      <Row gap={8}><Ionicons name="alert-circle-outline" size={18} color={palette.clayInk} />
-        <Txt variant="title" style={{ flex: 1, color: palette.clayInk }}>{reasonLine(c.pickupFailed, `pickup_${order.exceptionReason}`)}</Txt></Row>
+      <Row gap={8}><Ionicons name="alert-circle-outline" size={18} color={palette.warn} />
+        <Txt variant="title" style={{ flex: 1, color: palette.warn }}>{reasonLine(c.pickupFailed, `pickup_${order.exceptionReason}`)}</Txt></Row>
       {order.exceptionDetail && <Txt style={{ marginTop: 4 }}>{c[`refusal_${order.exceptionDetail}`]}</Txt>}
     </Card>}
     {activeStatuses.includes(order.status) && <Appear index={2}>
@@ -448,12 +449,12 @@ export default function OrderScreen() {
         </Txt>}
         {order.safetyHold && order.safetyReport?.status !== 'open' && <View accessibilityLiveRegion="polite">
           <Row gap={6} style={{ marginTop: 6 }}>
-            <Ionicons name="shield-outline" size={16} color={palette.clayInk} />
-            <Txt variant="caption" style={{ flex: 1, color: palette.clayInk }}>{c.safetyPaused}</Txt>
+            <Ionicons name="shield-outline" size={16} color={palette.warn} />
+            <Txt variant="caption" style={{ flex: 1, color: palette.warn }}>{c.safetyPaused}</Txt>
           </Row>
         </View>}
         {order.exceptionReason && ['on_hold', 'returning'].includes(order.status) &&
-          <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{reasonLine(c.exceptionTitle, `reason_${order.exceptionReason}`)}</Txt>}
+          <Txt variant="caption" style={{ marginTop: 4, color: palette.warn }}>{reasonLine(c.exceptionTitle, `reason_${order.exceptionReason}`)}</Txt>}
       </Card>
     </Appear>}
 
@@ -526,7 +527,7 @@ export default function OrderScreen() {
     </Card>}
 
     {isAdmin && order.ride && ['assigned', 'at_pickup'].includes(order.status)
-      && (order.ride.arrivedAt == null || order.ride.boardingLocked) && <Card tone="clay">
+      && (order.ride.arrivedAt == null || order.ride.boardingLocked) && <Card tone="warn">
       <Txt variant="title">{order.ride.arrivedAt == null ? c.rideArrivalOverride : boarding ? c.rideBoardingRotate : c.rideBoardingReset}</Txt>
       <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{order.ride.arrivedAt == null ? c.rideArrivalOverrideHint : boarding ? c.rideBoardingRotateHint : c.rideBoardingResetHint}</Txt>
       <Field label={c.proofResetReason} value={resetReason} maxLength={500} disabled={!!busy}
@@ -542,7 +543,7 @@ export default function OrderScreen() {
 
     {isAdmin && ['searching', 'assigned', 'at_pickup'].includes(order.status) && <AdminAssign order={order} busy={!!busy} act={act} />}
 
-    {isAdmin && order.status === 'on_hold' && <Card tone="clay">
+    {isAdmin && order.status === 'on_hold' && <Card tone="warn">
       <Txt variant="title">{c.exceptionTitle}</Txt>
       <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.resolveConfirm}</Txt>
       <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
@@ -559,9 +560,9 @@ export default function OrderScreen() {
       </View>
     </Card>}
 
-    {isAdmin && order.status === 'returning' && <Card tone="clay">
+    {isAdmin && order.status === 'returning' && <Card tone="warn">
       <Txt variant="title">{c.confirmReturnTitle}</Txt>
-      {order.supportHasGoods && <Txt variant="caption" style={{ marginTop: 4, color: palette.clayInk }}>{c.supportHasGoodsAdmin}</Txt>}
+      {order.supportHasGoods && <Txt variant="caption" style={{ marginTop: 4, color: palette.warn }}>{c.supportHasGoodsAdmin}</Txt>}
       <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setDecision({ id, reason })} />
       <View style={{ gap: 8 }}>
@@ -680,7 +681,7 @@ export default function OrderScreen() {
           onPress={() => act('unshare', `/orders/${order.id}/share/revoke`, {}, () => { setSharedUrl(null); setData({ ...order, sharing: false }); })} />}
       </Card>}
 
-      {isCustomer && order.dispute && <Card tone={order.dispute.status === 'open' ? 'clay' : 'olive'}>
+      {isCustomer && order.dispute && <Card tone={order.dispute.status === 'open' ? 'warn' : 'olive'}>
         <Txt variant="title">{order.dispute.status === 'open' ? c.disputeOpen : c.disputeResolved}</Txt>
         <Txt variant="caption" style={{ marginTop: 4 }}>{order.dispute.resolution ?? order.dispute.reason}</Txt>
         {order.dispute.credit && <Txt variant="label" selectable style={{ marginTop: 6 }}>{fill(c.disputeCredit, { r: money(order.dispute.credit.amount), code: order.dispute.credit.code })}</Txt>}
@@ -740,7 +741,7 @@ export default function OrderScreen() {
       <Txt variant="h2" numberOfLines={1} style={{ flex: 1 }}>{fill(c.scheduledFor, { t: time(booked) })}</Txt>
     </Row>}
     {finding && <View style={{ alignItems: 'center', paddingBottom: 8 }}>
-      <Radar color={serviceMeta[order.service].color} size={64}>
+      <Radar color={palette.forest} size={64}>
         <ServiceIcon service={order.service} size={28} />
       </Radar>
       <Txt variant="title" center style={{ marginTop: 4 }}>{c.findingTitle}</Txt>
@@ -765,9 +766,10 @@ export default function OrderScreen() {
     </View>}
         {activeStatuses.includes(order.status) && <>
           <Row gap={8} style={{ marginBottom: 4 }}>
-            <Pulse color={statusTone[order.status].fg} size={8} />{/* the state's colour, as on its badge */}
+            {journeyState[order.status] === 'live' ? <Pulse color={statusTone[order.status].mark} size={8} />
+              : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: statusTone[order.status].mark }} />}{/* the state's colour, as on its badge; only live states pulse */}
             <Txt variant="h2" numberOfLines={2} style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
-            {eta && location && !location.stale && <Txt variant="display" numberOfLines={1} style={{ color: statusTone[order.status].fg, flexShrink: 0 }}>{etaChip(eta)}</Txt>}
+            {eta && location && !location.stale && <Txt variant="display" numberOfLines={1} style={{ color: statusTone[order.status].mark, flexShrink: 0 }}>{etaChip(eta)}</Txt>}
           </Row>
           {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
             <Ionicons name="key-outline" size={16} color={palette.olive} />
@@ -853,9 +855,9 @@ function Safety({ order, driver, onChange }: { order: Order; driver: boolean; on
     catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
   }
   if (!open) return <Button title={c.safety} icon="shield-checkmark-outline" variant="outline" onPress={() => setOpen(true)} />;
-  return <Card tone="clay">
+  return <Card tone="warn">
     <Row gap={8} style={{ marginBottom: 4 }}>
-      <Ionicons name="shield-checkmark" size={22} color={palette.clayInk} />
+      <Ionicons name="shield-checkmark" size={22} color={palette.warn} />
       <Txt variant="title" style={{ flex: 1 }}>{c.safety}</Txt>
       <IconButton icon="close" label={c.close} onPress={() => setOpen(false)} />
     </Row>
@@ -960,7 +962,7 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
     {mineUnsent.map(u => <View key={u.requestId} style={[styles.bubble, styles.unsent, { alignSelf: rtl ? 'flex-start' : 'flex-end' }]}>
       <Txt accessibilityLabel={`${c.you}: ${u.body}, ${c.chatNotSent}`}>{u.body}</Txt>
       <Row gap={12} style={{ marginTop: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-        <Txt variant="micro" style={{ color: palette.clayInk }}>{c.chatNotSent}</Txt>
+        <Txt variant="micro" style={{ color: palette.warn }}>{c.chatNotSent}</Txt>
         {canWrite && <Press accessibilityLabel={`${c.chatResend}: ${u.body}`} disabled={busy} onPress={() => send(u.body)} style={styles.unsentAction}>
           <Txt variant="label" style={{ color: palette.olive }}>{c.chatResend}</Txt>
         </Press>}
@@ -1050,7 +1052,7 @@ function RateCustomer({ order, onRate }: { order: Order; onRate: (n: number) => 
 
 function IconStar({ n, label, on, disabled, onPress }: { n: number; label: string; on: boolean; disabled: boolean; onPress: () => void }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${n}/5`} disabled={disabled} aria-disabled={disabled} onPress={onPress} style={{ minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}>
-    <Ionicons name={on ? 'star' : 'star-outline'} size={28} color={palette.clay} />
+    <Ionicons name={on ? 'star' : 'star-outline'} size={28} color={palette.warn} />
   </Pressable>;
 }
 
@@ -1070,10 +1072,10 @@ const styles = StyleSheet.create({
   divider: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.hair },
   code: { gap: 4, flexWrap: 'wrap' },
   digit: { minWidth: 30, minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, borderRadius: 8, backgroundColor: palette.card, overflow: 'hidden' },
-  digitText: { fontSize: 22, fontFamily: headingFont.bold, color: palette.clayInk, textAlign: 'center' },
+  digitText: { fontSize: 22, fontFamily: headingFont.bold, color: palette.ink, textAlign: 'center' },
   detail: { paddingVertical: 6, alignItems: 'flex-start', justifyContent: 'space-between' },
   bubble: { maxWidth: '85%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
-  unsent: { backgroundColor: palette.olivePale, marginBottom: 6, borderWidth: 1, borderStyle: 'dashed', borderColor: palette.clayInk },
+  unsent: { backgroundColor: palette.olivePale, marginBottom: 6, borderWidth: 1, borderStyle: 'dashed', borderColor: palette.warn },
   unsentAction: { minHeight: 48, minWidth: 48, justifyContent: 'center', paddingHorizontal: 6 }, // 48 dp targets, as for Send
   bubbleMeta: { color: palette.secondary }, // faint is under 4.5:1 on the tinted bubbles
   send: { width: 48, height: 48, borderRadius: 24, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, // Field's bottom margin: aligns with the box
@@ -1146,7 +1148,7 @@ function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; rev
     <Txt variant="caption">{review.cleared ? fill(c.blockReviewCleared, { pay, paid: `${((review.paidCents ?? 0) / 100).toFixed(2)} ₪` }) : c.blockReviewNotCleared}</Txt>
   </Card>;
   const self = review.blockedBy === me, noteOk = note.trim().length >= 5;
-  return <Card tone={review.dueAt < now ? 'clay' : undefined}>
+  return <Card tone={review.dueAt < now ? 'warn' : undefined}>
     <Txt variant="title">{c.blockReview}</Txt>
     <Txt variant="caption">{fill(c.blockReviewDue, { pay, due: new Date(review.dueAt).toLocaleString() })}</Txt>
     {self ? <Txt variant="caption">{c.blockReviewSecondAdmin}</Txt> : <>
