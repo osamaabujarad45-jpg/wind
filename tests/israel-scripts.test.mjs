@@ -427,23 +427,27 @@ ${r.err}`);
     const build = readFileSync(new URL('../infra/osrm/build-west-bank.sh', import.meta.url), 'utf8');
     const exec = provision.match(/^ExecStart=\/usr\/bin\/docker run (.*)$/m)[1];
     assert.match(exec, /-p 127\.0\.0\.1:5000:5000 /, 'loopback only');
-    assert.ok(!/ -P | --publish-all|--network[ =]host|-p (0\.0\.0\.0:)?5000/.test(` ${exec} `), 'never on a public interface or the host network');
+    assert.ok(!/ -P | --publish-all|--net(work)?[ =]host|-p (0\.0\.0\.0:)?5000/.test(` ${exec} `), 'never on a public interface or the host network');
     for (const flag of ['--read-only', '--user 65534:65534', '--cap-drop=ALL', '--security-opt no-new-privileges', '-v /srv/osrm/:/data:ro '])
       assert.ok(exec.includes(flag), flag);
     const image = exec.match(/(ghcr\.io\/project-osrm\/osrm-backend@sha256:[0-9a-f]{64})/)[1];
     assert.ok(build.includes(`image=${image} `), 'the graph and the server come from the same image');
     const corpus = build.match(/^docker run -d --rm --name osrm-corpus (.*)$/m)[1];
-    for (const flag of ['--read-only', '--user 65534:65534', '--cap-drop=ALL', ':/data:ro"', '--max-table-size 100']) assert.ok(corpus.includes(flag), `corpus ${flag}`);
+    for (const flag of ['--read-only', '--user 65534:65534', '--cap-drop=ALL', '--memory=1g --memory-swap=1g', ':/data:ro"', '--max-table-size 100']) assert.ok(corpus.includes(flag), `corpus ${flag}`);
     assert.ok(provision.indexOf('# Road routing (SPEC-routing-eta.md)') > provision.indexOf('systemctl enable wind-api'), 'after every other step');
+    assert.ok(provision.indexOf('apt-get install -y -q docker.io') > provision.indexOf('systemctl enable wind-api'), 'Docker is installed there too');
     assert.match(provision, /^OOMScoreAdjust=-500$/m);
 
     // The routing block itself, run against a scratch root with stub systemctl and docker.
-    const block = provision.slice(provision.indexOf('OSRM_NEW=$(mktemp)'), provision.indexOf('\nfi\n', provision.indexOf('if [ -e /srv/osrm/region.osrm.mldgr ]')) + 4);
+    const block = provision.slice(provision.indexOf('OSRM_NEW=$(mktemp)'), provision.indexOf('\nfi\n', provision.indexOf('if [ -e /srv/osrm/BUILD-MANIFEST ]')) + 4);
     const r12 = mkdtempSync(join(root, 'osrm-')), b12 = join(r12, 'bin'), srv = join(r12, 'srv'), etc = join(r12, 'etc');
     for (const d of [b12, srv, join(etc, 'systemd', 'system')]) mkdirSync(d, { recursive: true });
     const log = join(r12, 'calls.log');
     writeFileSync(join(b12, 'systemctl'), `#!/bin/sh\necho "systemctl $*" >> "${log}"\ncase "$*" in "is-active --quiet wind-osrm") [ -e "${r12}/active" ] ;; "restart wind-osrm") [ -z "$FAIL_RESTART" ] && touch "${r12}/active" ;; *) exit 0 ;; esac\n`);
-    chmodSync(join(b12, 'systemctl'), 0o755);
+    // OSRM answers once the container runs, unless told it crashed after the fork; docker is present; no real sleeps.
+    writeFileSync(join(b12, 'curl'), `#!/bin/sh\n[ -e "${r12}/active" ] && [ -z "$OSRM_DEAD" ]\n`);
+    writeFileSync(join(b12, 'docker'), '#!/bin/sh\nexit 0\n'); writeFileSync(join(b12, 'sleep'), '#!/bin/sh\nexit 0\n');
+    for (const f of ['systemctl', 'curl', 'docker', 'sleep']) chmodSync(join(b12, f), 0o755);
     const script = block.replaceAll('/etc/', `${etc}/`).replaceAll('/srv/osrm', `${srv}/osrm`);
     const runBlock = (extra = {}) => { rmSync(log, { force: true });
       const res = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { encoding: 'utf8', env: { PATH: `${b12}:${process.env.PATH}`, ...extra } });
@@ -458,27 +462,49 @@ ${r.err}`);
     mkdirSync(join(srv, 'osrm-1')); writeFileSync(join(srv, 'osrm-1', 'region.osrm.mldgr'), '');
     symlinkSync(join(srv, 'osrm-1'), join(srv, 'osrm'));
     o = runBlock();
+    assert.ok(!o.calls.some(c => /enable|restart/.test(c)) && readFileSync(envFile, 'utf8') === 'A=1', 'an unfinished build (no manifest) is not served');
+    unlinkSync(join(srv, 'osrm'));
+    writeFileSync(join(srv, 'osrm-1', 'BUILD-MANIFEST'), 'built_at=1\n');
+    symlinkSync(join(srv, 'osrm-1'), join(srv, 'osrm'));
+    o = runBlock();
     assert.equal(o.status, 0, o.err);
     assert.equal(readFileSync(envFile, 'utf8'), 'A=1\nOSRM_URL=http://127.0.0.1:5000\n', 'a graph: OSRM_URL once, on its own line');
     assert.ok(o.calls.includes('systemctl restart wind-osrm'));
+    assert.match(o.err, /OSRM_URL added: .*restart wind-api/, 'and the operator is told the API needs a restart');
     o = runBlock();
     assert.ok(!o.calls.includes('systemctl restart wind-osrm'), 'a re-run with nothing changed does not restart it');
     assert.equal(readFileSync(envFile, 'utf8').match(/OSRM_URL=/g).length, 1);
-    mkdirSync(join(srv, 'osrm-2')); writeFileSync(join(srv, 'osrm-2', 'region.osrm.mldgr'), '');
+    // A unit that changed, and a container that is down, are restarted; one that crashed after the fork is not recorded as served.
+    writeFileSync(join(etc, 'systemd', 'system', 'wind-osrm.service'), '[Unit]\nDescription=older\n');
+    o = runBlock();
+    assert.ok(o.calls.includes('systemctl restart wind-osrm'), 'a changed unit restarts it');
+    rmSync(join(r12, 'active'));
+    o = runBlock();
+    assert.ok(o.calls.includes('systemctl reset-failed wind-osrm') && o.calls.includes('systemctl restart wind-osrm'), 'a stopped one is reset and started');
+    const servedBefore = readFileSync(join(etc, 'wind-osrm.graph'), 'utf8');
+    writeFileSync(join(srv, 'osrm-1', 'BUILD-MANIFEST'), 'built_at=2\n'); // rebuilt in place
+    o = runBlock({ OSRM_DEAD: '1' });
+    assert.ok(o.calls.includes('systemctl restart wind-osrm'), 'a rebuild into the same directory is picked up');
+    assert.match(o.err, /not answering/);
+    assert.equal(readFileSync(join(etc, 'wind-osrm.graph'), 'utf8'), servedBefore, 'a server that never answered is not recorded');
+    o = runBlock();
+    assert.ok(o.calls.includes('systemctl restart wind-osrm'), 'so the next run tries again');
+    mkdirSync(join(srv, 'osrm-2')); writeFileSync(join(srv, 'osrm-2', 'region.osrm.mldgr'), ''); writeFileSync(join(srv, 'osrm-2', 'BUILD-MANIFEST'), 'built_at=3\n');
     unlinkSync(join(srv, 'osrm')); symlinkSync(join(srv, 'osrm-2'), join(srv, 'osrm')); // the link, not its target
     o = runBlock({ FAIL_RESTART: '1' });
     assert.equal(o.status, 0, 'a failed restart does not fail provisioning');
     assert.ok(o.calls.includes('systemctl restart wind-osrm'), 'a newly promoted graph is picked up');
-    assert.match(o.err, /did not restart/);
+    assert.match(o.err, /not answering/);
     o = runBlock();
     assert.ok(o.calls.includes('systemctl restart wind-osrm'), 'and tried again on the next run');
 
     // build-west-bank.sh refuses the live graph through its link, and any directory that already holds a graph, before any work.
-    for (const [out, why] of [[join(srv, 'osrm-2'), 'the live target'], [join(srv, 'osrm-1'), 'a directory with a graph']]) {
+    for (const [out, why, message] of [[join(srv, 'osrm'), 'the live link', /refusing to build into the live graph/],
+      [join(srv, 'osrm-2'), 'the live target', /refusing to build into the live graph/], [join(srv, 'osrm-1'), 'a directory with a graph', /already holds a graph/]]) {
       const res = spawnSync('sh', [fileURLToPath(new URL('../infra/osrm/build-west-bank.sh', import.meta.url)), '/dev/null', out],
         { encoding: 'utf8', env: { PATH: `${b12}:${process.env.PATH}`, WIND_OSRM_LIVE: join(srv, 'osrm') } });
       assert.equal(res.status, 2, `${why}: ${res.stderr}`);
-      assert.match(res.stderr, /refusing/);
+      assert.match(res.stderr, message, why);
     }
   }
   console.log('israel-scripts: install, backup and restore failure paths passed');

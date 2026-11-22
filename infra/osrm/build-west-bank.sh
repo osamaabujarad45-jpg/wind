@@ -49,7 +49,7 @@ graph=$(cd "$out" && LC_ALL=C sha256sum region.osrm* | LC_ALL=C sort -k2)
 # Route corpus: fixed West Bank pairs served from this graph on a loopback port, then the server is removed.
 port=5199
 # The same flags as production's wind-osrm unit, so the corpus proves the way the graph is served (Haiku PR #104 L1).
-docker run -d --rm --name osrm-corpus --read-only --user 65534:65534 --cap-drop=ALL --security-opt no-new-privileges --pids-limit 256 --memory=1g -p 127.0.0.1:$port:5000 -v "$out:/data:ro" "$image" osrm-routed --algorithm mld --max-table-size 100 /data/region.osrm >/dev/null
+docker run -d --rm --name osrm-corpus --read-only --user 65534:65534 --cap-drop=ALL --security-opt no-new-privileges --pids-limit 256 --memory=1g --memory-swap=1g -p 127.0.0.1:$port:5000 -v "$out:/data:ro" "$image" osrm-routed --algorithm mld --max-table-size 100 /data/region.osrm >/dev/null
 trap 'docker rm -f osrm-corpus >/dev/null 2>&1 || true' EXIT
 for i in $(seq 1 30); do curl -fs "http://127.0.0.1:$port/nearest/v1/driving/35.2034,31.9038" >/dev/null && break; sleep 1; done
 routes=$(for pair in "tulkarm-ramallah 35.0279,32.3116;35.2034,31.9038" "nablus-ramallah 35.2544,32.2211;35.2034,31.9038" \

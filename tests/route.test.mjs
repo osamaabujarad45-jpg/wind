@@ -20,6 +20,9 @@ const osrm = createServer((req, res) => {
     { steps: [{ maneuver: { type: 'depart', location: [35.23, 32] } }, { name: 'Main', maneuver: { type: 'turn', modifier: 'left', location: [35.24, 32.1] } }, { maneuver: { type: 'arrive', location: b } }] },
   ] }] }));
   if (mode === 'none') return res.end(JSON.stringify({ code: 'NoRoute', routes: [] }));
+  // A point outside the West Bank graph: OSRM snaps it to the nearest road kilometres away and still answers Ok.
+  if (mode === 'far') return res.end(JSON.stringify({ code: 'Ok', routes: [route([a, b])], waypoints: [{ distance: 24800, location: [35.0, 32.1] }, { distance: 12, location: b }] }));
+  if (mode === 'near') return res.end(JSON.stringify({ code: 'Ok', routes: [route([a, b])], waypoints: [{ distance: 350, location: a }, { distance: 12, location: b }] }));
   if (mode === 'bad-distance') return res.end(JSON.stringify({ code: 'Ok', routes: [{ ...route([a, b]), distance: 'unknown' }] }));
   if (mode === 'bad-line') return res.end(JSON.stringify({ code: 'Ok', routes: [route([a, [null, 91], b])] }));
   if (mode === 'empty-line') return res.end(JSON.stringify({ code: 'Ok', routes: [route([])] }));
@@ -108,6 +111,14 @@ try {
   assert.equal(unavailable.healthy, false); assert.equal(unavailable.reason, 'route_unavailable');
   assert.ok(unavailable.checkedAt > 0);
   await call('/ready'); // Essential DB readiness is independent of optional routing health.
+  // Outside the graph (Haiku PR #104 M-2): no confident wrong route, yet OSRM is not reported down for it.
+  mode = 'ok';
+  await call('/route?from=31.53,35.1&to=31.7,35.2', { token: customer.token }); // healthy again
+  mode = 'far';
+  await call('/route?from=32.0853,34.7818&to=31.9038,35.2034', { token: customer.token, expect: 503 });
+  assert.equal((await call('/admin/routing', { token: admin.token })).healthy, true, 'a point outside the graph is not an outage');
+  mode = 'near'; // an address a few hundred metres off a mapped road still routes
+  assert.ok((await call('/route?from=31.54,35.1&to=31.7,35.2', { token: customer.token })).km > 0);
   mode = 'ok';
   await call('/route?from=31.51,35.1&to=31.7,35.2', { token: customer.token }); // failures are not cached
   assert.equal((await call('/admin/routing', { token: admin.token })).healthy, true);
