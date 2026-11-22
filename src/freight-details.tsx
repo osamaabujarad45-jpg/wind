@@ -4,9 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { freightFieldProblem, type FreightDraft, type FreightFieldKey } from './freight-scope';
 import type { Order } from './model';
 import { useFormat } from './parts';
-import { Card, ErrorText, Field, fill, palette, Press, Row, Txt, useCopy } from './ui';
+import { Card, ErrorText, Field, fill, Press, Row, Txt, useCopy } from './ui';
+import { useTheme } from './theme-context';
 
 export function FreightScopeForm({ draft, onChange, disabled, invalid }: { draft: FreightDraft; onChange: (draft: FreightDraft) => void; disabled: boolean; invalid: boolean }) {
+  const { palette } = useTheme();
   const { c } = useCopy();
   // Validate on blur, not while the customer is still entering a number.
   const [touched, setTouched] = useState<Partial<Record<FreightFieldKey, boolean>>>({});

@@ -14,8 +14,9 @@ import {
 } from './phone/flow';
 import { issueBody, proveBody, type SelfView } from './phone/requests';
 import { useSession } from './session';
-import { Badge, Button, Card, CodeField, ErrorText, Field, fill, haptic, palette, Row, Txt, tones, useCopy } from './ui';
+import { Badge, Button, Card, CodeField, ErrorText, Field, fill, haptic, Row, Txt, useCopy } from './ui';
 import type { CopyKey } from './copy';
+import { themedStyles, useTheme } from './theme-context';
 
 type Purpose = 'verify' | 'change';
 type Active = { purpose: Purpose; challengeId: string; phone: string; expiresAt: number; resendAt: number; state: string; attempts: number };
@@ -25,6 +26,8 @@ const POLL_MS = 3000;
 const MAX_POLLS = 20; // about a minute of watching the provider answer; leaving and returning starts again
 
 export function PhoneCard() {
+  const { palette, tones } = useTheme();
+  const styles = useStyles();
   const { me, refresh, forget } = useSession();
   const { c, err } = useCopy();
   const userId = me?.user.id;
@@ -257,7 +260,7 @@ export function PhoneCard() {
   </Card>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   locked: { minHeight: 44, borderRadius: 12, backgroundColor: palette.muted, paddingHorizontal: 12 },
   ltr: { writingDirection: 'ltr' },
-});
+}));

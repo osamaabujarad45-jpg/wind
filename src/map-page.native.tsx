@@ -5,11 +5,14 @@ import { WebView } from 'react-native-webview';
 import { API_URL } from './api';
 import { useMapBridge, type MapEvents } from './map-bridge';
 import { mapReadyMs } from './runtime-config';
-import { palette } from './ui';
+import { palettes } from './theme';
 
 const PAGE = `${API_URL}/map/v1/map.html`;
-const colors = { forest: palette.forest, olive: palette.olive, clay: palette.clay, blue: palette.blue };
+// The brand colours map.html draws its Day markers with; it draws Night from config.theme itself.
+const day = palettes.day, colors = { forest: day.forest, olive: day.olive, clay: day.clay, blue: day.blue };
 export const MAP_GROUND = '#EEEFEC';
+/** The Night map's land (public/map.html), shown before its tiles draw so a Night screen never flashes light. */
+export const MAP_GROUND_NIGHT = '#0F1B17';
 export type MapPageProps = MapEvents & { config: { mode?: string } & Record<string, unknown>; height?: number; fill?: boolean; update?: object };
 
 /** Calls onFail if the page fails or never says it is ready (offline, blocked, server without the page). */
@@ -20,7 +23,7 @@ export function MapPage({ config, height, fill, update, onCenter, onGesture, onM
   const { receive, fail } = useMapBridge(update, json => view.current?.injectJavaScript(`window.wind&&window.wind(${json});true;`), { onCenter, onGesture, onMoving, onFail, onReady });
   // Not an accessible group: that would hide the page's own Recenter button. The page labels its map itself.
   return <View style={fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
-    <WebView ref={view} source={{ uri }} style={{ flex: 1, backgroundColor: MAP_GROUND }} originWhitelist={['*']} textZoom={100}
+    <WebView ref={view} source={{ uri }} style={{ flex: 1, backgroundColor: config.theme === 'night' ? MAP_GROUND_NIGHT : MAP_GROUND }} originWhitelist={['*']} textZoom={100}
       setSupportMultipleWindows={false} overScrollMode="never" androidLayerType="hardware"
       // Only our map page loads here; map credits and any other link open in the browser.
       onShouldStartLoadWithRequest={r => {

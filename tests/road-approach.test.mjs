@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
+import { themeModules } from './theme-mock.mjs';
 const require = createRequire(import.meta.url);
 const realNow = Date.now, realMonotonic = performance.now;
 
@@ -44,6 +45,7 @@ function harness(mode) {
     './api': { useApi },
     './map-mode': { useMapMode: () => [mode] },
     './ui': {},
+    ...themeModules('./'),
   };
   const compiled = ts.transpileModule(readFileSync(new URL('../src/road.tsx', import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
+import { themeModules } from './theme-mock.mjs';
 
 const require = createRequire(import.meta.url), copy = require('../src/copy.ts'), model = require('../src/model.ts');
 const source = ts.transpileModule(readFileSync(new URL('../src/parts.tsx', import.meta.url), 'utf8'),
@@ -22,7 +23,7 @@ function account({ linked = true } = {}) {
       return [slot.value, next => { slot.value = typeof next === 'function' ? next(slot.value) : next; }]; },
     useEffect(fn, deps) { const i = cursor++, old = slots[i]; if (!same(old?.deps, deps)) effects.push(() => { old?.cleanup?.(); slots[i] = { deps, cleanup: fn() }; }); },
   };
-  const c = copy.copy.en, ui = Object.fromEntries(['Appear','Avatar','Badge','Button','Card','ErrorText','Field','FilterChips','Header','ListGroup','ListRow','Press','Row','Screen','Txt'].map(name => [name, name]));
+  const c = copy.copy.en, ui = Object.fromEntries(['Appear','Avatar','Badge','Button','Card','Choices','ErrorText','Field','FilterChips','Header','ListGroup','ListRow','Press','Row','Screen','Txt'].map(name => [name, name]));
   const modules = {
     react, 'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-native': { Platform: { OS: 'web' }, StyleSheet: { create: value => value }, View: 'View', Share: {} },
@@ -32,7 +33,8 @@ function account({ linked = true } = {}) {
       return {}; }, apiSessionRevision: () => revision, errorCode: e => e.message },
     './push': { pushSupported: () => false }, './native-push-row': { NativePushRow: 'NativePushRow' }, './session': { useSession: () => ({ me: { user: { id: 1, role: 'customer', name: 'Test', phone: '0599000000' } }, forget: async () => { forgot++; }, signOut: async () => {}, language: 'en', setLanguage() {} }) },
     './entra-auth': { entraConfigured: true, prepareEntraRequest: async nonce => ({ nonce }), signInWithEntra: async () => new Promise(resolve => { resolveMicrosoft = resolve; }) },
-    './ui': { ...ui, palette: {}, tones: {}, iconSize: { xs: 14, sm: 16, md: 18, lg: 20, xl: 22 }, confirm: (_text, yes) => yes(), useCopy: () => ({ c, err: e => e.message }), haptic: { error() {}, success() {} } },
+    ...themeModules('./'),
+    './ui': { ...ui, iconSize: { xs: 14, sm: 16, md: 18, lg: 20, xl: 22 }, confirm: (_text, yes) => yes(), useCopy: () => ({ c, err: e => e.message }), haptic: { error() {}, success() {} } },
   };
   const context = { exports: {}, setInterval: fn => { refreshChallenge = fn; return 1; }, clearInterval: () => { refreshChallenge = null; }, require: name => { assert.ok(name in modules, name); return modules[name]; } };
   runInNewContext(source, context);

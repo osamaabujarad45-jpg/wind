@@ -5,6 +5,7 @@ import ts from 'typescript';
 import { deliverDriverFix } from '../src/location-delivery.ts';
 import { driverLocationDiagnostics, sameDiagnostics } from '../src/driver-location-diagnostics.ts';
 import { copy } from '../src/copy.ts';
+import { themeModules } from './theme-mock.mjs';
 
 const stamp = 1_800_000_000_000;
 let receipt = null, response = { status: 200, accepted: true }, acknowledgedAt = stamp + 4_000;
@@ -51,7 +52,8 @@ assert.ok(!JSON.stringify(accepted).includes('private-token'));
 let language = 'en';
 const jsx = (type, props) => ({ type, props });
 const modules = { 'react/jsx-runtime': { jsx, jsxs: jsx },
-  'react-native': { Pressable: 'Pressable' }, './ui': { Card: 'Card', Row: 'Row', Txt: 'Txt', palette: { olive: '#000' }, useCopy: () => ({ language, c: copy[language] }) } };
+  'react-native': { Pressable: 'Pressable' }, './ui': { Card: 'Card', Row: 'Row', Txt: 'Txt', useCopy: () => ({ language, c: copy[language] }) },
+  ...themeModules('./') };
 const contextForCard = { exports: {}, require: name => { assert.ok(name in modules, `unexpected support side effect: ${name}`); return modules[name]; } };
 runInNewContext(ts.transpileModule(readFileSync(new URL('../src/driver-support-card.tsx', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },

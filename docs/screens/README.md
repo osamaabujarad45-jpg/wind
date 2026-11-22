@@ -88,5 +88,9 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 | Earnings | `/driver/earnings` | `src/app/driver/earnings.tsx` | [driver-earnings.png](ar/driver-earnings.png) | [driver-earnings.png](en/driver-earnings.png) |
 | Receipt (driver view) | `/receipt/1` | `src/app/receipt/[id].tsx` | [driver-receipt.png](ar/driver-receipt.png) | [driver-receipt.png](en/driver-receipt.png) |
 | Account | `/driver/account` | `src/parts.tsx (AccountScreen)` | [driver-account.png](ar/driver-account.png) | [driver-account.png](en/driver-account.png) |
+| Jobs · Night theme | `/driver` | `src/app/driver/index.tsx` | [driver-jobs-night.png](ar/driver-jobs-night.png) | [driver-jobs-night.png](en/driver-jobs-night.png) |
+| Active trip · Night theme | `/order/2` | `src/app/order/[id].tsx` | [driver-order-night.png](ar/driver-order-night.png) | [driver-order-night.png](en/driver-order-night.png) |
+| Earnings · Night theme | `/driver/earnings` | `src/app/driver/earnings.tsx` | [driver-earnings-night.png](ar/driver-earnings-night.png) | [driver-earnings-night.png](en/driver-earnings-night.png) |
+| Account · Night theme (Appearance: Automatic, Day, Night) | `/driver/account` | `src/parts.tsx (ThemeCard)` | [driver-account-night.png](ar/driver-account-night.png) | [driver-account-night.png](en/driver-account-night.png) |
 | Jobs · offer price outside the band (Send offer disabled, band shown) | `/driver` | `src/app/driver/index.tsx` | [driver-offer-range.png](ar/driver-offer-range.png) | [driver-offer-range.png](en/driver-offer-range.png) |
 

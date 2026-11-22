@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
+import { themeModules } from './theme-mock.mjs';
 const require = createRequire(import.meta.url);
 const math = require('../src/map-math.ts');
 const storage = require('../src/web-storage.ts');
@@ -62,7 +63,8 @@ function harness(file = 'google-map.web.tsx', deniedStorage = false, preferences
     Platform: { OS: 'web' }, StyleSheet: { create: value => value, absoluteFill: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 } } },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     '@expo/vector-icons': { Ionicons: 'Ionicons' }, './map-math': math, './route-preview': { __esModule: true, default: 'RoutePreview' },
-    './ui': { Button: 'Button', Txt: 'Txt', palette: { mapWash: '#E6ECE3' }, shadow: {}, useCopy: () => ({ rtl: !!preferences.rtl, c: { retry: 'Retry', routeOnMap: 'Route map', pinHint: 'Move the map to select the pin', pinPositionFailed: 'Positioning failed', confirmPin: 'Confirm pin', useLocation: 'Use location', locating: 'Locating', locationManual: 'Choose manually', locationInaccurate: 'Inaccurate', pinOutsideArea: 'Outside' } }) },
+    ...themeModules('./'),
+    './ui': { Button: 'Button', Txt: 'Txt', useCopy: () => ({ rtl: !!preferences.rtl, c: { retry: 'Retry', routeOnMap: 'Route map', pinHint: 'Move the map to select the pin', pinPositionFailed: 'Positioning failed', confirmPin: 'Confirm pin', useLocation: 'Use location', locating: 'Locating', locationManual: 'Choose manually', locationInaccurate: 'Inaccurate', pinOutsideArea: 'Outside' } }) },
     './route-map': { PinMap: 'PinMap' }, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     './customer-location': require('../src/customer-location.ts'),
     'react-native-webview': { WebView: 'WebView' }, './api': { API_URL: 'https://api.example.test' },

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Linking, Platform, StyleSheet, View } from 'react-native';
-import { Stack } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider as NavigationTheme } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Font from 'expo-font';
@@ -10,11 +10,12 @@ import { DriverWorkProvider } from '../driver-work';
 import { SessionProvider, useSession } from '../session';
 import { SUPPORT_URL, UPDATE_URL } from '../api';
 import { clientUpdateRequired, subscribeClientUpdate } from '../api-client';
-import { Button, Card, Empty, fill, palette, Txt, useCopy } from '../ui';
+import { Button, Card, Empty, fill, Txt, useCopy } from '../ui';
 import { useFormat } from '../parts';
 import { city, orderCode } from '../model';
 import { statusText } from '../copy';
 import type { OfflineSummary } from '../offline-summary';
+import { ThemeProvider, useTheme } from '../theme-context';
 
 SplashScreen.preventAutoHideAsync();
 // Native builds embed the heading fonts (expo-font plugin in app.json); the web loads them while the intro plays.
@@ -24,11 +25,16 @@ if (Platform.OS === 'web') Font.loadAsync({
 }).catch(() => { /* headings fall back to the system font at regular weight: still the largest, darkest text on screen */ });
 
 export default function RootLayout() {
-  return <SessionProvider>
-    <StatusBar style="dark" />
+  return <SessionProvider><ThemeProvider>
+    <ThemedStatusBar />
     <DriverWorkRoutes />
     <IntroOverlay />
-  </SessionProvider>;
+  </ThemeProvider></SessionProvider>;
+}
+
+// Dark status bar icons on Day, light ones on Night.
+function ThemedStatusBar() {
+  return <StatusBar style={useTheme().name === 'night' ? 'light' : 'dark'} />;
 }
 
 function DriverWorkRoutes() {
@@ -41,7 +47,8 @@ function DriverWorkRoutes() {
 // then fades away over whatever screen the session resolved to.
 const FADE_MS = 280;
 function IntroOverlay() {
-  const { ready } = useSession();
+  const session = useSession(), theme = useTheme();
+  const ready = session.ready && theme.ready;
   const reduced = useReducedMotion();
   const [played, setPlayed] = useState(false);
   const [gone, setGone] = useState(false);
@@ -81,6 +88,7 @@ function OfflineOrders({ summary }: { summary: OfflineSummary }) {
 }
 
 function Routes() {
+  const { palette } = useTheme();
   const { ready, offline, offlineSummary, me, onboarded, refresh } = useSession();
   const { c } = useCopy();
   const mustUpdate = useSyncExternalStore(subscribeClientUpdate, clientUpdateRequired);
@@ -102,7 +110,7 @@ function Routes() {
   </View>;
   const role = me?.user.role;
   // Each role only has its own screens; landing on another role's route redirects to the first allowed one.
-  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.paper } }}>
+  return <NavigationThemed><Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.paper } }}>
     <Stack.Protected guard={!me && !onboarded}>
       <Stack.Screen name="welcome" options={{ animation: 'fade' }} />
     </Stack.Protected>
@@ -136,5 +144,15 @@ function Routes() {
     <Stack.Screen name="help" />
     {/* A shared trip link opens for anyone, signed in or not. */}
     <Stack.Screen name="track/[token]" />
-  </Stack>;
+  </Stack></NavigationThemed>;
+}
+
+// The navigators paint their own ground (tab scenes, transitions) from the navigation theme: without it a Night screen showed
+// the library's light grey behind it.
+function NavigationThemed({ children }: { children: React.ReactNode }) {
+  const { name, palette } = useTheme();
+  // Day keeps the library theme as it was; Night takes the Night palette.
+  const value = useMemo(() => name === 'night' ? { ...DarkTheme, dark: true, colors: { ...DarkTheme.colors, primary: palette.forest,
+    background: palette.paper, card: palette.card, text: palette.ink, border: palette.hair, notification: palette.warn } } : DefaultTheme, [name, palette]);
+  return <NavigationTheme value={value}>{children}</NavigationTheme>;
 }

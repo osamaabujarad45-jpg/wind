@@ -672,6 +672,66 @@
     "session": "driver"
   },
   {
+    "id": "driver-jobs-night",
+    "group": "Driver",
+    "name": "Jobs · Night theme",
+    "route": "/driver",
+    "file": "src/app/driver/index.tsx",
+    "theme": "night",
+    "ar": [
+      "ar/driver-jobs-night.png"
+    ],
+    "en": [
+      "en/driver-jobs-night.png"
+    ],
+    "session": "driver"
+  },
+  {
+    "id": "driver-order-night",
+    "group": "Driver",
+    "name": "Active trip · Night theme",
+    "route": "/order/2",
+    "file": "src/app/order/[id].tsx",
+    "theme": "night",
+    "ar": [
+      "ar/driver-order-night.png"
+    ],
+    "en": [
+      "en/driver-order-night.png"
+    ],
+    "session": "driver"
+  },
+  {
+    "id": "driver-earnings-night",
+    "group": "Driver",
+    "name": "Earnings · Night theme",
+    "route": "/driver/earnings",
+    "file": "src/app/driver/earnings.tsx",
+    "theme": "night",
+    "ar": [
+      "ar/driver-earnings-night.png"
+    ],
+    "en": [
+      "en/driver-earnings-night.png"
+    ],
+    "session": "driver"
+  },
+  {
+    "id": "driver-account-night",
+    "group": "Driver",
+    "name": "Account · Night theme (Appearance: Automatic, Day, Night)",
+    "route": "/driver/account",
+    "file": "src/parts.tsx (ThemeCard)",
+    "theme": "night",
+    "ar": [
+      "ar/driver-account-night.png"
+    ],
+    "en": [
+      "en/driver-account-night.png"
+    ],
+    "session": "driver"
+  },
+  {
     "id": "driver-offer-range",
     "group": "Driver",
     "name": "Jobs · offer price outside the band (Send offer disabled, band shown)",

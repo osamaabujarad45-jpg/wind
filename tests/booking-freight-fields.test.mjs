@@ -12,6 +12,7 @@ import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as freight from '../src/freight-scope.ts';
+import { themeModules } from './theme-mock.mjs';
 
 const require = createRequire(import.meta.url);
 const copy = require('../src/copy.ts').copy;
@@ -47,7 +48,8 @@ function form(language = 'en') {
     './freight-scope': freight,
     './parts': { useFormat: () => ({ time: value => value }) },
     './ui': { ...Object.fromEntries(['Card', 'Field', 'Press', 'Row', 'Txt'].map(name => [name, name])),
-      fill: template => template, ErrorText: 'ErrorText', palette: { olive: '#34765A' }, useCopy: () => ({ c }) },
+      fill: template => template, ErrorText: 'ErrorText', useCopy: () => ({ c }) },
+    ...themeModules('./'),
   };
   const context = { exports: {}, require: name => { assert.ok(name in modules, 'unexpected import: ' + name); return modules[name]; } };
   runInNewContext(transpiled, context);

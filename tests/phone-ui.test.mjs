@@ -14,6 +14,7 @@ import { copy, fill } from '../src/copy.ts';
 import * as model from '../src/model.ts';
 import { ApiError, errorCode } from '../src/api-client.ts';
 import { webGet, webSet } from '../src/web-storage.ts';
+import { themeModules } from './theme-mock.mjs';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 let counter = 0;
@@ -104,7 +105,7 @@ assert.match(readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url),
   assert.match(map, /document\.documentElement\.lang = config\.language === 'ar' \? 'ar' : 'en'/);
   const scene = readFileSync(new URL('../src/scene-map.tsx', import.meta.url), 'utf8');
   assert.match(scene, /const config = \{ mode, language,/);
-  assert.match(scene, /const run = `\$\{language\}:\$\{attempt\}`/);
+  assert.match(scene, /const run = `\$\{language\}:\$\{night \? 'night' : 'day'\}:\$\{attempt\}`/); // a language or theme change redraws the page
 }
 for (const [input, expected] of [
   ['٠١٢٣٤٥', '012345'], ['٦٧٨٩', '6789'], ['۰۱۲۳۴۵', '012345'], ['۶۷۸۹', '6789'],
@@ -135,7 +136,8 @@ for (const [input, expected] of [
     '../session': { useSession: () => ({ me: { user, capabilities: { emailVerification: true } }, refresh: async () => {}, signIn: async () => {}, language }) },
     '../entra-auth': { entraConfigured: false }, '../phone/client': { phoneApi: { capabilities: async () => ({ available: false, enabled: false }) } },
     '../phone/flow': { codeInput, gateOf }, '../phone/notice': { takeAuthNotice: () => null },
-    '../ui': { ...ui, fill, haptic: { success() {}, error() {} }, palette: {}, tones: {}, useCopy: () => ({ c, err: error => String(error) }) },
+    '../ui': { ...ui, fill, haptic: { success() {}, error() {} }, palette: {}, tones: {}, useCopy: () => ({ c, err: error => String(error) }) }, // palette: auth.tsx until slice 2
+    ...themeModules('../'),
   };
   const load = file => {
     const source = ts.transpileModule(readFileSync(new URL(`../src/app/${file}.tsx`, import.meta.url), 'utf8'),
