@@ -81,6 +81,8 @@ ExecStartPre=/bin/sh -c 'if [ -e /data/.wind-db-expected ] && [ ! -s /data/wind.
 ExecStart=/opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts
 Restart=always
 RestartSec=3
+# A graph build beside it (osmium, up to 2 GiB) is killed before the API under memory pressure (Haiku PR #104 L3).
+OOMScoreAdjust=-500
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/data
@@ -134,37 +136,6 @@ if ! grep '^WIND_BACKUP_MAX_AGE_HOURS=' /etc/wind-api.env | tail -n1 | grep -qE 
   echo 'WIND_BACKUP_MAX_AGE_HOURS=3' >> /etc/wind-api.env
 fi
 
-# Road routing (SPEC-routing-eta.md). The graph is built beside the live one with infra/osrm/build-west-bank.sh and promoted by
-# pointing the /srv/osrm link at it (docs/operations/deploy.md). The container listens on loopback only, read-only, with the image
-# pinned to the digest the build used, and memory capped so the API keeps its RAM on this 4 GiB VM. Without a graph the unit does
-# not start and the API is not pointed at it, so it keeps its marked straight-line estimates; with one, an OSRM outage still
-# falls back to them after OSRM_TIMEOUT_MS (3 s).
-cat > /etc/systemd/system/wind-osrm.service <<'EOF'
-[Unit]
-Description=Wind road routing (OSRM, West Bank graph in /srv/osrm)
-After=docker.service
-Requires=docker.service
-ConditionPathExists=/srv/osrm/region.osrm.mldgr
-
-[Service]
-ExecStartPre=-/usr/bin/docker rm -f wind-osrm
-ExecStart=/usr/bin/docker run --rm --name wind-osrm --memory=1g --memory-swap=1g --read-only -p 127.0.0.1:5000:5000 -v /srv/osrm/:/data:ro ghcr.io/project-osrm/osrm-backend@sha256:ef49d1a83c0aa0707aad2338127f96f39af78374bb6c1b3ffa07cf13b92ac572 osrm-routed --algorithm mld --max-table-size 100 /data/region.osrm
-ExecStop=/usr/bin/docker stop wind-osrm
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl daemon-reload
-if [ -e /srv/osrm/region.osrm.mldgr ]; then
-  systemctl enable wind-osrm >/dev/null
-  systemctl restart wind-osrm # picks up a newly promoted graph
-  grep -q '^OSRM_URL=' /etc/wind-api.env || { [ -z "$(tail -c1 /etc/wind-api.env)" ] || echo >> /etc/wind-api.env; echo 'OSRM_URL=http://127.0.0.1:5000' >> /etc/wind-api.env; }
-else
-  echo "no road graph in /srv/osrm yet: routing stays off (see docs/operations/deploy.md, Road routing)" >&2
-fi
-
 # Validated before it replaces the working configuration; a bad one leaves Caddy as it was (Sol ops review 21 Nov).
 CADDY_NEW=$(mktemp /etc/caddy/Caddyfile.new.XXXXXX)
 cat > "$CADDY_NEW" <<EOF
@@ -190,4 +161,47 @@ systemctl reload caddy
 systemctl enable --now wind-backup.timer >/dev/null
 # Enabled so a reboot brings the API back; started by install-release.sh once a release is in /opt/windapi (Haiku PR #98 H-1).
 systemctl enable wind-api >/dev/null
+
+# Road routing (SPEC-routing-eta.md). Last, so a Docker failure can never stop the Caddy, backup and API steps above (Haiku PR #104
+# M1). The graph is built beside the live one with infra/osrm/build-west-bank.sh and promoted by pointing the /srv/osrm link at it
+# (docs/operations/deploy.md). The container listens on loopback only, read-only, unprivileged, with the image pinned to the digest
+# the build used, and memory capped so the API keeps its RAM on this 4 GiB VM. Without a graph the unit does not start and the API
+# is not pointed at it, so it keeps its marked straight-line estimates; with one, an OSRM outage still falls back to them within
+# OSRM_TIMEOUT_MS (3 s). A re-run restarts it only when the unit or the promoted graph changed, or it is down, so quotes do not
+# fall back to estimates for no reason (L4).
+OSRM_NEW=$(mktemp)
+cat > "$OSRM_NEW" <<'EOF'
+[Unit]
+Description=Wind road routing (OSRM, West Bank graph in /srv/osrm)
+After=docker.service
+Requires=docker.service
+ConditionPathExists=/srv/osrm/region.osrm.mldgr
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+ExecStartPre=-/usr/bin/docker rm -f wind-osrm
+ExecStart=/usr/bin/docker run --rm --name wind-osrm --read-only --user 65534:65534 --cap-drop=ALL --security-opt no-new-privileges --pids-limit 256 --memory=1g --memory-swap=1g -p 127.0.0.1:5000:5000 -v /srv/osrm/:/data:ro ghcr.io/project-osrm/osrm-backend@sha256:ef49d1a83c0aa0707aad2338127f96f39af78374bb6c1b3ffa07cf13b92ac572 osrm-routed --algorithm mld --max-table-size 100 /data/region.osrm
+ExecStop=/usr/bin/docker stop wind-osrm
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+OSRM_CHANGED=0
+cmp -s "$OSRM_NEW" /etc/systemd/system/wind-osrm.service || { install -m 644 "$OSRM_NEW" /etc/systemd/system/wind-osrm.service; OSRM_CHANGED=1; }
+rm -f "$OSRM_NEW"
+systemctl daemon-reload
+if [ -e /srv/osrm/region.osrm.mldgr ]; then
+  systemctl enable wind-osrm >/dev/null
+  GRAPH=$(readlink -f /srv/osrm)
+  if [ "$OSRM_CHANGED" = 1 ] || [ "$GRAPH" != "$(cat /etc/wind-osrm.graph 2>/dev/null)" ] || ! systemctl is-active --quiet wind-osrm; then
+    if systemctl restart wind-osrm; then echo "$GRAPH" > /etc/wind-osrm.graph
+    else echo "wind-osrm did not restart: the API keeps its straight-line estimates (journalctl -u wind-osrm)" >&2; fi
+  fi
+  grep -q '^OSRM_URL=' /etc/wind-api.env || { [ -z "$(tail -c1 /etc/wind-api.env)" ] || echo >> /etc/wind-api.env; echo 'OSRM_URL=http://127.0.0.1:5000' >> /etc/wind-api.env; }
+else
+  echo "no road graph in /srv/osrm yet: routing stays off (see docs/operations/deploy.md, Road routing)" >&2
+fi
 echo "provisioned for $HOST"
