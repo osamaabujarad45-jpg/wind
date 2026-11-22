@@ -43,6 +43,7 @@ case "$1" in
       if [ "$u" = wind-api ] && [ -e "$(dirname "$DB")/.wind-db-expected" ] && [ ! -s "$DB" ]; then exit 1; fi
       if [ "$u" = wind-api ] && [ -e "$LIVE/STARTFAIL" ]; then exit 1; fi
       if [ "$u" = wind-api ] && [ -e "$LIVE/MIGRATE" ]; then "$NODE" "$HELPER" write "$DB" migrated; fi
+      if [ "$u" = wind-api ] && [ -n "$FAKE_RESTART_DB_PATH" ]; then printf 'DB_PATH=%s\\0' "$FAKE_RESTART_DB_PATH" > "$PROCESS_ENV"; fi
       echo active > "$STATE/$u"
       # A signal delivered while Caddy starts (the install's commit boundary).
       if [ "$u" = caddy ] && [ -n "$FAKE_TERM_ON_CADDY_START" ]; then kill -TERM "$PPID"; fi
@@ -109,11 +110,12 @@ const install = script('install-release.sh', [nodeSwap,
 const backup = script('backup.sh', [nodeSwap, ['DIR=/data/backups; DB=/data/wind.db', `DIR=${data}/backups; DB=${db}`], ['exec 8</data', `exec 8<${data}`]]);
 const restore = script('restore.sh', [nodeSwap, configSwap, processSwap, ['DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold', `DATA=${data}; DB=${db}; HOLD=${hold}`]]);
 const sqliteConfig = 'SUPPORT_CONTACT=+972597127547\nWIND_FIREBASE_API_KEY=secret\n';
+const sqliteProcessEnv = `DB_PATH=${db}\0NODE_ENV=production\0`;
 writeFileSync(configPath, sqliteConfig);
-writeFileSync(processEnvPath, 'NODE_ENV=production\0');
+writeFileSync(processEnvPath, sqliteProcessEnv);
 
 const dryEnv = join(root, 'dry-env.json');
-const env = extra => ({ PATH: `${bin}:${process.env.PATH}`, CALLS: calls, DRY_ENV_OUT: dryEnv, STATE: state, NODE: node, HELPER: helper, DB: db, LIVE: live, HOLD: hold, ...extra });
+const env = extra => ({ PATH: `${bin}:${process.env.PATH}`, CALLS: calls, DRY_ENV_OUT: dryEnv, STATE: state, NODE: node, HELPER: helper, DB: db, LIVE: live, HOLD: hold, PROCESS_ENV: processEnvPath, ...extra });
 const run = (file, args, extra = {}) => {
   rmSync(calls, { force: true }); rmSync(dryEnv, { force: true });
   const r = spawnSync('bash', [file, ...args], { encoding: 'utf8', env: env(extra) });
@@ -151,18 +153,22 @@ const active = () => readlinkSync(live);
 try {
   freshDb(db); setUnits();
   for (const [file, args] of [[install, release()], [restore, [db]]]) {
-    writeFileSync(configPath, sqliteConfig + 'WIND_DATABASE_URL=postgresql://invalid.invalid/db\n');
-    let refused = run(file, args);
-    assert.equal(refused.status, 1, refused.err);
-    assert.match(refused.err, /refuses PostgreSQL configuration/);
-    assert.ok(!refused.calls.some(line => line.includes('systemctl stop')));
+    for (const assignment of ['WIND_DATABASE_URL=postgresql://invalid.invalid/db', 'DB_PATH=/data/other.db']) {
+      writeFileSync(configPath, `${sqliteConfig}${assignment}\n`);
+      const refused = run(file, args);
+      assert.equal(refused.status, 1, refused.err);
+      assert.match(refused.err, /refuses database overrides/);
+      assert.ok(!refused.calls.some(line => line.includes('systemctl stop')));
+    }
     writeFileSync(configPath, sqliteConfig);
-    writeFileSync(processEnvPath, 'WIND_DATABASE_URL=postgresql://invalid.invalid/db\0');
-    refused = run(file, args);
-    assert.equal(refused.status, 1, refused.err);
-    assert.match(refused.err, /cannot prove the live API uses SQLite/);
-    assert.ok(!refused.calls.some(line => line.includes('systemctl stop')));
-    writeFileSync(processEnvPath, 'NODE_ENV=production\0');
+    for (const processEnv of [sqliteProcessEnv + 'WIND_DATABASE_URL=postgresql://invalid.invalid/db\0', 'DB_PATH=/data/other.db\0']) {
+      writeFileSync(processEnvPath, processEnv);
+      const refused = run(file, args);
+      assert.equal(refused.status, 1, refused.err);
+      assert.match(refused.err, /cannot prove the live API uses .* on SQLite/);
+      assert.ok(!refused.calls.some(line => line.includes('systemctl stop')));
+    }
+    writeFileSync(processEnvPath, sqliteProcessEnv);
   }
   // 1. A host from before the symlink: its /opt/windapi directory becomes legacy-<time>, the checkpoint follows the freeze.
   freshDb(db); setUnits();
@@ -427,14 +433,19 @@ ${r.err}`);
   assert.match(r.err, /previous database is live again/);
   assert.ok(!existsSync(hold));
 
-  // A foreign listener can answer the readiness URL even though the systemd API never bound the socket.
-  setUnits(); freshDb(db);
-  r = run(restore, [copy, '--open'], { FAKE_FOREIGN_API: '1' });
-  assert.equal(r.status, 2, r.err);
-  assert.match(r.err, /API did not become ready on the previous database/);
-  assert.deepEqual(notes(db), ['first'], 'a foreign readiness answer cannot commit the replacement');
-  assert.deepEqual([unit('caddy'), existsSync(hold)], ['inactive', true]);
-  rmSync(hold);
+  // Readiness must come from the service on the expected database before the hold is released.
+  for (const [file, args] of [[install, release()], [restore, [copy, '--open']]]) {
+    for (const failure of [{ FAKE_FOREIGN_API: '1' }, { FAKE_RESTART_DB_PATH: '/data/other.db' }]) {
+      setUnits(); freshDb(db);
+      r = run(file, args, failure);
+      assert.equal(r.status, 2, r.err);
+      assert.match(r.err, /MANUAL RECOVERY NEEDED/);
+      assert.deepEqual(notes(db), ['first'], 'a mismatched listener or database cannot commit');
+      assert.deepEqual([unit('caddy'), existsSync(hold)], ['inactive', true]);
+      rmSync(hold);
+      writeFileSync(processEnvPath, sqliteProcessEnv);
+    }
+  }
 
   setUnits(); freshDb(db);
   r = run(restore, [copy, '--open'], { FAKE_PG_READY: '1' });

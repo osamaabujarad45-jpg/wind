@@ -22,19 +22,27 @@ set -euo pipefail
 TAR=$(realpath -s -- "${1:?release tarball}"); SUM=${2:?expected sha256} # absolute before the cd below (Haiku C1)
 cd / # the service user's commands never start in a directory it cannot read
 RELEASES=/opt/wind-releases; LIVE=/opt/windapi; DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold
+command -v ss >/dev/null || { echo "install needs ss (iproute2) to verify the API listener" >&2; exit 1; }
 exec 8<"$DATA"
 flock -n 8 || { echo "another install, restore or backup is running" >&2; exit 1; }
 API_ENV=/etc/wind-api.env
-[ -r "$API_ENV" ] || { echo "cannot read the API environment" >&2; exit 1; }
-if grep -Eq '^[[:blank:]]*(export[[:blank:]]+)?(WIND_DATABASE_URL|WIND_POSTGRES_STAGING)[[:blank:]]*=' "$API_ENV"; then
-  echo "the SQLite procedure refuses PostgreSQL configuration" >&2; exit 1
-fi
+config_check=0
+grep -Eq '^[[:blank:]]*(export[[:blank:]]+)?(DB_PATH|WIND_DATABASE_URL|WIND_POSTGRES_STAGING)[[:blank:]]*=' "$API_ENV" || config_check=$?
+case "$config_check" in
+  0) echo "the SQLite procedure refuses database overrides in $API_ENV" >&2; exit 1 ;;
+  1) ;;
+  *) echo "cannot read the API environment" >&2; exit 1 ;;
+esac
+api_uses_expected_db() {
+  local pid=$1 process_env pg=0
+  process_env="/proc/$pid/environ"
+  grep -zEq '^(WIND_DATABASE_URL|WIND_POSTGRES_STAGING)=.' "$process_env" || pg=$?
+  [ "$pg" = 1 ] && grep -zFxq -- "DB_PATH=$DB" "$process_env"
+}
 pid=$(systemctl show -p MainPID --value wind-api)
 [[ "$pid" =~ ^[0-9]+$ ]] || { echo "cannot determine the live API process" >&2; exit 1; }
-if [ "$pid" != 0 ]; then
-  pg=0
-  grep -zEq '^(WIND_DATABASE_URL|WIND_POSTGRES_STAGING)=.' "/proc/$pid/environ" || pg=$?
-  [ "$pg" = 1 ] || { echo "cannot prove the live API uses SQLite" >&2; exit 1; }
+if [ "$pid" != 0 ] && ! api_uses_expected_db "$pid"; then
+  echo "cannot prove the live API uses $DB on SQLite" >&2; exit 1
 fi
 # Both unit guards (provision.sh) must be in place first: the Caddy hold check and the API's missing-database check (Haiku M1).
 # The loaded units, not just the files on disk (Haiku N4), matched without a pipe.
@@ -55,9 +63,13 @@ say() { echo "install-release: $*" >&2; }
 sqlite_response() {
   /opt/node/bin/node -e 'try {const body = JSON.parse(require("node:fs").readFileSync(0, "utf8")); process.exit(body.ok === true && body.schema === 3 && body.backend !== "postgres" ? 0 : 1)} catch {process.exit(1)}'
 }
-ready() { # $1 port: the API answers /api/ready within $2 seconds
-  local i; for i in $(seq 1 "$2"); do
-    curl -fsS -m 3 "http://127.0.0.1:$1/api/ready" > "$WORK/ready.json" 2>/dev/null &&
+ready() { # The service answers /api/ready on the live listener within $1 seconds.
+  local i pid listeners
+  for i in $(seq 1 "$1"); do
+    pid=$(systemctl show -p MainPID --value wind-api) && [[ "$pid" =~ ^[1-9][0-9]*$ ]] &&
+      api_uses_expected_db "$pid" &&
+      listeners=$(ss -H -ltnp 'src 127.0.0.1 and sport = :4000') && [[ "$listeners" == *"pid=$pid,"* ]] &&
+      curl -fsS -m 3 http://127.0.0.1:4000/api/ready > "$WORK/ready.json" 2>/dev/null &&
       sqlite_response < "$WORK/ready.json" && return 0; sleep 1
   done; return 1
 }
@@ -104,7 +116,7 @@ reopen_previous() { # the previous release, ready, then the hold is lifted and C
   if [ -z "$PREV" ]; then fatal "first install failed; there is no previous release to start"; return; fi
   if [ -n "$CHECKPOINT" ] && [ ! -s "$DB" ]; then fatal "the database is missing; restore the checkpoint"; return; fi
   systemctl start wind-api || { fatal "the previous release did not start"; return; }
-  ready 4000 60 || { fatal "the previous release did not become ready"; return; }
+  ready 60 || { fatal "the previous release did not become ready"; return; }
   rm -f -- "$HOLD"
   systemctl start caddy || { fatal "the previous release is ready but Caddy did not start"; return; }
   say "the previous release is live again: $PREV"
@@ -226,7 +238,7 @@ point "$REL"
 sync
 PHASE=started # from the start command on, the candidate may write to the live database
 systemctl start wind-api
-ready 4000 60 || { journalctl -u wind-api -n 20 --no-pager >&2; say "the candidate did not become ready"; exit 1; }
+ready 60 || { journalctl -u wind-api -n 20 --no-pager >&2; say "the candidate did not become ready"; exit 1; }
 # Commit: from here the candidate is the release and its database is the database. A signal or a Caddy failure after this line
 # never rolls anything back, because Caddy may already have let requests through (Sol second recheck of PR #101).
 trap '' INT TERM HUP # the commit tail (lift the hold, start Caddy) always completes (Sonnet L2, Sol recheck 5)

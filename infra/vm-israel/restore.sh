@@ -28,16 +28,23 @@ case "$(systemctl show -p ExecStartPre --value wind-api 2>/dev/null)" in *wind-d
 exec 8<"$DATA"
 flock -n 8 || { echo "another install, restore or backup is running" >&2; exit 1; }
 API_ENV=/etc/wind-api.env
-[ -r "$API_ENV" ] || { echo "cannot read the API environment" >&2; exit 1; }
-if grep -Eq '^[[:blank:]]*(export[[:blank:]]+)?(WIND_DATABASE_URL|WIND_POSTGRES_STAGING)[[:blank:]]*=' "$API_ENV"; then
-  echo "the SQLite procedure refuses PostgreSQL configuration" >&2; exit 1
-fi
+config_check=0
+grep -Eq '^[[:blank:]]*(export[[:blank:]]+)?(DB_PATH|WIND_DATABASE_URL|WIND_POSTGRES_STAGING)[[:blank:]]*=' "$API_ENV" || config_check=$?
+case "$config_check" in
+  0) echo "the SQLite procedure refuses database overrides in $API_ENV" >&2; exit 1 ;;
+  1) ;;
+  *) echo "cannot read the API environment" >&2; exit 1 ;;
+esac
+api_uses_expected_db() {
+  local pid=$1 process_env pg=0
+  process_env="/proc/$pid/environ"
+  grep -zEq '^(WIND_DATABASE_URL|WIND_POSTGRES_STAGING)=.' "$process_env" || pg=$?
+  [ "$pg" = 1 ] && grep -zFxq -- "DB_PATH=$DB" "$process_env"
+}
 pid=$(systemctl show -p MainPID --value wind-api)
 [[ "$pid" =~ ^[0-9]+$ ]] || { echo "cannot determine the live API process" >&2; exit 1; }
-if [ "$pid" != 0 ]; then
-  pg=0
-  grep -zEq '^(WIND_DATABASE_URL|WIND_POSTGRES_STAGING)=.' "/proc/$pid/environ" || pg=$?
-  [ "$pg" = 1 ] || { echo "cannot prove the live API uses SQLite" >&2; exit 1; }
+if [ "$pid" != 0 ] && ! api_uses_expected_db "$pid"; then
+  echo "cannot prove the live API uses $DB on SQLite" >&2; exit 1
 fi
 KEPT="$DATA/wind.db.before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
 WORK=$(sudo -u wind mktemp -d "$DATA/restore.XXXXXX" 8<&-)   # wind's own, on the live file's filesystem: the final move is a rename
@@ -58,6 +65,7 @@ ready() {
   local i pid listeners
   for i in $(seq 1 60); do
     pid=$(systemctl show -p MainPID --value wind-api) && [[ "$pid" =~ ^[1-9][0-9]*$ ]] &&
+      api_uses_expected_db "$pid" &&
       listeners=$(api_listener) && [[ "$listeners" == *"pid=$pid,"* ]] &&
       curl -fsS -m 3 http://127.0.0.1:4000/api/ready 2>/dev/null | sqlite_response && return 0
     sleep 1
