@@ -64,6 +64,8 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 |---|---|---|---|---|
 | Shops · orders that need attention, terms, licence, payouts | `/admin/merchants` | `src/app/admin/merchants.tsx` | [admin-shops.png](ar/admin-shops.png) | [admin-shops.png](en/admin-shops.png) |
 | Dashboard | `/admin` | `src/app/admin/index.tsx` | [admin-dashboard.png](ar/admin-dashboard.png) | [admin-dashboard.png](en/admin-dashboard.png) |
+| Approvals: captains, plan requests and shops waiting for a decision | `/admin/approvals` | `src/app/admin/approvals.tsx` | [admin-approvals.png](ar/admin-approvals.png) | [admin-approvals.png](en/admin-approvals.png) |
+| Approvals on a desktop (side rail) | `/admin/approvals` | `src/app/admin/approvals.tsx` | [admin-approvals-desktop.png](ar/admin-approvals-desktop.png) | [admin-approvals-desktop.png](en/admin-approvals-desktop.png) |
 | Support inbox (conversations waiting first) | `/admin/support` | `src/app/admin/support.tsx` | [admin-support.png](ar/admin-support.png) | [admin-support.png](en/admin-support.png) |
 | Support inbox on a desktop: list and conversation side by side | `/admin/support` | `src/app/admin/support.tsx` | [admin-support-desktop.png](ar/admin-support-desktop.png) | [admin-support-desktop.png](en/admin-support-desktop.png) |
 | Dashboard on a desktop (1280 px): side rail instead of bottom tabs | `/admin` | `src/app/admin/_layout.tsx` | [admin-desktop.png](ar/admin-desktop.png) | [admin-desktop.png](en/admin-desktop.png) |

@@ -322,6 +322,8 @@ const screens = [
 
   { id: 'support', group: 'Customer', name: 'Message Wind support (in-app conversation)', route: '/support', file: 'src/app/support.tsx', role: 'customer' },
   { id: 'admin-dashboard', group: 'Admin', name: 'Dashboard', route: '/admin', file: 'src/app/admin/index.tsx', role: 'admin' },
+  { id: 'admin-approvals', group: 'Admin', name: 'Approvals: captains, plan requests and shops waiting for a decision', route: '/admin/approvals', file: 'src/app/admin/approvals.tsx', role: 'admin' },
+  { id: 'admin-approvals-desktop', group: 'Admin', name: 'Approvals on a desktop (side rail)', route: '/admin/approvals', file: 'src/app/admin/approvals.tsx', role: 'admin', desktop: true },
   { id: 'admin-support', group: 'Admin', name: 'Support inbox (conversations waiting first)', route: '/admin/support', file: 'src/app/admin/support.tsx', role: 'admin' },
   { id: 'admin-support-desktop', group: 'Admin', name: 'Support inbox on a desktop: list and conversation side by side', route: '/admin/support', file: 'src/app/admin/support.tsx', role: 'admin', desktop: true, tap: 'ليلى حداد' },
   { id: 'admin-desktop', group: 'Admin', name: 'Dashboard on a desktop (1280 px): side rail instead of bottom tabs', route: '/admin', file: 'src/app/admin/_layout.tsx', role: 'admin', desktop: true },
