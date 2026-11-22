@@ -9,6 +9,9 @@ const amounts = [
   [1250, '₪\u00a01,250'],
   [1234567.89, '₪\u00a01,234,567.89'],
   [-1250.5, '−₪\u00a01,250.50'],
+  [-0.004, '₪\u00a00.00'],
+  [NaN, '—'],
+  [Infinity, '—'],
 ];
 for (const language of ['ar', 'en']) {
   for (const [amount, expected] of amounts) {

@@ -48,7 +48,7 @@ const modules = {
     storage: { exclusive: run => run(), get: async key => store.get(key) ?? null,
       set: async (key, value) => { if (value === null) store.delete(key); else store.set(key, value); } },
   },
-  '../../api-client': { apiSessionRevision: () => 1, serverOffset: () => 0 },
+  '../../api-client': { apiSessionRevision: () => 1, serverOffset: () => receiptNow === undefined ? 0 : receiptNow - Date.now() },
   '../../booking': { ...booking, pendingOutcome: (receipt, command) => booking.pendingOutcome(receipt, command, receiptNow) },
   '../../shop-checkout': checkout,
   '../../recovery-storage': { recoveryStorage: { read: async key => {
@@ -153,34 +153,47 @@ for (const receiptState of ['unknown', 'absent', 'present']) {
   } finally { dismiss(); }
 }
 
-state.length = references.length = posts.length = navigation.length = 0;
-failFirst = true;
-receiptNow = undefined;
-receiptOrderId = undefined;
-render();
-const closeBeforeRead = focus();
-await flush();
-enterDelivery();
-await render().props.footer.props.onPress();
-closeBeforeRead();
-state.length = references.length = 0;
-protectedReadFails = true;
-receiptNow = posts[0].commandExpiresAt + 60_000;
-render();
-const closeAfterRead = focus();
-try {
+for (const outcome of ['restored', 'reenter', 'expired', 'committed']) {
+  state.length = references.length = posts.length = navigation.length = 0;
+  failFirst = true;
+  receiptNow = undefined;
+  receiptOrderId = undefined;
+  render();
+  const closeBeforeRead = focus();
   await flush();
-  assert.equal(store.size, 1, 'a transient read failure preserves the command');
-  assert.equal(protectedStore.size, 1, 'a transient read failure preserves the encrypted draft');
-  assert.equal(find(render(), 'ErrorText').children, c.bookingStorageError);
-  protectedReadFails = false;
-  find(render(), 'Button', props => props.title === c.retry).onPress();
-  await flush();
-  assert.equal(find(render(), 'Field', props => props.label === c.shopLandmark).value, 'Blue door');
-  assert.equal(posts.length, 1, 'retry after a storage failure cannot resend an expired POST');
-  assert.equal(store.size, 0);
-  assert.equal(protectedStore.size, 0);
-} finally { closeAfterRead(); }
+  enterDelivery();
+  await render().props.footer.props.onPress();
+  closeBeforeRead();
+  state.length = references.length = 0;
+  protectedReadFails = true;
+  render();
+  const closeAfterRead = focus();
+  try {
+    await flush();
+    assert.equal(find(render(), 'Button', props => props.title === c.shopReenterDelivery), undefined,
+      'a missing receipt before the deadline cannot authorize starting over');
+    receiptNow = posts[0].commandExpiresAt + 60_000;
+    find(render(), 'Button', props => props.title === c.retry).onPress();
+    await flush();
+    assert.equal(store.size, 1, 'a transient read failure preserves the command');
+    assert.equal(protectedStore.size, 1, 'a transient read failure preserves the encrypted draft');
+    assert.equal(find(render(), 'ErrorText').children, c.bookingStorageError);
+    protectedReadFails = outcome !== 'restored';
+    if (outcome === 'expired') receiptNow += 60 * 60_000;
+    if (outcome === 'committed') receiptOrderId = 14;
+    const action = outcome === 'reenter' || outcome === 'committed' ? c.shopReenterDelivery : c.retry;
+    find(render(), 'Button', props => props.title === action).onPress();
+    await flush();
+    if (outcome === 'committed') assert.deepEqual(navigation, ['/order/14'], 're-entry still honors a committed receipt');
+    else assert.equal(find(render(), 'Field', props => props.label === c.shopLandmark).value, outcome === 'restored' ? 'Blue door' : '');
+    assert.equal(posts.length, 1, 'retry after a storage failure cannot resend an expired POST');
+    assert.equal(store.size, 0);
+    assert.equal(protectedStore.size, 0);
+  } finally {
+    protectedReadFails = false;
+    closeAfterRead();
+  }
+}
 
 state.length = references.length = posts.length = navigation.length = 0;
 failFirst = true;

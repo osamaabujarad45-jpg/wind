@@ -14,8 +14,11 @@ function createFormatters(locale: string) {
 
 /** User-facing amounts are in shekels. Callers convert agorot before formatting. */
 export function formatMoney(amount: number, language: keyof typeof locales, currency: string) {
+  if (!Number.isFinite(amount)) return '—';
   const { whole, decimal } = formatters[language];
-  const digits = (Number.isInteger(amount) ? whole : decimal).format(Math.abs(amount));
+  const formatter = Number.isInteger(amount) ? whole : decimal;
+  const digits = formatter.format(Math.abs(amount));
+  const sign = amount < 0 && digits !== formatter.format(0) ? '−' : '';
   // Keep the currency and amount on the same line.
-  return `${amount < 0 ? '−' : ''}${currency}\u00a0${digits}`;
+  return `${sign}${currency}\u00a0${digits}`;
 }

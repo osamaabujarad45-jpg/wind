@@ -20,6 +20,20 @@ const delivery = { requestId: 'shop-request', dropoffNote: 'مَعلم'.repeat(4
 await store.write('shop-checkout', delivery, 1000);
 assert.ok([...data.values()].every(value => !value.includes(delivery.dropoffNote) && !value.includes(delivery.contact)), 'delivery details are encrypted');
 assert.deepEqual(await createProtectedRecovery(io).read('shop-checkout'), delivery, 'checkout details survive a restart');
+let reads = 0;
+const temporaryCredentialFailure = createProtectedRecovery({ ...io, currentCredential: async () => {
+  if (++reads === 2) throw new Error('temporary credential read failure');
+  return true;
+} });
+await assert.rejects(temporaryCredentialFailure.read('shop-checkout'), /temporary credential read failure/);
+assert.deepEqual(await temporaryCredentialFailure.read('shop-checkout'), delivery, 'credential errors do not remove a valid draft');
+let opens = 0;
+const temporaryDecryptFailure = createProtectedRecovery({ ...io, open: async (...args) => {
+  if (++opens === 1) throw new Error('temporary crypto failure');
+  return io.open(...args);
+} });
+await assert.rejects(temporaryDecryptFailure.read('shop-checkout'), /temporary crypto failure/);
+assert.deepEqual(await temporaryDecryptFailure.read('shop-checkout'), delivery, 'decrypt errors do not remove a valid draft');
 assert.deepEqual(await store.read('command'), { requestId: 'same', code: '1234' }, 'shop and driver commands use separate slots');
 token = 'session-two'; revision++;
 assert.equal(await store.read('command'), null, 'another login cannot read or overwrite an earlier session');

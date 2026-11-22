@@ -17,6 +17,7 @@ import { QtyControl } from '../../shop-ui';
 import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
 
 const deliveryRecoveryMs = 60 * 60_000;
+type CheckoutRecoveryAction = 'retry' | { discardDraftFor: string };
 
 export default function ShopCart() {
   const { c, language, money } = useCopy();
@@ -34,6 +35,7 @@ export default function ShopCart() {
   const key = me?.user.role === 'customer' ? shopCheckoutKey(me.user.id) : null;
   const [pending, setPending] = useState<ShopCheckout | null>(null);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const [reenterRequestId, setReenterRequestId] = useState<string | null>(null);
   const placing = useRef(false);
   const visible = useRef(false);
   const clearCheckout = useCallback(async (current: () => boolean) => {
@@ -69,7 +71,7 @@ export default function ShopCart() {
     }
     await finish(command, order.id, current);
   }, [key, c, clearCheckout, finish]);
-  const check = useCallback(async (focused: () => boolean = () => true, retry = false) => {
+  const check = useCallback(async (focused: () => boolean, action?: CheckoutRecoveryAction) => {
     if (!key) return;
     const revision = apiSessionRevision(), current = () => focused() && revision === apiSessionRevision();
     try { await storage.exclusive(async () => {
@@ -85,22 +87,28 @@ export default function ShopCart() {
         answer = pendingOutcome(await api<unknown>(`/orders/commands/${command.requestId}`), command);
       } catch { /* Keep the command until an authoritative receipt can be read. */ }
       if (!current()) return;
+      if (answer.state !== 'absent') setReenterRequestId(null);
       if (answer.state === 'present') { await finish(command, answer.orderId, current); return; }
-      if (answer.state === 'unknown' && (!retry || Date.now() + serverOffset() >= command.commandExpiresAt)) return;
-      const savedDelivery = await recoveryStorage.read('shop-checkout').catch((error: unknown) => {
-        // The recovery store already removes an expired or unreadable record. Other read failures can be retried.
+      if (answer.state === 'unknown' && (action !== 'retry' || Date.now() + serverOffset() >= command.commandExpiresAt)) return;
+      // A confirmed-absent command older than the draft lifetime can release the form even if the ciphertext will not open.
+      const draftExpired = answer.state === 'absent' && Date.now() + serverOffset() >= command.commandExpiresAt + deliveryRecoveryMs;
+      const discardDraft = answer.state === 'absent' && typeof action === 'object' && action.discardDraftFor === command.requestId;
+      const savedDelivery = draftExpired || discardDraft ? null : await recoveryStorage.read('shop-checkout').catch((error: unknown) => {
+        // The recovery store removes expired or invalid envelopes. Other read failures can be retried.
         if (error instanceof Error && error.message === 'recovery_record_unavailable') return null;
+        if (current() && answer.state === 'absent') setReenterRequestId(command.requestId);
         throw error;
       });
       const delivery = readShopDelivery(savedDelivery, command.requestId);
       if (!current()) return;
       if (answer.state === 'absent') {
-        const contents = await storedCart();
+        const contents = delivery ? await storedCart() : null;
         if (!current()) return;
         const restored = delivery && contents && basketIdentity(contents) === command.basket ? delivery : null;
         await clearCheckout(current);
         if (!current()) return;
         setPending(null);
+        setReenterRequestId(null);
         setPoint(restored?.dropoffPoint ?? null); setNote(restored?.dropoffNote ?? '');
         setContact(restored?.contact ?? defaultContact); setLimit(restored?.agreeLimit ?? 0.1);
         setError(restored ? '' : c.shopRecoveryReenter);
@@ -118,16 +126,20 @@ export default function ShopCart() {
     const timer = setInterval(run, 15_000);
     return () => { visible.current = false; focused = false; clearInterval(timer); };
   }, [check]));
+  function recoverCheckout(action: CheckoutRecoveryAction) {
+    if (placing.current) return;
+    placing.current = true;
+    setBusy(true);
+    void check(() => visible.current, action).finally(() => { placing.current = false; setBusy(false); });
+  }
+  const canReenterDelivery = loadedKey === key && pending && reenterRequestId === pending.requestId;
   if (!key || loadedKey !== key || pending) return <Screen>
     <Header title={c.shopCart} back />
-    {loadedKey === key && pending && <Card><Section title={c.bookingPending} /><Txt>{c.bookingRecoveryWait}</Txt></Card>}
+    {loadedKey === key && pending && <Card><Section title={c.bookingPending} /><Txt>{canReenterDelivery ? c.shopRecoveryReenter : c.bookingRecoveryWait}</Txt></Card>}
     <ErrorText>{error}</ErrorText>
-    {key && <Button title={c.retry} variant="soft" disabled={busy} onPress={() => {
-      if (placing.current) return;
-      placing.current = true;
-      setBusy(true);
-      void check(() => visible.current, true).finally(() => { placing.current = false; setBusy(false); });
-    }} />}
+    {key && <Button title={c.retry} variant="soft" disabled={busy} onPress={() => recoverCheckout('retry')} />}
+    {key && pending && canReenterDelivery &&
+      <Button title={c.shopReenterDelivery} variant="ghost" disabled={busy} onPress={() => recoverCheckout({ discardDraftFor: pending.requestId })} />}
     {key && <Button title={c.orders} variant="ghost" onPress={() => router.replace('/(customer)/orders')} />}
   </Screen>;
   if (!cart) return <Screen><Header title={c.shopCart} back /><Empty icon="basket-outline" title={c.shopCartEmpty} action={<Button title={c.shopBrowse} onPress={() => router.replace('/shop')} />} /></Screen>;

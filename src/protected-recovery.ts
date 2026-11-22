@@ -48,11 +48,12 @@ export function createProtectedRecovery(io: IO) {
         const scope = await namespace(token), recordKey = key(slot, scope); guard(revision);
         const ciphertext = await io.read(recordKey); guard(revision);
         if (ciphertext === null) return null;
+        // A crypto provider or credential store can fail temporarily. Only discard a record we can validate as unusable.
+        const plaintext = ciphertext.length <= MAX_CIPHERTEXT ? await io.open(ciphertext, token, slot) : null;
+        guard(revision);
         let envelope;
         try {
-          if (ciphertext.length > MAX_CIPHERTEXT) throw new Error('invalid_recovery_record');
-          envelope = JSON.parse(await io.open(ciphertext, token, slot)); guard(revision);
-          if (!await same(token)) throw new Error('session_changed');
+          envelope = plaintext === null ? null : JSON.parse(plaintext);
           const now = io.now();
           if (!envelope || envelope.schemaVersion !== 1 || !Number.isSafeInteger(envelope.createdAt) || !Number.isSafeInteger(envelope.expiresAt)
             || envelope.createdAt > now + 5_000 || envelope.expiresAt <= now || envelope.expiresAt <= envelope.createdAt
