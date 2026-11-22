@@ -725,6 +725,22 @@
       "endpoints": [
         { "method": "POST", "path": "/api/admin/orders/:id/block-review", "anonymousStatus": 401 }
       ]
+    },
+    {
+      "packet": "SUPPORT-inbox",
+      "source": "server/domain/support.ts",
+      "registrar": "registerSupportRoutes",
+      "endpoints": [
+        { "method": "GET", "path": "/api/support/thread", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/support/messages", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/admin/support", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/admin/support/:id", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/support/:id/reply", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/support/:id/close", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/support/:id/reopen", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/admin/support/:id/tags", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/admin/support/tags", "anonymousStatus": 401 }
+      ]
     }
   ]
 }

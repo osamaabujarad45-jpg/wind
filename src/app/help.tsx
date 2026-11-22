@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from '../motion';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { api, privacyUrl, SUPPORT_URL } from '../api';
 import { ltr } from '../model';
 import { InstallLink } from '../install-link';
@@ -36,9 +36,12 @@ export default function Help() {
     {orderRef && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.receiptNo}: {ltr(orderRef)}</Txt>}
 
     {/* the button already says "contact support"; the titled card only frames the no-line note */}
+    {/* In-app support first for anyone signed in (SPEC-support-inbox.md); WhatsApp or email stays as the other way. */}
+    {me && <Appear><View style={{ marginBottom: 10 }}><Button title={c.supportMessage} icon="chatbubbles-outline"
+      onPress={() => router.push({ pathname: '/support', params: orderRef ? { order: String(Number(orderRef.slice(2))) } : {} })} /></View></Appear>}
     <Appear>
       {SUPPORT_URL
-        ? <Button title={c.support} icon={SUPPORT_URL.startsWith('mailto:') ? 'mail-outline' : 'chatbubble-outline'} onPress={() => Linking.openURL(orderRef && SUPPORT_URL!.startsWith('https://wa.me/') ? `${SUPPORT_URL}?text=${encodeURIComponent(`${c.brand} · ${orderRef}`)}` : SUPPORT_URL!)} />
+        ? <Button title={c.support} variant={me ? 'outline' : 'primary'} icon={SUPPORT_URL.startsWith('mailto:') ? 'mail-outline' : 'chatbubble-outline'} onPress={() => Linking.openURL(orderRef && SUPPORT_URL!.startsWith('https://wa.me/') ? `${SUPPORT_URL}?text=${encodeURIComponent(`${c.brand} · ${orderRef}`)}` : SUPPORT_URL!)} />
         : <Card tone="olive">
           <Row gap={12} style={{ marginBottom: 12 }}>
             <View style={styles.icon}><Ionicons name="chatbubbles-outline" size={22} color={palette.olive} /></View>

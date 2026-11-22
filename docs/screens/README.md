@@ -47,6 +47,7 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 | Shop · catalogue (weighed items say estimate) | `/shop/1` | `src/app/shop/[id].tsx` | [shop-store.png](ar/shop-store.png) | [shop-store.png](en/shop-store.png) |
 | Shop order · on hold after a failed delivery (the card names the hold) | `/order/14` | `src/shop-ui.tsx (ShopCustomerPanel)` | [shop-on-hold.png](ar/shop-on-hold.png) | [shop-on-hold.png](en/shop-on-hold.png) |
 | Shop order · the shop asks before a substitution (approve, decline, add time) | `/order/11` | `src/shop-ui.tsx (ShopCustomerPanel)` | [shop-consent.png](ar/shop-consent.png) | [shop-consent.png](en/shop-consent.png) |
+| Message Wind support (in-app conversation) | `/support` | `src/app/support.tsx` | [support.png](ar/support.png) | [support.png](en/support.png) |
 
 ## Merchant
 
@@ -63,6 +64,8 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 |---|---|---|---|---|
 | Shops · orders that need attention, terms, licence, payouts | `/admin/merchants` | `src/app/admin/merchants.tsx` | [admin-shops.png](ar/admin-shops.png) | [admin-shops.png](en/admin-shops.png) |
 | Dashboard | `/admin` | `src/app/admin/index.tsx` | [admin-dashboard.png](ar/admin-dashboard.png) | [admin-dashboard.png](en/admin-dashboard.png) |
+| Support inbox (conversations waiting first) | `/admin/support` | `src/app/admin/support.tsx` | [admin-support.png](ar/admin-support.png) | [admin-support.png](en/admin-support.png) |
+| Support inbox on a desktop: list and conversation side by side | `/admin/support` | `src/app/admin/support.tsx` | [admin-support-desktop.png](ar/admin-support-desktop.png) | [admin-support-desktop.png](en/admin-support-desktop.png) |
 | Dashboard on a desktop (1280 px): side rail instead of bottom tabs | `/admin` | `src/app/admin/_layout.tsx` | [admin-desktop.png](ar/admin-desktop.png) | [admin-desktop.png](en/admin-desktop.png) |
 | All orders | `/admin/orders` | `src/app/admin/orders.tsx` | [admin-orders.png](ar/admin-orders.png) | [admin-orders.png](en/admin-orders.png) |
 | Parcel · delivery code recovery | `/order/7` | `src/app/order/[id].tsx` | [admin-order.png](ar/admin-order.png) | [admin-order.png](en/admin-order.png) |

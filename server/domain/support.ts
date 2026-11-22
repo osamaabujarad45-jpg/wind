@@ -1,0 +1,277 @@
+// In-app support inbox (owner decision 22 Nov 2026; SPEC-support-inbox.md). Customers, captains and shops write to Wind
+// support inside the app; staff (admin, or a support-scoped staff member) answer, close and tag each conversation so the
+// feedback rolls up into improvements. Additive module: the frozen main.ts route inventory requires new routes to own
+// their declarations. One open thread per person; a message from someone with none opens one. Callers run under the HTTP
+// envelope's transaction, which queuePush requires.
+import type { SQLInputValue } from 'node:sqlite';
+import type { User } from '../../src/model.ts';
+import type { Row, WriteResult } from '../db/persistence.ts';
+
+type Fail = (status: number, message: string) => never;
+type Ctx = { user: User; params: string[]; body: Row; query: URLSearchParams };
+type Register = (method: string, path: string, handler: (ctx: Ctx) => Promise<unknown>) => unknown;
+type Deps = {
+  one: (sql: string, ...args: SQLInputValue[]) => Promise<Row | undefined>;
+  all: (sql: string, ...args: SQLInputValue[]) => Promise<Row[]>;
+  run: (sql: string, ...args: SQLInputValue[]) => Promise<WriteResult>;
+  fail: Fail;
+  text: (value: unknown, max: number, required?: boolean) => string;
+  /** Admin role and the support (or platform admin) staff scope. */
+  needSupport: (user: User) => Promise<void>;
+  /** Rate limit by key: throws 429 when exceeded. */
+  limit: (key: string, maximum: number, windowMs: number) => Promise<unknown>;
+  limitKey: (userId: number) => string;
+  queuePush: (ids: number[], kind: 'support_reply' | 'attention', order: number, path?: string) => Promise<void>;
+  /** Inside a write's transaction: false once the account is deleted; on PostgreSQL also holds the user row (FOR KEY SHARE)
+   *  so a deletion waits for the write to commit, and then blanks and closes it too. */
+  holdPerson: (userId: number) => Promise<boolean>;
+  /** Support staff to tell about a new conversation (support or platform scope, active). */
+  staffIds: () => Promise<number[]>;
+  /** Run writes in one transaction (BEGIN IMMEDIATE on SQLite serializes racing first messages). */
+  tx: <T>(work: () => Promise<T>) => Promise<T>;
+};
+const uniqueViolation = (error: unknown) => {
+  const e = error as { code?: unknown; message?: unknown };
+  return e?.code === '23505' || e?.code === 'ERR_SQLITE_ERROR' && /UNIQUE constraint failed/.test(String(e.message));
+};
+
+export const SUPPORT_TAGS = ['checkpoints', 'eta', 'pricing', 'captain', 'app_bug', 'payment', 'safety', 'other'] as const;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MESSAGE_MAX = 1000;
+const PAGE = 50;
+const IMPROVEMENT_WINDOW = 30 * 86_400_000;
+const LIST_PAGE = 100;
+const LIST_MAX = 1000;
+
+/** 0599123456 → 059 ••• 3456: lists never show a whole number (admin.md: full number on the person's page only). */
+export const maskPhone = (phone: unknown) => {
+  const digits = String(phone ?? '').replace(/\D/g, '');
+  return digits.length < 7 ? '•••' : `${digits.slice(0, 3)} ••• ${digits.slice(-4)}`;
+};
+const tagsOf = (value: unknown) => String(value ?? '').split(',').filter(Boolean);
+
+export function registerSupportRoutes(route: Register, deps: Deps): void {
+  const { one, all, run, fail } = deps;
+
+  const message = (m: Row, viewer: number) => ({ id: m.id, fromStaff: !!m.from_staff, mine: m.sender_id === viewer, body: m.body,
+    orderId: m.order_id ?? null, createdAt: m.created_at });
+  // The latest page, or the page before a message id ("Earlier messages"); `more` says whether older ones remain.
+  const page = async (threadId: number, viewer: number, before?: number) => {
+    const rows = await all(`SELECT id, sender_id, from_staff, body, order_id, created_at FROM support_messages WHERE thread_id = ?
+      ${before ? 'AND id < ?' : ''} ORDER BY id DESC LIMIT ?`, ...(before ? [threadId, before, PAGE + 1] : [threadId, PAGE + 1]));
+    return { messages: rows.slice(0, PAGE).reverse().map(m => message(m, viewer)), more: rows.length > PAGE };
+  };
+  const beforeOf = (value: string | null) => {
+    if (value == null) return undefined;
+    const id = Number(value);
+    if (!Number.isSafeInteger(id) || id <= 0) fail(400, 'invalid_input');
+    return id;
+  };
+  const threadView = (t: Row) => ({ id: t.id, status: t.status, orderId: t.order_id ?? null, lastFrom: t.last_from,
+    createdAt: t.created_at, updatedAt: t.updated_at, closedAt: t.closed_at ?? null });
+  const staffView = (t: Row) => ({ ...threadView(t), tags: tagsOf(t.tags) }); // tags are internal triage: staff only
+  // The person may link one of their own orders: as its customer, its captain, or the shop that prepared it. Anyone else's
+  // order reads as missing.
+  const ownOrder = async (user: User, orderId: unknown) => {
+    if (orderId == null) return null;
+    const id = Number(orderId);
+    if (!Number.isSafeInteger(id) || id <= 0) fail(400, 'invalid_input');
+    const order = await one(`SELECT o.id FROM orders o WHERE o.id = ? AND (o.customer_id = ? OR o.driver_id = ? OR EXISTS
+      (SELECT 1 FROM shop_orders s JOIN merchants m ON m.id = s.merchant_id WHERE s.order_id = o.id AND m.owner_user_id = ?))`, id, user.id, user.id, user.id);
+    return order ? id : fail(404, 'not_found');
+  };
+  const requestIdOf = (value: unknown) => {
+    if (typeof value !== 'string' || !UUID.test(value)) fail(400, 'invalid_request_id');
+    return value as string;
+  };
+
+  // ---------- the person ----------
+  route('GET', '/api/support/thread', async ({ user, query }) => {
+    const before = beforeOf(query.get('before'));
+    const thread = (await one("SELECT * FROM support_threads WHERE user_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1", user.id))
+      ?? (await one('SELECT * FROM support_threads WHERE user_id = ? ORDER BY id DESC LIMIT 1', user.id));
+    return thread ? { thread: threadView(thread), ...await page(thread.id, user.id, before) } : { thread: null, messages: [], more: false };
+  });
+
+  route('POST', '/api/support/messages', async ({ user, body }) => {
+    const text = deps.text(body.body, MESSAGE_MAX);
+    if (!text.trim()) fail(400, 'invalid_input');
+    const requestId = requestIdOf(body.requestId);
+    // A resend after a lost reply replays instead of posting twice (checked before the order: it may no longer be theirs).
+    const replay = async () => {
+      const saved = await one('SELECT m.thread_id, m.body FROM support_messages m WHERE m.sender_id = ? AND m.request_id = ?', user.id, requestId);
+      if (!saved) return null;
+      if (saved.body !== text) fail(409, 'idempotency_conflict');
+      const thread = (await one('SELECT * FROM support_threads WHERE id = ?', saved.thread_id))!;
+      return { thread: threadView(thread), ...await page(thread.id, user.id) };
+    };
+    const earlier = await replay();
+    if (earlier) return earlier;
+    const orderId = await ownOrder(user, body.orderId);
+    await deps.limit(deps.limitKey(user.id), 20, 10 * 60_000);
+    try { return await deps.tx(() => post(user, text, requestId, orderId)); }
+    catch (error) {
+      // Two sends at once: the loser hit a unique index (same request id, or a second "first" thread). Replay or rejoin.
+      if (!uniqueViolation(error)) throw error;
+      return (await replay()) ?? deps.tx(() => post(user, text, requestId, orderId));
+    }
+  });
+
+  async function post(user: User, text: string, requestId: string, orderId: number | null) {
+    if (!await deps.holdPerson(user.id)) fail(401, 'unauthorized'); // the account was deleted while this send was in flight
+    const now = Date.now();
+    let thread: Row | undefined;
+    let opened = false;
+    // Join the open conversation, or open one. Staff may close it between the read and the write (PostgreSQL): the guarded
+    // update then changes nothing, and the message opens a fresh conversation instead of landing in a closed one.
+    for (let attempt = 0; !thread && attempt < 2; attempt++) {
+      const open = await one("SELECT * FROM support_threads WHERE user_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1", user.id);
+      if (!open) {
+        await run("INSERT INTO support_threads (user_id, order_id, status, tags, last_from, created_at, updated_at, waiting_since) VALUES (?, ?, 'open', '', 'user', ?, ?, ?)",
+          user.id, orderId, now, now, now);
+        thread = (await one("SELECT * FROM support_threads WHERE user_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1", user.id))!;
+        opened = true;
+      } else if ((await run(`UPDATE support_threads SET waiting_since = CASE WHEN last_from = 'user' AND waiting_since IS NOT NULL THEN waiting_since ELSE ? END,
+        last_from = 'user', updated_at = ?, order_id = COALESCE(order_id, ?) WHERE id = ? AND status = 'open'`, now, now, orderId, open.id)).changes) thread = open;
+    }
+    if (!thread) return fail(409, 'try_again');
+    // The message keeps its own order: a second order raised in the same conversation stays visible to staff.
+    await run('INSERT INTO support_messages (thread_id, sender_id, from_staff, body, created_at, request_id, order_id) VALUES (?, ?, 0, ?, ?, ?, ?)',
+      thread.id, user.id, text, now, requestId, orderId);
+    // A new conversation tells the staff once; follow-ups show in the inbox count instead of a push each.
+    if (opened) await deps.queuePush((await deps.staffIds()).filter(id => id !== user.id), 'attention', 0, '/admin/support');
+    const fresh = (await one('SELECT * FROM support_threads WHERE id = ?', thread.id))!;
+    return { thread: threadView(fresh), ...await page(fresh.id, user.id) };
+  }
+
+  // ---------- staff ----------
+  const person = (r: Row, full: boolean) => ({ id: r.user_id, name: r.user_name, role: r.user_role, phone: full ? r.user_phone : maskPhone(r.user_phone) });
+  const threadWithPerson = `SELECT t.*, u.name user_name, u.role user_role, u.phone user_phone FROM support_threads t JOIN users u ON u.id = t.user_id`;
+
+  route('GET', '/api/admin/support', async ({ user, query }) => {
+    await deps.needSupport(user);
+    const status = query.get('status') === 'closed' ? 'closed' : 'open';
+    const tag = query.get('tag');
+    if (tag && !(SUPPORT_TAGS as readonly string[]).includes(tag)) fail(400, 'invalid_input');
+    // ?limit= grows by LIST_PAGE when staff ask for more; the app re-queries the whole window on every poll, so rows never go
+    // stale or repeat between pages.
+    const limit = query.get('limit') == null ? LIST_PAGE : Number(query.get('limit'));
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > LIST_MAX) fail(400, 'invalid_input');
+    // Open: waiting first, longest-waiting first (waiting_since: the first unanswered message). Closed: most recently closed
+    // first. A theme filter matches the Improvements counts: every open conversation, or those closed in the last 30 days.
+    const windowed = tag && status === 'closed';
+    const rows = await all(`SELECT t.*, u.name user_name, u.role user_role, u.phone user_phone, o.service order_service, o.status order_status,
+      o.pickup_city order_from, o.dropoff_city order_to FROM support_threads t JOIN users u ON u.id = t.user_id LEFT JOIN orders o ON o.id = t.order_id
+      WHERE t.status = ? ${tag ? "AND (',' || t.tags || ',') LIKE ?" : ''} ${windowed ? 'AND t.closed_at >= ?' : ''}
+      ORDER BY ${status === 'open' ? "CASE WHEN t.last_from = 'user' THEN 0 ELSE 1 END, COALESCE(t.waiting_since, t.updated_at) ASC, t.id ASC" : 't.closed_at DESC, t.id DESC'}
+      LIMIT ?`, ...[status, ...(tag ? [`%,${tag},%`] : []), ...(windowed ? [Date.now() - IMPROVEMENT_WINDOW] : []), limit]);
+    const lasts = rows.length ? await all(`SELECT thread_id, body, from_staff, created_at FROM support_messages WHERE id IN
+      (SELECT MAX(id) FROM support_messages WHERE thread_id IN (${rows.map(() => '?').join(',')}) GROUP BY thread_id)`, ...rows.map(r => r.id as number)) : [];
+    const lastBy = new Map(lasts.map(m => [m.thread_id, m]));
+    return rows.map(r => {
+      const last = lastBy.get(r.id);
+      return { ...staffView(r), person: person(r, false), waiting: r.last_from === 'user' && r.status === 'open',
+        order: r.order_id == null ? null : { id: r.order_id, service: r.order_service, status: r.order_status, from: r.order_from, to: r.order_to },
+        // by code points, so an emoji is never cut in half
+        last: last ? { body: Array.from(String(last.body)).slice(0, 140).join(''), fromStaff: !!last.from_staff, createdAt: last.created_at } : null };
+    });
+  });
+
+  const staffThread = async (user: User, id: string) => {
+    await deps.needSupport(user);
+    return (await one(`${threadWithPerson} WHERE t.id = ?`, Number(id))) ?? fail(404, 'not_found');
+  };
+  const detail = async (user: User, t: Row, before?: number) => {
+    const order = t.order_id == null ? null : await one(`SELECT o.id, o.service, o.status, o.pickup_city, o.dropoff_city, d.name driver_name
+      FROM orders o LEFT JOIN users d ON d.id = o.driver_id WHERE o.id = ?`, t.order_id);
+    const history = await one('SELECT COUNT(*) n FROM orders WHERE customer_id = ? OR driver_id = ?', t.user_id, t.user_id);
+    return { ...staffView(t), person: { ...person(t, true), orders: Number(history?.n ?? 0) },
+      order: order ? { id: order.id, service: order.service, status: order.status, from: order.pickup_city, to: order.dropoff_city, captain: order.driver_name ?? null } : null,
+      ...await page(t.id, user.id, before) };
+  };
+  const reread = async (user: User, id: number) => detail(user, (await one(`${threadWithPerson} WHERE t.id = ?`, id))!);
+
+  route('GET', '/api/admin/support/:id', async ({ user, params, query }) => detail(user, await staffThread(user, params[0]!), beforeOf(query.get('before'))));
+
+  route('POST', '/api/admin/support/:id/reply', async ({ user, params, body }) => {
+    const t = await staffThread(user, params[0]!);
+    const text = deps.text(body.body, MESSAGE_MAX);
+    if (!text.trim()) fail(400, 'invalid_input');
+    const requestId = requestIdOf(body.requestId);
+    const replay = async () => {
+      const saved = await one('SELECT thread_id, body FROM support_messages WHERE sender_id = ? AND request_id = ?', user.id, requestId);
+      if (!saved) return null;
+      if (saved.thread_id !== t.id || saved.body !== text) fail(409, 'idempotency_conflict');
+      return reread(user, t.id as number);
+    };
+    const earlier = await replay();
+    if (earlier) return earlier;
+    // Answering a closed conversation reopens it, unless the person has since opened another: answer that one instead.
+    if (t.status === 'closed' && await one("SELECT id FROM support_threads WHERE user_id = ? AND status = 'open' AND id <> ?", t.user_id, t.id)) fail(409, 'already_open');
+    const now = Date.now();
+    try {
+      // The thread row first, as a send does: its lock orders a reply and a racing message, so the waiting flag always matches
+      // the author of the last message.
+      await deps.tx(async () => {
+        // The account is gone (deletion closed the conversation and blanked their words): nobody would read the answer.
+        if (!await deps.holdPerson(t.user_id as number)) fail(409, 'person_deleted');
+        await run("UPDATE support_threads SET last_from = 'staff', waiting_since = NULL, updated_at = ?, status = 'open', closed_at = NULL, closed_by = NULL WHERE id = ?", now, t.id);
+        await run('INSERT INTO support_messages (thread_id, sender_id, from_staff, body, created_at, request_id) VALUES (?, ?, 1, ?, ?, ?)', t.id, user.id, text, now, requestId);
+      });
+    } catch (error) {
+      if (!uniqueViolation(error)) throw error;
+      // The same reply sent twice at once replays; otherwise the person opened a new conversation in the meantime.
+      return (await replay()) ?? fail(409, 'already_open');
+    }
+    await deps.queuePush([t.user_id as number], 'support_reply', t.order_id ?? 0, '/support');
+    return reread(user, t.id as number);
+  });
+
+  route('POST', '/api/admin/support/:id/close', async ({ user, params, body }) => {
+    const t = await staffThread(user, params[0]!);
+    // `seen` (required) is the last message id on the closing screen: a message that arrived after it keeps the conversation
+    // open. The check is a separate statement after the row lock, so on PostgreSQL it sees a message committed while the
+    // close waited for that lock (a NOT EXISTS inside the UPDATE would read the older snapshot).
+    const seen = Number(body.seen);
+    if (body.seen == null || !Number.isSafeInteger(seen) || seen < 0) fail(400, 'invalid_input');
+    await deps.tx(async () => {
+      const closed = await run("UPDATE support_threads SET status = 'closed', closed_at = ?, closed_by = ? WHERE id = ? AND status = 'open'", Date.now(), user.id, t.id);
+      if (closed.changes && await one('SELECT id FROM support_messages WHERE thread_id = ? AND from_staff = 0 AND id > ? LIMIT 1', t.id, seen))
+        fail(409, 'new_message'); // rolls the close back
+    }); // no change: another staff member closed it a moment ago, which is the outcome asked for
+    return reread(user, t.id as number);
+  });
+
+  route('POST', '/api/admin/support/:id/reopen', async ({ user, params }) => {
+    const t = await staffThread(user, params[0]!);
+    // One open thread per person: reopening an old one while a newer is open would split the conversation.
+    if (await one("SELECT id FROM support_threads WHERE user_id = ? AND status = 'open' AND id <> ?", t.user_id, t.id)) fail(409, 'already_open');
+    try {
+      await deps.tx(async () => {
+        if (!await deps.holdPerson(t.user_id as number)) fail(409, 'person_deleted');
+        await run("UPDATE support_threads SET status = 'open', closed_at = NULL, closed_by = NULL WHERE id = ?", t.id);
+      });
+    }
+    catch (error) { if (uniqueViolation(error)) fail(409, 'already_open'); throw error; }
+    return reread(user, t.id as number);
+  });
+
+  route('POST', '/api/admin/support/:id/tags', async ({ user, params, body }) => {
+    const t = await staffThread(user, params[0]!);
+    const tags = body.tags;
+    if (!Array.isArray(tags) || tags.length > SUPPORT_TAGS.length || !tags.every(tag => (SUPPORT_TAGS as readonly string[]).includes(tag))) fail(400, 'invalid_input');
+    const unique = SUPPORT_TAGS.filter(tag => (tags as string[]).includes(tag)); // stable order, no duplicates
+    await run('UPDATE support_threads SET tags = ? WHERE id = ?', unique.join(','), t.id);
+    return reread(user, t.id as number);
+  });
+
+  // The Improvements view: how many conversations carry each theme, counted over exactly the threads the list filter shows:
+  // every open conversation, or those closed in the last 30 days.
+  route('GET', '/api/admin/support/tags', async ({ user, query }) => {
+    await deps.needSupport(user);
+    const rows = query.get('status') === 'closed'
+      ? await all("SELECT id, tags FROM support_threads WHERE status = 'closed' AND closed_at >= ? AND tags <> ''", Date.now() - IMPROVEMENT_WINDOW)
+      : await all("SELECT id, tags FROM support_threads WHERE status = 'open' AND tags <> ''");
+    return SUPPORT_TAGS.map(tag => ({ tag, count: rows.filter(r => tagsOf(r.tags).includes(tag)).length }));
+  });
+}

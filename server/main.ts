@@ -21,7 +21,7 @@ import { ResourceScope, registerResourceScopeRoutes, validateDeclaredScope, save
 import { createPrivateObjects, registerPrivateObjectRoutes } from './domain/private-objects.ts';
 import { Ledger, ledgerAvailable, registerLedgerRoutes, RETURN_NO_FARE } from './domain/ledger.ts';
 import { codGoodsMinor, createPayments, registerPaymentsRoutes } from './domain/payments.ts';
-import { needStaff, Ops, registerOpsRoutes, staffActor } from './domain/ops.ts';
+import { needStaff, Ops, registerOpsRoutes, staffActor, staffRoleOf } from './domain/ops.ts';
 import { NativePush, nativePushAvailable, nativeSuppression, registerNativePushRoutes, URGENT_KINDS } from './domain/native-push.ts';
 import { Realtime, registerRealtimeRoutes } from './domain/realtime.ts';
 import { EntraUnavailableError, entraConfig, registerEntraRoutes, verifyEntraIdToken } from './domain/entra.ts';
@@ -40,6 +40,7 @@ import { registerPlaceSearchRoutes } from './domain/place-search.ts';
 import { areaName, registerPlaceIndexRoutes, streetName } from './domain/place-index.ts';
 import { registerPlaceLinkRoutes } from './domain/place-link.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
+import { registerSupportRoutes } from './domain/support.ts';
 import { doorCash } from './domain/door-cash.ts';
 import { registerAdminAssignRoutes } from './domain/admin-assign.ts';
 import { driverRefusal } from './domain/driver-refusal.ts';
@@ -1255,6 +1256,8 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
     (await run('UPDATE referral_codes SET active = 0 WHERE user_id = ?', user.id)); // the code stops working and is never reissued
     (await run("UPDATE checkpoint_reports SET note = '' WHERE reporter_id = ?", user.id));
     (await run("UPDATE order_messages SET body = '—' WHERE sender_id = ?", user.id));
+    (await run("UPDATE support_messages SET body = '—' WHERE sender_id = ?", user.id)); // their words to support go too
+    (await run("UPDATE support_threads SET status = 'closed', closed_at = ? WHERE user_id = ? AND status = 'open'", Date.now(), user.id));
     // Release review, 18 Nov: four more places held a deleted customer's words, phones or positions.
     (await run("UPDATE order_disputes SET reason = '—' WHERE customer_id = ?", user.id));
     (await run("UPDATE safety_incidents SET note = '', lat = NULL, lng = NULL WHERE reporter_id = ?", user.id));
@@ -1467,7 +1470,7 @@ route('POST', '/api/admin/promos/:id/deactivate', async ({ user, params }) => {
 type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returned' | 'message' | 'job' | 'released' | 'cancelled'
   | 'offer' | 'offer_accepted' // SPEC-offer-alerts.md
   | 'on_hold' | 'returning' | 'decided' // SPEC-exception-push.md
-  | 'approved' | 'support' | 'cash' | 'attention' | 'safety' | 'plan'
+  | 'approved' | 'support' | 'support_reply' | 'cash' | 'attention' | 'safety' | 'plan'
   | 'destination_request' | 'destination_accepted' | 'destination_declined' | 'admin_assigned' | 'admin_unassigned' | 'dispatch_assigned' // WP-02
   | 'merchant_order' | 'shop_consent' | 'shop_update' // shop delivery (SRS §7)
   | 'office'; // SHIP-19 returned goods at the office
@@ -3583,6 +3586,23 @@ async function settleableDriver(driverId: number) {
 const needCashFinance = async (user: User) => needStaff(await staffActor(persistence, user), fail, 'finance');
 registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush, postCashJournal, lockCashDriver, needCashFinance });
 registerCashReceiptRoutes(route, { need, fail, uuid, one, cashEntry });
+// In-app support inbox (SPEC-support-inbox.md): people write to support; admins with the support scope answer, close and tag.
+const supportScoped = async (user: User) => ['support', 'platform_admin'].includes(staffRoleOf(await staffActor(persistence, user)) ?? '');
+registerSupportRoutes(route, { one, all, run, fail, text, limit: (key, maximum, windowMs) => limit(key, maximum, windowMs),
+  limitKey: id => identityKey('support', id), queuePush,
+  holdPerson: async id => !!(await one(`SELECT id FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%'${persistence.backend === 'postgres' ? ' FOR KEY SHARE' : ''}`, id)),
+  // Only staff who can open the inbox hear about a new conversation (finance or dispatch admins would get a 403).
+  staffIds: async () => (await Promise.all((await all("SELECT id, role, status FROM users WHERE role = 'admin' AND status = 'active'"))
+    .map(async a => ({ id: a.id as number, ok: await supportScoped(a as never) })))).filter(a => a.ok).map(a => a.id),
+  // PostgreSQL requests already run in the envelope transaction, where BEGIN opens a savepoint: a unique violation then rolls
+  // back only this unit and the replay that follows still works (no 'current transaction is aborted').
+  tx: work => persistence.scope(async () => {
+    if (persistence.backend === 'sqlite' && persistence.inTransaction) return work();
+    await persistence.exec(persistence.backend === 'postgres' ? 'BEGIN' : 'BEGIN IMMEDIATE');
+    try { const value = await work(); await persistence.exec('COMMIT'); return value; }
+    catch (error) { if (persistence.inTransaction) await persistence.exec('ROLLBACK'); throw error; }
+  }),
+  needSupport: async user => { need(user, 'admin'); needStaff(await staffActor(persistence, user), fail, 'support'); } });
 // WP-02: admin assign / reassign, through the same guards as the driver accept.
 registerAdminAssignRoutes(route, { one, all, run, db: persistence, fail, need, text, enabledServices, servesFor, canTake, activeLoad, driverRate, commissionOn, guardCashCap,
   safetyFree, hasOpenOffer: id => dispatch.hasOpenOffer(id), guardRideAssignment, ensureAssignment: (o, d, s) => rideLifecycle.ensureAssignment(o, d, s), assignedFrom: recordAssignedFrom, getOrder, queuePush,
@@ -3773,6 +3793,8 @@ route('GET', '/api/admin/stats', async ({ user }) => {
     services: Object.fromEntries((await all(`SELECT service, COUNT(*) n FROM orders WHERE status IN (${finishedSql}) GROUP BY service`)).map(r => [r.service, r.n])),
     users: Object.fromEntries((await all("SELECT role, COUNT(*) n FROM users WHERE phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%' GROUP BY role")).map(r => [r.role, r.n])),
     pendingDrivers: (await one("SELECT COUNT(*) n FROM users WHERE role = 'driver' AND status = 'pending'"))!.n,
+    // null for staff without the support scope: the app hides the Support tab and shortcut they could not open.
+    openSupport: await supportScoped(user) ? (await one("SELECT COUNT(*) n FROM support_threads WHERE status = 'open' AND last_from = 'user'"))!.n : null,
     pendingSubscriptions: (await one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'pending'"))!.n,
     openIncidents: (await one("SELECT COUNT(*) n FROM safety_incidents WHERE status = 'open'"))!.n,
     backupStale: backupStale(),

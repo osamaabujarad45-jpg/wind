@@ -64,6 +64,11 @@ sqlite.prepare('INSERT INTO promo_redemptions(promo_id,customer_id,order_id,crea
 const secondOrder=sqlite.prepare('SELECT id FROM orders WHERE id<>? ORDER BY id LIMIT 1').get(order).id;
 sqlite.prepare('INSERT INTO promo_redemptions(promo_id,customer_id,order_id,created_at) VALUES(?,?,?,?)').run(promo,user,secondOrder,now);
 sqlite.prepare("INSERT INTO order_messages(order_id,sender_id,driver_id,sender_role,body,created_at) VALUES(?,?,?,'customer','رسالة تجريبية محفوظة',?)").run(order,user,driver,now);
+// Support inbox (migration 42): a conversation and both sides of it.
+sqlite.prepare("INSERT INTO support_threads(user_id,order_id,status,tags,last_from,created_at,updated_at) VALUES(?,?,'open','eta','staff',?,?)").run(user,order,now,now);
+const supportThread=sqlite.prepare('SELECT max(id) id FROM support_threads').get().id;
+sqlite.prepare("INSERT INTO support_messages(thread_id,sender_id,from_staff,body,created_at,request_id) VALUES(?,?,0,'الطرد تأخر',?,'00000000-0000-4000-8000-000000000042')").run(supportThread,user,now);
+sqlite.prepare("INSERT INTO support_messages(thread_id,sender_id,from_staff,body,created_at) VALUES(?,?,1,'نتابع مع السائق',?)").run(supportThread,admin,now);
 // Shop delivery (migration 33): one row in every shop table, so a cutover is shown to carry shops, baskets and their money.
 sqlite.prepare("INSERT INTO merchants(owner_user_id,name,category,city,lat,lng,phone,status,paused_new,min_order_agorot,delivery_fee_agorot,service_fee_agorot,commission_bps,prep_minutes,licence_no,licence_expires_at,created_at,updated_at) VALUES(?,'مخبز تجريبي','bakery','tulkarm',32.312,35.029,'0599000003','active',0,2000,1000,200,1000,20,'TK-1',?,?,?)").run(user,now+86400000,now,now);
 const merchant=sqlite.prepare('SELECT max(id) id FROM merchants').get().id;

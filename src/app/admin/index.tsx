@@ -15,7 +15,7 @@ import { fill } from '../../copy';
 type Stats = {
   gmv: number; commission: number; subscriptions: number; discounts: number; profit: number; completed: number; activeSubscriptions: number;
   statuses: Partial<Record<OrderStatus, number>>; users: Record<string, number>;
-  pendingDrivers: number; pendingSubscriptions: number; openIncidents: number; backupStale: boolean; blockReviewsOverdue?: number;
+  pendingDrivers: number; pendingSubscriptions: number; openSupport?: number | null; openIncidents: number; backupStale: boolean; blockReviewsOverdue?: number;
   pickupPayReviewsOpen: number;
   pickupPayReviews?: { orderId: number; orderCode: string; driverName: string | null; suggestedCents: number | null;
     reason: NonNullable<Order['pickupPayReview']>['reason'] }[];
@@ -70,7 +70,8 @@ export default function Dashboard() {
 
       <Appear index={7}><ProfitChart daily={data.daily} /></Appear>
 
-      {(data.pendingDrivers > 0 || data.pendingSubscriptions > 0) && <Appear index={8}>
+      {(data.pendingDrivers > 0 || data.pendingSubscriptions > 0 || !!data.openSupport) && <Appear index={8}>
+        {!!data.openSupport && <Shortcut label={c.supportOpenCount} count={data.openSupport} onPress={() => router.navigate('/admin/support')} />}
         {data.pendingDrivers > 0 && <Shortcut label={c.pendingDrivers} count={data.pendingDrivers} onPress={() => router.navigate('/admin/users')} />}
         {data.pendingSubscriptions > 0 && <Shortcut label={c.pendingSubs} count={data.pendingSubscriptions} onPress={() => router.navigate('/admin/subscriptions')} />}
       </Appear>}

@@ -101,6 +101,22 @@ CREATE TABLE IF NOT EXISTS order_messages (
   driver_id INTEGER NOT NULL REFERENCES users(id), -- the assignment this thread belongs to
   sender_role TEXT NOT NULL CHECK (sender_role IN ('customer','driver')), body TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS order_messages_order ON order_messages(order_id, id);
+-- In-app support inbox (SPEC-support-inbox.md): one open thread per person; staff replies, closes and tags.
+CREATE TABLE IF NOT EXISTS support_threads (
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), order_id INTEGER REFERENCES orders(id),
+  status TEXT NOT NULL CHECK (status IN ('open','closed')), tags TEXT NOT NULL DEFAULT '', last_from TEXT NOT NULL CHECK (last_from IN ('user','staff')),
+  closed_by INTEGER REFERENCES users(id), closed_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  waiting_since INTEGER); -- when the person's unanswered run of messages began (NULL once staff answer)
+CREATE INDEX IF NOT EXISTS support_threads_queue ON support_threads(status, updated_at);
+CREATE INDEX IF NOT EXISTS support_threads_user ON support_threads(user_id, status);
+CREATE INDEX IF NOT EXISTS support_threads_closed ON support_threads(status, closed_at);
+CREATE UNIQUE INDEX IF NOT EXISTS support_threads_one_open ON support_threads(user_id) WHERE status = 'open';
+CREATE TABLE IF NOT EXISTS support_messages (
+  id INTEGER PRIMARY KEY, thread_id INTEGER NOT NULL REFERENCES support_threads(id), sender_id INTEGER NOT NULL REFERENCES users(id),
+  from_staff INTEGER NOT NULL CHECK (from_staff IN (0,1)), body TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 1000), created_at INTEGER NOT NULL, request_id TEXT,
+  order_id INTEGER REFERENCES orders(id)); -- the order this message is about, when it names one
+CREATE INDEX IF NOT EXISTS support_messages_thread ON support_messages(thread_id, id);
+CREATE UNIQUE INDEX IF NOT EXISTS support_messages_request ON support_messages(sender_id, request_id) WHERE request_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS checkpoints (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, cities TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS checkpoint_reports (
@@ -184,6 +200,11 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS cash_entries_request ON cash_entries(
 if (!(db.prepare('PRAGMA table_info(order_messages)').all() as Row[]).some(r => r.name === 'request_id'))
   db.exec('ALTER TABLE order_messages ADD COLUMN request_id TEXT');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS order_messages_request ON order_messages(sender_id, request_id) WHERE request_id IS NOT NULL');
+// Support inbox columns added after its first build: the message's own order, and when the person's wait began.
+if (!(db.prepare('PRAGMA table_info(support_messages)').all() as Row[]).some(r => r.name === 'order_id'))
+  db.exec('ALTER TABLE support_messages ADD COLUMN order_id INTEGER REFERENCES orders(id)');
+if (!(db.prepare('PRAGMA table_info(support_threads)').all() as Row[]).some(r => r.name === 'waiting_since'))
+  db.exec('ALTER TABLE support_threads ADD COLUMN waiting_since INTEGER');
 // Saved places keep their own pin (research priority #6). Additive and nullable: older rows stay landmark-only.
 for (const column of ['lat', 'lng'])
   if (!(db.prepare('PRAGMA table_info(saved_places)').all() as Row[]).some(r => r.name === column))
