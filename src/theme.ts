@@ -79,6 +79,8 @@ export const sizes = { touchMin: 44, control: 48, controlSm: 40, row: 56, tabbar
 // ---------- Night for captains: after sunset, before sunrise (design system v2) ----------
 // The standard sunrise equation; Ramallah by default. Accurate to a few minutes, which is all a map colour needs.
 const J2000 = 2451545, DAY_MS = 86_400_000, UNIX_JD = 2440587.5;
+/** Sunrise and sunset for the solar day whose noon is nearest `ms` (not always the local calendar day near midnight;
+ *  afterDark() is right either way, since both sides of midnight are night). */
 export function sunTimes(ms: number, latitude = 31.9, longitude = 35.2): { sunrise: number; sunset: number } {
   const rad = Math.PI / 180;
   const n = Math.round(ms / DAY_MS + UNIX_JD - J2000 - 0.0009 + longitude / 360); // the solar day containing ms (east longitude positive)

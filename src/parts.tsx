@@ -308,7 +308,7 @@ export function PlanCard() {
   }
 
   return <Appear>
-    <Card tone={sub?.status === 'active' ? 'olive' : sub ? 'card' : 'warn'}>{/* waiting on support is not a call to action; the badge carries it */}
+    <Card tone={sub?.status === 'active' ? 'olive' : sub ? 'card' : 'muted'}>{/* waiting on support is not a call to action; the badge carries it */}
       <Row style={{ justifyContent: 'space-between', marginBottom: 6 }}>
         <Row gap={8}>
           <Ionicons name="sparkles" size={18} color={palette.clay} />

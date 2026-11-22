@@ -1052,7 +1052,7 @@ function RateCustomer({ order, onRate }: { order: Order; onRate: (n: number) => 
 
 function IconStar({ n, label, on, disabled, onPress }: { n: number; label: string; on: boolean; disabled: boolean; onPress: () => void }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${n}/5`} disabled={disabled} aria-disabled={disabled} onPress={onPress} style={{ minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}>
-    <Ionicons name={on ? 'star' : 'star-outline'} size={28} color={palette.warn} />
+    <Ionicons name={on ? 'star' : 'star-outline'} size={28} color={palette.forest} /> {/* a rating, not an attention state */}
   </Pressable>;
 }
 

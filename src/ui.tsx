@@ -638,9 +638,10 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 // Design system v2 (Wind Control on a desktop): the same tabs as a rail on the reading-start side. Labels beside icons,
 // the current page on action-soft, counts as pills at the end. The navigator places it (tabBarPosition left/right).
 export function SideRail({ state, descriptors, navigation, title }: BottomTabBarProps & { title: string }) {
-  const { row, align } = useCopy();
+  const { row, align, rtl } = useCopy();
   const hidden = (key: string) => StyleSheet.flatten(descriptors[key].options.tabBarItemStyle)?.display === 'none';
-  return <SafeAreaView edges={['top', 'bottom']} style={styles.rail}>
+  // The app does not force RTL, so `end` is the physical right: in Arabic the rail sits right and its edge faces left.
+  return <SafeAreaView edges={['top', 'bottom', rtl ? 'right' : 'left']} style={[styles.rail, rtl && { borderEndWidth: 0, borderLeftWidth: 1, borderLeftColor: palette.hair }]}>
     <View style={[styles.railBrand, { flexDirection: row }]}>
       <Logo size={32} decorative />
       <Text maxFontSizeMultiplier={maxScale} accessibilityRole="header" style={styles.railTitle}>{title}</Text>
@@ -744,6 +745,6 @@ const styles = StyleSheet.create({
   barItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 50, gap: 3 },
   barPill: { width: 54, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'transparent' },
   barText: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
-  barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, minHeight: 16, borderRadius: 8, backgroundColor: palette.clayInk, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, minHeight: 16, borderRadius: 8, backgroundColor: palette.warn, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   barBadgeText: { color: palette.onFill, fontSize: 12, fontWeight: '800' }, // 5.7:1 on clayInk; clay itself is too light for text
 });

@@ -364,7 +364,7 @@ for (const language of ['ar', 'en']) {
   mkdirSync(join(outDir, language), { recursive: true });
   for (const screen of screens) {
     if (screen.state) continue; // captured after the scenarios that set them up
-    const viewport = screen.desktop ? { width: 1280, height: 800 } : phone; // Wind Control on a desktop: the side rail layout
+    const viewport = screen.desktop ? { width: 1280, height: 800 } : phone; // Wind Control on a desktop: the side rail layout (1x: a desktop screen, and the PNG stays small)
     const context = await browser.newContext({ viewport, deviceScaleFactor: screen.desktop ? 1 : 2, locale: language === 'ar' ? 'ar-PS' : 'en-GB',
       reducedMotion: screen.motion || screen.frames || screen.fresh ? 'no-preference' : 'reduce' });
     await context.addInitScript(({ token, language, onboarded }) => {
@@ -421,6 +421,8 @@ for (const language of ['ar', 'en']) {
       assert.ok(box, 'the settings tab is on screen');
       assert.ok(language === 'ar' ? box.x > viewport.width - 300 : box.x + box.width < 300, `${language}: rail on the reading-start side (x=${box.x})`);
       assert.ok(box.y < viewport.height - 80, `${language}: not a bottom bar (y=${box.y})`);
+      const bottoms = await page.getByRole('tab').evaluateAll(tabs => tabs.map(t => t.getBoundingClientRect().bottom));
+      assert.ok(bottoms.length > 0 && bottoms.every(b => b < viewport.height - 80), `${language}: no tab sits in a bottom bar`);
     }
     if (screen.id === 'driver-jobs') {
       await page.getByRole('button', { name: copy[language].activeOrder, exact: true }).waitFor();
