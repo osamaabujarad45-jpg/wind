@@ -33,13 +33,14 @@ export async function startApiProcess(storage) {
   const capture = chunk => { diagnostics = (diagnostics + chunk).slice(-12_000); };
   child.stdout.on('data', capture);
   child.stderr.on('data', capture);
-  const closed = new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
+  // 'close' comes after the child's output has been read, so a startup failure's message is in the diagnostics (Haiku PR #103 L9).
+  const closed = new Promise(resolve => child.once('close', (code, signal) => resolve({ code, signal })));
   let timeout;
   try {
     const ready = await new Promise((resolve, reject) => {
       timeout = setTimeout(() => reject(new Error(`Test API startup timed out: ${diagnostics}`)), 20_000);
       child.once('error', reject);
-      child.once('exit', code => reject(new Error(`Test API exited (${code}): ${diagnostics}`)));
+      void closed.then(({ code }) => reject(new Error(`Test API exited (${code}): ${diagnostics}`)));
       child.on('message', message => { if (message?.type === 'ready') resolve(message); });
     });
     return { base: `http://127.0.0.1:${ready.port}/api`, child,

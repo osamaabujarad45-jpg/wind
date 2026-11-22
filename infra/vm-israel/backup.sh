@@ -37,6 +37,9 @@ console.log(JSON.stringify({ users: n('users'), orders: n('orders'), cash: n('ca
 copy.close();"
 mv -f "$TMP" "$DIR/wind-$STAMP.db"
 find "$DIR" -maxdepth 1 -name 'wind-*.db' -mtime +13 -delete
+# The database is no longer read, so the lock goes before the upload (up to 5 minutes): an install or restore is not refused for
+# it. Nothing else writes this day's file: only this oneshot does, and an install stops it first (Haiku PR #103 L8).
+exec 8<&-
 
 if [ -z "$ACCOUNT" ]; then echo "local snapshot only: no off-host target configured; last-ok not updated" >&2; exit 1; fi
 TOKEN=$(curl -fsS -m 10 -H 'Metadata: true' \

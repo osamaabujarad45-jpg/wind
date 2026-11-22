@@ -57,8 +57,6 @@ WEB_ROOT=/opt/windapi/web
 EOF
   )
 fi
-# Backups run hourly, so admins hear of a broken one after 3 hours instead of a day (added to an existing file too).
-grep -q '^WIND_BACKUP_MAX_AGE_HOURS=' /etc/wind-api.env || echo 'WIND_BACKUP_MAX_AGE_HOURS=3' >> /etc/wind-api.env
 # The off-host backup target (no secret: the VM's managed identity authenticates).
 if [ -n "$BACKUP_ACCOUNT" ]; then printf 'WIND_BACKUP_ACCOUNT=%s\nWIND_BACKUP_CONTAINER=wind-backups\n' "$BACKUP_ACCOUNT" > /etc/wind-backup.env; chmod 644 /etc/wind-backup.env; fi
 
@@ -122,6 +120,14 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+# Loaded at once, so a later failure (the Caddy check below) cannot leave the hourly unit on disk with systemd still on the old
+# schedule. Then admins are told about a broken backup after 3 hours, not a day; the key is added to an existing file too, on a
+# line of its own, and an empty value gets a working line after it (Haiku PR #103 L3, L4, L6).
+systemctl daemon-reload
+if ! grep -q '^WIND_BACKUP_MAX_AGE_HOURS=.' /etc/wind-api.env; then
+  [ -z "$(tail -c1 /etc/wind-api.env)" ] || echo >> /etc/wind-api.env
+  echo 'WIND_BACKUP_MAX_AGE_HOURS=3' >> /etc/wind-api.env
+fi
 
 # Validated before it replaces the working configuration; a bad one leaves Caddy as it was (Sol ops review 21 Nov).
 CADDY_NEW=$(mktemp /etc/caddy/Caddyfile.new.XXXXXX)

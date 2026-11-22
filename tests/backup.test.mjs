@@ -16,7 +16,7 @@ process.env.WIND_BACKUP_MARKER = marker;
 process.env.WIND_ENABLED_SERVICES = 'parcel';
 process.env.WIND_PUSH_SUBJECT = 'mailto:wind-backup-suite@example.invalid';
 process.env.WIND_EXPO_PUSH_ENABLED = '1';
-delete process.env.OSRM_URL; delete process.env.WIND_DATABASE_URL;
+delete process.env.OSRM_URL; delete process.env.WIND_DATABASE_URL; delete process.env.WIND_BACKUP_MAX_AGE_HOURS; // the 26 hour default
 const { alertMissedBackup, db, persistence, promote, server, shutdown } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
@@ -64,6 +64,11 @@ try {
   const age = hours => { const t = (now - hours * 3_600_000) / 1000; utimesSync(marker, t, t); };
   age(26 - 1 / 3600); assert.equal((await stats()).backupStale, false, 'a job that ran late is not an alarm');
   age(26 + 1 / 3600); assert.equal((await stats()).backupStale, true, 'over a day and its slack is');
+  // A second outage the same day alerts again: the success in between ended the first one (Haiku PR #103 M1).
+  assert.equal(await alertMissedBackup(), true, 'a new outage after a success is told at once');
+  await settle();
+  assert.equal(sent.length, 1);
+  assert.equal(await alertMissedBackup(), false, 'and still once per outage');
 
   // The customer never sees this.
   await call('/admin/stats', { token: customer.token, expect: 403 });
@@ -121,13 +126,24 @@ try {
     hourlyAge(3 - 1 / 60); assert.equal((await remote('/admin/stats', { token: admin.token })).backupStale, false, 'inside the hourly limit');
     hourlyAge(3 + 1 / 60); assert.equal((await remote('/admin/stats', { token: admin.token })).backupStale, true, 'past it');
   } finally { await hourly.stop(); }
-  for (const bad of ['0', '-1', 'soon', '400'])
-    await assert.rejects(startApiProcess({ DB_PATH: join(dir, `bad-${bad}.db`), WIND_BACKUP_MAX_AGE_HOURS: bad }), /WIND_BACKUP_MAX_AGE_HOURS/, `${bad} stops startup`);
+  for (const [i, bad] of ['', '0', '0.5', '-1', 'soon', '400'].entries()) {
+    let started;
+    try { started = await startApiProcess({ DB_PATH: join(dir, `bad-${i}.db`), WIND_BACKUP_MAX_AGE_HOURS: bad }); }
+    catch (error) { assert.match(error.message, /WIND_BACKUP_MAX_AGE_HOURS/, `'${bad}' stops startup with the reason`); continue; }
+    await started.stop(); // a regression must fail here, not leave a child running
+    assert.fail(`'${bad}' should stop startup`);
+  }
   // The Israel host backs up hourly and alerts after 3 hours.
   const provision = readFileSync(new URL('../infra/vm-israel/provision.sh', import.meta.url), 'utf8');
   assert.match(provision, /^OnCalendar=\*-\*-\* \*:00:00 UTC$/m, 'the backup timer is hourly');
-  assert.match(provision, /^grep -q '\^WIND_BACKUP_MAX_AGE_HOURS=' \/etc\/wind-api\.env \|\| echo 'WIND_BACKUP_MAX_AGE_HOURS=3' >> \/etc\/wind-api\.env$/m,
-    'and its alert limit is set even on a host provisioned before');
+  assert.match(provision, /^if ! grep -q '\^WIND_BACKUP_MAX_AGE_HOURS=\.' \/etc\/wind-api\.env; then$/m, 'and its alert limit is set even on a host provisioned before');
+  assert.match(provision, /^  echo 'WIND_BACKUP_MAX_AGE_HOURS=3' >> \/etc\/wind-api\.env$/m);
+  const reload = provision.indexOf('systemctl daemon-reload');
+  assert.ok(provision.indexOf("echo 'WIND_BACKUP_MAX_AGE_HOURS=3'") < provision.indexOf('caddy validate'), 'before anything that can stop the script');
+  assert.ok(reload > provision.indexOf('OnCalendar=') && reload < provision.indexOf('caddy validate'), 'and the hourly timer is loaded before then too');
+  const backupScript = readFileSync(new URL('../infra/vm-israel/backup.sh', import.meta.url), 'utf8');
+  assert.ok(backupScript.indexOf('exec 8<&-') > backupScript.indexOf('mv -f "$TMP"') && backupScript.indexOf('exec 8<&-') < backupScript.indexOf('blob.core.windows.net'),
+    'the database lock is released after the snapshot and before the upload');
 
   console.log('Backup: missed backup alerts admins once a day, dashboard holds until a success, restore runs the service');
 } finally {
