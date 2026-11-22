@@ -152,6 +152,7 @@ const suites = [
   "native-push-session.test.mjs",
   "native-push-navigation.test.mjs",
   "install-locale.test.mjs",
+  "locale-format.test.mjs",
   "shop-checkout-retry.test.mjs",
   "backup.test.mjs",
   "deploy-script.test.mjs",
