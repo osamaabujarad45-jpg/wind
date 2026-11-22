@@ -157,7 +157,7 @@ export default function Users() {
                 }} /></View>
                 <View style={{ flex: 1 }}><Button title={c.cancel} variant="ghost" disabled={busy !== null} reason={c.wait_busy} onPress={() => setEditing(null)} /></View>
               </Row>
-              {temp?.id === user.id ? <Txt variant="title" selectable center style={{ color: palette.clayInk }}>{fill(c.tempPassword, { password: temp.password })}</Txt>
+              {temp?.id === user.id ? <Txt variant="title" selectable center style={{ color: palette.warn }}>{fill(c.tempPassword, { password: temp.password })}</Txt>
                 : <>
                   {!resetByEmail(user) && <Field label={c.resetAttestation} value={noteFor(user)} onChangeText={text => setAttestation({ id: user.id, text })} placeholder={c.resetAttestationHint} maxLength={300} multiline disabled={busy !== null} />}
                   <Button title={c.resetPassword} icon="key-outline" variant="ghost" disabled={busy !== null || resetBlocked(user)} reason={busy !== null ? c.wait_busy : resetByEmail(user) ? c.resetNeedsIdentity : c.resetNeedsAttestation}

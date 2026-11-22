@@ -63,6 +63,7 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 |---|---|---|---|---|
 | Shops · orders that need attention, terms, licence, payouts | `/admin/merchants` | `src/app/admin/merchants.tsx` | [admin-shops.png](ar/admin-shops.png) | [admin-shops.png](en/admin-shops.png) |
 | Dashboard | `/admin` | `src/app/admin/index.tsx` | [admin-dashboard.png](ar/admin-dashboard.png) | [admin-dashboard.png](en/admin-dashboard.png) |
+| Dashboard on a desktop (1280 px): side rail instead of bottom tabs | `/admin` | `src/app/admin/_layout.tsx` | [admin-desktop.png](ar/admin-desktop.png) | [admin-desktop.png](en/admin-desktop.png) |
 | All orders | `/admin/orders` | `src/app/admin/orders.tsx` | [admin-orders.png](ar/admin-orders.png) | [admin-orders.png](en/admin-orders.png) |
 | Parcel · delivery code recovery | `/order/7` | `src/app/order/[id].tsx` | [admin-order.png](ar/admin-order.png) | [admin-order.png](en/admin-order.png) |
 | Users | `/admin/users` | `src/app/admin/users.tsx` | [admin-users.png](ar/admin-users.png) | [admin-users.png](en/admin-users.png) |

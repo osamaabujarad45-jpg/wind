@@ -666,7 +666,7 @@ function BookForm() {
     {step === 'trip' && <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setSheetPeek} scrollRef={scrollRef}
       header={<View style={{ paddingBottom: 8 }}>
         {!!swapNotice && <View accessibilityLiveRegion="polite" style={{ marginBottom: 8 }}><Txt variant="caption">{swapNotice}</Txt></View>}
-        {pending && <Card tone="clay">
+        {pending && <Card tone="warn">
           <Txt variant="title">{c.bookingPending}</Txt>
           <Txt variant="caption">{c.bookingRetryHint}</Txt>
           <View accessibilityLiveRegion="polite"><Txt variant="caption" style={{ marginTop: 4 }}>{resolving ? c.bookingRecoveryChecking : releasable ? c.bookingRecoveryAbsent : settlesAt !== null ? fill(c.bookingRecoveryUntil, { t: time(settlesAt) }) : c.bookingRecoveryUnknown}</Txt></View>
@@ -680,7 +680,7 @@ function BookForm() {
         </Card>}
         {/* In the header, not after the last field: a refused retry or offline save must read beside its card (review 8 Nov). */}
         <ErrorText>{error}</ErrorText>
-        {!available && !pending && <Card tone="clay">
+        {!available && !pending && <Card tone="warn">
           <Txt variant="title">{c.serviceUnavailable}</Txt>
           <Button title={c.retry} variant="soft" loading={refreshingAvailability} onPress={retryAvailability} />
           <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />
@@ -717,8 +717,8 @@ function BookForm() {
       </>}>
       <RouteCheckpoints avoids={preview?.avoids ?? []} through={preview?.through ?? []} />
       {!!locationError && <Txt variant="caption" style={{ marginBottom: 8 }}>{locationError}</Txt>}
-      {routeChosen && alerts.length > 0 && <View accessibilityLiveRegion="polite"><Card tone="clay">
-        <Row gap={8} style={{ marginBottom: 6 }}><Ionicons name="warning-outline" size={18} color={palette.clayInk} /><Txt variant="title" style={{ flex: 1 }}>{c.roadAlert}</Txt></Row>
+      {routeChosen && alerts.length > 0 && <View accessibilityLiveRegion="polite"><Card tone="warn">
+        <Row gap={8} style={{ marginBottom: 6 }}><Ionicons name="warning-outline" size={18} color={palette.warn} /><Txt variant="title" style={{ flex: 1 }}>{c.roadAlert}</Txt></Row>
         {alerts.map(r => <Txt key={r.id} variant="caption">{`${rtl ? '\u200f' : '\u200e'}${isolate(r.name)}: ${c[`road_${r.status!}`]}${r.note ? ` · ${isolate(r.note)}` : ''}`}</Txt>)}
         <Button title={c.roads} variant="ghost" size="sm" icon="trail-sign-outline" onPress={() => router.push('/roads')} />
       </Card></View>}

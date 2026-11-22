@@ -128,7 +128,7 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
     <Section title={s.merchantName} />
     <Txt variant="label" accessibilityLabel={step} style={{ marginBottom: 6 }}>{step}</Txt>
     {!s.state && order.status === 'requested' && <AcceptClock until={s.acceptDeadline} />}
-    {s.change && <Card tone="clay" style={{ marginTop: 8 }}>
+    {s.change && <Card tone="warn" style={{ marginTop: 8 }}>
       <Txt variant="label" header>{c.shopConsentTitle}</Txt>
       <Txt style={{ marginTop: 4 }}>{s.change.kind === 'weight'
         ? fill(c.shopConsentWeight, { item: lineName(s.change, language), from: money(s.change.fromAgorot / 100), to: money(s.change.toAgorot / 100) })

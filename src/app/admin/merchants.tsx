@@ -25,7 +25,7 @@ export default function AdminMerchants() {
       <Section title={c.adminShopAttention} />
       {/* the reason gets its own line: in a one-line row it truncated the order number */}
       {attention.data.orders.map(o => <Press key={o.id} onPress={() => router.push(`/order/${o.id}`)} accessibilityLabel={[orderCode(o.id), o.shop?.merchantName, why(o)].filter(Boolean).join('، ')}>
-        <Card tone="clay">
+        <Card tone="warn">
           <Row style={{ justifyContent: 'space-between' }}>
             <Txt variant="label" style={{ writingDirection: 'ltr' }}>{orderCode(o.id)}</Txt>
             <Txt variant="caption" style={{ flex: 1, marginHorizontal: 8 }} numberOfLines={1}>{o.shop?.merchantName}</Txt>
@@ -65,7 +65,7 @@ function MerchantCard({ merchant: m, onChange }: { merchant: AdminMerchant; onCh
     return Object.values(values).every(v => Number.isSafeInteger(v) && v >= 0) && expiresAt > today ? { ...values, licenceExpiresAt: expiresAt } : null;
   };
   const payoutAgorot = minorFromText(payout);
-  const statusTone = m.status === 'active' ? tones.olive : m.status === 'pending' ? tones.clay : tones.muted;
+  const statusTone = m.status === 'active' ? tones.olive : m.status === 'pending' ? tones.warn : tones.muted;
   return <Card>
     <Row style={{ justifyContent: 'space-between' }}>
       <Txt variant="title" style={{ flex: 1 }}>{m.name}</Txt>

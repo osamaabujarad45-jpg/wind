@@ -29,12 +29,12 @@ const VIEW: Record<PresenceState, { icon: IconName; tone: { bg: string; fg: stri
   offline: { icon: 'power-outline', tone: tones.muted, title: 'presence_offline_title', body: 'presence_offline_body' },
   starting: { icon: 'sync-outline', tone: tones.blue, title: 'presence_starting_title', body: 'presence_starting_body' },
   online: { icon: 'radio-outline', tone: tones.olive, title: 'presence_online_title', body: 'presence_online_body' },
-  stale: { icon: 'time-outline', tone: tones.clay, title: 'presence_stale_title', body: 'presence_stale_body' },
+  stale: { icon: 'time-outline', tone: tones.warn, title: 'presence_stale_title', body: 'presence_stale_body' },
   reconnecting: { icon: 'sync-outline', tone: tones.blue, title: 'presence_reconnecting_title', body: 'presence_reconnecting_body' },
   busy: { icon: 'navigate-outline', tone: tones.blue, title: 'presence_busy_title', body: 'presence_busy_body' },
   unavailable: { icon: 'cloud-offline-outline', tone: tones.muted, title: 'presence_unavailable_title', body: 'presence_unavailable_body' },
   ineligible: { icon: 'shield-outline', tone: tones.error, title: 'presence_ineligible_title', body: 'presence_ineligible_body' },
-  permission_denied: { icon: 'location-outline', tone: tones.clay, title: 'presence_permission_title', body: 'presence_permission_body' },
+  permission_denied: { icon: 'location-outline', tone: tones.warn, title: 'presence_permission_title', body: 'presence_permission_body' },
 };
 
 // Going online is blocked for these states; the reason sentence under the button says what would unblock it.

@@ -166,8 +166,9 @@ try {
     }
   }
 
-  // 5. Phase 2 design-token guard: no raw hex literals in src/ outside src/ui.tsx and documented chart/map-ground constants.
-  const allowedHexFiles = new Set(['ui.tsx', 'map-page.tsx', 'map-page.native.tsx', 'app/admin/index.tsx', 'background-location.ts']);
+  // 5. Phase 2 design-token guard: no raw hex literals in src/ outside the token files (src/ui.tsx palette, src/theme.ts
+  // design system v2 roles) and documented chart/map-ground constants.
+  const allowedHexFiles = new Set(['ui.tsx', 'theme.ts', 'map-page.tsx', 'map-page.native.tsx', 'app/admin/index.tsx', 'background-location.ts']);
   const srcFiles = readdirSync(new URL('src/', root), { recursive: true })
     .map(f => String(f).replaceAll('\\', '/'))
     .filter(f => /\.(ts|tsx)$/.test(f));

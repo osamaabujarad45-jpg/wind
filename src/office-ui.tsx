@@ -77,7 +77,7 @@ export function OfficeShelf() {
       const over = now >= item.until;
       const line = over ? c.officeOverdue : fill(c.officeUntil, { t: time(item.until) });
       return <Press key={item.orderId} onPress={() => router.push(`/order/${item.orderId}`)} accessibilityLabel={`${orderCode(item.orderId)}، ${line}`}>
-        <Card tone={over ? 'clay' : 'card'} style={{ marginBottom: 8 }}>
+        <Card tone={over ? 'warn' : 'card'} style={{ marginBottom: 8 }}>
           <Row style={{ justifyContent: 'space-between' }}>
             <Txt variant="label" style={{ writingDirection: 'ltr' }}>{orderCode(item.orderId)}</Txt>
             <Txt variant="caption">{line}</Txt>

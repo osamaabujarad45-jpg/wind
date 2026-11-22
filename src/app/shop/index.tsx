@@ -25,7 +25,7 @@ export default function ShopList() {
       <Card>{/* full opacity: a 0.7 wash dropped the closed shop's text to about 3:1; the Closed badge and hours already say it */}
         <Row style={{ justifyContent: 'space-between' }}>
           <Txt variant="title" style={{ flex: 1 }}>{m.name}</Txt>
-          <Badge label={m.open ? c.shopOpen : c.shopClosed} tone={m.open ? tones.olive : tones.clay} icon={m.open ? 'checkmark-circle-outline' : 'time-outline'} />
+          <Badge label={m.open ? c.shopOpen : c.shopClosed} tone={m.open ? tones.olive : tones.warn} icon={m.open ? 'checkmark-circle-outline' : 'time-outline'} />
         </Row>
         <Txt variant="caption" style={{ marginTop: 4 }}>{`${c[`shopCat_${m.category}`]} · ${city(m.city)[language]}`}</Txt>
         <Txt variant="caption" style={{ marginTop: 4, color: palette.ink }}>

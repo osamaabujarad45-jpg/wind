@@ -53,7 +53,7 @@ function Incidents({ list }: { list: RefObject<ScrollView | null> }) {
   const call = (phone: string) => () => { Linking.openURL(`tel:${phone}`).catch(() => fail(c.callUnavailable)); };
   return <>
     <ErrorText>{failure || (error && err(error))}</ErrorText>
-    {!data ? <Loading failed={!!error} onRetry={reload} /> : rows.length === 0 ? <Empty icon="shield-checkmark-outline" title={c.noIncidents} /> : rows.map(d => <Card key={d.id} tone={d.status === 'open' ? 'clay' : undefined}>
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : rows.length === 0 ? <Empty icon="shield-checkmark-outline" title={c.noIncidents} /> : rows.map(d => <Card key={d.id} tone={d.status === 'open' ? 'warn' : undefined}>
       <Txt variant="title">{`${c[`safety_${d.kind}`]} · ${time(d.createdAt)}`}</Txt>
       <Txt variant="caption" style={{ marginBottom: 6 }}>{`${c.reporter}: ${c[d.reporterRole]} · ${d.reporterName}`}</Txt>
       {!!d.note && <Txt variant="body" style={{ marginBottom: 8 }}>{d.note}</Txt>}

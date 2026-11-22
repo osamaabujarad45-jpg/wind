@@ -701,6 +701,21 @@
     "session": "admin"
   },
   {
+    "id": "admin-desktop",
+    "group": "Admin",
+    "name": "Dashboard on a desktop (1280 px): side rail instead of bottom tabs",
+    "route": "/admin",
+    "file": "src/app/admin/_layout.tsx",
+    "desktop": true,
+    "ar": [
+      "ar/admin-desktop.png"
+    ],
+    "en": [
+      "en/admin-desktop.png"
+    ],
+    "session": "admin"
+  },
+  {
     "id": "admin-orders",
     "group": "Admin",
     "name": "All orders",

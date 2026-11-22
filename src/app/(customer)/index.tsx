@@ -104,9 +104,9 @@ export default function Home() {
     </>}
 
     {/* One card left (Plus members): full width, not a half-empty rail. */}
-    {me?.plan ? <Promo tone="clay" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} wide />
+    {me?.plan ? <Promo tone="olive" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} wide />
       : <Rail gap={10} style={{ marginHorizontal: -16, marginTop: 10 }} contentStyle={{ paddingHorizontal: 16, paddingBottom: 4 }}>
-        <Promo tone="clay" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} />
+        <Promo tone="olive" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} />
         <Promo tone="olive" icon="sparkles-outline" title={c.plusTitle}
           body={fill(c.plusPitch, { pct: Math.round((me?.settings.plusDiscount ?? defaultSettings.plusDiscount) * 100), price: me?.settings.plusPrice ?? defaultSettings.plusPrice })} onPress={() => router.navigate('/account')} />
       </Rail>}
@@ -170,8 +170,8 @@ export default function Home() {
   </View>;
 }
 
-function Promo({ tone, icon, title, body, onPress, wide }: { tone: 'forest' | 'clay' | 'olive'; icon: IconName; title: string; body: string; onPress: () => void; wide?: boolean }) {
-  const t = { forest: [palette.forest, palette.lime, 'rgba(255,255,255,0.78)'], clay: [palette.clayPale, palette.clayInk, palette.ink], olive: [palette.olivePale, palette.olive, palette.ink] }[tone];
+function Promo({ tone, icon, title, body, onPress, wide }: { tone: 'forest' | 'olive'; icon: IconName; title: string; body: string; onPress: () => void; wide?: boolean }) {
+  const t = { forest: [palette.forest, palette.lime, 'rgba(255,255,255,0.78)'], olive: [palette.olivePale, palette.olive, palette.ink] }[tone];
   return <Press accessibilityLabel={`${title}. ${body}`} onPress={onPress} style={[styles.promo, wide && styles.wide, { backgroundColor: t[0] }]}>
     <Ionicons name={icon} size={20} color={t[1]} />
     <Txt variant="title" numberOfLines={2} style={{ color: tone === 'forest' ? palette.lime : palette.ink, marginTop: 8 }}>{title}</Txt>

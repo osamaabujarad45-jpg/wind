@@ -196,7 +196,7 @@ export function PhoneCard() {
   if (!user) return null;
 
   const status = gate === 'checking' ? c.phone_status_checking : isVerified ? c.phone_status_verified : c.phone_status_unverified;
-  const badge = gate === 'ready' ? (isVerified ? { label: c.verified, tone: tones.olive } : { label: c.unverified, tone: tones.clay })
+  const badge = gate === 'ready' ? (isVerified ? { label: c.verified, tone: tones.olive } : { label: c.unverified, tone: tones.warn })
     : gate === 'unavailable' || gate === 'disabled' ? { label: c.phone_unavailable, tone: tones.muted } : null;
   const formValid = !!form && phoneInputOk(form.phone) && form.password.length > 0;
   const formReason = !form ? undefined : changeBlock ? reason(changeBlock) : !phoneInputOk(form.phone) ? c.phone_reason_new_number

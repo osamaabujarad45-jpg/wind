@@ -43,9 +43,9 @@ export default function MerchantHome() {
     <Header title={merchant.name} back subtitle={merchant.status === 'paused' ? c.merchantLicencePaused : merchant.pausedNew ? c.merchantPausedNew : merchant.open ? c.shopOpen : c.shopClosed} />
     {/* The banner opens the first new order: it named the work but led nowhere (design review 17 Nov). */}
     {fresh.length > 0 && <Press onPress={() => router.push(`/merchant/order/${fresh[0].id}`)} accessibilityLabel={fill(c.merchantNewOrders, { n: fresh.length })}>
-      <Card tone="clay"><Row style={{ justifyContent: 'space-between' }}>
+      <Card tone="warn"><Row style={{ justifyContent: 'space-between' }}>
         <Txt variant="label" style={{ flex: 1 }}>{fill(c.merchantNewOrders, { n: fresh.length })}</Txt>
-        <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={18} color={palette.clayInk} />
+        <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={18} color={palette.warn} />
       </Row></Card>
     </Press>}
     <Row style={{ flexWrap: 'wrap' }}>
@@ -122,7 +122,7 @@ function InboxRow({ order }: { order: Order }) {
     <Card>
       <Row style={{ justifyContent: 'space-between' }}>
         <Txt variant="label">{`W-${String(order.id).padStart(5, '0')}`}</Txt>
-        <Badge label={step} tone={!s.state && order.status === 'requested' ? tones.clay : statusFlow.includes(order.status) ? tones.olive : tones.muted} />
+        <Badge label={step} tone={!s.state && order.status === 'requested' ? tones.warn : statusFlow.includes(order.status) ? tones.olive : tones.muted} />
       </Row>
       <Txt variant="caption" style={{ marginTop: 4 }}>{fill(c.merchantLines, { n: s.lines.filter(l => !l.removed).length, r: money(s.goodsAgorot / 100) })}</Txt>
       {!s.state && order.status === 'requested' && <Txt variant="caption" style={{ marginTop: 2 }}>{clock.left === 0 ? c.shopAcceptExpired : fill(c.shopAcceptTimer, { t: clock.text })}</Txt>}
