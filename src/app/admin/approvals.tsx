@@ -4,7 +4,7 @@
 import { useContext, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { ScrollView, View } from 'react-native';
-import { api, useApi } from '../../api';
+import { api, ApiError, useApi } from '../../api';
 import { city, isCity, type Merchant, type Subscription, type User } from '../../model';
 import { useFormat } from '../../parts';
 import { useSession } from '../../session';
@@ -31,6 +31,11 @@ export default function Approvals() {
   const waitingPlans = (plans.data ?? []).filter(s => s.status === 'pending').sort((a, b) => a.createdAt - b.createdAt);
   const waitingShops = (shops.data?.merchants ?? []).filter(m => m.status === 'pending');
   const ready = !!drivers.data && !!plans.data;
+  // Shop tables not created yet (service_unavailable) means no shop applications, not an error.
+  const shopMissing = shops.error instanceof ApiError && shops.error.message === 'service_unavailable';
+  const shopError = shop && !shops.data && !shopMissing ? shops.error : undefined;
+  // "Nothing is waiting" only once the shop list has answered too (or failed, which then shows its error).
+  const shopSettled = !shop || !!shops.data || !!shops.error;
   const loadError = drivers.error ?? plans.error;
   // The lists are capped at 200 rows: say so when the count is larger, instead of hiding the rest.
   const moreDrivers = Math.max(0, (stats.data?.pendingDrivers ?? 0) - waitingDrivers.length);
@@ -56,8 +61,8 @@ export default function Approvals() {
   return <Screen onRefresh={reload} scrollRef={list}>
     {/* Plans has no phone tab: its link stays here whatever is pending */}
     <Header title={c.approvalsTitle} right={<Button title={c.approvalsAllPlans} variant="ghost" size="sm" onPress={() => router.navigate('/admin/subscriptions')} />} />
-    <ErrorText>{failure || (loadError ? err(loadError) : '')}</ErrorText>
-    {!ready ? <Loading failed={!!loadError} onRetry={reload} /> : total === 0 ? <Empty icon="checkmark-done-outline" title={c.approvalsNone} /> : <View style={{ gap: 8 }}>
+    <ErrorText>{failure || (loadError ? err(loadError) : shopError ? err(shopError) : '')}</ErrorText>
+    {!ready || (total === 0 && !shopSettled) ? <Loading failed={!!loadError} onRetry={reload} /> : total === 0 && !shopError ? <Empty icon="checkmark-done-outline" title={c.approvalsNone} /> : <View style={{ gap: 8 }}>
       {waitingDrivers.length > 0 && <>
         <Section title={`${c.pendingDrivers} · ${waitingDrivers.length}`} action={c.approvalsAllUsers} onAction={() => router.navigate('/admin/users')} />
         {moreDrivers > 0 && <Txt variant="caption">{fill(c.approvalsMore, { n: moreDrivers })}</Txt>}
@@ -88,7 +93,6 @@ export default function Approvals() {
           </Row>
         </Card>)}
       </>}
-      {shop && shops.error && !shops.data && <ErrorText>{err(shops.error)}</ErrorText>}
       {waitingShops.length > 0 && <>
         <Section title={`${c.approvalsShops} · ${waitingShops.length}`} />
         {waitingShops.map(m => <Card key={`s${m.id}`}>
