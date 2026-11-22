@@ -3,19 +3,20 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
+import { themeModules } from './theme-mock.mjs';
 
 const require = createRequire(import.meta.url), model = require('../src/model.ts'), copy = require('../src/copy.ts');
 let language = 'en', mustUpdate = false;
 let session = { ready: true, offline: true, me: null, onboarded: true, refresh() {},
   offlineSummary: { actorId: 7, role: 'driver', savedAt: 1, orders: [{ id: 1, service: 'parcel', status: 'assigned', pickupCity: 'ramallah', dropoffCity: 'nablus' }] } };
-const ui = { Button: 'Button', Card: 'Card', Empty: 'Empty', Txt: 'Txt', palette: {}, fill: copy.fill,
+const ui = { Button: 'Button', Card: 'Card', Empty: 'Empty', Txt: 'Txt', fill: copy.fill,
   useCopy: () => ({ c: copy.copy[language], language, rtl: language === 'ar' }) };
 const modules = {
   react: { useSyncExternalStore: () => mustUpdate }, 'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
   'react-native': { View: 'View', Platform: { OS: 'android' }, StyleSheet: { create: x => x, absoluteFill: {} } },
   'expo-router': { Stack: { Protected: 'Protected', Screen: 'Route' } }, 'expo-status-bar': {}, 'expo-splash-screen': { preventAutoHideAsync() {} }, 'expo-font': { loadAsync: async () => {} },
   '../motion': {}, '../intro': {}, '../driver-work': {}, '../session': { useSession: () => session }, '../api': {}, '../api-client': {},
-  '../model': model, '../parts': { useFormat: () => ({ time: () => 'saved-time' }) }, '../copy': copy, '../ui': ui,
+  '../model': model, '../parts': { useFormat: () => ({ time: () => 'saved-time' }) }, '../copy': copy, '../ui': ui, ...themeModules('../'),
 };
 const source = ts.transpileModule(readFileSync(new URL('../src/app/_layout.tsx', import.meta.url), 'utf8'),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
