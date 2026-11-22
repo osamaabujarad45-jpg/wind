@@ -87,7 +87,12 @@ export default function ShopCart() {
       if (!current()) return;
       if (answer.state === 'present') { await finish(command, answer.orderId, current); return; }
       if (answer.state === 'unknown' && (!retry || Date.now() + serverOffset() >= command.commandExpiresAt)) return;
-      const delivery = readShopDelivery(await recoveryStorage.read('shop-checkout').catch(() => null), command.requestId);
+      const savedDelivery = await recoveryStorage.read('shop-checkout').catch((error: unknown) => {
+        // The recovery store already removes an expired or unreadable record. Other read failures can be retried.
+        if (error instanceof Error && error.message === 'recovery_record_unavailable') return null;
+        throw error;
+      });
+      const delivery = readShopDelivery(savedDelivery, command.requestId);
       if (!current()) return;
       if (answer.state === 'absent') {
         const contents = await storedCart();

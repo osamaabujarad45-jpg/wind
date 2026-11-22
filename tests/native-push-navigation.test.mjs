@@ -148,6 +148,17 @@ try {
     await settle();
     assert.deepEqual(fake.nav, [['replace', '/driver/earnings']], 'role-appropriate target');
   }
+  { // A captain awaiting approval can still read their own support reply.
+    const { fake, navigation } = await setup();
+    navigation.syncNativePushNavigation(true, account('driver', 'pending'));
+    fake.listener(response('pending-jobs', '/driver', 1));
+    fake.listener(response('someone-elses-reply', '/support', 2));
+    fake.listener(response('own-reply', '/support', 1));
+    assert.deepEqual(fake.nav, [['replace', '/support']], 'pending captains can open their own inbox only');
+    navigation.syncNativePushNavigation(true, account('driver', 'blocked'));
+    fake.listener(response('blocked-reply', '/support', 1));
+    assert.deepEqual(fake.nav, [['replace', '/support']], 'a blocked account cannot open the inbox');
+  }
   const layout = readFileSync(new URL('../src/app/_layout.tsx', import.meta.url), 'utf8');
   assert.match(layout, /const rootKey = useRootNavigationState\(\)\?\.key/);
   assert.match(layout, /const canOpenNotification = ready && !offline && !mustUpdate && !!rootKey/);

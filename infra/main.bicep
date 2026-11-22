@@ -7,7 +7,7 @@ param prefix string
 param location string = resourceGroup().location
 @allowed(['dev', 'staging', 'prod'])
 param environment string
-@description('Must remain false until root-reviewed PostgreSQL runtime cutover and all operational gates pass.')
+@description('Enable the reviewed staging workloads after private networking and operational gates pass. Production cutover is unavailable.')
 param enableWorkloads bool = false
 @description('Prepare private access to the staging registry, Web PubSub and graph share before enabling apps. Requires an approved Premium registry and a VNet-connected build runner.')
 param enablePrivateServiceNetworking bool = false
@@ -54,11 +54,12 @@ param pushSubject string = ''
 @allowed(['operator-verified', 'self-service'])
 param identityMode string = 'operator-verified'
 
-// Evaluate both required images at deployment start, before workload activation.
-var checkedImage = !enableWorkloads || !empty(trim(imageDigest)) ? imageDigest : fail('imageDigest is required when enableWorkloads is true')
-var checkedOsrmImage = !enableWorkloads || !empty(trim(osrmImageDigest)) ? osrmImageDigest : fail('osrmImageDigest is required when enableWorkloads is true')
-var checkedSupportContact = !enableWorkloads || !empty(trim(supportContact)) ? supportContact : fail('supportContact is required when enableWorkloads is true')
-var checkedPushSubject = !enableWorkloads || !empty(trim(pushSubject)) ? pushSubject : fail('pushSubject is required when enableWorkloads is true')
+// The only non-loopback runtime available today is for isolated staging.
+var workloadsEnabled = !enableWorkloads ? false : (environment == 'staging' && enablePrivateServiceNetworking ? true : fail('Workloads require the staging environment and private service networking'))
+var checkedImage = !workloadsEnabled || !empty(trim(imageDigest)) ? imageDigest : fail('imageDigest is required when enableWorkloads is true')
+var checkedOsrmImage = !workloadsEnabled || !empty(trim(osrmImageDigest)) ? osrmImageDigest : fail('osrmImageDigest is required when enableWorkloads is true')
+var checkedSupportContact = !workloadsEnabled || !empty(trim(supportContact)) ? supportContact : fail('supportContact is required when enableWorkloads is true')
+var checkedPushSubject = !workloadsEnabled || !empty(trim(pushSubject)) ? pushSubject : fail('pushSubject is required when enableWorkloads is true')
 var suffix = uniqueString(subscription().id, resourceGroup().id, prefix)
 var commonTags = { application: 'fastship', environment: environment, managedBy: 'bicep' }
 var vnetName = '${prefix}-${environment}-vnet'
@@ -70,7 +71,6 @@ var blobDnsZoneName = 'privatelink.blob.core.windows.net'
 #disable-next-line no-hardcoded-env-urls
 var fileDnsZoneName = 'privatelink.file.core.windows.net'
 var privateEndpointSubnetId = '${vnet.id}/subnets/private-endpoints'
-var prepareFileNetwork = enableWorkloads || enablePrivateServiceNetworking
 #disable-next-line no-hardcoded-env-urls
 var registryDnsZoneName = 'privatelink.azurecr.io'
 #disable-next-line no-hardcoded-env-urls
@@ -105,7 +105,7 @@ resource blobPrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = {
   location: 'global'
   tags: commonTags
 }
-resource filePrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if (prepareFileNetwork) {
+resource filePrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if (enablePrivateServiceNetworking) {
   name: fileDnsZoneName
   location: 'global'
   tags: commonTags
@@ -121,7 +121,7 @@ resource blobDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020
   location: 'global'
   properties: { registrationEnabled: false, virtualNetwork: { id: vnet.id } }
 }
-resource fileDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (prepareFileNetwork) {
+resource fileDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (enablePrivateServiceNetworking) {
   parent: filePrivateDns
   name: '${prefix}-${environment}-file-link'
   location: 'global'
@@ -310,13 +310,13 @@ resource vaultZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups
   name: 'default'
   properties: { privateDnsZoneConfigs: [{ name: 'vault', properties: { privateDnsZoneId: vaultPrivateDns.id } }] }
 }
-resource osrmFileEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (prepareFileNetwork) {
+resource osrmFileEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateServiceNetworking) {
   name: '${prefix}-${environment}-osrm-file-pe'
   location: location
   tags: commonTags
   properties: { subnet: { id: privateEndpointSubnetId }, privateLinkServiceConnections: [{ name: 'file', properties: { privateLinkServiceId: osrmStorage.id, groupIds: ['file'] } }] }
 }
-resource osrmFileZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (prepareFileNetwork) {
+resource osrmFileZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateServiceNetworking) {
   parent: osrmFileEndpoint
   name: 'default'
   properties: { privateDnsZoneConfigs: [{ name: 'file', properties: { privateDnsZoneId: filePrivateDns!.id } }] }
@@ -379,7 +379,7 @@ resource pubsubZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroup
   properties: { privateDnsZoneConfigs: [{ name: 'webpubsub', properties: { privateDnsZoneId: pubsubPrivateDns!.id } }] }
   dependsOn: [pubsubDnsLink]
 }
-resource databaseUrlSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (enableWorkloads) {
+resource databaseUrlSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (workloadsEnabled) {
   parent: vault
   name: 'database-url'
   properties: {
@@ -393,24 +393,24 @@ resource acsKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (enabl
   name: 'acs-key'
   properties: { value: acsAccessKey }
 }
-resource vaultSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableWorkloads) {
+resource vaultSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (workloadsEnabled) {
   name: guid(vault.id, environmentIdentity.id, '4633458b-17de-408a-b874-0445c86b69e6')
   scope: vault
   properties: { principalId: environmentIdentity.properties.principalId, principalType: 'ServicePrincipal', roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') }
 }
-resource registryPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableWorkloads) {
+resource registryPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (workloadsEnabled) {
   name: guid(registry.id, environmentIdentity.id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
   scope: registry
   properties: { principalId: environmentIdentity.properties.principalId, principalType: 'ServicePrincipal', roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') }
 }
-resource osrmRegistryPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableWorkloads) {
+resource osrmRegistryPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (workloadsEnabled) {
   name: guid(registry.id, osrmIdentity.id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
   scope: registry
   properties: { principalId: osrmIdentity.properties.principalId, principalType: 'ServicePrincipal', roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') }
 }
 // Owner gate: workloads stay disabled until the runtime PostgreSQL cutover is reviewed, the
 // migration has run under the advisory lock, and the identity/provider gates are accepted.
-module api 'modules/container-app.bicep' = if (enableWorkloads) {
+module api 'modules/container-app.bicep' = if (workloadsEnabled) {
   name: 'api'
   params: {
     name: '${prefix}-${environment}-api'
@@ -458,7 +458,7 @@ module api 'modules/container-app.bicep' = if (enableWorkloads) {
   }
   dependsOn: [registryPull, registryZoneGroup, vaultZoneGroup, vaultDnsLink, vaultSecretsUser, databaseUrlSecret, acsKeySecret, dataEnvironmentStorage]
 }
-module worker 'modules/container-app.bicep' = if (enableWorkloads) {
+module worker 'modules/container-app.bicep' = if (workloadsEnabled) {
   name: 'worker'
   params: {
     name: '${prefix}-${environment}-worker'
@@ -484,7 +484,7 @@ module worker 'modules/container-app.bicep' = if (enableWorkloads) {
   }
   dependsOn: [registryPull, registryZoneGroup, vaultZoneGroup, vaultDnsLink, vaultSecretsUser, databaseUrlSecret]
 }
-resource acaOsrm 'Microsoft.App/containerApps@2024-03-01' = if (enableWorkloads) {
+resource acaOsrm 'Microsoft.App/containerApps@2024-03-01' = if (workloadsEnabled) {
   name: '${prefix}-${environment}-osrm'
   location: location
   tags: commonTags
@@ -535,8 +535,8 @@ resource budget 'Microsoft.Consumption/budgets@2023-05-01' = {
     notifications: { actual80: { enabled: true, operator: 'GreaterThan', threshold: 80, contactEmails: [], contactRoles: ['Owner'], thresholdType: 'Actual' }, actual100: { enabled: true, operator: 'GreaterThan', threshold: 100, contactEmails: [], contactRoles: ['Owner'], thresholdType: 'Actual' } }
   }
 }
-output imageValidation string = enableWorkloads ? '${checkedImage} ${checkedOsrmImage}' : 'Workloads disabled'
-output workloadGate string = enableWorkloads ? 'Enabled by parameter; does not mean runtime gates passed.' : 'Disabled; workloads are not staged or running.'
+output imageValidation string = workloadsEnabled ? '${checkedImage} ${checkedOsrmImage}' : 'Workloads disabled'
+output workloadGate string = workloadsEnabled ? 'Private staging workloads enabled' : 'Workloads disabled'
 output postgresFqdn string = pg.properties.fullyQualifiedDomainName
 output acsHostName string = enableAcs ? comm!.properties.hostName : ''
 output storageId string = storage.id

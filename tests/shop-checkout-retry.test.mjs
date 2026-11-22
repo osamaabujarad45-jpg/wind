@@ -14,7 +14,7 @@ const cart = { merchantId: 1, merchantName: 'Market', city: 'ramallah', minOrder
 const state = [], references = [], posts = [], navigation = [];
 const store = new Map();
 const protectedStore = new Map();
-let cursor, refCursor, focus, failFirst, firstStatus, rejectRetry, cartCleared, receiptNow, receiptOrderId, protectedWriteFails;
+let cursor, refCursor, focus, failFirst, firstStatus, rejectRetry, cartCleared, receiptNow, receiptOrderId, protectedWriteFails, protectedReadFails;
 class ApiError extends Error {
   constructor(message, status) { super(message); this.status = status; }
 }
@@ -51,7 +51,10 @@ const modules = {
   '../../api-client': { apiSessionRevision: () => 1, serverOffset: () => 0 },
   '../../booking': { ...booking, pendingOutcome: (receipt, command) => booking.pendingOutcome(receipt, command, receiptNow) },
   '../../shop-checkout': checkout,
-  '../../recovery-storage': { recoveryStorage: { read: async key => protectedStore.get(key) ?? null,
+  '../../recovery-storage': { recoveryStorage: { read: async key => {
+    if (protectedReadFails) throw new Error('temporary storage failure');
+    return protectedStore.get(key) ?? null;
+  },
     write: async (key, value) => {
       if (protectedWriteFails) throw new Error('unavailable');
       if (value === null) protectedStore.delete(key); else protectedStore.set(key, value);
@@ -149,6 +152,35 @@ for (const receiptState of ['unknown', 'absent', 'present']) {
     assert.equal(protectedStore.size, 0);
   } finally { dismiss(); }
 }
+
+state.length = references.length = posts.length = navigation.length = 0;
+failFirst = true;
+receiptNow = undefined;
+receiptOrderId = undefined;
+render();
+const closeBeforeRead = focus();
+await flush();
+enterDelivery();
+await render().props.footer.props.onPress();
+closeBeforeRead();
+state.length = references.length = 0;
+protectedReadFails = true;
+receiptNow = posts[0].commandExpiresAt + 60_000;
+render();
+const closeAfterRead = focus();
+try {
+  await flush();
+  assert.equal(store.size, 1, 'a transient read failure preserves the command');
+  assert.equal(protectedStore.size, 1, 'a transient read failure preserves the encrypted draft');
+  assert.equal(find(render(), 'ErrorText').children, c.bookingStorageError);
+  protectedReadFails = false;
+  find(render(), 'Button', props => props.title === c.retry).onPress();
+  await flush();
+  assert.equal(find(render(), 'Field', props => props.label === c.shopLandmark).value, 'Blue door');
+  assert.equal(posts.length, 1, 'retry after a storage failure cannot resend an expired POST');
+  assert.equal(store.size, 0);
+  assert.equal(protectedStore.size, 0);
+} finally { closeAfterRead(); }
 
 state.length = references.length = posts.length = navigation.length = 0;
 failFirst = true;

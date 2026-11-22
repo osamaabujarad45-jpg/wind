@@ -52,7 +52,8 @@ if (Platform.OS !== 'web') {
     pending = null; // a stale or refused tap is never retried under another account
     consume(target.identifier);
     if (!target.credential || target.credential !== apiSessionCredential() || target.identifier === lastOpened
-      || account?.user.status !== 'active' || (target.recipient !== undefined && target.recipient !== account.user.id)
+      || !account || (account.user.status !== 'active' && !(account.user.status === 'pending' && target.url === '/support'))
+      || (target.recipient !== undefined && target.recipient !== account.user.id)
       || !allowed(target.url, account.user.role)) return;
     lastOpened = target.identifier;
     router.replace(target.url as never);

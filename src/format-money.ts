@@ -12,7 +12,7 @@ function createFormatters(locale: string) {
   };
 }
 
-/** User-facing amounts are in whole shekels. Callers convert agorot before formatting. */
+/** User-facing amounts are in shekels. Callers convert agorot before formatting. */
 export function formatMoney(amount: number, language: keyof typeof locales, currency: string) {
   const { whole, decimal } = formatters[language];
   const digits = (Number.isInteger(amount) ? whole : decimal).format(Math.abs(amount));

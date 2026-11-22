@@ -50,8 +50,11 @@ const deployment=name=>compiled.resources.find(resource=>resource.type==='Micros
 const api=deployment('api').properties.parameters,worker=deployment('worker').properties.parameters;
 assert.equal(api.minReplicas.value, 1, 'process-local quota and presence state still require one API replica');
 assert.equal(api.maxReplicas.value, 1, 'scale-out stays blocked until shared quota/presence state exists');
-const workloadCondition = "[parameters('enableWorkloads')]";
+const workloadCondition = "[variables('workloadsEnabled')]";
 const privateNetworkingCondition = "[parameters('enablePrivateServiceNetworking')]";
+assert.match(compiled.variables.workloadsEnabled,
+  /if\(not\(parameters\('enableWorkloads'\)\), false\(\), if\(and\(equals\(parameters\('environment'\), 'staging'\), parameters\('enablePrivateServiceNetworking'\)\), true\(\), fail\(/,
+  'activating workloads outside private staging fails evaluation');
 assert.equal(compiled.parameters.enablePrivateServiceNetworking.defaultValue, false, 'private networking is an explicit staging rollout');
 const registry = compiled.resources.find(resource => resource.type === 'Microsoft.ContainerRegistry/registries');
 assert.match(registry.sku.name, /enablePrivateServiceNetworking.*'Premium'.*'Basic'/, 'private ACR endpoints require Premium');
@@ -70,6 +73,7 @@ for (const group of ['registry', 'webpubsub']) {
   assert.ok(zoneGroup.dependsOn.some(dependency => dependency.includes('virtualNetworkLinks')), `${group} DNS waits for its VNet link`);
 }
 for (const workload of [deployment('api'), deployment('worker'), compiled.resources.find(resource => resource.type === 'Microsoft.App/containerApps')]) {
+  assert.equal(workload.condition, workloadCondition, 'all three workloads enforce the staging gate');
   assert.ok(workload.dependsOn.some(dependency => dependency.includes('registry-pe') && dependency.includes('privateDnsZoneGroups')), 'private image pulls wait for ACR DNS');
 }
 assert.match(main, /privatelink\.azurecr\.io/);
@@ -90,17 +94,14 @@ assert.equal(compiled.parameters.enableWorkloads.defaultValue,false);
 assert.ok(deployment('api').condition && deployment('worker').condition,'Workloads retain the activation gate');
 const graphShare=compiled.resources.find(resource=>resource.type==='Microsoft.Storage/storageAccounts/fileServices/shares');
 assert.ok(graphShare && !graphShare.condition,'The graph share exists before enabling its application');
-const fileNetworkCondition = "[variables('prepareFileNetwork')]";
-assert.equal(compiled.variables.prepareFileNetwork, "[or(parameters('enableWorkloads'), parameters('enablePrivateServiceNetworking'))]",
-  'the private graph can be populated before enabling applications without changing default deployments');
 const graphEndpoint=compiled.resources.find(resource=>resource.type==='Microsoft.Network/privateEndpoints'
   && resource.properties.privateLinkServiceConnections.some(connection=>connection.properties.groupIds.includes('file')));
-assert.equal(graphEndpoint?.condition, fileNetworkCondition, 'File endpoint can be enabled during private bootstrap');
+assert.equal(graphEndpoint?.condition, privateNetworkingCondition, 'File endpoint can be enabled during private bootstrap');
 for (const resource of compiled.resources.filter(resource =>
   (resource.type === 'Microsoft.Network/privateDnsZones' && String(resource.name).includes('fileDnsZoneName')) ||
   (resource.type === 'Microsoft.Network/privateDnsZones/virtualNetworkLinks' && String(resource.name).includes('fileDnsZoneName')) ||
   (resource.type === 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups' && String(resource.name).includes('osrm-file-pe')))) {
-  assert.equal(resource.condition, fileNetworkCondition, 'File DNS follows the File endpoint');
+  assert.equal(resource.condition, privateNetworkingCondition, 'File DNS follows the File endpoint');
 }
 const fileZone = compiled.resources.find(resource => resource.type === 'Microsoft.Network/privateDnsZones' && String(resource.name).includes('fileDnsZoneName'));
 const fileLink = compiled.resources.find(resource => resource.type === 'Microsoft.Network/privateDnsZones/virtualNetworkLinks' && String(resource.name).includes('fileDnsZoneName'));
@@ -114,15 +115,14 @@ assert.match(compiled.variables.checkedOsrmImage, /fail\('osrmImageDigest is req
 assert.match(compiled.variables.checkedPushSubject, /pushSubject is required/);
 assert.match(compiled.outputs.imageValidation.value, /checkedImage/);
 const paramFile = path.join(root, '.expo/implementation/wp16-enabled.bicepparam');
-writeFileSync(paramFile, `using '../../infra/main.bicep'\nparam prefix = 'fsstage'\nparam environment = 'staging'\nparam postgresAdministratorPassword = 'compile-only-not-a-secret'\nparam enableWorkloads = true\nparam imageDigest = 'example/api@sha256:1234'\nparam osrmImageDigest = 'example/osrm@sha256:1234'\n`);
+writeFileSync(paramFile, `using '../../infra/main.bicep'\nparam prefix = 'fsstage'\nparam environment = 'staging'\nparam postgresAdministratorPassword = 'compile-only-not-a-secret'\nparam enableWorkloads = true\nparam enablePrivateServiceNetworking = true\nparam imageDigest = 'example/api@sha256:1234'\nparam osrmImageDigest = 'example/osrm@sha256:1234'\n`);
 const bicep = process.env.BICEP_COMMAND || 'az';
 const prefix = bicep === 'az' ? ['bicep'] : [];
 execFileSync(bicep, [...prefix, 'build-params', ...(bicep === 'az' ? ['--file', paramFile] : [paramFile]), '--outfile', path.join(root, '.expo/implementation/wp16-enabled.parameters.json')], { cwd: root, stdio: 'inherit', env: process.env, shell: process.platform === 'win32' && !bicep.toLowerCase().endsWith('.exe') });
 const enabled = JSON.parse(readFileSync(path.join(root, '.expo/implementation/wp16-enabled.parameters.json'), 'utf8')).parameters;
 assert.equal(enabled.enableWorkloads.value, true);
+assert.equal(enabled.enablePrivateServiceNetworking.value, true);
 assert.ok(enabled.imageDigest.value && enabled.osrmImageDigest.value);
-assert.equal(deployment('api').condition, workloadCondition);
-assert.equal(deployment('worker').condition, workloadCondition);
 const apiEnv = Object.fromEntries(api.environmentVariables.value.map(entry => [entry.name, entry]));
 for (const name of ['SUPPORT_CONTACT', 'WIND_IDENTITY_MODE', 'OSRM_URL', 'DB_PATH', 'WIND_PUSH_SUBJECT']) {
   assert.ok(typeof apiEnv[name]?.value === 'string' && apiEnv[name].value.length > 0, `${name} must render non-empty`);
