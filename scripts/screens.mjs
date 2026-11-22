@@ -20,7 +20,8 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const only = args.find(a => a.startsWith('--only='))?.slice(7).split(',');
-const API_PORT = 4100, WEB_PORT = 4101;
+// SCREENS_API_PORT / SCREENS_WEB_PORT let two runs share one machine (a gate sandbox serving several branches).
+const API_PORT = Number(process.env.SCREENS_API_PORT) || 4100, WEB_PORT = Number(process.env.SCREENS_WEB_PORT) || 4101;
 const webDir = join(root, '.screens', 'web');
 const outDir = join(root, 'docs', 'screens');
 const phone = { width: 390, height: 844 };
