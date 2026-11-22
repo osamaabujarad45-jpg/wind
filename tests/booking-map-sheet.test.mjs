@@ -142,7 +142,10 @@ check('Arabic landscape sheet is on the reading end and expanded body remains us
   const scroll = find(expandedSheet, node => node.type === 'ScrollView');
   const scrollStyle = flatten(scroll.props.style);
   assert.equal(scrollStyle.flex, 1);
-  assert.equal(scrollStyle.marginBottom, 70, 'the expanded form ends above its footer');
+  const sheetChildren = children(expandedSheet);
+  const footerSpacer = sheetChildren.at(-1);
+  assert.equal(flatten(footerSpacer.props.style).height, 70, 'the expanded form reserves the footer height');
+  assert.equal(flatten(footerSpacer.props.style).flexShrink, 0, 'the footer reserve cannot collapse');
   assert.equal(scroll.props.accessibilityElementsHidden, false);
   assert.equal(scroll.props.importantForAccessibility, 'auto');
   assert.ok(360 - 48 - 58 - 70 > 0, 'the expanded form has a positive scroll viewport');

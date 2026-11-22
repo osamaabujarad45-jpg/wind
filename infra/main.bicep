@@ -9,6 +9,8 @@ param location string = resourceGroup().location
 param environment string
 @description('Must remain false until root-reviewed PostgreSQL runtime cutover and all operational gates pass.')
 param enableWorkloads bool = false
+@description('Prepare private access to the staging registry, Web PubSub and graph share before enabling apps. Requires an approved Premium registry and a VNet-connected build runner.')
+param enablePrivateServiceNetworking bool = false
 @description('Reviewed container image digest, e.g. repo@sha256:...; required only when workloads are enabled.')
 param imageDigest string = ''
 @description('OSRM image digest containing the reviewed graph-serving entrypoint; graph is mounted from durable Azure Files.')
@@ -39,7 +41,7 @@ param entraClientId string = ''
 @description('ACS sender (phone number or alphanumeric ID) used when enableAcs is true.')
 param acsSender string = ''
 @secure()
-@description('ACS access key; prefer a Key Vault reference in reviewed deployments.')
+@description('ACS access key for optional Key Vault bootstrap. Omit after the versionless secret is available.')
 param acsAccessKey string = ''
 @description('Provision Azure Communication Services (SMS + Email) for OTP delivery bake-off; Entra tenant itself is portal-created.')
 param enableAcs bool = false
@@ -68,6 +70,11 @@ var blobDnsZoneName = 'privatelink.blob.core.windows.net'
 #disable-next-line no-hardcoded-env-urls
 var fileDnsZoneName = 'privatelink.file.core.windows.net'
 var privateEndpointSubnetId = '${vnet.id}/subnets/private-endpoints'
+var prepareFileNetwork = enableWorkloads || enablePrivateServiceNetworking
+#disable-next-line no-hardcoded-env-urls
+var registryDnsZoneName = 'privatelink.azurecr.io'
+#disable-next-line no-hardcoded-env-urls
+var pubsubDnsZoneName = 'privatelink.webpubsub.azure.com'
 
 resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
   name: vnetName
@@ -98,7 +105,7 @@ resource blobPrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = {
   location: 'global'
   tags: commonTags
 }
-resource filePrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if (enableWorkloads) {
+resource filePrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if (prepareFileNetwork) {
   name: fileDnsZoneName
   location: 'global'
   tags: commonTags
@@ -114,7 +121,7 @@ resource blobDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020
   location: 'global'
   properties: { registrationEnabled: false, virtualNetwork: { id: vnet.id } }
 }
-resource fileDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (enableWorkloads) {
+resource fileDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (prepareFileNetwork) {
   parent: filePrivateDns
   name: '${prefix}-${environment}-file-link'
   location: 'global'
@@ -123,6 +130,28 @@ resource fileDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020
 resource vaultDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
   parent: vaultPrivateDns
   name: '${prefix}-${environment}-vault-link'
+  location: 'global'
+  properties: { registrationEnabled: false, virtualNetwork: { id: vnet.id } }
+}
+resource registryPrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if (enablePrivateServiceNetworking) {
+  name: registryDnsZoneName
+  location: 'global'
+  tags: commonTags
+}
+resource registryDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (enablePrivateServiceNetworking) {
+  parent: registryPrivateDns
+  name: '${prefix}-${environment}-registry-link'
+  location: 'global'
+  properties: { registrationEnabled: false, virtualNetwork: { id: vnet.id } }
+}
+resource pubsubPrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if (enablePrivateServiceNetworking) {
+  name: pubsubDnsZoneName
+  location: 'global'
+  tags: commonTags
+}
+resource pubsubDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (enablePrivateServiceNetworking) {
+  parent: pubsubPrivateDns
+  name: '${prefix}-${environment}-pubsub-link'
   location: 'global'
   properties: { registrationEnabled: false, virtualNetwork: { id: vnet.id } }
 }
@@ -214,6 +243,7 @@ resource osrmStorage 'Microsoft.Storage/storageAccounts@2026-06-01' = {
     allowBlobPublicAccess: false
     allowSharedKeyAccess: false
     publicNetworkAccess: 'Disabled'
+    networkAcls: { defaultAction: 'Deny', bypass: 'None', ipRules: [], virtualNetworkRules: [] }
     azureFilesIdentityBasedAuthentication: { directoryServiceOptions: 'AADKERB', defaultSharePermission: 'None', smbOAuthSettings: { isSmbOAuthEnabled: true } }
   }
 }
@@ -232,7 +262,7 @@ resource osrmEnvironmentStorage 'Microsoft.App/managedEnvironments/storages@2026
   properties: {
     azureFile: { accountName: osrmStorage.name, identity: 'system', shareName: 'osrm-graph', accessMode: 'ReadOnly' }
   }
-  dependsOn: [osrmStorageRole]
+  dependsOn: [osrmFiles, osrmStorageRole, osrmFileZoneGroup]
 }
 // The durable share must contain region.osrm and its companion files before enableWorkloads:
 // mounting an empty share hides the image's baked graph and osrm-routed crash-loops (deploy.md).
@@ -248,7 +278,7 @@ resource dataEnvironmentStorage 'Microsoft.App/managedEnvironments/storages@2026
   properties: {
     azureFile: { accountName: osrmStorage.name, identity: 'system', shareName: 'wind-data', accessMode: 'ReadWrite' }
   }
-  dependsOn: [osrmStorageRole]
+  dependsOn: [dataFiles, osrmStorageRole, osrmFileZoneGroup]
 }
 resource evidence 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   name: '${storage.name}/default/evidence'
@@ -280,16 +310,17 @@ resource vaultZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups
   name: 'default'
   properties: { privateDnsZoneConfigs: [{ name: 'vault', properties: { privateDnsZoneId: vaultPrivateDns.id } }] }
 }
-resource osrmFileEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enableWorkloads) {
+resource osrmFileEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (prepareFileNetwork) {
   name: '${prefix}-${environment}-osrm-file-pe'
   location: location
   tags: commonTags
   properties: { subnet: { id: privateEndpointSubnetId }, privateLinkServiceConnections: [{ name: 'file', properties: { privateLinkServiceId: osrmStorage.id, groupIds: ['file'] } }] }
 }
-resource osrmFileZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enableWorkloads) {
+resource osrmFileZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (prepareFileNetwork) {
   parent: osrmFileEndpoint
   name: 'default'
-  properties: { privateDnsZoneConfigs: [{ name: 'file', properties: { privateDnsZoneId: filePrivateDns.id } }] }
+  properties: { privateDnsZoneConfigs: [{ name: 'file', properties: { privateDnsZoneId: filePrivateDns!.id } }] }
+  dependsOn: [fileDnsLink]
 }
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: '${prefix}-${environment}-kv-${suffix}'
@@ -310,14 +341,43 @@ resource pubsub 'Microsoft.SignalRService/webPubSub@2024-03-01' = {
   location: location
   tags: commonTags
   sku: { name: 'Standard_S1', capacity: pubSubCapacity }
-  properties: { publicNetworkAccess: 'Enabled', disableAadAuth: false, disableLocalAuth: true, tls: { clientCertEnabled: false } }
+  properties: { publicNetworkAccess: enablePrivateServiceNetworking ? 'Disabled' : 'Enabled', disableAadAuth: false, disableLocalAuth: true, tls: { clientCertEnabled: false } }
 }
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: '${replace(prefix, '-', '')}${uniqueString(resourceGroup().id, environment)}'
   location: location
   tags: commonTags
-  sku: { name: 'Basic' }
-  properties: { adminUserEnabled: false, publicNetworkAccess: 'Enabled', networkRuleBypassOptions: 'AzureServices' }
+  sku: { name: enablePrivateServiceNetworking ? 'Premium' : 'Basic' }
+  properties: {
+    adminUserEnabled: false
+    publicNetworkAccess: enablePrivateServiceNetworking ? 'Disabled' : 'Enabled'
+    networkRuleBypassOptions: enablePrivateServiceNetworking ? 'None' : 'AzureServices'
+  }
+}
+// Independent of enableWorkloads, so a connected build runner can seed the private registry before apps start.
+resource registryEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateServiceNetworking) {
+  name: '${prefix}-${environment}-registry-pe'
+  location: location
+  tags: commonTags
+  properties: { subnet: { id: privateEndpointSubnetId }, privateLinkServiceConnections: [{ name: 'registry', properties: { privateLinkServiceId: registry.id, groupIds: ['registry'] } }] }
+}
+resource registryZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateServiceNetworking) {
+  parent: registryEndpoint
+  name: 'default'
+  properties: { privateDnsZoneConfigs: [{ name: 'registry', properties: { privateDnsZoneId: registryPrivateDns!.id } }] }
+  dependsOn: [registryDnsLink]
+}
+resource pubsubEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enablePrivateServiceNetworking) {
+  name: '${prefix}-${environment}-pubsub-pe'
+  location: location
+  tags: commonTags
+  properties: { subnet: { id: privateEndpointSubnetId }, privateLinkServiceConnections: [{ name: 'webpubsub', properties: { privateLinkServiceId: pubsub.id, groupIds: ['webpubsub'] } }] }
+}
+resource pubsubZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enablePrivateServiceNetworking) {
+  parent: pubsubEndpoint
+  name: 'default'
+  properties: { privateDnsZoneConfigs: [{ name: 'webpubsub', properties: { privateDnsZoneId: pubsubPrivateDns!.id } }] }
+  dependsOn: [pubsubDnsLink]
 }
 resource databaseUrlSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (enableWorkloads) {
   parent: vault
@@ -327,6 +387,11 @@ resource databaseUrlSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (
     // The production cutover still requires the code gate to be removed by review.
     value: 'postgresql://${postgresAdministratorLogin}:${uriComponent(postgresAdministratorPassword)}@${pg.properties.fullyQualifiedDomainName}:5432/fastship?sslmode=verify-full'
   }
+}
+resource acsKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (enableAcs && !empty(trim(acsAccessKey))) {
+  parent: vault
+  name: 'acs-key'
+  properties: { value: acsAccessKey }
 }
 resource vaultSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableWorkloads) {
   name: guid(vault.id, environmentIdentity.id, '4633458b-17de-408a-b874-0445c86b69e6')
@@ -379,11 +444,11 @@ module api 'modules/container-app.bicep' = if (enableWorkloads) {
     ]
     keyVaultSecrets: [
       { name: 'database-url', envName: 'WIND_DATABASE_URL', keyVaultUrl: '${vault.properties.vaultUri}secrets/database-url', identity: environmentIdentity.id }
+      { name: 'acs-key', envName: 'WIND_ACS_KEY', keyVaultUrl: '${vault.properties.vaultUri}secrets/acs-key', identity: environmentIdentity.id, enabled: enableAcs }
     ]
     volumeName: 'data'
     volumeMountPath: '/data'
     storageName: 'wind-data'
-    acsAccessKey: acsAccessKey
     minReplicas: 1
     maxReplicas: 1
     probes: [
@@ -391,7 +456,7 @@ module api 'modules/container-app.bicep' = if (enableWorkloads) {
       { type: 'Readiness', httpGet: { path: '/api/ready', port: 4000, scheme: 'HTTP' }, initialDelaySeconds: 10, periodSeconds: 30 }
     ]
   }
-  dependsOn: [registryPull, vaultSecretsUser, databaseUrlSecret]
+  dependsOn: [registryPull, registryZoneGroup, vaultZoneGroup, vaultDnsLink, vaultSecretsUser, databaseUrlSecret, acsKeySecret, dataEnvironmentStorage]
 }
 module worker 'modules/container-app.bicep' = if (enableWorkloads) {
   name: 'worker'
@@ -417,7 +482,7 @@ module worker 'modules/container-app.bicep' = if (enableWorkloads) {
     minReplicas: 1
     maxReplicas: 1
   }
-  dependsOn: [registryPull, vaultSecretsUser, databaseUrlSecret]
+  dependsOn: [registryPull, registryZoneGroup, vaultZoneGroup, vaultDnsLink, vaultSecretsUser, databaseUrlSecret]
 }
 resource acaOsrm 'Microsoft.App/containerApps@2024-03-01' = if (enableWorkloads) {
   name: '${prefix}-${environment}-osrm'
@@ -433,7 +498,7 @@ resource acaOsrm 'Microsoft.App/containerApps@2024-03-01' = if (enableWorkloads)
     }
     template: { containers: [{ name: 'osrm', image: checkedOsrmImage, resources: { cpu: osrmCpu, memory: osrmMemory }, volumeMounts: [{ volumeName: 'graph', mountPath: '/data' }] }], scale: { minReplicas: 1, maxReplicas: 1 }, volumes: [{ name: 'graph', storageType: 'AzureFile', storageName: 'osrm-graph' }] }
   }
-  dependsOn: [osrmRegistryPull, osrmEnvironmentStorage, osrmFileZoneGroup]
+  dependsOn: [osrmRegistryPull, registryZoneGroup, osrmEnvironmentStorage, osrmFileZoneGroup]
 }
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: '${prefix}-${environment}-appi-${suffix}'

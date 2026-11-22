@@ -13,7 +13,8 @@ const cart = { merchantId: 1, merchantName: 'Market', city: 'ramallah', minOrder
   lines: [{ itemId: 10, qtyMilli: 1000, policy: 'remove', unitAgorot: 2000, nameEn: 'Bread' }] };
 const state = [], references = [], posts = [], navigation = [];
 const store = new Map();
-let cursor, refCursor, focus, failFirst, rejectRetry, cartCleared, receiptNow;
+const protectedStore = new Map();
+let cursor, refCursor, focus, failFirst, firstStatus, rejectRetry, cartCleared, receiptNow, receiptOrderId, protectedWriteFails;
 class ApiError extends Error {
   constructor(message, status) { super(message); this.status = status; }
 }
@@ -37,10 +38,10 @@ const modules = {
     ApiError,
     errorCode: error => error.message,
     api: async (path, body) => {
-      if (path.startsWith('/orders/commands/')) return {};
+      if (path.startsWith('/orders/commands/')) return { orderId: receiptOrderId };
       assert.equal(path, '/orders');
       posts.push(JSON.parse(JSON.stringify(body)));
-      if (failFirst) { failFirst = false; throw new ApiError('network'); }
+      if (failFirst) { failFirst = false; throw new ApiError(firstStatus ? 'blocked' : 'network', firstStatus); }
       if (rejectRetry) throw new ApiError('price_changed', 409);
       return { id: 12 };
     },
@@ -50,6 +51,11 @@ const modules = {
   '../../api-client': { apiSessionRevision: () => 1, serverOffset: () => 0 },
   '../../booking': { ...booking, pendingOutcome: (receipt, command) => booking.pendingOutcome(receipt, command, receiptNow) },
   '../../shop-checkout': checkout,
+  '../../recovery-storage': { recoveryStorage: { read: async key => protectedStore.get(key) ?? null,
+    write: async (key, value) => {
+      if (protectedWriteFails) throw new Error('unavailable');
+      if (value === null) protectedStore.delete(key); else protectedStore.set(key, value);
+    } } },
   '../../model': model,
   '../../pin-sheet': { __esModule: true, default: 'PinSheet' },
   '../../session': { useSession: () => ({ me: { user: { id: 17, role: 'customer', phone: '0599100017' } } }) },
@@ -71,6 +77,11 @@ function find(node, type, predicate = () => true) {
   }
 }
 const flush = () => new Promise(resolve => setImmediate(resolve));
+const enterDelivery = () => {
+  find(render(), 'Button', props => props.title === c.shopPinSet).onPress();
+  find(render(), 'PinSheet').onConfirm({ latitude: 31.9, longitude: 35.2 });
+  find(render(), 'Field', props => props.label === c.shopLandmark).onChangeText('Blue door');
+};
 for (rejectRetry of [false, true]) {
   state.length = references.length = posts.length = navigation.length = 0;
   failFirst = true;
@@ -80,9 +91,7 @@ for (rejectRetry of [false, true]) {
   const unfocus = focus();
   try {
     await flush();
-    find(render(), 'Button', props => props.title === c.shopPinSet).onPress();
-    find(render(), 'PinSheet').onConfirm({ latitude: 31.9, longitude: 35.2 });
-    find(render(), 'Field', props => props.label === c.shopLandmark).onChangeText('Blue door');
+    enterDelivery();
     await render().props.footer.props.onPress();
     assert.equal(posts.length, 1);
     assert.ok(![...store.values()][0].includes('Blue door'), 'recovery storage holds no address');
@@ -104,4 +113,71 @@ for (rejectRetry of [false, true]) {
     assert.equal(store.size, 0);
   } finally { unfocus(); }
 }
-console.log('Shop checkout retries its original command after a transport failure');
+
+for (const receiptState of ['unknown', 'absent', 'present']) {
+  state.length = references.length = posts.length = navigation.length = 0;
+  rejectRetry = false;
+  failFirst = true;
+  receiptNow = undefined;
+  receiptOrderId = undefined;
+  render();
+  const close = focus();
+  await flush();
+  enterDelivery();
+  await render().props.footer.props.onPress();
+  assert.equal(posts.length, 1);
+  close();
+  state.length = references.length = 0; // the app was restarted, only storage survives
+  if (receiptState === 'absent') receiptNow = posts[0].commandExpiresAt + 60_000;
+  if (receiptState === 'present') receiptOrderId = 13;
+  render();
+  const dismiss = focus();
+  try {
+    await flush();
+    if (receiptState === 'absent') {
+      assert.equal(find(render(), 'Field', props => props.label === c.shopLandmark).value, 'Blue door', 'an absent restarted checkout restores the draft');
+      assert.equal(posts.length, 1);
+    } else if (receiptState === 'present') {
+      assert.deepEqual(navigation, ['/order/13'], 'the receipt takes precedence over the draft');
+      assert.equal(posts.length, 1, 'a committed command is not sent again');
+    } else {
+      find(render(), 'Button', props => props.title === c.retry).onPress();
+      await flush();
+      assert.deepEqual(posts, [posts[0], posts[0]], 'restart retries the same POST');
+    }
+    assert.equal(store.size, 0);
+    assert.equal(protectedStore.size, 0);
+  } finally { dismiss(); }
+}
+
+state.length = references.length = posts.length = navigation.length = 0;
+failFirst = true;
+firstStatus = 403;
+receiptNow = undefined;
+receiptOrderId = undefined;
+render();
+const dismiss = focus();
+try {
+  await flush();
+  enterDelivery();
+  await render().props.footer.props.onPress();
+  assert.equal(posts.length, 1);
+  assert.equal(store.size, 0, 'a first-send 403 releases the cart');
+  assert.equal(protectedStore.size, 0);
+  assert.equal(find(render(), 'Field', props => props.label === c.shopLandmark).value, 'Blue door');
+} finally { dismiss(); }
+
+state.length = references.length = posts.length = 0;
+protectedWriteFails = true;
+render();
+const close = focus();
+try {
+  await flush();
+  enterDelivery();
+  await render().props.footer.props.onPress();
+  assert.equal(posts.length, 0, 'no order is sent when its encrypted draft cannot be saved');
+  assert.equal(store.size, 0, 'no pending marker is created for an unsent order');
+  assert.equal(find(render(), 'Field', props => props.label === c.shopLandmark).value, 'Blue door');
+} finally { close(); }
+
+console.log('Shop checkout keeps the exact command across restart, restores the draft on absence, and releases a first-send refusal');

@@ -51,7 +51,8 @@ assert.ok(!JSON.stringify(accepted).includes('private-token'));
 let language = 'en';
 const jsx = (type, props) => ({ type, props });
 const modules = { 'react/jsx-runtime': { jsx, jsxs: jsx },
-  'react-native': { Pressable: 'Pressable' }, './ui': { Card: 'Card', Row: 'Row', Txt: 'Txt', palette: { olive: '#000' }, useCopy: () => ({ language, c: copy[language] }) } };
+  'react-native': { Pressable: 'Pressable' }, './ui': { Card: 'Card', Row: 'Row', Txt: 'Txt', palette: { olive: '#000' }, useCopy: () => ({ language, c: copy[language] }) },
+  './parts': { useFormat: () => ({ time: value => `${language} time ${value}` }) } };
 const contextForCard = { exports: {}, require: name => { assert.ok(name in modules, `unexpected support side effect: ${name}`); return modules[name]; } };
 runInNewContext(ts.transpileModule(readFileSync(new URL('../src/driver-support-card.tsx', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
@@ -76,6 +77,8 @@ for (language of ['ar', 'en']) {
   assert.equal(render().props.children[1], false, 'a second tap closes it');
   assert.equal(rows.length, 6, 'all six support facts remain visible in both languages');
   assert.ok(rows.every(row => row.props.numberOfLines === undefined), 'support facts are never clipped to one line');
+  assert.equal(rows[0].props.children.at(-1), `${language} time ${stamp - 1_000}`);
+  assert.equal(rows[1].props.children.at(-1), `${language} time ${stamp + 4_000}`);
   assert.match(rows[4].props.children.join(''), language === 'ar' ? /غير معروف/ : /Unknown/);
   assert.match(rows[5].props.children.join(''), language === 'ar' ? /لا يوجد موعد مضمون/ : /time is not guaranteed/);
 }

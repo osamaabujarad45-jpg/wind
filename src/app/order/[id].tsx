@@ -1133,6 +1133,7 @@ function PickupPayReviewCard({ orderId, fareCents, review, onDone }: { orderId: 
 // DRV-17: a second admin decides whether the captain is cleared and the trip pay can be posted.
 function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; review: NonNullable<Order['blockReview']>; me: number; now: number; onDone: () => unknown }) {
   const { c, err } = useCopy();
+  const { time } = useFormat();
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState<'' | 'yes' | 'no'>('');
   const [error, setError] = useState('');
@@ -1151,7 +1152,7 @@ function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; rev
   const self = review.blockedBy === me, noteOk = note.trim().length >= 5;
   return <Card tone={review.dueAt < now ? 'warn' : undefined}>
     <Txt variant="title">{c.blockReview}</Txt>
-    <Txt variant="caption">{fill(c.blockReviewDue, { pay, due: new Date(review.dueAt).toLocaleString() })}</Txt>
+    <Txt variant="caption">{fill(c.blockReviewDue, { pay, due: time(review.dueAt) })}</Txt>
     {self ? <Txt variant="caption">{c.blockReviewSecondAdmin}</Txt> : <>
       <Field label={c.adminNote} value={note} onChangeText={setNote} multiline maxLength={500} />
       <Button title={c.blockReviewClear} size="sm" disabled={!noteOk || !!busy} reason={noteOk ? undefined : c.adminNoteNeeded} loading={busy === 'yes'} onPress={() => decide(true)} />

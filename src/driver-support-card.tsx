@@ -1,18 +1,20 @@
 import { Pressable } from 'react-native';
 import type { DriverLocationDiagnostics } from './driver-location-diagnostics';
+import { useFormat } from './parts';
 import { Card, palette, Row, Txt, useCopy } from './ui';
 
 // Presentation only: opening support cannot start tracking, request permission or send a location.
 // Collapsed by default: the facts are for a support call, not for the driver's everyday job list.
 export function DriverSupportCard({ diagnostics, open, onToggle }: { diagnostics: DriverLocationDiagnostics; open: boolean; onToggle: () => void }) {
-  const { c, language } = useCopy();
-  const time = (value: number | null) => value === null ? c.locSupport_notRecorded : new Date(value).toLocaleString(language);
+  const { c } = useCopy();
+  const { time } = useFormat();
+  const recordedAt = (value: number | null) => value === null ? c.locSupport_notRecorded : time(value);
   const registration = { registered: c.locSupport_registered, unregistered: c.locSupport_unregistered, unknown: c.locSupport_unknown,
     not_applicable: c.locSupport_notApplicable }[diagnostics.registration];
   const retry = { fresh_fix: c.locSupport_freshFix, none: c.locSupport_none, unknown: c.locSupport_unknown }[diagnostics.nextRetry];
   const rows = [
-    [c.locSupport_fix, time(diagnostics.lastAcceptedFixAt)],
-    [c.locSupport_acknowledgement, time(diagnostics.lastServerAcknowledgementAt)],
+    [c.locSupport_fix, recordedAt(diagnostics.lastAcceptedFixAt)],
+    [c.locSupport_acknowledgement, recordedAt(diagnostics.lastServerAcknowledgementAt)],
     [c.locSupport_requested, diagnostics.requested === null ? c.locSupport_unknown : diagnostics.requested ? c.locSupport_yes : c.locSupport_no],
     [c.locSupport_registration, registration],
     [c.locSupport_service, diagnostics.foregroundService === 'unknown' ? c.locSupport_serviceUnknown : c.locSupport_notApplicable],

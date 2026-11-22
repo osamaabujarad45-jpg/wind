@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Linking, Platform, StyleSheet, View } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Font from 'expo-font';
@@ -10,6 +10,7 @@ import { DriverWorkProvider } from '../driver-work';
 import { SessionProvider, useSession } from '../session';
 import { SUPPORT_URL, UPDATE_URL } from '../api';
 import { clientUpdateRequired, subscribeClientUpdate } from '../api-client';
+import { syncNativePushNavigation } from '../native-push';
 import { Button, Card, Empty, fill, palette, Txt, useCopy } from '../ui';
 import { useFormat } from '../parts';
 import { city, orderCode } from '../model';
@@ -84,6 +85,12 @@ function Routes() {
   const { ready, offline, offlineSummary, me, onboarded, refresh } = useSession();
   const { c } = useCopy();
   const mustUpdate = useSyncExternalStore(subscribeClientUpdate, clientUpdateRequired);
+  const rootKey = useRootNavigationState()?.key;
+  const canOpenNotification = ready && !offline && !mustUpdate && !!rootKey;
+  useEffect(() => {
+    syncNativePushNavigation(canOpenNotification, me);
+    return () => syncNativePushNavigation(false, null);
+  }, [canOpenNotification, me]);
   // The server refused this build (426): nothing else works, so nothing else is shown.
   if (mustUpdate) return <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: palette.paper }}>
     <Empty icon="cloud-download-outline" title={c.updateRequired} body={c.updateRequiredDesc} action={Platform.OS === 'web'

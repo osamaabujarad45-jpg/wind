@@ -150,6 +150,8 @@ const suites = [
   "phone-provider.mjs",
   "native-push-sqlite.mjs",
   "native-push-session.test.mjs",
+  "native-push-navigation.test.mjs",
+  "install-locale.test.mjs",
   "shop-checkout-retry.test.mjs",
   "backup.test.mjs",
   "deploy-script.test.mjs",

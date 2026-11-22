@@ -14,11 +14,20 @@ tag=$1 digest=$2 revision=$3
 case "$tag" in ''|*[!A-Za-z0-9._-]*) die "bad image tag" ;; esac
 case "$digest" in sha256:*) hex "${digest#sha256:}" 64 || die "digest must be sha256:<64 hex>" ;; *) die "digest must be sha256:<64 hex>" ;; esac
 hex "$revision" 40 || die "revision must be the full 40-hex commit"
+postgres_rollback_refused() { die "PostgreSQL requires backend-aware migration and forward recovery; refusing SQLite rollback deploy"; }
+if [ -f /srv/wind-api.env ]; then
+  [ -r /srv/wind-api.env ] || die "cannot read the new container environment"
+  if grep -Eq '^[[:blank:]]*WIND_DATABASE_URL(=.+)?$' /srv/wind-api.env; then postgres_rollback_refused; fi
+fi
 registry=windpsacr.azurecr.io
 image=$registry/wind-api@$digest
 old=wind-api-pre-$tag
 # A tag deployed before still owns its rollback container: replacing it would lose the way back.
 if docker inspect "$old" >/dev/null 2>&1; then die "$old exists: $tag was already deployed"; fi
+# Read only a marker, so a restored or replaced env file cannot hide the live container's backend.
+live_backend=$(docker inspect --type container --format '{{range .Config.Env}}{{if and (eq (index (split . "=") 0) "WIND_DATABASE_URL") (ne . "WIND_DATABASE_URL=")}}postgres{{end}}{{end}}' wind-api) \
+  || die "cannot determine the live container database backend"
+[ -z "$live_backend" ] || postgres_rollback_refused
 # The VM's managed identity may only pull from this registry (AcrPull). The login lasts hours, so it is dropped however the pull ends.
 token=$(/srv/azure-token.sh acr "$registry")
 trap 'docker logout "$registry" >/dev/null 2>&1 || true' EXIT

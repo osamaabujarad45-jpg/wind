@@ -3,7 +3,13 @@ import * as Crypto from 'expo-crypto';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { api, apiSessionRevision, storage } from './api';
+import { apiSessionCredential } from './api-client';
 import { router } from 'expo-router';
+import type { User } from './model';
+
+type NavigationAccount = { user: Pick<User, 'id' | 'role' | 'status'> } | null;
+let syncNavigation: (ready: boolean, me: NavigationAccount) => void = () => {};
+export function syncNativePushNavigation(sessionReady: boolean, me: NavigationAccount) { syncNavigation(sessionReady, me); }
 
 // Foreground pushes must still surface, and a tap must land on the linked
 // screen; without a handler Expo drops foreground notifications silently.
@@ -12,18 +18,71 @@ if (Platform.OS !== 'web') {
     handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
   });
   // T37: a tap that LAUNCHED the app never reaches the listener — the response is waiting in
-  // getLastNotificationResponseAsync. Both paths can report the same tap, so each identifier opens once.
-  let lastOpened: string | undefined;
-  const open = (response: Notifications.NotificationResponse | null) => {
-    const url = response?.notification.request.content.data?.url;
-    if (typeof url !== 'string' || !url.startsWith('/')) return;
-    const identifier = response?.notification.request.identifier;
-    if (identifier && identifier === lastOpened) return;
-    lastOpened = identifier;
-    router.push(url as never);
+  // getLastNotificationResponseAsync. Hold every tap until the session and its route guards are ready.
+  type Tap = { identifier: string; url: string; recipient?: number };
+  type PendingTarget = Tap & { credential: string | null };
+  let readyRevision: number | undefined, account: NavigationAccount = null, pending: PendingTarget | null = null;
+  let lastOpened: string | undefined, received = 0;
+  const startupRevision = apiSessionRevision();
+  // Start this read before either Expo response path can resume after a new sign-in.
+  const startupCredential = storage.get('token').catch(() => null);
+  const allowed = (url: string, role: User['role']) => {
+    if (url === '/support' || /^\/(?:order|receipt)\/[1-9]\d*$/.test(url)) return true;
+    if (role === 'driver') return /^\/driver(?:\/(?:earnings|account))?$/.test(url);
+    if (role === 'admin') return /^\/admin(?:\/(?:users|orders|cash|subscriptions|merchants|support))?$/.test(url);
+    return url === '/account' || url === '/merchant' || /^\/merchant\/order\/[1-9]\d*$/.test(url);
   };
-  Notifications.addNotificationResponseReceivedListener(open);
-  Notifications.getLastNotificationResponseAsync().then(open).catch(() => { /* no cold-start tap */ });
+  const tapFrom = (response: Notifications.NotificationResponse | null): Tap | null => {
+    const request = response?.notification.request;
+    const { url, recipient } = request?.content.data ?? {};
+    if (!request?.identifier || typeof url !== 'string' || url !== url.trim() || !/^\/(?!\/)[^\\]*$/.test(url)) return null;
+    if (recipient !== undefined && (typeof recipient !== 'number' || !Number.isSafeInteger(recipient) || recipient < 1)) return null;
+    return { identifier: request.identifier, url, recipient };
+  };
+  const consume = (identifier: string) => {
+    // Expo keeps the last response until it is cleared. Leave a later notification intact.
+    try {
+      if (Notifications.getLastNotificationResponse()?.notification.request.identifier === identifier)
+        Notifications.clearLastNotificationResponse();
+    } catch { /* A notification is only a hint. */ }
+  };
+  const flush = () => {
+    if (readyRevision !== apiSessionRevision() || !pending) return;
+    const target = pending;
+    pending = null; // a stale or refused tap is never retried under another account
+    consume(target.identifier);
+    if (!target.credential || target.credential !== apiSessionCredential() || target.identifier === lastOpened
+      || account?.user.status !== 'active' || (target.recipient !== undefined && target.recipient !== account.user.id)
+      || !allowed(target.url, account.user.role)) return;
+    lastOpened = target.identifier;
+    router.replace(target.url as never);
+  };
+  const queue = (tap: Tap, credential: string | null) => {
+    pending = { ...tap, credential };
+    flush();
+  };
+  const initialArrival = received;
+  Notifications.addNotificationResponseReceivedListener(response => {
+    const tap = tapFrom(response);
+    if (!tap) return;
+    const arrival = ++received;
+    const credential = apiSessionCredential();
+    if (credential || readyRevision !== undefined || apiSessionRevision() !== startupRevision) {
+      queue(tap, credential);
+      return;
+    }
+    pending = null;
+    void startupCredential.then(saved => { if (arrival === received) queue(tap, saved); });
+  });
+  void Promise.all([startupCredential, Notifications.getLastNotificationResponseAsync()]).then(([credential, response]) => {
+    const tap = tapFrom(response);
+    if (tap && initialArrival === received) queue(tap, credential);
+  }).catch(() => { /* No cold-start tap. */ });
+  syncNavigation = (sessionReady, me) => {
+    readyRevision = sessionReady ? apiSessionRevision() : undefined;
+    account = me;
+    flush();
+  };
 }
 
 // Native push registration (Expo Push). Best-effort by design: any failure —
@@ -51,22 +110,22 @@ export function registerNativePush(lang: 'ar' | 'en', ask: false | 'once' | 'alw
   return next;
 }
 async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap', session: number): Promise<boolean> {
-  const current_ = () => apiSessionRevision() === session;
+  const isCurrentSession = () => apiSessionRevision() === session;
   try {
-    if (!current_()) return false;
+    if (!isCurrentSession()) return false;
     // The channel must exist before Android 13 can ask for permission; high importance gives a heads-up. server/push.ts names it.
     if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('default', { name: lang === 'ar' ? 'ويند' : 'Wind', importance: Notifications.AndroidImportance.HIGH });
     const current = await Notifications.getPermissionsAsync();
     let status = current.status;
     // The person's own tap on the notifications row ('tap') always asks while the OS allows it (Haiku polish r3 R3-1).
-    if (status !== 'granted' && ask && current.canAskAgain && current_() && (ask === 'tap' || askedInSession !== session)
-      && (ask !== 'once' || await storage.get('pushAsked') !== '1') && current_()) {
+    if (status !== 'granted' && ask && current.canAskAgain && isCurrentSession() && (ask === 'tap' || askedInSession !== session)
+      && (ask !== 'once' || await storage.get('pushAsked') !== '1') && isCurrentSession()) {
       askedInSession = session;
       status = (await Notifications.requestPermissionsAsync()).status;
       // A customer's once-per-device ask is spent once answered (Haiku polish r2 N5); captains' asks keep no device flag.
       if (ask === 'once') await storage.set('pushAsked', '1').catch(() => undefined);
     }
-    if (status !== 'granted' || !current_()) return false;
+    if (status !== 'granted' || !isCurrentSession()) return false;
     const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
     const expoPushToken = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
     let deviceId = await storage.get('pushDeviceId');
@@ -74,7 +133,7 @@ async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap
       deviceId = Crypto.randomUUID();
       await storage.set('pushDeviceId', deviceId);
     }
-    if (!current_()) return false;
+    if (!isCurrentSession()) return false;
     await api('/push/native/register', { expoPushToken, deviceId, platform: Platform.OS, lang });
     return true;
   } catch { return false; /* polling fallback remains authoritative */ }

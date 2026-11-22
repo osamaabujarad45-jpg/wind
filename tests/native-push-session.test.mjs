@@ -21,6 +21,7 @@ const modules = {
   'expo-constants': `export default {};`,
   'expo-router': `export const router = {};`,
   'react-native': `export const Platform = { OS: 'android' };`,
+  './api-client': `export const apiSessionCredential = () => null;`,
   './api': `const fake = globalThis.__nativePushSessionTest;
     export const apiSessionRevision = () => fake.revision;
     export const api = async path => { fake.calls.push([fake.revision, path]); };

@@ -1,4 +1,4 @@
-export type RecoverySlot = 'command' | 'summary' | 'diagnostics';
+export type RecoverySlot = 'command' | 'summary' | 'diagnostics' | 'shop-checkout';
 type IO = { read: (key: string) => Promise<string | null>; write: (key: string, value: string | null) => Promise<void>;
   credential: () => Promise<string | null>; revision: () => number; now: () => number;
   namespace: (token: string) => Promise<string>; currentCredential?: (token: string) => Promise<boolean>;
@@ -7,7 +7,7 @@ type IO = { read: (key: string) => Promise<string | null>; write: (key: string, 
   clearDeadlines?: () => Promise<void>;
   seal: (plaintext: string, token: string, slot: RecoverySlot) => Promise<string>;
   open: (ciphertext: string, token: string, slot: RecoverySlot) => Promise<string> };
-const slots: RecoverySlot[] = ['command', 'summary', 'diagnostics'];
+const slots: RecoverySlot[] = ['command', 'summary', 'diagnostics', 'shop-checkout'];
 const MAX_CIPHERTEXT = 2000;
 const key = (slot: RecoverySlot, namespace: string) => `wind.recovery.v1.${namespace}.${slot}`;
 const INDEX = 'wind.recovery.v1.index';
@@ -26,6 +26,7 @@ export function createProtectedRecovery(io: IO) {
     return value;
   };
   const deadline = async (scope: string, slot: RecoverySlot, expiresAt: number | null, remaining: number) => {
+    if (slot === 'shop-checkout') return; // Receipt recovery runs when the cart is open.
     try { await io.deadline?.(scope, slot, expiresAt, remaining); }
     catch { /* An advisory scheduler failure must never discard an encrypted pending intent. */ }
   };

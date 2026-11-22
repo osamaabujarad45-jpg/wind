@@ -13,7 +13,6 @@ assert.equal(examples.length, 3, 'dev/staging/prod parameter examples exist');
 assert.match(main, /param enableWorkloads bool = false/);
 assert.match(app, /NODE_ENV', value: 'production'/);
 assert.doesNotMatch(`${main}\n${app}`, /NODE_ENV', value: 'test'/);
-assert.match(main, /maxReplicas: 1/);
 assert.match(main, /\/api\/health/);
 assert.match(main, /\/api\/ready/);
 assert.match(main, /server\/worker\.ts/);
@@ -32,8 +31,10 @@ assert.match(main, /Microsoft\.DBforPostgreSQL\/flexibleServers@2024-08-01/);
 assert.match(app, /Microsoft\.App\/containerApps@2024-03-01/);
 assert.match(main, /name: 'WIND_ENTRA_TENANT_NAME', value: entraTenantName/);
 assert.doesNotMatch(main, /name: 'WIND_ACS_KEY', value:/, 'ACS credentials must not be plain environment values');
-assert.match(app, /@secure\(\)\s*param acsAccessKey string/);
-assert.match(app, /name: 'WIND_ACS_KEY', secretRef: 'acs-key'/);
+assert.match(main, /@secure\(\)\s*@description\('ACS access key[\s\S]*?param acsAccessKey string/);
+assert.doesNotMatch(app, /param acsAccessKey|value: acsAccessKey|secretRef: 'acs-key'/);
+assert.match(main, /name: 'acs-key'/);
+assert.match(main, /envName: 'WIND_ACS_KEY'/);
 assert.doesNotMatch(main, /postgresAdministratorPassword\s*=\s*'[^']+'/i);
 assert.doesNotMatch(main, /accountKey\s*:/i);
 assert.doesNotMatch(main, /DefaultEndpointsProtocol=|AccountKey=|postgres(?:ql)?:\/\/[^\s'"`$]+/i);
@@ -47,6 +48,37 @@ execFileSync('node', ['scripts/check-azure.mjs'], { cwd: root, stdio: 'inherit',
 const compiled=JSON.parse(readFileSync(path.join(root,'.expo/implementation/azure-main.json'),'utf8'));
 const deployment=name=>compiled.resources.find(resource=>resource.type==='Microsoft.Resources/deployments' && resource.name===name);
 const api=deployment('api').properties.parameters,worker=deployment('worker').properties.parameters;
+assert.equal(api.minReplicas.value, 1, 'process-local quota and presence state still require one API replica');
+assert.equal(api.maxReplicas.value, 1, 'scale-out stays blocked until shared quota/presence state exists');
+const workloadCondition = "[parameters('enableWorkloads')]";
+const privateNetworkingCondition = "[parameters('enablePrivateServiceNetworking')]";
+assert.equal(compiled.parameters.enablePrivateServiceNetworking.defaultValue, false, 'private networking is an explicit staging rollout');
+const registry = compiled.resources.find(resource => resource.type === 'Microsoft.ContainerRegistry/registries');
+assert.match(registry.sku.name, /enablePrivateServiceNetworking.*'Premium'.*'Basic'/, 'private ACR endpoints require Premium');
+assert.match(registry.properties.publicNetworkAccess, /enablePrivateServiceNetworking.*'Disabled'.*'Enabled'/);
+assert.match(registry.properties.networkRuleBypassOptions, /enablePrivateServiceNetworking.*'None'.*'AzureServices'/);
+const pubsub = compiled.resources.find(resource => resource.type === 'Microsoft.SignalRService/webPubSub');
+assert.match(pubsub.properties.publicNetworkAccess, /enablePrivateServiceNetworking.*'Disabled'.*'Enabled'/);
+for (const group of ['registry', 'webpubsub']) {
+  const endpoint = compiled.resources.find(resource => resource.type === 'Microsoft.Network/privateEndpoints'
+    && resource.properties.privateLinkServiceConnections.some(connection => connection.properties.groupIds.includes(group)));
+  assert.ok(endpoint, `${group} has a private endpoint`);
+  assert.equal(endpoint.condition, privateNetworkingCondition, `${group} networking can be bootstrapped before workloads`);
+  const zoneGroup = compiled.resources.find(resource => resource.type === 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups'
+    && resource.properties.privateDnsZoneConfigs.some(config => config.name === group));
+  assert.equal(zoneGroup?.condition, privateNetworkingCondition, `${group} DNS follows the endpoint gate`);
+  assert.ok(zoneGroup.dependsOn.some(dependency => dependency.includes('virtualNetworkLinks')), `${group} DNS waits for its VNet link`);
+}
+for (const workload of [deployment('api'), deployment('worker'), compiled.resources.find(resource => resource.type === 'Microsoft.App/containerApps')]) {
+  assert.ok(workload.dependsOn.some(dependency => dependency.includes('registry-pe') && dependency.includes('privateDnsZoneGroups')), 'private image pulls wait for ACR DNS');
+}
+assert.match(main, /privatelink\.azurecr\.io/);
+assert.match(main, /privatelink\.webpubsub\.azure\.com/);
+const osrmAccount = compiled.resources.find(resource => resource.type === 'Microsoft.Storage/storageAccounts'
+  && JSON.stringify(resource.tags ?? {}).includes('retained-osrm-graph'));
+assert.equal(osrmAccount.properties.publicNetworkAccess, 'Disabled');
+assert.equal(osrmAccount.properties.networkAcls.defaultAction, 'Deny');
+assert.deepEqual(osrmAccount.properties.networkAcls.virtualNetworkRules, []);
 const docker=readFileSync(path.join(root,'Dockerfile'),'utf8');
 const runtimePort=Number(/ENV NODE_ENV=production[^\n]*\bPORT=(\d+)/.exec(docker)[1]);
 assert.equal(api.ingressPort.value,runtimePort,'Cloud ingress matches the packaged API port');
@@ -57,21 +89,26 @@ assert.equal(worker.minReplicas.value,1,'A polling worker without an event scale
 assert.equal(compiled.parameters.enableWorkloads.defaultValue,false);
 assert.ok(deployment('api').condition && deployment('worker').condition,'Workloads retain the activation gate');
 const graphShare=compiled.resources.find(resource=>resource.type==='Microsoft.Storage/storageAccounts/fileServices/shares');
-assert.ok(graphShare && !graphShare.condition,'Graph storage can be populated before enabling its application');
+assert.ok(graphShare && !graphShare.condition,'The graph share exists before enabling its application');
+const fileNetworkCondition = "[variables('prepareFileNetwork')]";
+assert.equal(compiled.variables.prepareFileNetwork, "[or(parameters('enableWorkloads'), parameters('enablePrivateServiceNetworking'))]",
+  'the private graph can be populated before enabling applications without changing default deployments');
 const graphEndpoint=compiled.resources.find(resource=>resource.type==='Microsoft.Network/privateEndpoints'
   && resource.properties.privateLinkServiceConnections.some(connection=>connection.properties.groupIds.includes('file')));
-const workloadCondition = "[parameters('enableWorkloads')]";
-assert.equal(graphEndpoint?.condition, workloadCondition, 'File endpoint follows the workload gate');
+assert.equal(graphEndpoint?.condition, fileNetworkCondition, 'File endpoint can be enabled during private bootstrap');
 for (const resource of compiled.resources.filter(resource =>
   (resource.type === 'Microsoft.Network/privateDnsZones' && String(resource.name).includes('fileDnsZoneName')) ||
   (resource.type === 'Microsoft.Network/privateDnsZones/virtualNetworkLinks' && String(resource.name).includes('fileDnsZoneName')) ||
   (resource.type === 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups' && String(resource.name).includes('osrm-file-pe')))) {
-  assert.equal(resource.condition, workloadCondition, 'File DNS resources follow the workload gate');
+  assert.equal(resource.condition, fileNetworkCondition, 'File DNS follows the File endpoint');
 }
 const fileZone = compiled.resources.find(resource => resource.type === 'Microsoft.Network/privateDnsZones' && String(resource.name).includes('fileDnsZoneName'));
 const fileLink = compiled.resources.find(resource => resource.type === 'Microsoft.Network/privateDnsZones/virtualNetworkLinks' && String(resource.name).includes('fileDnsZoneName'));
 const fileGroup = compiled.resources.find(resource => resource.type === 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups' && String(resource.name).includes('osrm-file-pe'));
 assert.ok(fileZone && fileLink && fileGroup, 'File zone, link and zone group are present');
+assert.ok(fileGroup.dependsOn.some(dependency => dependency.includes('virtualNetworkLinks')), 'private File DNS waits for its VNet link');
+assert.ok(deployment('api').dependsOn.some(dependency => dependency.includes('wind-data') && dependency.includes('managedEnvironments/storages')),
+  'the app waits for the environment to register its volume');
 assert.match(compiled.variables.checkedImage, /fail\('imageDigest is required/);
 assert.match(compiled.variables.checkedOsrmImage, /fail\('osrmImageDigest is required/);
 assert.match(compiled.variables.checkedPushSubject, /pushSubject is required/);
@@ -91,6 +128,12 @@ for (const name of ['SUPPORT_CONTACT', 'WIND_IDENTITY_MODE', 'OSRM_URL', 'DB_PAT
   assert.ok(typeof apiEnv[name]?.value === 'string' && apiEnv[name].value.length > 0, `${name} must render non-empty`);
 }
 assert.ok(api.keyVaultSecrets.value.some(secret => secret.name === 'database-url' && secret.envName === 'WIND_DATABASE_URL' && secret.keyVaultUrl.includes('secrets/database-url')));
+const acsSecret = api.keyVaultSecrets.value.find(secret => secret.envName === 'WIND_ACS_KEY');
+assert.equal(acsSecret.enabled, "[parameters('enableAcs')]");
+assert.match(acsSecret.keyVaultUrl, /secrets\/acs-key'/, 'the app follows the versionless Key Vault key');
+assert.equal(compiled.parameters.acsAccessKey.type, 'securestring');
+assert.ok(!Object.hasOwn(api, 'acsAccessKey'), 'the ACS access key does not enter the app module');
+assert.ok(deployment('api').dependsOn.some(dependency => dependency.includes('acs-key')), 'the app waits for a key seeded by this deployment');
 assert.equal(apiEnv.DB_PATH.value, '/data/wind.db');
 assert.equal(api.volumeMountPath.value, '/data');
 assert.equal(api.storageName.value, 'wind-data');
@@ -130,9 +173,9 @@ assert.ok(osrmWorkload.dependsOn.some(dependency => dependency.includes('7f951dd
 const { runtimePersistence } = await import('../server/db/runtime.ts');
 const saved = { ...process.env };
 try {
-  Object.assign(process.env, { NODE_ENV: 'production', WIND_POSTGRES_STAGING: '1', WIND_DATABASE_URL: 'postgresql://example.com/db?sslmode=verify-full' });
+  Object.assign(process.env, { NODE_ENV: 'production', WIND_POSTGRES_STAGING: '1', WIND_DATABASE_URL: 'postgresql://example.com/db?sslmode=verify-full', DB_PATH: '/data/wind.db' });
   const staging = runtimePersistence();
-  assert.equal(staging.backend, 'postgres');
+  assert.equal(staging.backend, 'postgres', 'DB_PATH remains only the legacy mount in staging; PostgreSQL cannot fall back to it');
   assert.equal(staging.pool.options.options, '-c search_path=wp16_staging,public');
   await staging.close();
   for (const url of ['postgresql://localhost/db?sslmode=verify-full', 'postgresql://127.0.0.2/db?sslmode=verify-full', 'postgresql://example.com/db', 'postgresql://example.com/db?sslmode=require', 'postgresql://example.com/db?sslmode=verify-full&host=localhost']) {
@@ -151,7 +194,7 @@ try {
   process.env.WIND_DATABASE_URL = 'postgresql://example.com/db';
   assert.throws(() => runtimePersistence(), /require loopback/);
 } finally {
-  for (const key of ['NODE_ENV', 'WIND_POSTGRES_STAGING', 'WIND_DATABASE_URL', 'WIND_POSTGRES_TEST_ONLY', 'WIND_POSTGRES_TEST_SCHEMA']) {
+  for (const key of ['NODE_ENV', 'WIND_POSTGRES_STAGING', 'WIND_DATABASE_URL', 'WIND_POSTGRES_TEST_ONLY', 'WIND_POSTGRES_TEST_SCHEMA', 'DB_PATH']) {
     if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
   }
 }

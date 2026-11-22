@@ -4,6 +4,7 @@
 import { createServer, type IncomingMessage } from 'node:http';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { initializeSqlite } from './db/sqlite-schema.ts';
+import { postgresSchemaVersion } from './db/postgres-schema.ts';
 import { runtimePersistence } from './db/runtime.ts';
 import { databaseUnavailable } from './http/database-errors.ts';
 import { customerStatistics, driverStatistics } from './domain/statistics.ts';
@@ -856,17 +857,14 @@ route('GET', '/api/ready', async () => {
       accessSync(process.env.DB_PATH ?? 'wind.db', constants.W_OK);
       await one('SELECT COUNT(*) n FROM sqlite_schema');
     } else {
-      schema = Number((await one('SELECT MAX(version) AS version FROM schema_migrations'))?.version ?? 0);
-      const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 21'))?.n ?? 0);
-      if (schema < 32 || applied !== 19 || !(await one('SELECT version FROM schema_migrations WHERE version = 30'))
-        || !(await one('SELECT version FROM schema_migrations WHERE version = 31')) || !(await one('SELECT version FROM schema_migrations WHERE version = 32'))) fail(503, 'unavailable');
+      const version = await postgresSchemaVersion(persistence);
+      if (version === null) return fail(503, 'unavailable');
+      schema = version;
     }
     (await persistence.exec('BEGIN IMMEDIATE')); (await persistence.exec('ROLLBACK'));
   } catch { fail(503, 'unavailable'); }
-  if (persistence.backend === 'postgres' && !(await one('SELECT version FROM schema_migrations WHERE version=33')))
-    fail(503, 'captain_pay_schema_required');
 
-  return { ok: true, schema };
+  return { ok: true, schema, ...(persistence.backend === 'postgres' && { backend: 'postgres' }) };
 }, true);
 
 
@@ -1505,19 +1503,24 @@ const backupMarker = process.env.WIND_BACKUP_MARKER ?? (production && persistenc
 // value that is not 1 to 336 hours, an empty one included, stops startup rather than quietly changing the alarm (Haiku PR #103 L4, L5).
 const backupMaxAgeHours = process.env.WIND_BACKUP_MAX_AGE_HOURS === undefined ? 26 : Number(process.env.WIND_BACKUP_MAX_AGE_HOURS);
 if (!(backupMaxAgeHours >= 1 && backupMaxAgeHours <= 14 * 24)) throw new Error('WIND_BACKUP_MAX_AGE_HOURS must be a number of hours from 1 to 336');
-const backupStale = (now = Date.now()) => {
-  if (!backupMarker) return false;
-  try { return now - statSync(backupMarker).mtimeMs > backupMaxAgeHours * 60 * 60_000; } catch { return true; }
+const lastBackupAt = () => {
+  try { return backupMarker ? Math.floor(statSync(backupMarker).mtimeMs) : null; } catch { return null; }
 };
+const backupAgeLimitMs = backupMaxAgeHours * 60 * 60_000;
+const isBackupStale = (now: number, savedAt: number | null) => savedAt === null || now - savedAt > backupAgeLimitMs;
+const backupStale = () => !!backupMarker && isBackupStale(Date.now(), lastBackupAt());
 /** One alert per outage, at most one a day. The dashboard keeps saying it until a backup succeeds, because a push can be missed. */
 export async function alertMissedBackup(now = Date.now()) {
-  // A backup that succeeded ends the outage, so the next one alerts again the same day instead of waiting out the first one's
-  // daily allowance (Haiku PR #103 M1; with an hourly job, two outages in a day are no longer rare).
-  if (!backupStale(now)) { if (backupMarker) await run('DELETE FROM request_limits WHERE key = ?', identityKey('backup-alert', 'system')); return false; }
+  if (!backupMarker) return false;
+  const savedAt = lastBackupAt();
+  const alertKey = identityKey('backup-alert', 'system');
   const sent = await persistence.atomic({ purpose: 'backup_alert' }, async () => {
+    // A successful backup ends the outage even if it was never fresh during a sweep. A newer alert keeps its allowance.
+    if (savedAt !== null) await run('DELETE FROM request_limits WHERE key = ? AND until < ?', alertKey, savedAt + DAY);
+    if (!isBackupStale(now, savedAt)) return false;
     const admins = await adminIds();
     if (!admins.length) return false; // an admin added later today still gets the day's alert
-    try { await limit(identityKey('backup-alert', 'system'), 1, DAY); } catch { return false; }
+    try { await limit(alertKey, 1, DAY); } catch { return false; }
     await queuePush(admins, 'attention', 0, '/admin');
     return true;
   });
@@ -4546,10 +4549,10 @@ if (import.meta.main) {
     (await run('DELETE FROM checkpoint_reports WHERE created_at < ?', Date.now() - 30 * DAY)); // only the last two hours are ever shown
     (await pruneExpired());
     const maintenance = async () => { try { (await pruneExpired()); (await alertMissedBackup()); } catch (error) { logServerError('maintenance_failed', error); } };
-    // Ten minutes after start too, so a restart does not wait an hour to notice a stale backup (and a stale alert allowance is
+    // Five minutes after start too, so a restart does not wait an hour to notice a stale backup (and a stale alert allowance is
     // cleared before the next outage; Haiku PR #103 recheck 5). An install's dry run is stopped within about four minutes (60 tries
     // of a 3 s probe and 1 s pause), so it never gets here; even if it did, its database copy has every push target removed.
-    setTimeout(maintenance, 10 * 60_000).unref();
+    setTimeout(maintenance, 5 * 60_000).unref();
     setInterval(maintenance, 60 * 60_000).unref(); // expired throttles never pile up
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
