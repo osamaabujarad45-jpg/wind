@@ -4,7 +4,7 @@
 import { useContext, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { ScrollView, View } from 'react-native';
-import { api, ApiError, useApi } from '../../api';
+import { api, useApi } from '../../api';
 import { city, isCity, type Merchant, type Subscription, type User } from '../../model';
 import { useFormat } from '../../parts';
 import { useSession } from '../../session';
@@ -32,7 +32,7 @@ export default function Approvals() {
   const waitingShops = (shops.data?.merchants ?? []).filter(m => m.status === 'pending');
   const ready = !!drivers.data && !!plans.data;
   // Shop tables not created yet (service_unavailable) means no shop applications, not an error.
-  const shopMissing = shops.error instanceof ApiError && shops.error.message === 'service_unavailable';
+  const shopMissing = shops.error === 'service_unavailable'; // useApi errors are the server's code
   const shopError = shop && !shops.data && !shopMissing ? shops.error : undefined;
   // "Nothing is waiting" only once the shop list has answered too (or failed, which then shows its error).
   const shopSettled = !shop || !!shops.data || !!shops.error;
