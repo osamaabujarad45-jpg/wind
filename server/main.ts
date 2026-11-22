@@ -1470,7 +1470,7 @@ route('POST', '/api/admin/promos/:id/deactivate', async ({ user, params }) => {
 type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returned' | 'message' | 'job' | 'released' | 'cancelled'
   | 'offer' | 'offer_accepted' // SPEC-offer-alerts.md
   | 'on_hold' | 'returning' | 'decided' // SPEC-exception-push.md
-  | 'approved' | 'support' | 'cash' | 'attention' | 'safety' | 'plan'
+  | 'approved' | 'support' | 'support_reply' | 'cash' | 'attention' | 'safety' | 'plan'
   | 'destination_request' | 'destination_accepted' | 'destination_declined' | 'admin_assigned' | 'admin_unassigned' | 'dispatch_assigned' // WP-02
   | 'merchant_order' | 'shop_consent' | 'shop_update' // shop delivery (SRS §7)
   | 'office'; // SHIP-19 returned goods at the office
@@ -3590,6 +3590,7 @@ registerCashReceiptRoutes(route, { need, fail, uuid, one, cashEntry });
 const supportScoped = async (user: User) => ['support', 'platform_admin'].includes(staffRoleOf(await staffActor(persistence, user)) ?? '');
 registerSupportRoutes(route, { one, all, run, fail, text, limit: (key, maximum, windowMs) => limit(key, maximum, windowMs),
   limitKey: id => identityKey('support', id), queuePush,
+  holdPerson: async id => !!(await one(`SELECT id FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%'${persistence.backend === 'postgres' ? ' FOR KEY SHARE' : ''}`, id)),
   // Only staff who can open the inbox hear about a new conversation (finance or dispatch admins would get a 403).
   staffIds: async () => (await Promise.all((await all("SELECT id, role, status FROM users WHERE role = 'admin' AND status = 'active'"))
     .map(async a => ({ id: a.id as number, ok: await supportScoped(a as never) })))).filter(a => a.ok).map(a => a.id),

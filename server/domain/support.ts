@@ -16,12 +16,15 @@ type Deps = {
   run: (sql: string, ...args: SQLInputValue[]) => Promise<WriteResult>;
   fail: Fail;
   text: (value: unknown, max: number, required?: boolean) => string;
-  /** Admin role and the support (or full) staff scope. */
+  /** Admin role and the support (or platform admin) staff scope. */
   needSupport: (user: User) => Promise<void>;
   /** Rate limit by key: throws 429 when exceeded. */
   limit: (key: string, maximum: number, windowMs: number) => Promise<unknown>;
   limitKey: (userId: number) => string;
-  queuePush: (ids: number[], kind: 'support' | 'attention', order: number, path?: string) => Promise<void>;
+  queuePush: (ids: number[], kind: 'support_reply' | 'attention', order: number, path?: string) => Promise<void>;
+  /** Inside a write's transaction: false once the account is deleted; on PostgreSQL also holds the user row (FOR KEY SHARE)
+   *  so a deletion waits for the write to commit, and then blanks and closes it too. */
+  holdPerson: (userId: number) => Promise<boolean>;
   /** Support staff to tell about a new conversation (support or platform scope, active). */
   staffIds: () => Promise<number[]>;
   /** Run writes in one transaction (BEGIN IMMEDIATE on SQLite serializes racing first messages). */
@@ -37,6 +40,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MESSAGE_MAX = 1000;
 const PAGE = 50;
 const IMPROVEMENT_WINDOW = 30 * 86_400_000;
+const LIST_PAGE = 100;
+const LIST_MAX = 1000;
 
 /** 0599123456 → 059 ••• 3456: lists never show a whole number (admin.md: full number on the person's page only). */
 export const maskPhone = (phone: unknown) => {
@@ -113,6 +118,7 @@ export function registerSupportRoutes(route: Register, deps: Deps): void {
   });
 
   async function post(user: User, text: string, requestId: string, orderId: number | null) {
+    if (!await deps.holdPerson(user.id)) fail(401, 'unauthorized'); // the account was deleted while this send was in flight
     const now = Date.now();
     let thread: Row | undefined;
     let opened = false;
@@ -147,18 +153,27 @@ export function registerSupportRoutes(route: Register, deps: Deps): void {
     const status = query.get('status') === 'closed' ? 'closed' : 'open';
     const tag = query.get('tag');
     if (tag && !(SUPPORT_TAGS as readonly string[]).includes(tag)) fail(400, 'invalid_input');
+    // ?limit= grows by LIST_PAGE when staff ask for more; the app re-queries the whole window on every poll, so rows never go
+    // stale or repeat between pages.
+    const limit = query.get('limit') == null ? LIST_PAGE : Number(query.get('limit'));
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > LIST_MAX) fail(400, 'invalid_input');
     // Open: waiting first, longest-waiting first (waiting_since: the first unanswered message). Closed: most recently closed
-    // first. A theme filter matches the Improvements counts: the same status, active in the last 30 days.
-    const rows = await all(`${threadWithPerson} WHERE t.status = ? ${tag ? "AND (',' || t.tags || ',') LIKE ? AND t.updated_at >= ?" : ''}
-      ORDER BY ${status === 'open' ? "CASE WHEN t.last_from = 'user' THEN 0 ELSE 1 END, COALESCE(t.waiting_since, t.updated_at) ASC" : 't.closed_at DESC, t.id DESC'} LIMIT 100`,
-      ...(tag ? [status, `%,${tag},%`, Date.now() - IMPROVEMENT_WINDOW] : [status]));
+    // first. A theme filter matches the Improvements counts: every open conversation, or those closed in the last 30 days.
+    const windowed = tag && status === 'closed';
+    const rows = await all(`SELECT t.*, u.name user_name, u.role user_role, u.phone user_phone, o.service order_service, o.status order_status,
+      o.pickup_city order_from, o.dropoff_city order_to FROM support_threads t JOIN users u ON u.id = t.user_id LEFT JOIN orders o ON o.id = t.order_id
+      WHERE t.status = ? ${tag ? "AND (',' || t.tags || ',') LIKE ?" : ''} ${windowed ? 'AND t.closed_at >= ?' : ''}
+      ORDER BY ${status === 'open' ? "CASE WHEN t.last_from = 'user' THEN 0 ELSE 1 END, COALESCE(t.waiting_since, t.updated_at) ASC, t.id ASC" : 't.closed_at DESC, t.id DESC'}
+      LIMIT ?`, ...[status, ...(tag ? [`%,${tag},%`] : []), ...(windowed ? [Date.now() - IMPROVEMENT_WINDOW] : []), limit]);
     const lasts = rows.length ? await all(`SELECT thread_id, body, from_staff, created_at FROM support_messages WHERE id IN
       (SELECT MAX(id) FROM support_messages WHERE thread_id IN (${rows.map(() => '?').join(',')}) GROUP BY thread_id)`, ...rows.map(r => r.id as number)) : [];
     const lastBy = new Map(lasts.map(m => [m.thread_id, m]));
     return rows.map(r => {
       const last = lastBy.get(r.id);
       return { ...staffView(r), person: person(r, false), waiting: r.last_from === 'user' && r.status === 'open',
-        last: last ? { body: String(last.body).slice(0, 140), fromStaff: !!last.from_staff, createdAt: last.created_at } : null };
+        order: r.order_id == null ? null : { id: r.order_id, service: r.order_service, status: r.order_status, from: r.order_from, to: r.order_to },
+        // by code points, so an emoji is never cut in half
+        last: last ? { body: Array.from(String(last.body)).slice(0, 140).join(''), fromStaff: !!last.from_staff, createdAt: last.created_at } : null };
     });
   });
 
@@ -195,16 +210,20 @@ export function registerSupportRoutes(route: Register, deps: Deps): void {
     if (t.status === 'closed' && await one("SELECT id FROM support_threads WHERE user_id = ? AND status = 'open' AND id <> ?", t.user_id, t.id)) fail(409, 'already_open');
     const now = Date.now();
     try {
+      // The thread row first, as a send does: its lock orders a reply and a racing message, so the waiting flag always matches
+      // the author of the last message.
       await deps.tx(async () => {
-        await run('INSERT INTO support_messages (thread_id, sender_id, from_staff, body, created_at, request_id) VALUES (?, ?, 1, ?, ?, ?)', t.id, user.id, text, now, requestId);
+        // The account is gone (deletion closed the conversation and blanked their words): nobody would read the answer.
+        if (!await deps.holdPerson(t.user_id as number)) fail(409, 'person_deleted');
         await run("UPDATE support_threads SET last_from = 'staff', waiting_since = NULL, updated_at = ?, status = 'open', closed_at = NULL, closed_by = NULL WHERE id = ?", now, t.id);
+        await run('INSERT INTO support_messages (thread_id, sender_id, from_staff, body, created_at, request_id) VALUES (?, ?, 1, ?, ?, ?)', t.id, user.id, text, now, requestId);
       });
     } catch (error) {
       if (!uniqueViolation(error)) throw error;
       // The same reply sent twice at once replays; otherwise the person opened a new conversation in the meantime.
       return (await replay()) ?? fail(409, 'already_open');
     }
-    await deps.queuePush([t.user_id as number], 'support', t.order_id ?? 0, '/support');
+    await deps.queuePush([t.user_id as number], 'support_reply', t.order_id ?? 0, '/support');
     return reread(user, t.id as number);
   });
 
@@ -227,7 +246,12 @@ export function registerSupportRoutes(route: Register, deps: Deps): void {
     const t = await staffThread(user, params[0]!);
     // One open thread per person: reopening an old one while a newer is open would split the conversation.
     if (await one("SELECT id FROM support_threads WHERE user_id = ? AND status = 'open' AND id <> ?", t.user_id, t.id)) fail(409, 'already_open');
-    try { await deps.tx(() => run("UPDATE support_threads SET status = 'open', closed_at = NULL, closed_by = NULL WHERE id = ?", t.id)); }
+    try {
+      await deps.tx(async () => {
+        if (!await deps.holdPerson(t.user_id as number)) fail(409, 'person_deleted');
+        await run("UPDATE support_threads SET status = 'open', closed_at = NULL, closed_by = NULL WHERE id = ?", t.id);
+      });
+    }
     catch (error) { if (uniqueViolation(error)) fail(409, 'already_open'); throw error; }
     return reread(user, t.id as number);
   });
@@ -241,11 +265,13 @@ export function registerSupportRoutes(route: Register, deps: Deps): void {
     return reread(user, t.id as number);
   });
 
-  // The Improvements view: how many conversations (in the list's status) active in the last 30 days carry each theme.
+  // The Improvements view: how many conversations carry each theme, counted over exactly the threads the list filter shows:
+  // every open conversation, or those closed in the last 30 days.
   route('GET', '/api/admin/support/tags', async ({ user, query }) => {
     await deps.needSupport(user);
-    const status = query.get('status') === 'closed' ? 'closed' : 'open';
-    const rows = await all("SELECT id, tags FROM support_threads WHERE status = ? AND updated_at >= ? AND tags <> ''", status, Date.now() - IMPROVEMENT_WINDOW);
+    const rows = query.get('status') === 'closed'
+      ? await all("SELECT id, tags FROM support_threads WHERE status = 'closed' AND closed_at >= ? AND tags <> ''", Date.now() - IMPROVEMENT_WINDOW)
+      : await all("SELECT id, tags FROM support_threads WHERE status = 'open' AND tags <> ''");
     return SUPPORT_TAGS.map(tag => ({ tag, count: rows.filter(r => tagsOf(r.tags).includes(tag)).length }));
   });
 }

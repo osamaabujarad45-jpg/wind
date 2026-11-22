@@ -16,18 +16,35 @@ type Tag = typeof TAGS[number];
 type Person = { id: number; name: string; role: string; phone: string; orders?: number };
 type Message = { id: number; fromStaff: boolean; mine: boolean; body: string; orderId: number | null; createdAt: number };
 type Row_ = { id: number; status: 'open' | 'closed'; orderId: number | null; tags: Tag[]; updatedAt: number; person: Person; waiting: boolean;
+  order: { id: number; service: string; status: string; from: string; to: string } | null;
   last: { body: string; fromStaff: boolean; createdAt: number } | null };
 type Detail = { id: number; status: 'open' | 'closed'; orderId: number | null; tags: Tag[]; person: Person; messages: Message[]; more: boolean;
   order: { id: number; service: string; status: string; from: string; to: string; captain: string | null } | null };
 const code = (id: number) => `W-${String(id).padStart(5, '0')}`;
 
 export default function AdminSupport() {
-  const { c, err, row } = useCopy();
+  const { c, err, row, rtl, language } = useCopy();
   const wide = useContext(WideContext);
+  const town = (place: string) => isCity(place) ? city(place)[language] : place;
   const [status, setStatus] = useState<'open' | 'closed'>('open');
   const [tag, setTag] = useState<Tag | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
-  const list = useApi<Row_[]>(`/admin/support?status=${status}${tag ? `&tag=${tag}` : ''}`, 20_000);
+  const query = `status=${status}${tag ? `&tag=${tag}` : ''}`;
+  // "More conversations" widens one window (100 more each time) that every poll re-reads whole; each filter keeps its own.
+  const [limits, setLimits] = useState<Record<string, number>>({});
+  const limit = limits[query] ?? 100;
+  const list = useApi<Row_[]>(`/admin/support?${query}&limit=${limit}`, 20_000);
+  // While a wider window loads, keep showing the rows already on screen for this filter instead of a spinner.
+  const [kept, setKept] = useState<{ query: string; rows: Row_[]; limit: number } | null>(null);
+  const held = kept?.query === query ? kept : null;
+  const rows = list.data ?? held?.rows ?? null;
+  // Judged on the window actually on screen: a failed wider load keeps the button, and a retry asks for the same page again.
+  const shownLimit = list.data ? limit : held?.limit ?? limit;
+  const full = !!rows && rows.length === shownLimit;
+  const loadMore = () => {
+    if (rows) setKept({ query, rows, limit: shownLimit });
+    setLimits(current => ({ ...current, [query]: shownLimit + 100 }));
+  };
   // Improvements: what people raised in conversations active over the last 30 days. A theme filters the list.
   const themes = useApi<{ tag: Tag; count: number }[]>(`/admin/support/tags?status=${status}`, 60_000);
 
@@ -35,7 +52,7 @@ export default function AdminSupport() {
     <FilterChips label={c.supportInbox} value={status} onChange={value => { setStatus(value); setTag(null); setSelected(null); }}
       items={[{ key: 'open', label: c.supportOpen }, { key: 'closed', label: c.supportClosed }]} />
     {(tag != null || !!themes.data?.some(t => t.count > 0)) && <View style={{ gap: 6, marginBottom: 10 }}>
-      <Txt variant="label">{c.supportImprovements}</Txt>
+      <Txt variant="label">{status === 'open' ? c.supportImprovements : c.supportImprovementsClosed}</Txt>
       {/* the active theme stays as a chip even when its count drops to zero, so the filter can always be cleared */}
       <Row gap={6} style={{ flexWrap: 'wrap' }}>{(themes.data ?? []).filter(t => t.count > 0 || t.tag === tag).map(t => <Press key={t.tag} accessibilityRole="checkbox"
         accessibilityState={{ checked: tag === t.tag }} onPress={() => { setTag(tag === t.tag ? null : t.tag); setSelected(null); }}
@@ -43,18 +60,21 @@ export default function AdminSupport() {
         <Txt variant="label" style={{ color: tag === t.tag ? palette.onFill : palette.ink }}>{`${c[`tag_${t.tag}`]} · ${t.count}`}</Txt>
       </Press>)}</Row>
     </View>}
-    {!list.data ? (list.error ? <ErrorText>{err(list.error)}</ErrorText> : <Loading />)
-      : list.data.length === 0 ? <Empty icon="chatbubbles-outline" title={c.supportNone} />
-      : <View style={{ gap: 8 }}>{list.data.map(t => <Press key={t.id} onPress={() => setSelected(t.id)} accessibilityRole="button"
+    {!rows ? (list.error ? <ErrorText>{err(list.error)}</ErrorText> : <Loading />)
+      : rows.length === 0 ? <Empty icon="chatbubbles-outline" title={c.supportNone} />
+      : <View style={{ gap: 8 }}>{list.error && !list.data && <ErrorText>{err(list.error)}</ErrorText>}{rows.map(t => <Press key={t.id} onPress={() => setSelected(t.id)} accessibilityRole="button"
         accessibilityLabel={[t.person.name, t.waiting ? c.supportWaiting : null, t.id === selected ? c.supportSelected : null, t.last?.body].filter(Boolean).join('. ')}
         style={[styles.row, t.id === selected && styles.rowOn]}>
         <Row gap={8} style={{ justifyContent: 'space-between' }}>
           <Txt variant="title" numberOfLines={1} style={{ flex: 1 }}>{t.person.name}</Txt>
           {t.waiting && <Badge label={c.supportWaiting} tone={tones.warn} icon="time-outline" />}
         </Row>
-        <Txt variant="micro">{[c[t.person.role as 'customer'] ?? t.person.role, t.orderId != null ? code(t.orderId) : null].filter(Boolean).join(' · ')}</Txt>
+        <Txt variant="micro">{[c[t.person.role as 'customer'] ?? t.person.role,
+          t.order ? `${code(t.order.id)} · ${town(t.order.from)} ${rtl ? '←' : '→'} ${town(t.order.to)}` : null].filter(Boolean).join(' · ')}</Txt>
         {t.last && <Txt variant="caption" numberOfLines={2}>{t.last.body}</Txt>}
-      </Press>)}</View>}
+      </Press>)}
+      {full && (shownLimit < 1000 ? <Button title={c.supportMoreConversations} variant="ghost" size="sm" onPress={loadMore} />
+        : <Txt variant="caption">{c.supportListCap}</Txt>)}</View>}
   </View>;
 
   const changed = async () => { await Promise.all([list.reload(), themes.reload()]); };

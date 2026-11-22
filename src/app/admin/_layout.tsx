@@ -17,7 +17,7 @@ export default function AdminTabs() {
     <Tabs.Screen name="orders" options={{ title: c.allOrders, tabBarIcon: tabIcon('receipt-outline') }} />
     <Tabs.Screen name="users" options={{ title: c.usersTab, tabBarIcon: tabIcon('people-outline'), tabBarBadge: data?.pendingDrivers || undefined }} />
     {/* openSupport is null for staff without the support scope: the tab appears only once the stats say they have it */}
-    <Tabs.Screen name="support" options={{ title: c.supportInbox, tabBarIcon: tabIcon('chatbubbles-outline'), tabBarBadge: data?.openSupport || undefined,
+    <Tabs.Screen name="support" options={{ title: c.supportTab, tabBarIcon: tabIcon('chatbubbles-outline'), tabBarBadge: data?.openSupport || undefined,
       href: data && data.openSupport != null ? undefined : null }} />
     <Tabs.Screen name="cash" options={{ title: c.cashTab, tabBarIcon: tabIcon('cash-outline') }} />
     <Tabs.Screen name="merchants" options={{ title: c.adminShops, tabBarIcon: tabIcon('storefront-outline'), href: shop ? undefined : null }} />

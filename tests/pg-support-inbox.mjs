@@ -60,7 +60,47 @@ try {
     assert.equal((await f.db.one("SELECT COUNT(*) n FROM support_threads WHERE user_id = ? AND status = 'open'", person.user.id)).n, 1);
   }
   assert.equal(refused + reopened, 12, 'every round ends with the follow-up in an open conversation');
-  console.log(`pg-support-inbox: scopes, racing first messages and replies, close vs message (${refused} refused, ${reopened} new) ok`);
+
+  // A staff reply racing the person's next message: the waiting flag always matches whoever wrote last.
+  for (let round = 0; round < 8; round++) {
+    const person = await f.account();
+    const opened = await say(f.call, person, `question ${round}`);
+    await Promise.all([
+      (round % 2 ? f.call : f.other)(`/admin/support/${opened.thread.id}/reply`, { token: support.token, body: { body: `answer ${round}`, requestId: randomUUID() } }),
+      say(round % 2 ? f.other : f.call, person, `more ${round}`)]);
+    const last = await f.db.one('SELECT from_staff FROM support_messages WHERE thread_id = ? ORDER BY id DESC LIMIT 1', opened.thread.id);
+    const thread = await f.db.one('SELECT last_from, waiting_since FROM support_threads WHERE id = ?', opened.thread.id);
+    assert.equal(thread.last_from, last.from_staff ? 'staff' : 'user', `round ${round}: waiting flag disagrees with the last message`);
+    assert.equal(thread.waiting_since == null, !!last.from_staff, `round ${round}: waiting_since disagrees with the last message`);
+  }
+  // A send racing the account's deletion: the deletion holds the user row; the send parks on holdPerson's FOR KEY SHARE (seen in
+  // pg_stat_activity, so the test fails if the lock is not taken), then sees the account is gone and writes nothing. The
+  // deletion commits as soon as the wait shows, well inside the API's 500 ms lock timeout (which runs only while it waits).
+  const leaving = await f.account();
+  await f.call('/support/thread', { token: leaving.token }); // warm the session so the send arrives promptly
+  await f.db.scope(async () => {
+    await f.db.exec('BEGIN');
+    try {
+      await f.db.one('SELECT id FROM users WHERE id = ? FOR UPDATE', leaving.user.id);
+      const send = f.call('/support/messages', { token: leaving.token, body: { body: 'are you there', requestId: randomUUID() }, expect: 401 })
+        .then(value => ({ value }), error => ({ error }));
+      let parked = false;
+      for (const started = Date.now(); !parked && Date.now() - started < 3000; await new Promise(done => setTimeout(done, 10))) {
+        await f.db.one('SELECT pg_stat_clear_snapshot()'); // activity stats are cached per transaction: read them fresh each time
+        parked = (await f.db.one(`SELECT COUNT(*) n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%FOR KEY SHARE%'
+          AND query LIKE '%deleted-%'`)).n > 0;
+      }
+      await f.db.run('UPDATE users SET phone = ? WHERE id = ?', `deleted-${leaving.user.id}`, leaving.user.id);
+      await f.db.exec('COMMIT');
+      const outcome = await send;
+      if (outcome.error) throw outcome.error;
+      assert.ok(parked, 'the send waited on the user row lock');
+    } catch (error) { if (f.db.inTransaction) await f.db.exec('ROLLBACK'); throw error; }
+  });
+  assert.equal((await f.db.one('SELECT COUNT(*) n FROM support_messages WHERE sender_id = ?', leaving.user.id)).n, 0);
+  assert.equal((await f.db.one('SELECT COUNT(*) n FROM support_threads WHERE user_id = ?', leaving.user.id)).n, 0);
+
+  console.log(`pg-support-inbox: scopes, racing first messages and replies, close vs message (${refused} refused, ${reopened} new), reply vs message ok`);
 } finally {
   await f.close();
 }

@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings, quote } from '../src/model.ts';
 import { maskPhone } from '../server/domain/support.ts';
+import { nativeSuppression } from '../server/domain/native-push.ts';
 import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-support-'));
@@ -22,6 +23,9 @@ try {
   assert.equal(maskPhone('0599712754'), '059 ••• 2754');
   assert.equal(maskPhone('+970 59 712 7547'), '970 ••• 7547');
   assert.equal(maskPhone(''), '•••');
+  // a support reply follows the person's push preferences like other non-essential alerts
+  assert.equal(nativeSuppression(JSON.stringify({ nonessentialMuted: true, mutedKinds: [], quietHours: null }), 'support_reply', null), 'nonessential_muted');
+  assert.equal(nativeSuppression(JSON.stringify({ nonessentialMuted: false, mutedKinds: [], quietHours: null }), 'support_reply', null), null);
 
   const admin = await call('/auth/register', { body: { phone: '0599120001', name: 'Admin', password: 'secret1' } });
   await promote('0599120001');
@@ -72,6 +76,9 @@ try {
   assert.equal(inbox[0].waiting, true);
   assert.equal(inbox[0].person.phone, '059 ••• 0002');
   assert.equal(inbox[0].last.body, 'Order W-1, please');
+  assert.deepEqual([inbox[0].order.id, inbox[0].order.from, inbox[0].order.to], [order.id, 'ramallah', 'nablus']); // the row names its order
+  for (const limit of [0, 1001, 'x']) await call(`/admin/support?limit=${limit}`, { token: admin.token, expect: 400 });
+  assert.equal((await call('/admin/support?limit=1', { token: admin.token })).length, 1);
   assert.equal((await call('/admin/stats', { token: admin.token })).openSupport, 1);
   const detail = await call(`/admin/support/${threadId}`, { token: admin.token });
   assert.equal(detail.person.phone, '0599120002');
@@ -168,6 +175,8 @@ try {
   assert.equal(olderPage.more, false);
   assert.equal(olderPage.messages[0].body, 'About the basket order');
   await call('/support/thread?before=abc', { token: stranger.token, expect: 400 });
+  // the database also refuses an empty or over-long body
+  for (const body of ['', 'x'.repeat(1001)]) assert.throws(() => db.prepare('INSERT INTO support_messages (thread_id, sender_id, from_staff, body, created_at) VALUES (?, ?, 0, ?, 1)').run(threadId, customer.user.id, body));
   // one open thread per person, enforced by the database too
   assert.throws(() => db.prepare("INSERT INTO support_threads (user_id, status, tags, last_from, created_at, updated_at) VALUES (?, 'open', '', 'user', 1, 1)").run(customer.user.id));
 
@@ -178,8 +187,10 @@ try {
   await call('/me/delete', { token: customer.token, body: { password: 'secret1' } });
   const bodies = db.prepare('SELECT body FROM support_messages WHERE sender_id = ?').all(customer.user.id).map(r => r.body);
   assert.ok(bodies.length >= 3 && bodies.every(b => b === '—'), JSON.stringify(bodies));
-  // and closes their open conversation, so the inbox does not wait on someone who is gone
+  // and closes their open conversation, so the inbox does not wait on someone who is gone; staff cannot reopen or answer it
   assert.equal(db.prepare("SELECT COUNT(*) n FROM support_threads WHERE user_id = ? AND status = 'open'").get(customer.user.id).n, 0);
+  await call(`/admin/support/${threadId}/reply`, { token: admin.token, body: { body: 'Hello?', requestId: randomUUID() }, expect: 409 });
+  await call(`/admin/support/${threadId}/reopen`, { token: admin.token, body: {}, expect: 409 });
   console.log('Support inbox: one open thread, own orders only, idempotent sends, staff-only admin, replies, tags, close/reopen and deletion passed');
 } finally {
   await shutdown();
