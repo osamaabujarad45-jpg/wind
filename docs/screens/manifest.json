@@ -715,6 +715,35 @@
     "session": "admin"
   },
   {
+    "id": "admin-approvals",
+    "group": "Admin",
+    "name": "Approvals: captains, plan requests and shops waiting for a decision",
+    "route": "/admin/approvals",
+    "file": "src/app/admin/approvals.tsx",
+    "ar": [
+      "ar/admin-approvals.png"
+    ],
+    "en": [
+      "en/admin-approvals.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-approvals-desktop",
+    "group": "Admin",
+    "name": "Approvals on a desktop (side rail)",
+    "route": "/admin/approvals",
+    "file": "src/app/admin/approvals.tsx",
+    "desktop": true,
+    "ar": [
+      "ar/admin-approvals-desktop.png"
+    ],
+    "en": [
+      "en/admin-approvals-desktop.png"
+    ],
+    "session": "admin"
+  },
+  {
     "id": "admin-support",
     "group": "Admin",
     "name": "Support inbox (conversations waiting first)",
