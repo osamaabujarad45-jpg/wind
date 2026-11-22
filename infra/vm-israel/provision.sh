@@ -6,7 +6,11 @@
 set -euo pipefail
 HOST=${1:?public host name, e.g. 20.217.202.98.sslip.io}
 BACKUP_ACCOUNT=${2:-}   # private Azure Blob account for the off-host backup copy (deploy.md)
+TLS_ALIAS_FILE=/etc/caddy/wind-tls-alias
 TLS_ALIAS=${3:-}
+if [ "$#" -lt 3 ] && [ -f "$TLS_ALIAS_FILE" ]; then
+  TLS_ALIAS=$(cat "$TLS_ALIAS_FILE")
+fi
 for name in "$HOST" "$TLS_ALIAS"; do
   [ -z "$name" ] || [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z0-9]+$ ]] || { echo "invalid TLS host name: $name" >&2; exit 1; }
 done
@@ -148,6 +152,14 @@ $HOST${TLS_ALIAS:+, $TLS_ALIAS} {
 EOF
 chmod 644 "$CADDY_NEW"
 caddy validate --adapter caddyfile --config "$CADDY_NEW" >/dev/null || { echo "invalid Caddyfile; the current one is kept" >&2; rm -f "$CADDY_NEW"; exit 1; }
+# Save the validated alias for reprovisioning. An explicit empty third argument clears it.
+if [ -n "$TLS_ALIAS" ]; then
+  STATE_NEW=$(mktemp "${TLS_ALIAS_FILE}.new.XXXXXX")
+  printf '%s\n' "$TLS_ALIAS" > "$STATE_NEW"
+  mv -f -- "$STATE_NEW" "$TLS_ALIAS_FILE"
+else
+  rm -f -- "$TLS_ALIAS_FILE"
+fi
 mv -f "$CADDY_NEW" /etc/caddy/Caddyfile
 
 # The ingress hold (install-release.sh, restore.sh): while /etc/wind-ingress-hold exists Caddy does not start, at boot too.

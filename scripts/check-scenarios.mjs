@@ -470,7 +470,9 @@ try {
   await driverPage.unroute(farPath);
   await button(driverPage, c.sheetExpand).click(); // the problem form is on the open sheet, as for a real driver
   await field(driverPage, c.problemNote).fill('Recipient absent after contact attempts.');
-  await button(driverPage, c.reportProblem).click();
+  const reportProblem = button(driverPage, c.reportProblem);
+  await reportProblem.evaluate(element => element.scrollIntoView({ block: 'center' }));
+  await reportProblem.click();
   await atStatus(returnId, 'on_hold');
   await adminPage.goto(`${base}/order/${returnId}`);
   await field(adminPage, c.proofResetReason).fill('Sender confirms return to the pickup shop.');

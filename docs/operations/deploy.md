@@ -29,6 +29,7 @@ its data is backed up and those installs are rebuilt.
     when that address changes.
   - SSH: `ssh -i ~/.ssh/wind-vm-prod-1121 windadmin@20.217.202.98`.
 - **Runtime:** `sudo bash infra/vm-israel/provision.sh <host> <backup-account> [tls-alias]` (idempotent; the Caddyfile is validated before it replaces the working one).
+  - With no third argument, provisioning keeps the saved TLS alias. Pass an explicit empty third argument to remove the alias from Caddy.
   - Node 24.12.0 (checksum-verified) in `/opt/node`.
   - Caddy terminates TLS.
   - `wind-api.service` runs `/opt/windapi` as the unprivileged user `wind` (not root), on 127.0.0.1:4000. It has

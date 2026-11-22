@@ -32,7 +32,7 @@ Use `infra/vm-israel/backup-monitor.bicep` with an existing protected Log Analyt
 2. Run the compiled query against that workspace. Confirm it returns a nonzero count for a healthy three-hour window and returns one row with zero during a controlled empty window.
 3. Enable the rule and test notification and recovery on an isolated configuration. Record the actual time between missed writes and notification. Keep the independent public readiness probe for API outage coverage.
 
-On 22 November 2026, production StorageBlobLogs recorded HTTP 201 writes by the VM identity. The successful-write count was two for the healthy window and zero for an empty window. The three-hour missing-backup rule now uses `wind-prod-operators`, with the subscription Owner role and the designated backup operator. Use `infra/vm-israel/api-availability.bicep` for the production HTTPS readiness test. It checks three locations every 15 minutes and alerts when two locations fail.
+On 22 November 2026, production StorageBlobLogs recorded HTTP 201 writes by the VM identity. The successful-write count was two for the healthy window and zero for an empty window. The three-hour missing-backup rule now uses `wind-prod-operators`, with the subscription Owner role and the designated backup operator. The production HTTPS test in `infra/vm-israel/api-availability.bicep` probes `https://20.217.202.98.sslip.io/api/ready` from three locations every 15 minutes and alerts when two locations fail.
 
 ## API host name
 
