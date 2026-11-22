@@ -121,11 +121,13 @@ Persistent=true
 WantedBy=timers.target
 EOF
 # Loaded at once, so a later failure (the Caddy check below) cannot leave the hourly unit on disk with systemd still on the old
-# schedule. Then admins are told about a broken backup after 3 hours, not a day; the key is added to an existing file too, on a
-# line of its own, and an empty value gets a working line after it (Haiku PR #103 L3, L4, L6).
+# schedule. Then admins are told about a broken backup after 3 hours, not a day. The key is added to an existing file too, on a
+# line of its own. A value that is not a whole number of hours from 1 to 336 (empty included), which the API would refuse at
+# start, is replaced; a valid one the operator chose is kept (Haiku PR #103 L3, L4, L6; recheck 4).
 systemctl daemon-reload
-if ! grep -q '^WIND_BACKUP_MAX_AGE_HOURS=.' /etc/wind-api.env; then
-  [ -z "$(tail -c1 /etc/wind-api.env)" ] || echo >> /etc/wind-api.env
+if ! grep '^WIND_BACKUP_MAX_AGE_HOURS=' /etc/wind-api.env | tail -n1 | grep -qE '^WIND_BACKUP_MAX_AGE_HOURS=([1-9]|[1-9][0-9]|[12][0-9][0-9]|3[0-2][0-9]|33[0-6])$'; then
+  sed -i '/^WIND_BACKUP_MAX_AGE_HOURS=/d' /etc/wind-api.env
+  [ ! -s /etc/wind-api.env ] || [ -z "$(tail -c1 /etc/wind-api.env)" ] || echo >> /etc/wind-api.env
   echo 'WIND_BACKUP_MAX_AGE_HOURS=3' >> /etc/wind-api.env
 fi
 

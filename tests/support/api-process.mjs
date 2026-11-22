@@ -20,7 +20,7 @@ export async function startApiProcess(storage) {
   if (!storage?.DB_PATH) throw new Error('Test API requires an explicit isolated database path');
   const env = { ...process.env };
   // Inherited credentials must never redirect a local test to a real database.
-  for (const key of ['DATABASE_URL', 'WIND_DATABASE_URL', 'PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGDATABASE', 'PGSERVICE', 'PGSERVICEFILE', 'WIND_DISPATCH_TEST_ONLY']) delete env[key];
+  for (const key of ['DATABASE_URL', 'WIND_DATABASE_URL', 'PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGDATABASE', 'PGSERVICE', 'PGSERVICEFILE', 'WIND_DISPATCH_TEST_ONLY', 'WIND_BACKUP_MAX_AGE_HOURS']) delete env[key]; // a suite passes its own
   // A phone fixture must explicitly supply its isolated provider settings, never inherit live SMS access.
   for (const key of Object.keys(env)) if (/^WIND_(?:PHONE|OOREDOO|OTP)/.test(key)) delete env[key];
   Object.assign(env, storage, { NODE_ENV: 'test', WIND_ENABLED_SERVICES: 'parcel,ride,freight', WIND_IDENTITY_MODE: 'operator-verified' });

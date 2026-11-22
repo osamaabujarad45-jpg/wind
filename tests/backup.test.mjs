@@ -1,7 +1,8 @@
-// T46: a missed backup reaches an admin, and a nightly copy restores to a working service.
+// T46: a missed backup reaches an admin, and a backup copy restores to a working service.
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { gunzipSync, gzipSync } from 'node:zlib';
@@ -80,7 +81,7 @@ try {
   assert.ok(script.indexOf('chmod 600') > script.indexOf('gzip -9') && script.indexOf('chmod 600') < script.indexOf('azure-token.sh'), 'copies are private before anything else runs');
   assert.ok(script.indexOf('trap ') > 0 && script.indexOf('trap ') < script.indexOf('VACUUM INTO'), 'a failed run leaves no uncompressed copy');
 
-  // Restore: the nightly copy, unzipped into place, runs the service with its accounts and orders.
+  // Restore: the backup copy, unzipped into place, runs the service with its accounts and orders.
   const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
     pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599170002', detail: 'Box' };
   const order = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
@@ -126,7 +127,7 @@ try {
     hourlyAge(3 - 1 / 60); assert.equal((await remote('/admin/stats', { token: admin.token })).backupStale, false, 'inside the hourly limit');
     hourlyAge(3 + 1 / 60); assert.equal((await remote('/admin/stats', { token: admin.token })).backupStale, true, 'past it');
   } finally { await hourly.stop(); }
-  for (const [i, bad] of ['', '0', '0.5', '-1', 'soon', '400'].entries()) {
+  for (const [i, bad] of ['', '0', '0.001', '0.5', '-1', 'soon', '337'].entries()) {
     let started;
     try { started = await startApiProcess({ DB_PATH: join(dir, `bad-${i}.db`), WIND_BACKUP_MAX_AGE_HOURS: bad }); }
     catch (error) { assert.match(error.message, /WIND_BACKUP_MAX_AGE_HOURS/, `'${bad}' stops startup with the reason`); continue; }
@@ -136,8 +137,19 @@ try {
   // The Israel host backs up hourly and alerts after 3 hours.
   const provision = readFileSync(new URL('../infra/vm-israel/provision.sh', import.meta.url), 'utf8');
   assert.match(provision, /^OnCalendar=\*-\*-\* \*:00:00 UTC$/m, 'the backup timer is hourly');
-  assert.match(provision, /^if ! grep -q '\^WIND_BACKUP_MAX_AGE_HOURS=\.' \/etc\/wind-api\.env; then$/m, 'and its alert limit is set even on a host provisioned before');
-  assert.match(provision, /^  echo 'WIND_BACKUP_MAX_AGE_HOURS=3' >> \/etc\/wind-api\.env$/m);
+  assert.match(provision, /^  echo 'WIND_BACKUP_MAX_AGE_HOURS=3' >> \/etc\/wind-api\.env$/m, 'and its alert limit is set even on a host provisioned before');
+  // The env-file step itself, run on scratch files: added on its own line, a bad value replaced, a valid choice kept.
+  const step = provision.slice(provision.indexOf("if ! grep '^WIND_BACKUP_MAX_AGE_HOURS='"), provision.indexOf('\nfi\n', provision.indexOf("if ! grep '^WIND_BACKUP_MAX_AGE_HOURS='")) + 3);
+  for (const [before, after] of [['A=1\n', 'A=1\nWIND_BACKUP_MAX_AGE_HOURS=3\n'], ['A=1', 'A=1\nWIND_BACKUP_MAX_AGE_HOURS=3\n'], ['', 'WIND_BACKUP_MAX_AGE_HOURS=3\n'],
+    ['A=1\nWIND_BACKUP_MAX_AGE_HOURS=\n', 'A=1\nWIND_BACKUP_MAX_AGE_HOURS=3\n'], ['WIND_BACKUP_MAX_AGE_HOURS=0.5\nA=1\n', 'A=1\nWIND_BACKUP_MAX_AGE_HOURS=3\n'],
+    ['WIND_BACKUP_MAX_AGE_HOURS=soon\n', 'WIND_BACKUP_MAX_AGE_HOURS=3\n'], ['WIND_BACKUP_MAX_AGE_HOURS=337\n', 'WIND_BACKUP_MAX_AGE_HOURS=3\n'],
+    ['A=1\nWIND_BACKUP_MAX_AGE_HOURS=6\n', 'A=1\nWIND_BACKUP_MAX_AGE_HOURS=6\n'], ['WIND_BACKUP_MAX_AGE_HOURS=336\n', 'WIND_BACKUP_MAX_AGE_HOURS=336\n']]) {
+    const file = join(dir, 'wind-api.env');
+    writeFileSync(file, before);
+    const r = spawnSync('bash', ['-c', step.replaceAll('/etc/wind-api.env', file)], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(readFileSync(file, 'utf8'), after, JSON.stringify(before));
+  }
   const reload = provision.indexOf('systemctl daemon-reload');
   assert.ok(provision.indexOf("echo 'WIND_BACKUP_MAX_AGE_HOURS=3'") < provision.indexOf('caddy validate'), 'before anything that can stop the script');
   assert.ok(reload > provision.indexOf('OnCalendar=') && reload < provision.indexOf('caddy validate'), 'and the hourly timer is loaded before then too');
