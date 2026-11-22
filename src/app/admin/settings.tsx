@@ -20,8 +20,16 @@ const unitless = (key: keyof Settings) => key.endsWith('Minutes'); // the label 
 
 const toText = (settings: Settings) => Object.fromEntries(Object.entries(settings).map(([k, v]) => [k, String(v)]));
 
-type SettingsResponse = { settings: Omit<Settings, 'pickupPayPerKm'>; pickupPayPerKm: number };
-const payrollSettings = ({ settings, pickupPayPerKm }: SettingsResponse): Settings => ({ ...settings, pickupPayPerKm });
+type LegacySettings = Omit<Settings, 'pickupPayPerKm'>;
+type SettingsResponse = { settings: LegacySettings; pickupPayPerKm?: number };
+function readSettings(response: SettingsResponse | LegacySettings) {
+  const wrapped = 'settings' in response;
+  const pickupPayPerKm = wrapped ? response.pickupPayPerKm : undefined;
+  return {
+    values: { ...defaultSettings, ...(wrapped ? response.settings : response), pickupPayPerKm: pickupPayPerKm ?? defaultSettings.pickupPayPerKm },
+    payrollAvailable: typeof pickupPayPerKm === 'number' && Number.isFinite(pickupPayPerKm),
+  };
+}
 
 export default function AdminSettings() {
   const { c } = useCopy();
@@ -43,14 +51,16 @@ function AdminSettingsForm({ initial, payroll }: { initial: Settings; payroll: S
   // What the server last confirmed. A failed save clears it: a lost reply may hide a committed write,
   // so the next comparison reads /me first instead of trusting an old copy.
   const [baseline, setBaseline] = useState<Settings | null>(initial);
+  const [payrollAvailable, setPayrollAvailable] = useState(typeof payroll?.pickupPayPerKm === 'number');
   const [busy, setBusy] = useState(false);
   const payrollApplied = useRef(false);
   const touchedRef = useRef(touched);
-  // payrollSettings() is a new object every render; apply the first payload once, and only onto keys not yet typed.
+  // Apply the first payload once, and only onto keys not yet typed.
   useEffect(() => {
     if (!payroll || payrollApplied.current) return;
     payrollApplied.current = true;
-    const next = payrollSettings(payroll);
+    const { values: next, payrollAvailable: supported } = readSettings(payroll);
+    setPayrollAvailable(supported);
     const typed = touchedRef.current;
     setValues(current => {
       const merged = toText(next);
@@ -75,7 +85,9 @@ function AdminSettingsForm({ initial, payroll }: { initial: Settings; payroll: S
     setMessage('');
     try {
       // The reply is the server's settings after this write: it becomes the comparison baseline.
-      const saved = payrollSettings(await api<SettingsResponse>('/admin/settings?payroll=1', { ...patch, expected }, 'POST'));
+      // Pre-payroll servers ignore the query and reply with a flat settings object.
+      const { values: saved, payrollAvailable: supported } = readSettings(await api<SettingsResponse | LegacySettings>('/admin/settings?payroll=1', { ...patch, expected }, 'POST'));
+      setPayrollAvailable(supported);
       payrollApplied.current = true; // The save response supersedes the initial payroll request.
       setBaseline(saved);
       setValues(toText(saved));
@@ -97,13 +109,14 @@ function AdminSettingsForm({ initial, payroll }: { initial: Settings; payroll: S
 
   // After a failed save the last server state is unknown, so read /me directly. The session refresh
   // swallows network errors, which is why it cannot stand in for this read.
-  async function currentSettings(): Promise<Settings> {
-    if (baseline) return baseline;
+  async function currentSettings() {
+    if (baseline) return { values: baseline, payrollAvailable };
     setBusy(true);
     try {
-      const settings = payrollSettings(await api<SettingsResponse>('/me?payroll=1'));
+      const { values: settings, payrollAvailable: supported } = readSettings(await api<SettingsResponse>('/me?payroll=1'));
+      setPayrollAvailable(supported);
       setBaseline(settings);
-      return settings;
+      return { values: settings, payrollAvailable: supported };
     } finally { setBusy(false); }
   }
 
@@ -121,11 +134,13 @@ function AdminSettingsForm({ initial, payroll }: { initial: Settings; payroll: S
       setError(fill(c.set_invalid, { field: c[`set_${invalid}`] }));
       return;
     }
-    const before = await currentSettings().catch(e => { setError(err(e)); return null; });
-    if (!before) return;
+    const latest = await currentSettings().catch(e => { setError(err(e)); return null; });
+    if (!latest) return;
+    const before = latest.values;
     // Only fields this admin edited, and only where the server differs, are shown and sent. A field left
     // alone never goes out, so another admin's edit to it survives even after a lost reply.
-    const keys = (Object.keys(numbers) as (keyof Settings)[]).filter(key => touched[key] && numbers[key] !== before[key]);
+    const keys = (Object.keys(numbers) as (keyof Settings)[]).filter(key => touched[key] && numbers[key] !== before[key]
+      && (key !== 'pickupPayPerKm' || latest.payrollAvailable));
     if (!keys.length) { setMessage(c.saved); return; }
     // Shown the way the field shows it (percent for rates, ₪ for money), so the review reads like the form.
     const shown = (key: keyof Settings, value: number) => fractionSettings.includes(key) ? `${Math.round(value * 100)}%` : unitless(key) ? String(value) : `${value} ₪`;
@@ -140,7 +155,7 @@ function AdminSettingsForm({ initial, payroll }: { initial: Settings; payroll: S
     {groups.filter(group => group.title !== 'shopTimers' || me?.capabilities?.enabledServices?.includes('shop')).map(group => <Card key={group.title}>
       <Txt variant="h2" style={{ marginBottom: 4 }}>{c[group.title]}</Txt>
       {group.title === 'discounts' && <Txt variant="caption" style={{ marginBottom: 10 }}>{c.percentNote}</Txt>}
-      {group.keys.map(key => <Field key={key} keyboardType="decimal-pad" disabled={busy}
+      {group.keys.filter(key => key !== 'pickupPayPerKm' || payrollAvailable).map(key => <Field key={key} keyboardType="decimal-pad" disabled={busy}
         label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(typedNumber(values[key]) * 100) || 0}%)` : unitless(key) ? '' : ' ₪'}`}
         error={bad === key ? fill(c.set_invalid, { field: c[`set_${key}`] }) : undefined}
         value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); touchedRef.current = { ...touchedRef.current, [key]: true }; setTouched(touchedRef.current); setMessage(''); if (bad === key) setBad(''); }} />)}

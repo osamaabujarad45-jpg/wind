@@ -59,7 +59,8 @@ async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap
     const current = await Notifications.getPermissionsAsync();
     let status = current.status;
     // The person's own tap on the notifications row ('tap') always asks while the OS allows it (Haiku polish r3 R3-1).
-    if (status !== 'granted' && ask && current.canAskAgain && current_() && (ask === 'tap' || askedInSession !== session) && (ask !== 'once' || await storage.get('pushAsked') !== '1')) {
+    if (status !== 'granted' && ask && current.canAskAgain && current_() && (ask === 'tap' || askedInSession !== session)
+      && (ask !== 'once' || await storage.get('pushAsked') !== '1') && current_()) {
       askedInSession = session;
       status = (await Notifications.requestPermissionsAsync()).status;
       // A customer's once-per-device ask is spent once answered (Haiku polish r2 N5); captains' asks keep no device flag.

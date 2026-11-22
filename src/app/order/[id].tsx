@@ -144,7 +144,7 @@ export default function OrderScreen() {
 
   // A customer is asked for notifications here, with an order on its way: every route to a first order (booking, a recovered
   // booking, order again, shop checkout) lands on this screen, and "your driver accepted" is then the reason (product audit, 21 Nov).
-  const customerLive = me?.user.role === 'customer' && !!order && (order.status === 'searching' || activeStatuses.includes(order.status));
+  const customerLive = me?.user.role === 'customer' && !!order?.driverId && activeStatuses.includes(order.status);
   useEffect(() => { if (customerLive) void registerNativePush(language, 'once'); }, [customerLive, language]);
 
   if (!order || !me) return <Screen><Header title={/^\d+$/.test(id) ? orderCode(Number(id)) : c.orders} back /><ErrorText>{error && err(error)}</ErrorText><Loading failed={!!error} onRetry={reload} /></Screen>;
@@ -573,7 +573,8 @@ export default function OrderScreen() {
           ['confirm_office_return', 'support', c.confirmOfficeReturnSupport, c.confirmOfficeReturnSupportHint],
           // Support collected the goods mid-return: recorded when they change hands, before any closure (Sol recheck of PR 101).
           ['support_takeover', undefined, c.supportTakeover, c.supportTakeoverHint],
-        ] as const).filter(([action, carrier]) => !order.supportHasGoods || (action !== 'support_takeover' && carrier !== 'captain' && carrier !== 'staff')).map(([action, carrier, title, hint]) => <Button key={`${action}-${carrier ?? ''}`} title={title} variant="outline" icon={action === 'support_takeover' ? 'hand-left-outline' : 'checkmark-done-outline'}
+        ] as const).filter(([action, carrier]) => action === 'support_takeover' ? !order.supportHasGoods
+          : !(order.supportReturnRequired || order.supportHasGoods) || carrier === 'support').map(([action, carrier, title, hint]) => <Button key={`${action}-${carrier ?? ''}`} title={title} variant="outline" icon={action === 'support_takeover' ? 'hand-left-outline' : 'checkmark-done-outline'}
           loading={busy === `${action}-${carrier ?? ''}`} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(hint, () => act(`${action}-${carrier ?? ''}`, `/admin/orders/${order.id}/resolve`,
             { action, ...(carrier && { carrier }), reason: decisionReason.trim() },

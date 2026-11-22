@@ -386,8 +386,11 @@ try {
   const carriedId = carried.id;
   const reviewPath = `/admin/orders/${carriedId}/block-review`;
   await call(`/admin/users/${captain.user.id}`, { token: admin.token, method: 'PATCH', body: { status: 'blocked', recovery: 'return' } });
-  const returned = await call(`/admin/orders/${carriedId}/resolve`, { token: admin.token,
-    body: { action: 'confirm_office_return', carrier: 'staff', reason: 'Support delivered the recovered goods' } });
+  const carriedResolve = `/admin/orders/${carriedId}/resolve`;
+  await err(carriedResolve, { token: admin.token,
+    body: { action: 'confirm_office_return', carrier: 'staff', reason: 'Wrong carrier' } }, 409, 'cannot_resolve');
+  const returned = await call(carriedResolve, { token: admin.token,
+    body: { action: 'confirm_office_return', carrier: 'support', reason: 'Support delivered the recovered goods' } });
   assert.equal(returned.blockReview.tripPayCents, 1000, 'the block opens a one-leg review on both databases');
   assert.equal(await one('SELECT 1 FROM shop_ledger WHERE order_id = ? AND kind = ?', carriedId, 'trip_pay'), undefined);
   // Older releases could leave only the audit and no review row.

@@ -147,6 +147,8 @@ const suites = [
   "runtime-dependencies.test.mjs",
   "phone-provider.mjs",
   "native-push-sqlite.mjs",
+  "native-push-session.test.mjs",
+  "shop-checkout-retry.test.mjs",
   "backup.test.mjs",
   "deploy-script.test.mjs",
   "israel-scripts.test.mjs",

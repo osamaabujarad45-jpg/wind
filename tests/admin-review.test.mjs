@@ -25,7 +25,7 @@ for (const language of ['ar', 'en']) {
 // `store` is the device's secure storage (shared between two renders = an app restart); `effects` runs mount effects once;
 // `receipt` is what GET /admin/cash/commands/:id answers: one entry for every id, or a function of the request id (which may
 // return a promise, to hold the lookup open).
-function screen(file, language, { data = {}, errors = {}, me = {}, store = new Map(), effects = false, receipt = null, delayPayroll = false } = {}) {
+function screen(file, language, { data = {}, errors = {}, me = {}, store = new Map(), effects = false, receipt = null, delayPayroll = false, legacyPayroll = false } = {}) {
   const slots = [], calls = [], dialogs = [];
   let cursor = 0, serverSettings = me.settings ? { ...me.settings } : null;
   let loseNext = false, forbidNext = false, holding = false, releaseHeld = null;
@@ -43,7 +43,10 @@ function screen(file, language, { data = {}, errors = {}, me = {}, store = new M
   };
   // The server side of the stub. A "lost" call still reaches the server first (the write commits) and then the reply is dropped.
   // The settings screen negotiates the payroll rate with ?payroll=1 (older admin builds never see it); calls log the bare path.
-  const payrollView = settings => { const { pickupPayPerKm = 1, ...legacy } = settings ?? {}; return { settings: legacy, pickupPayPerKm }; };
+  const payrollView = settings => {
+    const { pickupPayPerKm = 1, ...legacy } = settings ?? {};
+    return { settings: legacy, ...(!legacyPayroll && { pickupPayPerKm }) };
+  };
   const openedWith = serverSettings ? payrollView(serverSettings) : null; // what the screen fetched when it opened
   let payrollData = delayPayroll ? null : openedWith;
   const api = async (rawPath, body, method) => {
@@ -62,7 +65,7 @@ function screen(file, language, { data = {}, errors = {}, me = {}, store = new M
       serverSettings = { ...serverSettings, ...writes };
       if (holding) { holding = false; await new Promise(resolve => { releaseHeld = resolve; }); }
       if (lost) throw new Error('network');
-      return payroll ? payrollView(serverSettings) : { ...serverSettings };
+      return payroll && !legacyPayroll ? payrollView(serverSettings) : { ...serverSettings };
     }
     if (forbidNext && !path.startsWith('/admin/cash/commands/')) { forbidNext = false; throw Object.assign(new ApiError('forbidden'), { status: 403 }); }
     if (path.startsWith('/admin/cash/commands/')) { if (lost) throw new Error('network'); return { entry: typeof receipt === 'function' ? await receipt(path.split('/').pop()) : receipt }; }
@@ -204,6 +207,22 @@ for (const language of ['ar', 'en']) {
     assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 ₪ → 10 ₪` }), 'compared against the saved 12, not the stale 10');
     config.dialogs.at(-1).yes(); await flush();
     assert.equal(config.server().parcelPrice, 10);
+  }
+
+  // A new app can still edit the common settings while the server runs a pre-payroll release.
+  {
+    const { pickupPayPerKm, ...settings } = settingsBase;
+    const config = screen('settings', language, { me: { settings }, effects: true, legacyPayroll: true });
+    assert.ok(!nodes(config.render(), 'Field').some(props => props.label.startsWith(c.set_pickupPayPerKm)),
+      'the rollback server did not advertise payroll');
+    field(config.render(), c.set_parcelPrice).onChangeText(typed12);
+    await tap(config, c.save);
+    config.dialogs[0].yes(); await flush();
+    assert.equal(field(config.render(), c.set_parcelPrice).value, '12', 'the flat legacy reply becomes the new baseline');
+    field(config.render(), c.set_parcelPrice).onChangeText(typed14);
+    await tap(config, c.save);
+    config.dialogs[1].yes(); await flush();
+    assert.deepEqual(config.calls.at(-1).body, { parcelPrice: 14, expected: { parcelPrice: 12 } });
   }
 
   // The initial payroll response can arrive before or after the first confirmed save.

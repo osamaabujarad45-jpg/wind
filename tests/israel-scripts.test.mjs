@@ -66,8 +66,14 @@ case "$url" in
     [ -e "$DRY_ENV_OUT" ] || exit 7; echo '{"ready":true}' ;;
   *:4000/*) up=""; [ "$(cat "$STATE/wind-api" 2>/dev/null)" = active ] && up=1
     if [ -n "$probe" ]; then if [ -n "$up" ]; then echo 200; exit 0; fi; echo 000; exit 7; fi
+    if [ -n "$FAKE_FOREIGN_API" ]; then echo '{"ready":true}'; exit 0; fi
     [ -n "$up" ] && [ ! -e "$LIVE/BAD" ] && ! "$NODE" "$HELPER" poison "$DB" || exit 7; echo '{"ready":true}' ;;
 esac`);
+stub('ss', `if [ -n "$FAKE_FOREIGN_API" ]; then pid=8080
+elif [ "$(cat "$STATE/wind-api" 2>/dev/null)" = active ]; then pid=4242
+else exit 0
+fi
+printf 'LISTEN 0 511 127.0.0.1:4000 0.0.0.0:* users:(("node",pid=%s,fd=23))\\n' "$pid"`);
 // A signal right after a given rename, such as restore's move of the replacement into place.
 stub('mv', '/bin/mv "$@"; rc=$?; if [ -n "$FAKE_TERM_AFTER_MV_FROM" ]; then case "$*" in *"$FAKE_TERM_AFTER_MV_FROM"*) kill -TERM "$PPID" ;; esac; fi; exit $rc');
 stub('sudo', 'w=""; while [ $# -gt 0 ]; do case "$1" in -u) w=$2; shift 2 ;; -E) shift ;; *) break ;; esac; done; if [ "$w" = wind ] && [ -n "$FAKE_WIND_UNREADABLE" ]; then for a; do case "$a" in *"$FAKE_WIND_UNREADABLE") echo "Permission denied" >&2; exit 1 ;; esac; done; fi; exec "$@"');
@@ -394,6 +400,15 @@ ${r.err}`);
   assert.deepEqual([unit('caddy'), unit('wind-api')], ['active', 'active']);
   assert.match(r.err, /previous database is live again/);
   assert.ok(!existsSync(hold));
+
+  // A foreign listener can answer the readiness URL even though the systemd API never bound the socket.
+  setUnits(); freshDb(db);
+  r = run(restore, [copy, '--open'], { FAKE_FOREIGN_API: '1' });
+  assert.equal(r.status, 2, r.err);
+  assert.match(r.err, /API did not become ready on the previous database/);
+  assert.deepEqual(notes(db), ['first'], 'a foreign readiness answer cannot commit the replacement');
+  assert.deepEqual([unit('caddy'), existsSync(hold)], ['inactive', true]);
+  rmSync(hold);
 
   // 10. A failed restore while an earlier restore's hold is still owed its reconciliation keeps that hold and stays closed.
   setUnits(); writeFileSync(hold, 'restored earlier: re-apply\n');
