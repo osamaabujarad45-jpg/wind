@@ -111,7 +111,7 @@ const themed = readdirSync(new URL('../src/', import.meta.url), { recursive: tru
 assert.ok(themed.length > 100);
 for (const rel of themed) {
   const source = readFileSync(new URL(`../src/${rel}`, import.meta.url), 'utf8');
-  const fromUi = [...source.matchAll(/import \{([^}]*)\} from '(?:\.\.?\/)+ui';/g)].map(m => m[1]).join(',');
+  const fromUi = [...source.matchAll(/(?:import|export)(?: type)? \{([^}]*)\} from '(?:\.\.?\/)+ui';/g)].map(m => m[1]).join(',');
   for (const fixed of ['palette', 'tones', 'statusTone', 'shadow', 'sheetShadow']) assert.ok(!new RegExp(`\\b${fixed}\\b`).test(fromUi), `${rel} imports the fixed Day ${fixed} from ui.tsx: read useTheme()`);
   assert.doesNotMatch(source, /\bafterDark\(/, `${rel} decides Night itself: the theme context does`);
 }

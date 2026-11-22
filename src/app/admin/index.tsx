@@ -25,7 +25,7 @@ type Stats = {
 };
 
 // Validated with the dataviz palette checker (CVD-safe on the paper surface);
-// both series hold ≥3:1 against the white card.
+// both series hold ≥3:1 against the white Day card and the Night card (#121F1A), so they stay fixed in both themes.
 const SERIES = { commission: '#2F6DB5', subscriptions: '#C77420' };
 
 export default function Dashboard() {
