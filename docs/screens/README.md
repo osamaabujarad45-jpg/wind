@@ -39,6 +39,8 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 | Order · delivered | `/order/1` | `src/app/order/[id].tsx` | [order-done.png](ar/order-done.png) | [order-done.png](en/order-done.png) |
 | Receipt | `/receipt/1` | `src/app/receipt/[id].tsx` | [receipt.png](ar/receipt.png) | [receipt.png](en/receipt.png) |
 | Account | `/account` | `src/parts.tsx (AccountScreen)` | [account.png](ar/account.png) | [account.png](en/account.png) |
+| Account · Night theme (Appearance: Automatic stays Day for customers) | `/account` | `src/parts.tsx (ThemeCard)` | [account-night.png](ar/account-night.png) | [account-night.png](en/account-night.png) |
+| My orders · Night theme | `/orders` | `src/app/(customer)/orders.tsx` | [orders-night.png](ar/orders-night.png) | [orders-night.png](en/orders-night.png) |
 | Edit profile | `/profile` | `src/app/profile.tsx` | [profile.png](ar/profile.png) | [profile.png](en/profile.png) |
 | Edit profile · phone verification available (synthetic reply, Verify live) | `/profile` | `src/phone-card.tsx` | [profile-phone-ready.png](ar/profile-phone-ready.png) | [profile-phone-ready.png](en/profile-phone-ready.png) |
 | Edit profile · code requested, provider accepted (synthetic), not confirmed as delivered | `/profile` | `src/phone-card.tsx` | [profile-phone-code.png](ar/profile-phone-code.png) | [profile-phone-code.png](en/profile-phone-code.png) |
@@ -69,6 +71,7 @@ For Claude Code: open any PNG below with the Read tool to see the screen, then e
 | Support inbox (conversations waiting first) | `/admin/support` | `src/app/admin/support.tsx` | [admin-support.png](ar/admin-support.png) | [admin-support.png](en/admin-support.png) |
 | Support inbox on a desktop: list and conversation side by side | `/admin/support` | `src/app/admin/support.tsx` | [admin-support-desktop.png](ar/admin-support-desktop.png) | [admin-support-desktop.png](en/admin-support-desktop.png) |
 | Dashboard on a desktop (1280 px): side rail instead of bottom tabs | `/admin` | `src/app/admin/_layout.tsx` | [admin-desktop.png](ar/admin-desktop.png) | [admin-desktop.png](en/admin-desktop.png) |
+| Dashboard on a desktop · Night theme | `/admin` | `src/app/admin/_layout.tsx` | [admin-desktop-night.png](ar/admin-desktop-night.png) | [admin-desktop-night.png](en/admin-desktop-night.png) |
 | All orders | `/admin/orders` | `src/app/admin/orders.tsx` | [admin-orders.png](ar/admin-orders.png) | [admin-orders.png](en/admin-orders.png) |
 | Parcel · delivery code recovery | `/order/7` | `src/app/order/[id].tsx` | [admin-order.png](ar/admin-order.png) | [admin-order.png](en/admin-order.png) |
 | Users | `/admin/users` | `src/app/admin/users.tsx` | [admin-users.png](ar/admin-users.png) | [admin-users.png](en/admin-users.png) |
