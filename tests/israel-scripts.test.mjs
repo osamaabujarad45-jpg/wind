@@ -433,6 +433,9 @@ ${r.err}`);
     const image = exec.match(/(ghcr\.io\/project-osrm\/osrm-backend@sha256:[0-9a-f]{64})/)[1];
     assert.ok(build.includes(`image=${image} `), 'the graph and the server come from the same image');
     const corpus = build.match(/^docker run -d --rm --name osrm-corpus (.*)$/m)[1];
+    const readable = build.indexOf(`find "$(realpath "$out")" -maxdepth 1 -type f -name 'region.osrm*' -exec chmod a+r {} +`);
+    assert.ok(readable > build.indexOf('osrm-customize') && readable < build.indexOf('--name osrm-corpus'),
+      'the graph is readable by the unprivileged server before the corpus runs');
     for (const flag of ['--read-only', '--user 65534:65534', '--cap-drop=ALL', '--memory=1g --memory-swap=1g', ':/data:ro"', '--max-table-size 100']) assert.ok(corpus.includes(flag), `corpus ${flag}`);
     assert.ok(provision.indexOf('# Road routing (SPEC-routing-eta.md)') > provision.indexOf('systemctl enable wind-api'), 'after every other step');
     assert.ok(provision.indexOf('apt-get install -y -q docker.io') > provision.indexOf('systemctl enable wind-api'), 'Docker is installed there too');
@@ -517,6 +520,13 @@ ${r.err}`);
       assert.equal(res.status, 2, `${why}: ${res.stderr}`);
       assert.match(res.stderr, message, why);
     }
+    // A failed extract download stops the build before any graph step (22 Nov: it went on to osmium with no extract).
+    const fresh = join(srv, 'osrm-3');
+    const res = spawnSync('sh', [fileURLToPath(new URL('../infra/osrm/build-west-bank.sh', import.meta.url)), '/dev/null', fresh],
+      { encoding: 'utf8', env: { PATH: `${b12}:${process.env.PATH}`, WIND_OSRM_LIVE: join(srv, 'osrm'), OSRM_DEAD: '1' } }); // the stub curl fails
+    assert.equal(res.status, 1, res.stderr);
+    assert.match(res.stderr, /could not download .*pass a dated extract/);
+    assert.ok(!existsSync(join(fresh, 'source.osm.pbf')));
   }
   console.log('israel-scripts: install, backup and restore failure paths passed');
 } finally {

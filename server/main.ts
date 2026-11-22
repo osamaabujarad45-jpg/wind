@@ -4517,7 +4517,12 @@ if (import.meta.main) {
   } else {
     (await run('DELETE FROM checkpoint_reports WHERE created_at < ?', Date.now() - 30 * DAY)); // only the last two hours are ever shown
     (await pruneExpired());
-    setInterval(async () => { try { (await pruneExpired()); (await alertMissedBackup()); } catch (error) { logServerError('maintenance_failed', error); } }, 60 * 60_000).unref(); // expired throttles never pile up
+    const maintenance = async () => { try { (await pruneExpired()); (await alertMissedBackup()); } catch (error) { logServerError('maintenance_failed', error); } };
+    // Ten minutes after start too, so a restart does not wait an hour to notice a stale backup (and a stale alert allowance is
+    // cleared before the next outage; Haiku PR #103 recheck 5). An install's dry run is stopped within about four minutes (60 tries
+    // of a 3 s probe and 1 s pause), so it never gets here; even if it did, its database copy has every push target removed.
+    setTimeout(maintenance, 10 * 60_000).unref();
+    setInterval(maintenance, 60 * 60_000).unref(); // expired throttles never pile up
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
     setInterval(async () => { try { (await alertReleasedJobs()); } catch (error) { logServerError('maintenance_failed', error); } }, 60_000).unref(); // scheduled-job release alerts

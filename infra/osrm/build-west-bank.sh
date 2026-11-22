@@ -20,14 +20,18 @@ live_link=${WIND_OSRM_LIVE:-/srv/osrm}
 case $(realpath -m "$out") in "$(realpath -m "$live_link")"|/srv/osrm|/srv/osrm/) echo "refusing to build into the live graph $live_link" >&2; exit 2;; esac
 [ ! -e "$out/region.osrm.mldgr" ] || { echo "refusing: $out already holds a graph; build into a new directory" >&2; exit 2; }
 image=ghcr.io/project-osrm/osrm-backend@sha256:ef49d1a83c0aa0707aad2338127f96f39af78374bb6c1b3ffa07cf13b92ac572 # v26.6.1-amd64-alpine
-url=https://download.geofabrik.de/asia/israel-and-palestine-latest.osm.pbf
+url=https://download.geofabrik.de/asia/israel-and-palestine/israel-and-palestine-latest.osm.pbf # Geofabrik's region folder; the old top-level name redirects here
 mkdir -p "$out"
 cp "$boundary" "$out/boundary.geojson"
 if [ -n "$source" ]; then
   [ "$(realpath "$source")" = "$(realpath -m "$out/source.osm.pbf")" ] || cp "$source" "$out/source.osm.pbf"
   url="file:$(realpath "$source")"
 else
-  curl -fsSL -o "$out/source.osm.pbf.part" "$url" && mv "$out/source.osm.pbf.part" "$out/source.osm.pbf" # never truncate a kept extract
+  # A failed download stops here: under sh, a failure inside `a && b` does not trigger set -e, and on 22 Nov the build went on
+  # to osmium with no extract (Geofabrik's "latest" redirect led to a dated file that was not there yet). Pass a dated extract
+  # as the third argument when that happens.
+  curl -fsSL -o "$out/source.osm.pbf.part" "$url" || { echo "could not download $url; pass a dated extract as the third argument" >&2; exit 1; }
+  mv "$out/source.osm.pbf.part" "$out/source.osm.pbf" # never truncate a kept extract
 fi
 docker run --rm --memory=2g --memory-swap=2g -v "$out:/d" debian:bookworm-slim sh -euc 'apt-get update -qq && apt-get install -qq -y osmium-tool >/dev/null
   osmium extract -s simple -p /d/boundary.geojson -o /d/region.osm.pbf --overwrite /d/source.osm.pbf
@@ -37,6 +41,9 @@ for step in "osrm-extract -p /opt/car.lua /d/region.osm.pbf" "osrm-partition /d/
   docker run --rm --memory=1g --memory-swap=1g -v "$out:/d" "$image" $step
 done
 rm -f "$out/region.osm.pbf"
+# osrm-extract writes region.osrm.fileIndex as 0700 root; the server runs as nobody (wind-osrm unit and the corpus below), so the
+# graph is made world-readable, never writable (22 Nov: the first build on the Israel host failed its corpus on exactly this).
+chmod a+rX "$out"; find "$(realpath "$out")" -maxdepth 1 -type f -name 'region.osrm*' -exec chmod a+r {} + # read only, no execute; links are not followed
 
 # Every value is computed before the manifest is written, so a failure stops the script instead of writing an empty field.
 ls "$out"/region.osrm.* >/dev/null

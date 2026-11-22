@@ -451,7 +451,12 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, multili
     return () => sub.remove();
   }, [focused, ref]);
   return <View style={styles.field}>
-    <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
+    {/* Tapping the label focuses its field, as on the web (A53 walk, 22 Nov). Screen readers already hear the label on the input,
+        so the label and its text are hidden from them, and it is no keyboard stop on the web (Haiku PR #105 M1, M2). */}
+    <Pressable accessible={false} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden aria-hidden tabIndex={-1}
+      disabled={disabled} onPress={() => ref.current?.focus()}>
+      <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt>
+    </Pressable>
     <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, disabled && styles.inputDisabled, !!error && styles.inputError, multiline && { alignItems: 'flex-start' }]}>
       {icon && <Ionicons name={icon} size={iconSize.md} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
       <TextInput ref={ref} maxFontSizeMultiplier={maxScale} accessibilityLabel={label} accessibilityHint={error} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={disabled ? palette.secondary : palette.faint}
