@@ -687,6 +687,20 @@
     "session": "freshDriver"
   },
   {
+    "id": "support",
+    "group": "Customer",
+    "name": "Message Wind support (in-app conversation)",
+    "route": "/support",
+    "file": "src/app/support.tsx",
+    "ar": [
+      "ar/support.png"
+    ],
+    "en": [
+      "en/support.png"
+    ],
+    "session": "customer"
+  },
+  {
     "id": "admin-dashboard",
     "group": "Admin",
     "name": "Dashboard",
@@ -697,6 +711,36 @@
     ],
     "en": [
       "en/admin-dashboard.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-support",
+    "group": "Admin",
+    "name": "Support inbox (conversations waiting first)",
+    "route": "/admin/support",
+    "file": "src/app/admin/support.tsx",
+    "ar": [
+      "ar/admin-support.png"
+    ],
+    "en": [
+      "en/admin-support.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-support-desktop",
+    "group": "Admin",
+    "name": "Support inbox on a desktop: list and conversation side by side",
+    "route": "/admin/support",
+    "file": "src/app/admin/support.tsx",
+    "desktop": true,
+    "tap": "ليلى حداد",
+    "ar": [
+      "ar/admin-support-desktop.png"
+    ],
+    "en": [
+      "en/admin-support-desktop.png"
     ],
     "session": "admin"
   },

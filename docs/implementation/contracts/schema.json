@@ -522,13 +522,13 @@
       "type": "table",
       "name": "support_messages",
       "tableName": "support_messages",
-      "sql": "CREATE TABLE support_messages (\n  id INTEGER PRIMARY KEY, thread_id INTEGER NOT NULL REFERENCES support_threads(id), sender_id INTEGER NOT NULL REFERENCES users(id),\n  from_staff INTEGER NOT NULL CHECK (from_staff IN (0,1)), body TEXT NOT NULL, created_at INTEGER NOT NULL, request_id TEXT)"
+      "sql": "CREATE TABLE support_messages (\n  id INTEGER PRIMARY KEY, thread_id INTEGER NOT NULL REFERENCES support_threads(id), sender_id INTEGER NOT NULL REFERENCES users(id),\n  from_staff INTEGER NOT NULL CHECK (from_staff IN (0,1)), body TEXT NOT NULL, created_at INTEGER NOT NULL, request_id TEXT,\n  order_id INTEGER REFERENCES orders(id))"
     },
     {
       "type": "table",
       "name": "support_threads",
       "tableName": "support_threads",
-      "sql": "CREATE TABLE support_threads (\n  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), order_id INTEGER REFERENCES orders(id),\n  status TEXT NOT NULL CHECK (status IN ('open','closed')), tags TEXT NOT NULL DEFAULT '', last_from TEXT NOT NULL CHECK (last_from IN ('user','staff')),\n  closed_by INTEGER REFERENCES users(id), closed_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)"
+      "sql": "CREATE TABLE support_threads (\n  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), order_id INTEGER REFERENCES orders(id),\n  status TEXT NOT NULL CHECK (status IN ('open','closed')), tags TEXT NOT NULL DEFAULT '', last_from TEXT NOT NULL CHECK (last_from IN ('user','staff')),\n  closed_by INTEGER REFERENCES users(id), closed_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n  waiting_since INTEGER)"
     },
     {
       "type": "table",
@@ -5448,11 +5448,29 @@
           "notnull": 0,
           "dflt_value": null,
           "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "order_id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
         }
       ],
       "foreignKeys": [
         {
           "id": 0,
+          "seq": 0,
+          "table": "orders",
+          "from": "order_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
           "seq": 0,
           "table": "users",
           "from": "sender_id",
@@ -5462,7 +5480,7 @@
           "match": "NONE"
         },
         {
-          "id": 1,
+          "id": 2,
           "seq": 0,
           "table": "support_threads",
           "from": "thread_id",
@@ -5553,6 +5571,14 @@
           "name": "updated_at",
           "type": "INTEGER",
           "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "waiting_since",
+          "type": "INTEGER",
+          "notnull": 0,
           "dflt_value": null,
           "pk": 0
         }

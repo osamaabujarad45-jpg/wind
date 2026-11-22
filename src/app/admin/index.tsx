@@ -15,7 +15,7 @@ import { fill } from '../../copy';
 type Stats = {
   gmv: number; commission: number; subscriptions: number; discounts: number; profit: number; completed: number; activeSubscriptions: number;
   statuses: Partial<Record<OrderStatus, number>>; users: Record<string, number>;
-  pendingDrivers: number; pendingSubscriptions: number; openSupport?: number; openIncidents: number; backupStale: boolean; blockReviewsOverdue?: number;
+  pendingDrivers: number; pendingSubscriptions: number; openSupport?: number | null; openIncidents: number; backupStale: boolean; blockReviewsOverdue?: number;
   pickupPayReviewsOpen: number;
   pickupPayReviews?: { orderId: number; orderCode: string; driverName: string | null; suggestedCents: number | null;
     reason: NonNullable<Order['pickupPayReview']>['reason'] }[];

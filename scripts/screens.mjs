@@ -235,6 +235,16 @@ await call('/merchant/settings', sweets.token, { hours: everyDay(opensAt, (opens
 db.prepare("UPDATE orders SET status = 'on_hold', updated_at = ? WHERE id = ?").run(Date.now() - 3 * 86_400_000, shopHold.id);
 db.prepare("UPDATE shop_orders SET merchant_state = 'handed_over' WHERE order_id = ?").run(shopHold.id);
 
+// In-app support inbox (SPEC-support-inbox.md): Layla writes about her ride, support answers; the admin sees it waiting first.
+// Seeded before the web build: the synchronous export blocks this process's API server, and the first fetch after it
+// reuses a keep-alive socket the server has already timed out (ECONNRESET).
+{
+  const first = await call('/support/messages', layla.token, { body: 'الرحلة تأخرت والسائق لا يرد على الهاتف', orderId: searching.id, requestId: randomUUID() });
+  await call(`/admin/support/${first.thread.id}/reply`, boss.token, { body: 'السائق عالق عند حاجز، الوصول خلال 15 دقيقة تقريباً. نتابع معه.', requestId: randomUUID() });
+  await call(`/admin/support/${first.thread.id}/tags`, boss.token, { tags: ['checkpoints', 'eta'] });
+  await call('/support/messages', layla.token, { body: 'تمام، شكراً كتير', requestId: randomUUID() });
+}
+
 // ---------- 2. web build + static server ----------
 if (!args.includes('--no-build') || !existsSync(join(webDir, 'index.html'))) {
   console.log('Building the web app…');
@@ -321,13 +331,6 @@ const screens = [
   { id: 'admin-subscriptions', group: 'Admin', name: 'Subscriptions', route: '/admin/subscriptions', file: 'src/app/admin/subscriptions.tsx', role: 'admin' },
   { id: 'admin-settings', group: 'Admin', name: 'Tariffs & settings', route: '/admin/settings', file: 'src/app/admin/settings.tsx', role: 'admin' },
 ].filter(s => !only || only.includes(s.id));
-// In-app support inbox (SPEC-support-inbox.md): Layla writes about her ride, support answers; the admin sees it waiting first.
-{
-  const first = await call('/support/messages', layla.token, { body: 'الرحلة تأخرت والسائق لا يرد على الهاتف', orderId: searching.id, requestId: randomUUID() });
-  await call(`/admin/support/${first.thread.id}/reply`, boss.token, { body: 'السائق عالق عند حاجز، الوصول خلال 15 دقيقة تقريباً. نتابع معه.', requestId: randomUUID() });
-  await call(`/admin/support/${first.thread.id}/tags`, boss.token, { tags: ['checkpoints', 'eta'] });
-  await call('/support/messages', layla.token, { body: 'تمام، شكراً كتير', requestId: randomUUID() });
-}
 const tokens = { customer: layla.token, rider: nour.token, driver: ahmad.token, courier: recoveryDriver.token, idle: idleDriver.token, pending: sami.token, admin: boss.token, merchant: baker.token };
 
 // ---------- 4. capture ----------

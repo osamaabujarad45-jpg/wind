@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS support_threads (
   closed_by BIGINT CHECK (closed_by BETWEEN -9007199254740991 AND 9007199254740991) REFERENCES users(id) DEFERRABLE INITIALLY DEFERRED,
   closed_at BIGINT CHECK (closed_at BETWEEN -9007199254740991 AND 9007199254740991),
   created_at BIGINT NOT NULL CHECK (created_at BETWEEN -9007199254740991 AND 9007199254740991),
-  updated_at BIGINT NOT NULL CHECK (updated_at BETWEEN -9007199254740991 AND 9007199254740991)
+  updated_at BIGINT NOT NULL CHECK (updated_at BETWEEN -9007199254740991 AND 9007199254740991),
+  waiting_since BIGINT CHECK (waiting_since BETWEEN -9007199254740991 AND 9007199254740991)
 );
 CREATE INDEX IF NOT EXISTS support_threads_queue ON support_threads(status, updated_at);
 CREATE INDEX IF NOT EXISTS support_threads_user ON support_threads(user_id, status);
@@ -21,7 +22,8 @@ CREATE TABLE IF NOT EXISTS support_messages (
   from_staff SMALLINT NOT NULL CHECK (from_staff IN (0,1)),
   body TEXT NOT NULL,
   created_at BIGINT NOT NULL CHECK (created_at BETWEEN -9007199254740991 AND 9007199254740991),
-  request_id TEXT
+  request_id TEXT,
+  order_id BIGINT CHECK (order_id BETWEEN -9007199254740991 AND 9007199254740991) REFERENCES orders(id) DEFERRABLE INITIALLY DEFERRED
 );
 CREATE INDEX IF NOT EXISTS support_messages_thread ON support_messages(thread_id, id);
 CREATE UNIQUE INDEX IF NOT EXISTS support_messages_request ON support_messages(sender_id, request_id) WHERE request_id IS NOT NULL;
