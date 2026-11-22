@@ -136,7 +136,7 @@ for (const [input, expected] of [
     '../session': { useSession: () => ({ me: { user, capabilities: { emailVerification: true } }, refresh: async () => {}, signIn: async () => {}, language }) },
     '../entra-auth': { entraConfigured: false }, '../phone/client': { phoneApi: { capabilities: async () => ({ available: false, enabled: false }) } },
     '../phone/flow': { codeInput, gateOf }, '../phone/notice': { takeAuthNotice: () => null },
-    '../ui': { ...ui, fill, haptic: { success() {}, error() {} }, palette: {}, tones: {}, useCopy: () => ({ c, err: error => String(error) }) }, // palette: auth.tsx until slice 2
+    '../ui': { ...ui, fill, haptic: { success() {}, error() {} }, useCopy: () => ({ c, err: error => String(error) }) },
     ...themeModules('../'),
   };
   const load = file => {

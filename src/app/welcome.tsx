@@ -7,11 +7,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { ServiceIcon } from '../parts';
 import { useSession } from '../session';
 import { InstallLink } from '../install-link';
-import { Button, fill, haptic, headingFont, Logo, maxScale, palette, Press, Row, Txt, useCopy } from '../ui';
+import { Button, fill, haptic, headingFont, Logo, maxScale, Press, Row, Txt, useCopy } from '../ui';
+import { themedStyles, useTheme } from '../theme-context';
 
 const SLIDES = 3;
 
 export default function Welcome() {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { finishOnboarding, language, setLanguage } = useSession();
   const { c } = useCopy();
   const [index, setIndex] = useState(0);
@@ -66,6 +69,8 @@ export default function Welcome() {
 // Slide 1: the product itself, a small map with the pickup, the road and the drop-off pin (design review 17 Nov: the cube and
 // bar said nothing). Pure views, no image; the route follows reading direction, like the route rail in the app.
 function ServicesArt() {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { rtl } = useCopy();
   const reduced = useReducedMotion();
   const start = rtl ? 'right' : 'left', end = rtl ? 'left' : 'right';
@@ -86,6 +91,8 @@ function ServicesArt() {
 }
 
 function PriceArt({ label }: { label: string }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c, row, language } = useCopy(); // keyed Text below: Android re-measures after an in-app language switch
   return <View style={{ alignItems: 'center', gap: 18 }}>
     <Ionicons name="receipt-outline" size={64} color={palette.olive} />
@@ -99,6 +106,8 @@ function PriceArt({ label }: { label: string }) {
 
 // Slide 3: status steps and the 4-digit handover code.
 function HandoverArt({ label, steps }: { label: string; steps: string[] }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const reduced = useReducedMotion();
   return <View style={{ width: 270, gap: 14 }}>
     <View style={styles.panel}>
@@ -120,11 +129,11 @@ function HandoverArt({ label, steps }: { label: string; steps: string[] }) {
   </View>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((palette, theme) => StyleSheet.create({
   safe: { flex: 1, width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: palette.paper },
   pill: { paddingHorizontal: 14, minHeight: 44, borderRadius: 22, justifyContent: 'center', backgroundColor: palette.card },
   body: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 16, gap: 30 },
-  art: { minHeight: 220, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center', boxShadow: '0px 4px 14px rgba(14,31,25,0.06)' },
+  art: { minHeight: 220, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center', ...(theme.name === 'night' ? theme.shadow : { boxShadow: '0px 4px 14px rgba(14,31,25,0.06)' }) },
   footer: { paddingHorizontal: 20, paddingBottom: 16, gap: 18 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.field }, // inactive dots were 1.2:1 on paper
   dotOn: { width: 24, backgroundColor: palette.olive },
@@ -137,8 +146,8 @@ const styles = StyleSheet.create({
   avenue: { position: 'absolute', top: -20, width: 18, height: 190, backgroundColor: palette.card, opacity: 0.85 },
   routeDot: { position: 'absolute', width: 8, height: 8, borderRadius: 4, backgroundColor: palette.olive },
   pickup: { position: 'absolute', width: 18, height: 18, borderRadius: 9, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },
-  parcelChip: { position: 'absolute', padding: 4, borderRadius: 14, backgroundColor: palette.card, boxShadow: '0px 2px 8px rgba(14,31,25,0.10)' },
+  parcelChip: { position: 'absolute', padding: 4, borderRadius: 14, backgroundColor: palette.card, ...(theme.name === 'night' ? theme.shadow : { boxShadow: '0px 2px 8px rgba(14,31,25,0.10)' }) },
   panel: { backgroundColor: palette.card, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: palette.line },
   stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: palette.field, alignItems: 'center', justifyContent: 'center' },
   code: { fontSize: 28, fontFamily: headingFont.bold, color: palette.ink, letterSpacing: 6, writingDirection: 'ltr' },
-});
+}));

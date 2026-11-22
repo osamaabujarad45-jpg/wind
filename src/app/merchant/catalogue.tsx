@@ -4,9 +4,11 @@ import { useState } from 'react';
 import { ActivityIndicator, Switch, View } from 'react-native';
 import { api, useApi } from '../../api';
 import { minorFromText, type MerchantItem } from '../../model';
-import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Loading, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
+import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Loading, Row, Screen, Section, Txt, useCopy } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 export default function MerchantCatalogue() {
+  const { palette } = useTheme();
   const { c, language, money, err } = useCopy();
   const { data, error, reload } = useApi<{ items: MerchantItem[] }>('/merchant/catalogue');
   const [editing, setEditing] = useState<MerchantItem | 'new' | null>(null);

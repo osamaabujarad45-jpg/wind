@@ -7,7 +7,8 @@ import { isolate, ltr, minorFromText } from '../../model';
 import { useFormat } from '../../parts';
 import { useSession } from '../../session';
 import { storage } from '../../storage';
-import { Appear, Badge, Button, Card, confirm, Empty, ErrorText, Field, fill, haptic, Header, Loading, Row, Screen, tones, Txt, useCopy } from '../../ui';
+import { Appear, Badge, Button, Card, confirm, Empty, ErrorText, Field, fill, haptic, Header, Loading, Row, Screen, Txt, useCopy } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 type Balance = { driverId: number; name: string; phone: string; owedCents: number; pendingCents: number; lastRemittanceAt: number | null };
 // A-01: the form is saved in the admin's own secure slot before it is sent (it outlives a forced sign-out, like a pending
@@ -32,6 +33,7 @@ type PendingEntry = { id: number; amountCents: number; createdAt: number; userNa
 // Cashier view: every driver's cash balance, highest debt first. Handovers wait for the driver's confirmation;
 // one a driver cannot confirm (blocked, gone, dispute deadlock) is resolved here with a recorded reason (T25).
 export default function AdminCash() {
+  const { tones } = useTheme();
   const { c, money, err, rtl } = useCopy();
   const { date } = useFormat();
   const { me } = useSession();

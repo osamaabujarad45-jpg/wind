@@ -9,6 +9,7 @@ import ts from 'typescript';
 import { copy, fill } from '../src/copy.ts';
 import * as model from '../src/model.ts';
 import * as cashCommand from '../src/admin-cash-command.ts';
+import { themeModules } from './theme-mock.mjs';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -71,7 +72,7 @@ function screen(file, language, { data = {}, errors = {}, me = {}, store = new M
   };
   const c = copy[language];
   const ui = new Proxy({
-    fill, palette: {}, tones: {}, haptic: { success() {}, error() {} },
+    fill, haptic: { success() {}, error() {} },
     confirm: (message, yes, yesLabel, noLabel) => dialogs.push({ message, yes, yesLabel, noLabel }),
     useCopy: () => ({ c, rtl: language === 'ar', err: e => typeof e === 'string' ? e : e.message, money: n => String(n), largeText: false }),
   }, { get: (target, name) => name in target ? target[name] : String(name) });
@@ -90,6 +91,7 @@ function screen(file, language, { data = {}, errors = {}, me = {}, store = new M
     '../../storage': { storage: { exclusive: run => run(), get: async key => store.get(key) ?? null, set: async (key, value) => { if (value === null) store.delete(key); else store.set(key, value); } } },
     '../../booking': { newRequestId: () => randomUUID() }, // a real UUID: a saved cash command with any other id is refused
     '../../ui': ui,
+    ...themeModules('../../'),
     'expo-router': { router: {} },
     '@expo/vector-icons': { Ionicons: 'Ionicons' },
   };

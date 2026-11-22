@@ -510,7 +510,7 @@ export function AccountScreen() {
       <PasswordCard />
       {pushSupported() ? <PushRow /> : Platform.OS !== 'web' && <NativePushRow />}
     </ListGroup>
-    {user.role === 'driver' && <ThemeCard captain />}
+    <ThemeCard captain={user.role === 'driver'} />
     <ListGroup>
       <ListRow icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />
       {/* MER-05: merchant mode is a link inside this account, never a role switch; it appears only while shop delivery is on. */}

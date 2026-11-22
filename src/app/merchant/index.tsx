@@ -10,11 +10,13 @@ import { registerNativePush } from '../../native-push';
 import PinSheet from '../../pin-sheet';
 import { useSession } from '../../session';
 import { useCountdown } from '../../shop-ui';
-import { Badge, Button, Card, Choices, Empty, ErrorText, Field, fill, Header, ListGroup, ListRow, Loading, palette, Press, Row, Screen, Section, Stat, tones, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, Choices, Empty, ErrorText, Field, fill, Header, ListGroup, ListRow, Loading, Press, Row, Screen, Section, Stat, Txt, useCopy } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 type Statement = { balanceAgorot: number; payableAgorot: number; entries: { id: number; orderId: number | null; kind: string; amountAgorot: number; note: string; reference: string | null; createdAt: number }[] };
 
 export default function MerchantHome() {
+  const { palette } = useTheme();
   const { c, money, rtl, err, language } = useCopy();
   const mine = useApi<{ merchant: Merchant | null }>('/merchant');
   const merchant = mine.data?.merchant;
@@ -113,6 +115,7 @@ function Hours({ merchant, saved, onSaved }: { merchant: Merchant; saved: boolea
 }
 
 function InboxRow({ order }: { order: Order }) {
+  const { tones } = useTheme();
   const { c, money } = useCopy();
   const s = order.shop!;
   const clock = useCountdown(order.status === 'requested' && !s.state ? s.acceptDeadline : null, c.shopAcceptLeft);

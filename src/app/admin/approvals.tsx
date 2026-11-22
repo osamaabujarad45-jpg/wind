@@ -8,9 +8,11 @@ import { api, useApi } from '../../api';
 import { city, isCity, type Merchant, type Subscription, type User } from '../../model';
 import { useFormat } from '../../parts';
 import { useSession } from '../../session';
-import { Badge, Button, Card, confirm, Empty, ErrorText, fill, haptic, Header, Loading, Row, Screen, Section, tones, Txt, useCopy, WideContext } from '../../ui';
+import { Badge, Button, Card, confirm, Empty, ErrorText, fill, haptic, Header, Loading, Row, Screen, Section, Txt, useCopy, WideContext } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 export default function Approvals() {
+  const { tones } = useTheme();
   const { c, err, money, language } = useCopy();
   const { date } = useFormat();
   const { me } = useSession();

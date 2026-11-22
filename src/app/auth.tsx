@@ -12,12 +12,14 @@ import { entraConfigured, prepareEntraRequest, signInWithEntra, type EntraReques
 import { phoneApi } from '../phone/client';
 import { codeInput, gateOf, type Capabilities } from '../phone/flow';
 import { takeAuthNotice } from '../phone/notice';
-import { Appear, Button, Card, Check, Choices, ErrorText, Field, haptic, Loading, Logo, palette, Press, Row, Screen, Txt, useCopy } from '../ui';
+import { Appear, Button, Card, Check, Choices, ErrorText, Field, haptic, Loading, Logo, Press, Row, Screen, Txt, useCopy } from '../ui';
+import { useTheme } from '../theme-context';
 
 const HERO = FadeInUp.duration(400);
 const FORM = FadeInDown.duration(300).delay(120);
 
 export default function Auth() {
+  const { palette } = useTheme();
   const { signIn, language, setLanguage } = useSession();
   const { c, err } = useCopy();
   const still = useReducedMotion(); // reduced motion: render the auth card without entrance movement

@@ -1,5 +1,5 @@
 // Design system v2: Day and Night for the whole app. Day by default; captains go Night after sunset (afterDark), and a Day,
-// Night or Automatic choice is saved on this device (Account offers it to captains until every screen reads the theme).
+// Night or Automatic choice is saved on this device (Account, every role; Automatic is Night only for captains).
 // The swap is instant, with no animated transition, so reduced motion has nothing to stop and the new theme reads at once.
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, type ViewStyle } from 'react-native';
