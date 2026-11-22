@@ -1,6 +1,7 @@
 #!/bin/bash
 # Provision the Wind production VM (Ubuntu 24.04) the way docs/operations/deploy.md describes the host: Node 24 in /opt/node,
-# the API under systemd on 127.0.0.1:4000, Caddy for TLS, SQLite at /data/wind.db, hourly backups. Idempotent.
+# the API under systemd on 127.0.0.1:4000, Caddy for TLS, SQLite at /data/wind.db, hourly backups, and West Bank road routing
+# (OSRM in Docker on 127.0.0.1:5000) once a graph has been built into /srv/osrm. Idempotent.
 # Hardening over the student host: the API runs as the unprivileged user `wind`, not root.
 set -euo pipefail
 HOST=${1:?public host name, e.g. 20.217.202.98.sslip.io}
@@ -12,6 +13,8 @@ export DEBIAN_FRONTEND=noninteractive
 
 apt-get update -q
 apt-get install -y -q curl ca-certificates debian-keyring debian-archive-keyring apt-transport-https gnupg unattended-upgrades xz-utils
+# Docker runs only the road-routing container and the graph build (infra/osrm/build-west-bank.sh); Ubuntu's own package.
+apt-get install -y -q docker.io
 
 # Node 24 (same major as the gate), checked against the published checksum.
 if [ ! -x /opt/node/bin/node ] || [ "$(/opt/node/bin/node -v)" != "v$NODE_VERSION" ]; then
@@ -129,6 +132,37 @@ if ! grep '^WIND_BACKUP_MAX_AGE_HOURS=' /etc/wind-api.env | tail -n1 | grep -qE 
   sed -i '/^WIND_BACKUP_MAX_AGE_HOURS=/d' /etc/wind-api.env
   [ ! -s /etc/wind-api.env ] || [ -z "$(tail -c1 /etc/wind-api.env)" ] || echo >> /etc/wind-api.env
   echo 'WIND_BACKUP_MAX_AGE_HOURS=3' >> /etc/wind-api.env
+fi
+
+# Road routing (SPEC-routing-eta.md). The graph is built beside the live one with infra/osrm/build-west-bank.sh and promoted by
+# pointing the /srv/osrm link at it (docs/operations/deploy.md). The container listens on loopback only, read-only, with the image
+# pinned to the digest the build used, and memory capped so the API keeps its RAM on this 4 GiB VM. Without a graph the unit does
+# not start and the API is not pointed at it, so it keeps its marked straight-line estimates; with one, an OSRM outage still
+# falls back to them after OSRM_TIMEOUT_MS (3 s).
+cat > /etc/systemd/system/wind-osrm.service <<'EOF'
+[Unit]
+Description=Wind road routing (OSRM, West Bank graph in /srv/osrm)
+After=docker.service
+Requires=docker.service
+ConditionPathExists=/srv/osrm/region.osrm.mldgr
+
+[Service]
+ExecStartPre=-/usr/bin/docker rm -f wind-osrm
+ExecStart=/usr/bin/docker run --rm --name wind-osrm --memory=1g --memory-swap=1g --read-only -p 127.0.0.1:5000:5000 -v /srv/osrm/:/data:ro ghcr.io/project-osrm/osrm-backend@sha256:ef49d1a83c0aa0707aad2338127f96f39af78374bb6c1b3ffa07cf13b92ac572 osrm-routed --algorithm mld --max-table-size 100 /data/region.osrm
+ExecStop=/usr/bin/docker stop wind-osrm
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+if [ -e /srv/osrm/region.osrm.mldgr ]; then
+  systemctl enable wind-osrm >/dev/null
+  systemctl restart wind-osrm # picks up a newly promoted graph
+  grep -q '^OSRM_URL=' /etc/wind-api.env || { [ -z "$(tail -c1 /etc/wind-api.env)" ] || echo >> /etc/wind-api.env; echo 'OSRM_URL=http://127.0.0.1:5000' >> /etc/wind-api.env; }
+else
+  echo "no road graph in /srv/osrm yet: routing stays off (see docs/operations/deploy.md, Road routing)" >&2
 fi
 
 # Validated before it replaces the working configuration; a bad one leaves Caddy as it was (Sol ops review 21 Nov).

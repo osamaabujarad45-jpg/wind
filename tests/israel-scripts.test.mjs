@@ -57,7 +57,11 @@ case "$*" in *" -w "*) probe=1 ;; *) probe="" ;; esac
 case "$url" in
   *169.254.169.254*) echo '{"access_token":"tok"}'; exit 0 ;;
   *blob.core.windows.net*) [ -z "$FAKE_PUT_FAIL" ] || exit 22; exit 0 ;;
-  *:4010/*) if [ -n "$probe" ]; then echo 000; exit 7; fi; [ -z "$FAKE_DRY_FAIL" ] && [ -e "$DRY_ENV_OUT" ] || exit 7; echo '{"ready":true}' ;; # ready once the dry run is up
+  # Ready once the dry run is up. sleep is stubbed out, so the script's 60 tries take no time: wait here (up to 5 s) for the
+  # stand-in API to start, or a slow node start fails the dry run (seen 22 Nov in the sandbox).
+  *:4010/*) if [ -n "$probe" ]; then echo 000; exit 7; fi; [ -z "$FAKE_DRY_FAIL" ] || exit 7
+    i=0; while [ ! -e "$DRY_ENV_OUT" ] && [ $i -lt 50 ]; do /bin/sleep 0.1; i=$((i + 1)); done
+    [ -e "$DRY_ENV_OUT" ] || exit 7; echo '{"ready":true}' ;;
   *:4000/*) up=""; [ "$(cat "$STATE/wind-api" 2>/dev/null)" = active ] && up=1
     if [ -n "$probe" ]; then if [ -n "$up" ]; then echo 200; exit 0; fi; echo 000; exit 7; fi
     [ -n "$up" ] && [ ! -e "$LIVE/BAD" ] && ! "$NODE" "$HELPER" poison "$DB" || exit 7; echo '{"ready":true}' ;;
@@ -414,6 +418,22 @@ ${r.err}`);
   assert.deepEqual(notes(db), ['first'], 'the original database is live again');
   assert.equal(count(db, 'sessions'), 1);
   assert.deepEqual([unit('caddy'), unit('wind-api'), existsSync(hold)], ['active', 'active', false]);
+  // 12. Road routing: the container is reachable from this host only, read-only, on the same pinned image as the graph build; the
+  //     API is pointed at it only once a graph exists, so a host without one keeps the marked estimates.
+  {
+    const provision = readFileSync(new URL('../infra/vm-israel/provision.sh', import.meta.url), 'utf8');
+    const build = readFileSync(new URL('../infra/osrm/build-west-bank.sh', import.meta.url), 'utf8');
+    const exec = provision.match(/^ExecStart=\/usr\/bin\/docker run (.*)$/m)[1];
+    assert.match(exec, /-p 127\.0\.0\.1:5000:5000 /, 'loopback only');
+    assert.ok(!/-p (0\.0\.0\.0:)?5000/.test(exec), 'never on a public interface');
+    assert.match(exec, /--read-only .*-v \/srv\/osrm\/:\/data:ro /, 'and it cannot change the graph');
+    const image = exec.match(/(ghcr\.io\/project-osrm\/osrm-backend@sha256:[0-9a-f]{64})/)[1];
+    assert.ok(build.includes(`image=${image} `), 'the graph and the server come from the same image');
+    assert.match(provision, /^ConditionPathExists=\/srv\/osrm\/region\.osrm\.mldgr$/m);
+    const gate = provision.indexOf('if [ -e /srv/osrm/region.osrm.mldgr ]; then');
+    assert.ok(gate > 0 && provision.indexOf("echo 'OSRM_URL=http://127.0.0.1:5000'") > gate
+      && provision.indexOf("echo 'OSRM_URL=http://127.0.0.1:5000'") < provision.indexOf('\nfi\n', gate), 'OSRM_URL only with a graph');
+  }
   console.log('israel-scripts: install, backup and restore failure paths passed');
 } finally {
   rmSync(root, { recursive: true, force: true });
