@@ -109,7 +109,19 @@ const install = script('install-release.sh', [nodeSwap,
   configSwap, processSwap, ["prune /opt 'windapi-old-*'", `prune ${opt} 'windapi-old-*'`]]);
 const backup = script('backup.sh', [nodeSwap, ['DIR=/data/backups; DB=/data/wind.db', `DIR=${data}/backups; DB=${db}`], ['exec 8</data', `exec 8<${data}`]]);
 const restore = script('restore.sh', [nodeSwap, configSwap, processSwap, ['DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold', `DATA=${data}; DB=${db}; HOLD=${hold}`]]);
-const sqliteConfig = 'SUPPORT_CONTACT=+972597127547\nWIND_FIREBASE_API_KEY=secret\n';
+const sqliteConfig = [
+  'SUPPORT_CONTACT=+972597127547',
+  'WIND_PUSH_SUBJECT=mailto:fixture@example.invalid',
+  'WIND_TRUST_PROXY=1',
+  'WIND_IDENTITY_MODE=operator-verified',
+  'WIND_FIREBASE_API_KEY=placeholder',
+  'WIND_PUBSUB_ENABLED=true',
+  'WIND_PUBSUB_ENDPOINT=https://fixture.invalid',
+  'WIND_EXPO_PUSH_ENABLED=true',
+  'WIND_ACS_KEY=placeholder',
+  'OSRM_URL=https://fixture.invalid',
+  '',
+].join('\n');
 const sqliteProcessEnv = `DB_PATH=${db}\0NODE_ENV=production\0`;
 writeFileSync(configPath, sqliteConfig);
 writeFileSync(processEnvPath, sqliteProcessEnv);
@@ -141,7 +153,7 @@ const release = (markers = []) => {
   const dir = mkdtempSync(join(root, 'rel-')), t = join(dir, 'windapi');
   mkdirSync(join(t, 'server'), { recursive: true }); mkdirSync(join(t, 'web'));
   // The dry run only has to stay up; it records the environment it was given.
-  writeFileSync(join(t, 'server', 'main.ts'), "if (process.env.PORT === '4010') process.getBuiltinModule('node:fs').writeFileSync(process.env.DRY_ENV_OUT, JSON.stringify(process.env));\nsetInterval(() => {}, 1000);\n");
+  writeFileSync(join(t, 'server', 'main.ts'), `if (process.env.PORT === '4010') process.getBuiltinModule('node:fs').writeFileSync(${JSON.stringify(dryEnv)}, JSON.stringify(process.env));\nsetInterval(() => {}, 1000);\n`);
   for (const f of ['backup.sh', 'restore.sh']) { writeFileSync(join(t, f), '#!/bin/sh\n'); chmodSync(join(t, f), 0o755); }
   for (const m of markers) writeFileSync(join(t, m), '');
   const tar = join(root, `release-${++tarN}.tar.gz`);
@@ -184,7 +196,12 @@ try {
   const checkpoint = readdirSync(join(data, 'backups')).find(n => n.startsWith('pre-install-'));
   assert.deepEqual(notes(join(data, 'backups', checkpoint)), ['first', 'acknowledged-at-stop'], 'the checkpoint holds the write acknowledged while stopping');
   const dry = JSON.parse(readFileSync(dryEnv, 'utf8'));
-  assert.equal(dry.WIND_FIREBASE_API_KEY, undefined, 'the dry run gets no provider keys');
+  for (const name of ['WIND_FIREBASE_API_KEY', 'WIND_PUBSUB_ENABLED', 'WIND_PUBSUB_ENDPOINT', 'WIND_EXPO_PUSH_ENABLED', 'WIND_ACS_KEY', 'OSRM_URL']) {
+    assert.equal(dry[name], undefined, `${name} stays out of the dry run`);
+  }
+  assert.equal(dry.WIND_IDENTITY_MODE, 'operator-verified');
+  assert.equal(dry.WIND_TRUST_PROXY, '1');
+  assert.equal(dry.WIND_PUSH_SUBJECT, 'mailto:fixture@example.invalid');
   assert.equal(dry.SUPPORT_CONTACT, '+972597127547', 'the dry run gets the service environment');
 
   // 2. A candidate that migrates the live file and then fails readiness: the pointer and the checkpoint go back, keeping

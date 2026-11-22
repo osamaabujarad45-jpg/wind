@@ -191,13 +191,15 @@ db.close();" 8<&-
 fi
 # The dry run must be the only thing answering on :4010, or the check below would pass against something else.
 port_free 4010 || { say "port 4010 is already in use"; exit 1; }
-set -a; . "$API_ENV"; set +a
-unset WIND_DATABASE_URL WIND_POSTGRES_STAGING WIND_POSTGRES_TEST_ONLY WIND_POSTGRES_TEST_SCHEMA
-# The dry run talks to nothing outside the VM: no Firebase, email or SMS provider keys (Haiku PR #101 M2).
-for v in $(compgen -e | grep -E '^(WIND_FIREBASE|FIREBASE|GOOGLE_|WIND_EMAIL|WIND_SMTP|WIND_SMS|WIND_OTP|WIND_PHONE|CLOUDFLARE)' || true); do unset "$v"; done
+. "$API_ENV"
 cd "$REL"
+# Pass only the production settings needed for startup. Provider credentials, endpoints and switches stay in the live service.
 # 8<&-: the dry run never holds the database lock (Sol recheck L2).
-sudo -u wind -E env NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DRY/wind.db" TZ=Asia/Hebron WEB_ROOT="$REL/web" \
+sudo -u wind env -i PATH=/opt/node/bin:/usr/bin:/bin \
+  NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DRY/wind.db" TZ=Asia/Hebron WEB_ROOT="$REL/web" \
+  SUPPORT_CONTACT="${SUPPORT_CONTACT:-}" WIND_PUSH_SUBJECT="${WIND_PUSH_SUBJECT:-}" \
+  WIND_TRUST_PROXY="${WIND_TRUST_PROXY:-}" WIND_IDENTITY_MODE="${WIND_IDENTITY_MODE:-}" \
+  WIND_ENABLED_SERVICES="${WIND_ENABLED_SERVICES-parcel}" \
   /opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts > "$WORK/dry.log" 2>&1 8<&- &
 PID=$! # sudo relays the kill to node
 cd /

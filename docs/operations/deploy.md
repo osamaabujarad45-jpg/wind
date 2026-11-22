@@ -46,7 +46,7 @@ its data is backed up and those installs are rebuilt.
   2. Run `sudo bash install-release.sh /tmp/wind-release.tar.gz <sha256>`. It:
      - takes the database lock (the `/data` directory itself; restore and the backup job take the same lock, so none of them runs during another);
      - checks the hash and unpacks the archive's `windapi/` directory to `/opt/wind-releases/<time>`;
-     - dry-runs the candidate as `wind` on :4010 against a copy of the live data, with push registrations and provider keys removed so nobody is notified and no outside service is reached. A failure leaves the live service untouched.
+     - dry-runs the candidate as `wind` on :4010 against a copy of the live data. It removes push registrations from the copy and starts the candidate with only the settings required for local startup. A failure leaves the live service untouched.
      - refuses to start while the ingress hold `/etc/wind-ingress-hold` exists (a restore awaiting reconciliation);
      - freezes: stops Caddy, writes the ingress hold, stops a running backup, then stops the API and checks both stopped (an uncertain stop changes nothing and reopens the previous release once it is ready). While the hold exists Caddy refuses to start, at boot too (`provision.sh` installs that check as a Caddy drop-in), so a power loss mid-install reboots closed;
      - takes the rollback checkpoint `/data/backups/pre-install-<time>.db` from the stopped database (checked, kept 30 days), so it holds every acknowledged write and sign-out;
