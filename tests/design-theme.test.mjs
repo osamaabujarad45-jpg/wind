@@ -2,7 +2,7 @@
 // in Day and Night, and a service line's accent is never a state colour.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { afterDark, colors, journeyState, lineOf, lines, sizes, stateLook, sunTimes } from '../src/theme.ts';
+import { afterDark, colors, journeyState, lineOf, lines, palettes, resolveTheme, sizes, stateLook, sunTimes, themeChoices } from '../src/theme.ts';
 
 const lum = hex => {
   const h = hex.replace('#', '');
@@ -53,10 +53,11 @@ for (const theme of ['day', 'night']) {
 // clay is the brand pin and the destination only: no state uses it
 for (const theme of ['day', 'night']) for (const look of Object.values(stateLook[theme])) for (const v of [look.bg, look.fg, look.mark]) assert.notEqual(v.toUpperCase(), '#CB6845');
 
-// v1 palette (src/ui.tsx) and v2 roles (src/theme.ts) must not drift apart while screens move over
+// v1 palette keys (palettes in src/theme.ts; ui.tsx `palette` is the Day alias) and v2 roles must not drift apart
 const ui = readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8');
-const pal = Object.fromEntries([...ui.slice(ui.indexOf('export const palette'), ui.indexOf('};', ui.indexOf('export const palette'))).matchAll(/^\s*(\w+): '(#[0-9A-Fa-f]{6})'/gm)].map(m => [m[1], m[2].toUpperCase()]));
-const same = (a, b, what) => assert.equal(a.toUpperCase(), b.toUpperCase(), what + ' drifted between ui.tsx and theme.ts');
+assert.match(ui, /export const palette = palettes\.day;/, 'ui.tsx palette is the Day palette, not a second copy');
+const pal = palettes.day;
+const same = (a, b, what) => assert.equal(a.toUpperCase(), b.toUpperCase(), what + ' drifted between the palette and the v2 roles');
 same(pal.blue, lines.day.ride.color, 'ride line'); same(pal.bluePale, lines.day.ride.tint, 'ride tint');
 same(pal.olive, lines.day.send.color, 'send line'); same(pal.olivePale, lines.day.send.tint, 'send tint');
 same(pal.shop, lines.day.shop.color, 'shop line'); same(pal.shopPale, lines.day.shop.tint, 'shop tint');
@@ -66,6 +67,52 @@ same(pal.field, stateLook.day.wait.edge, 'wait edge'); same(pal.field, colors.da
 same(pal.forest, colors.day.forest, 'forest'); same(pal.lime, colors.day.lime, 'lime'); same(pal.clay, colors.day.clay, 'clay');
 assert.match(ui, new RegExp(`rail: \\{ width: ${sizes.adminRail} `), 'the admin rail width is the admin-rail token');
 same(pal.paper, colors.day.ground, 'ground'); same(pal.ink, colors.day.ink, 'ink'); same(pal.secondary, colors.day.inkSecondary, 'ink secondary');
+// Night keeps every key, and its roles are the Night tokens: the action is lime with forest on it, the lines are the Night lines
+assert.deepEqual(Object.keys(palettes.night), Object.keys(palettes.day));
+const nightPal = palettes.night;
+same(nightPal.forest, colors.night.action, 'Night action'); same(nightPal.lime, colors.night.actionAccent, 'Night on-action accent');
+same(nightPal.onFill, colors.night.onAction, 'Night text on fills'); same(nightPal.paper, colors.night.ground, 'Night ground');
+same(nightPal.card, colors.night.surface, 'Night surface'); same(nightPal.muted, colors.night.surfaceSunken, 'Night sunken');
+same(nightPal.blue, lines.night.ride.color, 'Night ride'); same(nightPal.olive, lines.night.send.color, 'Night send'); same(nightPal.shop, lines.night.shop.color, 'Night shop');
+same(nightPal.warn, stateLook.night.attention.mark, 'Night attention'); same(nightPal.field, colors.night.lineStrong, 'Night control edge');
+same(nightPal.clay, colors.night.clay, 'clay is the brand in both themes');
+
+// WCAG AA for every text and background pair the screens draw from the palette, in Day and in Night (design system v2)
+for (const theme of ['day', 'night']) {
+  const p = palettes[theme], c = colors[theme];
+  const text = (fg, bg, min = 4.5) => atLeast(p[fg], p[bg], min, `${theme} palette.${fg} on palette.${bg}`);
+  for (const ground of ['paper', 'card', 'muted']) for (const fg of ['ink', 'secondary']) text(fg, ground); // body text; secondary on muted is the disabled button
+  for (const ground of ['paper', 'card']) text('faint', ground); // faint is never set on muted (4.1:1 by day)
+  for (const ground of ['paper', 'card']) for (const fg of ['olive', 'blue', 'warn', 'error', 'shop', 'clayInk', 'forest']) text(fg, ground);
+  text('error', 'muted');
+  for (const [fg, bg] of [['olive', 'olivePale'], ['blue', 'bluePale'], ['warn', 'warnPale'], ['error', 'errorPale'], ['shop', 'shopPale'], ['clayInk', 'clayPale']]) text(fg, bg);
+  for (const tint of ['olivePale', 'warnPale', 'errorPale', 'bluePale']) { text('ink', tint); text('secondary', tint); } // tinted cards hold body text
+  for (const fill of ['forest', 'olive', 'blue', 'error', 'warn', 'clayInk', 'ink']) text('onFill', fill); // buttons, counts, selected chips
+  text('lime', 'forest'); // the accent on the action: trailing price, tab glyph, send arrow
+  atLeast(c.onActionSoft, p.olivePale, 4.5, `${theme} current rail item on action-soft`);
+  for (const ground of ['paper', 'card', 'muted']) text('field', ground, 3); // control edges (WCAG 1.4.11)
+  text('forest', 'card', 3); // focus ring and selected outline
+}
+
+// which theme: Day by default; Automatic is Night only for a captain after sunset; a saved Day or Night always wins
+assert.deepEqual([...themeChoices], ['auto', 'day', 'night']);
+assert.equal(resolveTheme('auto', false, true), 'day', 'customers stay Day on Automatic');
+assert.equal(resolveTheme('auto', true, false), 'day', 'captains are Day before sunset');
+assert.equal(resolveTheme('auto', true, true), 'night', 'captains go Night after sunset');
+assert.equal(resolveTheme('day', true, true), 'day');
+assert.equal(resolveTheme('night', false, false), 'night');
+
+// Screens moved to the theme read colours from useTheme(), never the fixed Day palette from ui.tsx, and never decide Night themselves
+const themed = ['app/_layout.tsx', 'app/driver/earnings.tsx', 'app/driver/index.tsx', 'app/driver/trips.tsx', 'app/help.tsx', 'app/order/[id].tsx',
+  'app/profile.tsx', 'app/receipt/[id].tsx', 'app/roads.tsx', 'custody.tsx', 'driver-presence-card.tsx', 'driver-support-card.tsx', 'freight-details.tsx',
+  'google-map.native.tsx', 'google-map.web.tsx', 'map-provider-boundary.tsx', 'map-sheet.tsx', 'parts.tsx', 'phone-card.tsx', 'pin-sheet.tsx', 'road.tsx',
+  'route-map.native.tsx', 'route-preview.tsx', 'scene-map.tsx', 'shop-ui.tsx', 'driver-map.tsx'];
+for (const rel of themed) {
+  const source = readFileSync(new URL(`../src/${rel}`, import.meta.url), 'utf8');
+  const fromUi = source.match(/import \{([^}]*)\} from '(?:\.\.?\/)+ui';/s)?.[1] ?? '';
+  for (const fixed of ['palette', 'tones', 'statusTone', 'shadow', 'sheetShadow']) assert.ok(!new RegExp(`\\b${fixed}\\b`).test(fromUi), `${rel} imports the fixed Day ${fixed} from ui.tsx: read useTheme()`);
+  assert.doesNotMatch(source, /\bafterDark\(/, `${rel} decides Night itself: the theme context does`);
+}
 
 // map page: Night is opt-in by the exact string, and its route uses the Night action colour (lime on the dark map)
 const mapPage = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');

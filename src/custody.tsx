@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { useApi } from './api';
 import { useFormat } from './parts';
-import { Button, Card, fill, Loading, palette, Row, Txt, useCopy } from './ui';
+import { Button, Card, fill, Loading, Row, Txt, useCopy } from './ui';
+import { useTheme } from './theme-context';
 
 type Step = { at: number; kind: string; by: 'sender' | 'driver' | 'support'; reason?: string; driver?: string; until?: number; attempt?: number };
 
@@ -15,6 +16,7 @@ export function CustodyChain({ orderId }: { orderId: number }) {
 }
 
 function Steps({ orderId }: { orderId: number }) {
+  const { palette } = useTheme();
   const { c } = useCopy();
   const { time } = useFormat();
   const { data, error, reload } = useApi<{ steps: Step[] }>(`/orders/${orderId}/custody`);

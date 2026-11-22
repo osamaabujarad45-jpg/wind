@@ -8,7 +8,8 @@ import { api } from './api';
 import { handoverExceptions, hhmm, isolate, latinDigits, ltr, minorFromText, type Merchant, type MerchantItem, type Order, type ShopLine, type ShopPolicy } from './model';
 import { currentCart, replaceCart } from './shop-cart';
 import { newRequestId } from './booking';
-import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScale, palette, Row, Section, Txt, useCopy } from './ui';
+import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScale, Row, Section, Txt, useCopy } from './ui';
+import { useTheme } from './theme-context';
 
 const WEIGHT_STEP = 250; // grams
 
@@ -27,6 +28,7 @@ export function qtyLabel(qtyMilli: number, byWeight: boolean, c: Record<string, 
 }
 
 export function QtyControl({ item, qtyMilli, name, onChange }: { item: Pick<MerchantItem, 'byWeight'>; qtyMilli: number; name: string; onChange: (q: number) => void }) {
+  const { palette } = useTheme();
   const { c, row } = useCopy();
   const step = item.byWeight ? WEIGHT_STEP : 1000, max = item.byWeight ? 50_000 : 99_000, min = item.byWeight ? 250 : 1000;
   const shown = qtyLabel(qtyMilli, item.byWeight, c);
@@ -61,6 +63,7 @@ const lineName = (l: Pick<ShopLine, 'nameAr' | 'nameEn'>, language: string) => l
 
 /** The basket with each line's price, estimate or final, and the money lines (DLV-03): goods, delivery fee, service fee, cash at the door. */
 export function ShopLines({ order, totalsOnly = false }: { order: Order; totalsOnly?: boolean }) {
+  const { palette } = useTheme();
   const { c, language, money, rtl } = useCopy();
   const s = order.shop!;
   return <>
@@ -88,6 +91,7 @@ function Money({ label, value, strong }: { label: string; value: string; strong?
 
 /** The customer's part of a shop order: the actor-named step, the consent card, cancel while free, rating and order again. */
 export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange: (o: Order) => void }) {
+  const { palette } = useTheme();
   const { c, language, money, err } = useCopy();
   const s = order.shop!;
   const [busy, setBusy] = useState('');

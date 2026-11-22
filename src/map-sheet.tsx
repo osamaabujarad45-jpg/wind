@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, KeyboardAvoidingView, PanResponder, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReducedMotion } from './motion';
-import { palette, sheetShadow, useCopy } from './ui';
+import { useCopy } from './ui';
+import { themedStyles, useTheme } from './theme-context';
 
 const GRIP = 48;
 const nativeDriver = Platform.OS !== 'web';
@@ -26,6 +27,8 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   expandedRatio?: number;
   onRefresh?: () => Promise<unknown>;
 }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c, rtl } = useCopy();
   const still = useReducedMotion();
   const { height: screen } = useWindowDimensions();
@@ -94,7 +97,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   </KeyboardAvoidingView>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((palette, { sheetShadow }) => StyleSheet.create({
   sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: palette.paper, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     ...sheetShadow },
   side: { left: 'auto', right: 0, width: SIDE_SHEET, alignSelf: 'auto' },
@@ -104,4 +107,4 @@ const styles = StyleSheet.create({
   grip: { width: 40, height: 4, borderRadius: 2, backgroundColor: palette.dash },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 16, paddingTop: 10, backgroundColor: palette.paper,
     borderTopWidth: 1, borderTopColor: palette.hair },
-});
+}));

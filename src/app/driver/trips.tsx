@@ -2,9 +2,11 @@ import { View } from 'react-native';
 import { router } from 'expo-router';
 import { activeStatuses, city, runSheet } from '../../model';
 import { MoreOrders, OrderRow, useOrders } from '../../parts';
-import { Button, Empty, ErrorText, fill, Header, Loading, palette, Screen, Txt, useCopy } from '../../ui';
+import { Button, Empty, ErrorText, fill, Header, Loading, Screen, Txt, useCopy } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 export default function Trips() {
+  const { palette } = useTheme();
   const { c, err, language } = useCopy();
   const { data, error, reload, more } = useOrders('/orders', 10_000);
   const active = (data ?? []).filter(o => activeStatuses.includes(o.status));

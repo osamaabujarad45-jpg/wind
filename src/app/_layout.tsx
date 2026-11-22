@@ -10,11 +10,12 @@ import { DriverWorkProvider } from '../driver-work';
 import { SessionProvider, useSession } from '../session';
 import { SUPPORT_URL, UPDATE_URL } from '../api';
 import { clientUpdateRequired, subscribeClientUpdate } from '../api-client';
-import { Button, Card, Empty, fill, palette, Txt, useCopy } from '../ui';
+import { Button, Card, Empty, fill, Txt, useCopy } from '../ui';
 import { useFormat } from '../parts';
 import { city, orderCode } from '../model';
 import { statusText } from '../copy';
 import type { OfflineSummary } from '../offline-summary';
+import { ThemeProvider, useTheme } from '../theme-context';
 
 SplashScreen.preventAutoHideAsync();
 // Native builds embed the heading fonts (expo-font plugin in app.json); the web loads them while the intro plays.
@@ -24,11 +25,16 @@ if (Platform.OS === 'web') Font.loadAsync({
 }).catch(() => { /* headings fall back to the system font at regular weight: still the largest, darkest text on screen */ });
 
 export default function RootLayout() {
-  return <SessionProvider>
-    <StatusBar style="dark" />
+  return <SessionProvider><ThemeProvider>
+    <ThemedStatusBar />
     <DriverWorkRoutes />
     <IntroOverlay />
-  </SessionProvider>;
+  </ThemeProvider></SessionProvider>;
+}
+
+// Dark status bar icons on Day, light ones on Night.
+function ThemedStatusBar() {
+  return <StatusBar style={useTheme().name === 'night' ? 'light' : 'dark'} />;
 }
 
 function DriverWorkRoutes() {
@@ -81,6 +87,7 @@ function OfflineOrders({ summary }: { summary: OfflineSummary }) {
 }
 
 function Routes() {
+  const { palette } = useTheme();
   const { ready, offline, offlineSummary, me, onboarded, refresh } = useSession();
   const { c } = useCopy();
   const mustUpdate = useSyncExternalStore(subscribeClientUpdate, clientUpdateRequired);

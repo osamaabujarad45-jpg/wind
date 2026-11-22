@@ -1,6 +1,7 @@
 // Wind design system v2 — the tokens of the published "Wind" design system, as code.
 // One app, three service lines (ride, send, shop), one journey with five states, Day and Night themes.
-// `palette` in ./ui stays the v1 source for existing screens; new and migrated code reads these roles.
+// Screens read the active theme through useTheme() (./theme-context); `palette` in ./ui is the Day palette, kept for code
+// outside React (the logo, icons) and as the Day alias while screens move over.
 // Values are exact copies of the design system's tokens.json; change both together.
 
 import type { OrderStatus, Service } from './model';
@@ -71,6 +72,82 @@ export const stateLook: Record<ThemeName, Record<JourneyState, StateLook>> = {
   },
 };
 
+// ---------- the v1 palette, in Day and Night ----------
+// Screens name colours by these v1 keys (`palette.olive`); useTheme() hands them the active theme's values. Night keeps every
+// key's job: `forest` is the action (lime at night, like `colors.night.action`), `lime` is what sits on it, the accents
+// (olive, blue, warn, error, shop, clayInk) turn light so they read as text on the dark surfaces, and `onFill`, the text on
+// those accents used as fills, turns dark. Every text pair here is checked for WCAG AA in tests/design-theme.test.mjs.
+export const palettes = {
+  day: {
+    paper: '#F3F2EC',
+    card: '#FFFFFF',
+    ink: '#0E1F19',
+    secondary: '#56635C',
+    faint: '#66716B', // 4.5:1 on paper and white: the lightest grey allowed for text (same as Souq's ink-faint)
+    olive: '#34765A',
+    olivePale: '#E2EEE5',
+    forest: '#12342A', // lead surfaces: primary button, search pill, selected chip
+    lime: '#D3F27A', // only ever on forest
+    clay: '#CB6845', // logo pin and markers; too light for text
+    clayInk: '#A94A28',
+    clayPale: '#F9E9E1',
+    blue: '#2F5E8C',
+    bluePale: '#E6EDF6',
+    shop: '#8A3D6A', // Shop line accent (design system v2): icon and badge only, never a state or an action
+    shopPale: '#F5E6EE',
+    line: '#E2E1D8', // dividers only: 1.2:1, too faint to mark a control's edge
+    field: '#7D867F', // control edges (inputs, outline buttons, chips, unselected choices): 3.3:1 on paper, 3.8:1 on white (WCAG 1.4.11)
+    hair: '#ECEBE4',
+    mapWash: '#E6ECE3', // map placeholder and failure ground, before tiles draw
+    dash: '#B4B3A8', // non-text marks on paper, muted or white (1.7–2.1:1): disabled button edge, sheet grip
+    muted: '#EAE8DF',
+    error: '#A3392A',
+    onFill: '#FFFFFF', // text and icons on forest, olive, blue, warn and clayInk fills
+    errorPale: '#F8E6E2',
+    warn: '#8A5A00', // waiting/pending text: ochre, apart from brand clay and from error red (5.3:1 on paper)
+    warnPale: '#FBF0D9',
+    shade: '#0E1F1966', // modal scrim over full-screen sheets
+  },
+  night: {
+    paper: colors.night.ground,
+    card: colors.night.surface,
+    ink: colors.night.ink,
+    secondary: colors.night.inkSecondary,
+    faint: colors.night.inkFaint,
+    olive: lines.night.send.color,
+    olivePale: lines.night.send.tint,
+    forest: colors.night.action, // lime: the Night action colour
+    lime: colors.night.actionAccent, // forest, on the lime action
+    clay: brand.clay,
+    clayInk: '#EBA07F',
+    clayPale: '#33201A',
+    blue: lines.night.ride.color,
+    bluePale: lines.night.ride.tint,
+    shop: lines.night.shop.color,
+    shopPale: lines.night.shop.tint,
+    line: colors.night.line,
+    field: colors.night.lineStrong,
+    hair: colors.night.hairline,
+    mapWash: '#16231E',
+    dash: '#3E4F48',
+    muted: colors.night.surfaceSunken,
+    error: '#E67A66', // 5:1 on the sunken surface too; colors.night.danger is for error text on the plain surface
+    onFill: colors.night.onAction,
+    errorPale: colors.night.dangerTint,
+    warn: stateLook.night.attention.mark,
+    warnPale: stateLook.night.attention.bg,
+    shade: '#000000A6',
+  },
+} as const;
+export type Palette = { [K in keyof typeof palettes.day]: string };
+
+// Cards lift with a soft shadow by day; a shadow is invisible on the Night ground, so there a 1 px edge (a spread shadow, which
+// takes no layout room) carries the card instead.
+export const shadows = {
+  day: { card: '0px 1px 2px rgba(14,31,25,0.06), 0px 4px 14px rgba(14,31,25,0.06)', sheet: '0px -2px 16px rgba(14,31,25,0.16)' },
+  night: { card: `0px 0px 0px 1px ${colors.night.cardEdge}`, sheet: `0px -1px 0px 0px ${colors.night.line}, 0px -2px 16px rgba(0,0,0,0.5)` },
+} as const;
+
 // ---------- scales ----------
 export const space = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 8: 32, 12: 48 } as const;
 export const radius = { sm: 8, md: 12, lg: 16, xl: 24, pill: 999 } as const;
@@ -99,3 +176,10 @@ export const afterDark = (ms: number, latitude?: number, longitude?: number) => 
   const { sunrise, sunset } = sunTimes(ms, latitude, longitude);
   return ms < sunrise || ms > sunset;
 };
+
+// ---------- which theme: Day by default, a saved choice per device, Night after sunset for captains on Automatic ----------
+export type ThemeChoice = 'auto' | 'day' | 'night';
+export const themeChoices: readonly ThemeChoice[] = ['auto', 'day', 'night'];
+/** The theme a choice resolves to: Automatic is Night only for a captain after sunset. */
+export const resolveTheme = (choice: ThemeChoice, captain: boolean, dark: boolean): ThemeName =>
+  choice === 'auto' ? (captain && dark ? 'night' : 'day') : choice;

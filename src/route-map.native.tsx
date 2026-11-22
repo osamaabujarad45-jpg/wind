@@ -8,7 +8,11 @@ import { MapProviderBoundary } from './map-provider-boundary';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { mapReadyMs } from './runtime-config';
-import { maxScale, palette, shadow, useCopy } from './ui';
+import { maxScale, useCopy } from './ui';
+import { themedStyles, useTheme } from './theme-context';
+import { palettes } from './theme';
+// Google draws its map in the day style whatever the app theme, so what is drawn on the map keeps the Day colours.
+const onMap = palettes.day;
 
 export type { PinMapProps, RouteMapProps };
 // iOS: Apple Maps is the baseline (no key). When this binary was built with a restricted Google key
@@ -22,6 +26,8 @@ export default function RouteMap(props: RouteMapProps) {
 }
 
 function AppleRouteMap(props: RouteMapProps) {
+  const { palette, shadow } = useTheme();
+  const styles = useStyles();
   const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, height = 220 } = props;
   const { c, rtl } = useCopy();
   const points = routeFramePoints(props);
@@ -82,11 +88,11 @@ function AppleRouteMap(props: RouteMapProps) {
     accessibilityLabel={`${c.routeOnMap}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}${driver ? ` · ${driverTitle ?? ''}` : ''}`}
     onMapReady={() => setReady(true)} onTouchStart={() => setMoved(true)} onPanDrag={() => setMoved(true)}>
     {/* Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line. */}
-    {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
-    <Marker coordinate={pickup} title={pickupTitle} pinColor={palette.olive} />
-    <Marker coordinate={dropoff} title={dropoffTitle} pinColor={palette.clay} />
+    {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={onMap.forest} strokeWidth={4} />}
+    <Marker coordinate={pickup} title={pickupTitle} pinColor={onMap.olive} />
+    <Marker coordinate={dropoff} title={dropoffTitle} pinColor={onMap.clay} />
     {(props.closed ?? []).map(p => <Marker key={`${p.latitude},${p.longitude}`} coordinate={p} anchor={{ x: 0.5, y: 0.5 }}>
-      <Ionicons name="remove-circle" size={24} color={palette.error} />
+      <Ionicons name="remove-circle" size={24} color={onMap.error} />
     </Marker>)}
     {driver && <Car driver={driver} title={driverTitle} approach={props.approach} still={still} stale={!!props.stale} />}
   </MapView>
@@ -127,27 +133,29 @@ export function Car({ driver, title, approach, still, stale }: { driver: NonNull
   }, [driver.latitude, driver.longitude, driver.heading, still]); // eslint-disable-line react-hooks/exhaustive-deps
   const line = useMemo(() => approach && !stale && [lineAt, ...approach.map(([longitude, latitude]) => ({ latitude, longitude }))], [approach, lineAt, stale]);
   return <>
-    {line && <Polyline coordinates={line} strokeColor={palette.blue} strokeWidth={5} />}
+    {line && <Polyline coordinates={line} strokeColor={onMap.blue} strokeWidth={5} />}
     {/* The halo belongs to the drawn car, not to the raw fix, and fades with it when the signal is lost. */}
     {!!driver.accuracy && <Circle center={lineAt} radius={driver.accuracy}
-      fillColor={`${palette.blue}${stale ? '0D' : '1F'}`} strokeColor={`${palette.blue}${stale ? '26' : '4D'}`} strokeWidth={1} />}
+      fillColor={`${onMap.blue}${stale ? '0D' : '1F'}`} strokeColor={`${onMap.blue}${stale ? '26' : '4D'}`} strokeWidth={1} />}
     <Marker coordinate={pose} title={title} flat rotation={pose.rotation} anchor={{ x: 0.5, y: 0.5 }} opacity={stale ? 0.45 : 1}>
-      <Ionicons name={heading != null ? 'navigate-circle' : 'ellipse'} size={34} color={palette.blue} />
+      <Ionicons name={heading != null ? 'navigate-circle' : 'ellipse'} size={34} color={onMap.blue} />
     </Marker>
   </>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   recenter: { position: 'absolute', bottom: 34, width: 48, height: 48, borderRadius: 24, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   cover: { alignItems: 'center', justifyContent: 'center' },
   retry: { minWidth: 48, minHeight: 48, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
-});
+}));
 
 export function PinMap(props: PinMapProps) {
   return <MapProviderBoundary platform="ios" pin={props} google={GooglePinMap} baseline={ApplePin} />;
 }
 
 function ApplePin({ center, onChange, onGesture, onFail, onReady, height = 320 }: PinMapProps) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c } = useCopy();
   const view = useRef<MapView>(null);
   const touching = useRef(false);

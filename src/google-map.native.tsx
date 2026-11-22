@@ -11,7 +11,11 @@ import { useReducedMotion } from './motion';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { mapReadyMs } from './runtime-config';
 import { Car } from './route-map.native';
-import { maxScale, palette, shadow, useCopy } from './ui';
+import { maxScale, useCopy } from './ui';
+import { themedStyles, useTheme } from './theme-context';
+import { palettes } from './theme';
+// Google draws its map in the day style whatever the app theme, so what is drawn on the map keeps the Day colours.
+const onMap = palettes.day;
 
 export type { PinMapProps, RouteMapProps };
 export const canPin = true;
@@ -19,6 +23,8 @@ export const canPin = true;
 const FOLLOW_DELTA = 0.012;
 
 export default function RouteMap(props: RouteMapProps) {
+  const { palette, shadow } = useTheme();
+  const styles = useStyles();
   const { pickup, dropoff, pickupTitle, dropoffTitle, driver, driverTitle, height = 220 } = props;
   const { c, rtl } = useCopy();
   const points = routeFramePoints(props);
@@ -75,11 +81,11 @@ export default function RouteMap(props: RouteMapProps) {
     // A pinch the native recogniser claims before React sees the touch still reports a gesture-driven region change.
     onRegionChangeStart={(_, details) => { if (details?.isGesture) setMoved(true); }}>
     {/* Lines follow roads only (provider geometry); never a straight pickup→dropoff line. */}
-    {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={palette.forest} strokeWidth={4} />}
-    <Marker coordinate={pickup} title={pickupTitle} pinColor={palette.olive} />
-    <Marker coordinate={dropoff} title={dropoffTitle} pinColor={palette.clay} />
+    {props.road && <Polyline coordinates={props.road.map(([longitude, latitude]) => ({ latitude, longitude }))} strokeColor={onMap.forest} strokeWidth={4} />}
+    <Marker coordinate={pickup} title={pickupTitle} pinColor={onMap.olive} />
+    <Marker coordinate={dropoff} title={dropoffTitle} pinColor={onMap.clay} />
     {(props.closed ?? []).map(p => <Marker key={`${p.latitude},${p.longitude}`} coordinate={p} anchor={{ x: 0.5, y: 0.5 }}>
-      <Ionicons name="remove-circle" size={24} color={palette.error} />
+      <Ionicons name="remove-circle" size={24} color={onMap.error} />
     </Marker>)}
     {driver && <Car driver={driver} title={driverTitle} approach={props.approach} still={still} stale={!!props.stale} />}
   </MapView>
@@ -92,6 +98,8 @@ export default function RouteMap(props: RouteMapProps) {
 
 /** Fixed centre pin over a draggable Google map; reports the centre when the map stops moving. */
 export function PinMap({ center, onChange, onGesture, onFail, onReady, height = 320 }: PinMapProps) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c } = useCopy();
   const view = useRef<MapView>(null);
   const reported = useRef(center);
@@ -142,8 +150,8 @@ export function PinMap({ center, onChange, onGesture, onFail, onReady, height = 
   </View>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   recenter: { position: 'absolute', bottom: 34, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   cover: { alignItems: 'center', justifyContent: 'center' },
   retry: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
-});
+}));

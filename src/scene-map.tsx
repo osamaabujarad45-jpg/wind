@@ -2,11 +2,12 @@
 // map, a centre pin and a drawn trip without reloading, so a booking keeps one map from search to request.
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { MAP_GROUND, MapPage } from './map-page';
+import { MAP_GROUND, MAP_GROUND_NIGHT, MapPage } from './map-page';
 import type { Point } from './model';
 import { useReducedMotion } from './motion';
 import RoutePreview, { type MapInsets, type PinMapProps, type RouteMapProps, type UserDot } from './route-preview';
-import { maxScale, palette, useCopy } from './ui';
+import { maxScale, useCopy } from './ui';
+import { themedStyles, useTheme } from './theme-context';
 
 export type SceneMapInsets = MapInsets;
 
@@ -16,7 +17,7 @@ export type SceneMapProps = {
   pickup?: Point | null; dropoff?: Point | null;
   driver?: RouteMapProps['driver']; road?: RouteMapProps['road']; approach?: RouteMapProps['approach']; closed?: RouteMapProps['closed'];
   focus?: RouteMapProps['focus']; stale?: boolean; follow?: boolean;
-  night?: boolean; // design system v2: the Night map (captains after sunset)
+  night?: boolean; // design system v2: the Night map; follows the app theme when absent
   user?: UserDot | null; insets?: SceneMapInsets; labels?: { pickup?: string; dropoff?: string } | null; eta?: string | null;
   label?: string; height?: number; fill?: boolean;
   /** Margin kept around framed stops, in points. */
@@ -27,15 +28,19 @@ export type SceneMapProps = {
 };
 
 export function SceneMap(props: SceneMapProps) {
+  const theme = useTheme(), { palette } = theme;
+  const styles = useStyles();
   const { mode, height = 220, fill, center, zoom, pickup, dropoff, driver, road, approach, closed, focus, stale, follow, user, insets, labels, eta, label } = props;
   const { c, language } = useCopy();
   const still = useReducedMotion();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [drawn, setDrawn] = useState<string | null>(null);
-  const run = `${language}:${attempt}`;
+  // The page reads its theme once, when it mounts: a theme change (sunset, or a new choice in Account) draws it again.
+  const night = props.night ?? theme.name === 'night', ground = night ? MAP_GROUND_NIGHT : MAP_GROUND;
+  const run = `${language}:${night ? 'night' : 'day'}:${attempt}`;
   if (failed) return <View style={fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
-    {props.fallback ?? <View style={[StyleSheet.absoluteFill, { backgroundColor: MAP_GROUND }]} />}
+    {props.fallback ?? <View style={[StyleSheet.absoluteFill, { backgroundColor: ground }]} />}
     <View style={[StyleSheet.absoluteFill, styles.cover]}>
       <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={[styles.retry, { transform: [
         { translateX: ((insets?.left ?? 0) - (insets?.right ?? 0)) / 2 },
@@ -45,13 +50,13 @@ export function SceneMap(props: SceneMapProps) {
   </View>;
   const liveDriver = driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading ?? null, accuracy: driver.accuracy ?? null } : null;
   const dot = user ? { latitude: user.latitude, longitude: user.longitude, accuracy: user.accuracy ?? null } : null;
-  const config = { mode, language, still, center, zoom, pickup, dropoff, driver: liveDriver, user: dot, insets, recenter: c.recenter, ...(props.night && { theme: 'night' as const }),
+  const config = { mode, language, still, center, zoom, pickup, dropoff, driver: liveDriver, user: dot, insets, recenter: c.recenter, ...(night && { theme: 'night' as const }),
     padding: props.padding ?? (fill ? 56 : Math.round(Math.min(56, height / 5))) }; // markers clear of the edges without zooming a short map out
   const update = { mode, ...(center && { center, zoom }), ...(mode === 'route' && pickup && dropoff ? { pickup, dropoff } : {}), driver: liveDriver, road: road ?? null, approach: approach ?? null,
     closed: closed ?? [], focus, stale: !!stale, follow: !!follow, user: dot, ...(insets && { insets }), labels: labels ?? null, eta: eta ?? null, ...(label && { label }) };
   return <View style={fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
     {/* Never a blank box while the page loads over a slow connection. */}
-    {drawn !== run && <View style={[StyleSheet.absoluteFill, styles.cover, { backgroundColor: MAP_GROUND }]} pointerEvents="none"
+    {drawn !== run && <View style={[StyleSheet.absoluteFill, styles.cover, { backgroundColor: ground }]} pointerEvents="none"
       accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden>
       <ActivityIndicator color={palette.olive} />
     </View>}
@@ -76,7 +81,7 @@ export function BaselinePin({ center, onChange, onGesture, onMoving, onFail, onR
   return <SceneMap mode="pin" center={center} height={height} fill={fill} insets={insets} user={user} onCenter={onChange} onGesture={onGesture} onMoving={onMoving} onReady={onReady} onFail={onFail} />;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   cover: { alignItems: 'center', justifyContent: 'center' },
   retry: { minWidth: 48, minHeight: 48, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
-});
+}));

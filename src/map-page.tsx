@@ -7,6 +7,8 @@ import { palette } from './ui';
 
 const colors = { forest: palette.forest, olive: palette.olive, clay: palette.clay, blue: palette.blue };
 export const MAP_GROUND = '#EEEFEC';
+/** The Night map's land (public/map.html), shown before its tiles draw so a Night screen never flashes light. */
+export const MAP_GROUND_NIGHT = '#0F1B17';
 export type MapPageProps = MapEvents & { config: { mode?: string } & Record<string, unknown>; height?: number; fill?: boolean; update?: object };
 
 export function MapPage({ config, height, fill, update, onCenter, onGesture, onMoving, onFail, onReady }: MapPageProps) {
@@ -23,6 +25,6 @@ export function MapPage({ config, height, fill, update, onCenter, onGesture, onM
     return () => window.removeEventListener('message', listener);
   }, []);
   return <View style={fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
-    <iframe ref={frame} src={src} title="map" onError={fail} style={{ border: 0, width: '100%', height: '100%', display: 'block', background: MAP_GROUND }} />
+    <iframe ref={frame} src={src} title="map" onError={fail} style={{ border: 0, width: '100%', height: '100%', display: 'block', background: config.theme === 'night' ? MAP_GROUND_NIGHT : MAP_GROUND }} />
   </View>;
 }

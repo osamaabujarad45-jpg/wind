@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import { cities, type Point } from './model';
 import { pickupLocation, rememberedHere, rememberHere } from './pickup-location';
 import { SceneMap } from './scene-map';
-import { afterDark } from './theme';
 import { SIDE_SHEET, useSideSheet } from './map-sheet';
 import { useCopy } from './ui';
 
@@ -13,7 +12,6 @@ export function DriverMap({ active, bottom, label, onHere }: { active: boolean; 
   const { rtl } = useCopy();
   const [center, setCenter] = useState<Point | null>(null);
   const [dot, setDot] = useState<Point | null>(null);
-  const [night] = useState(() => afterDark(Date.now())); // the map page reads its theme once, when it mounts
   const report = useRef(onHere);
   useEffect(() => { report.current = onHere; });
   useEffect(() => {
@@ -28,5 +26,5 @@ export function DriverMap({ active, bottom, label, onHere }: { active: boolean; 
     return () => { request.abort(); clearInterval(timer); setDot(null); report.current(null); };
   }, [active]);
   const at = center ?? cities[0];
-  return <SceneMap fill night={night} mode="browse" center={{ latitude: at.latitude, longitude: at.longitude }} zoom={center ? 15 : 9} user={dot} insets={{ top: 60, bottom, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} label={label} />;
+  return <SceneMap fill mode="browse" center={{ latitude: at.latitude, longitude: at.longitude }} zoom={center ? 15 : 9} user={dot} insets={{ top: 60, bottom, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} label={label} />;
 }

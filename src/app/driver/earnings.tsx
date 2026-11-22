@@ -3,13 +3,14 @@ import { View } from 'react-native';
 import { api, useApi } from '../../api';
 import { type CashBalance, cashLines } from '../../cash-lines';
 import { PlanCard, useFormat } from '../../parts';
-import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading, Row, Screen, tones, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading, Row, Screen, Txt, useCopy } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 type Bucket = { jobs: number; gross: number; commission: number; net: number; earnedNet?: number; tripPayCents?: number };
 type CashEntry = { id: number; kind: 'remittance' | 'adjustment'; amountCents: number; note: string; source?: 'trip_pay' | 'pickup_pay' | 'payout';
   status: 'pending' | 'confirmed' | 'disputed'; reference: string | null; createdAt: number };
 type Cash = CashBalance & { pendingCents: number; capCents?: number; exposureCents?: number; entries: CashEntry[] };
-const entryTone = { pending: tones.warn, confirmed: tones.olive, disputed: tones.error };
+const entryTone = { pending: 'warn', confirmed: 'olive', disputed: 'error' } as const;
 
 export default function Earnings() {
   const { c, money, err } = useCopy();
@@ -42,6 +43,7 @@ export default function Earnings() {
 
 // What the driver owes Wind in cash, and the cashier's handovers waiting for the driver's confirmation.
 function CashCard() {
+  const { tones } = useTheme();
   const { c, money, err } = useCopy();
   const { time } = useFormat();
   const { data, error, reload } = useApi<Cash>('/driver/cash', 15_000); // a handover recorded at the cashier shows up while the driver waits
@@ -89,7 +91,7 @@ function CashCard() {
         </View>
         <View style={{ alignItems: 'flex-end', gap: 4 }}>
           <Txt variant="title">{money((entry.kind === 'remittance' ? -entry.amountCents : entry.amountCents) / 100)}</Txt>
-          <Badge label={entry.status === 'pending' ? c.cashAwaitingYou : c[`entry_${entry.status}`]} tone={entryTone[entry.status]} />
+          <Badge label={entry.status === 'pending' ? c.cashAwaitingYou : c[`entry_${entry.status}`]} tone={tones[entryTone[entry.status]]} />
         </View>
       </Row>;
     })}

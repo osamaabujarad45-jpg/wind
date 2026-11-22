@@ -11,7 +11,8 @@ import { useMapMode } from './map-mode';
 import { publicFixAgeMs, publicFixClock } from './location-state';
 import { etaRange, fromDriver, nearLine, roadPath, shownApproach } from './map-math';
 import { activeStatuses, city, type Order, type Point } from './model';
-import { fill, palette, Row, Txt, useCopy } from './ui';
+import { fill, Row, Txt, useCopy } from './ui';
+import { useTheme } from './theme-context';
 
 type Anchor = { key: string; fix: (Point & { heading?: number | null }) | null; metres: number; at: number };
 
@@ -124,6 +125,7 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
 
 /** One line per outcome under a route map: the route goes around closed checkpoints, or cannot. */
 export function RouteCheckpoints({ avoids, through }: { avoids: string[]; through: string[] }) {
+  const { palette } = useTheme();
   const { c, language } = useCopy();
   if (!avoids.length && !through.length) return null;
   const sep = language === 'ar' ? '، ' : ', ';
