@@ -235,6 +235,16 @@ await call('/merchant/settings', sweets.token, { hours: everyDay(opensAt, (opens
 db.prepare("UPDATE orders SET status = 'on_hold', updated_at = ? WHERE id = ?").run(Date.now() - 3 * 86_400_000, shopHold.id);
 db.prepare("UPDATE shop_orders SET merchant_state = 'handed_over' WHERE order_id = ?").run(shopHold.id);
 
+// In-app support inbox (SPEC-support-inbox.md): Layla writes about her ride, support answers; the admin sees it waiting first.
+// Seeded before the web build: the synchronous export blocks this process's API server, and the first fetch after it
+// reuses a keep-alive socket the server has already timed out (ECONNRESET).
+{
+  const first = await call('/support/messages', layla.token, { body: 'الرحلة تأخرت والسائق لا يرد على الهاتف', orderId: searching.id, requestId: randomUUID() });
+  await call(`/admin/support/${first.thread.id}/reply`, boss.token, { body: 'السائق عالق عند حاجز، الوصول خلال 15 دقيقة تقريباً. نتابع معه.', requestId: randomUUID() });
+  await call(`/admin/support/${first.thread.id}/tags`, boss.token, { tags: ['checkpoints', 'eta'] });
+  await call('/support/messages', layla.token, { body: 'تمام، شكراً كتير', requestId: randomUUID() });
+}
+
 // ---------- 2. web build + static server ----------
 if (!args.includes('--no-build') || !existsSync(join(webDir, 'index.html'))) {
   console.log('Building the web app…');
@@ -310,7 +320,11 @@ const screens = [
   { id: 'driver-account', group: 'Driver', name: 'Account', route: '/driver/account', file: 'src/parts.tsx (AccountScreen)', role: 'driver' },
   { id: 'driver-offer-range', group: 'Driver', name: 'Jobs · offer price outside the band (Send offer disabled, band shown)', route: '/driver', file: 'src/app/driver/index.tsx', role: 'freshDriver', state: 'offer-range' },
 
+  { id: 'support', group: 'Customer', name: 'Message Wind support (in-app conversation)', route: '/support', file: 'src/app/support.tsx', role: 'customer' },
   { id: 'admin-dashboard', group: 'Admin', name: 'Dashboard', route: '/admin', file: 'src/app/admin/index.tsx', role: 'admin' },
+  { id: 'admin-support', group: 'Admin', name: 'Support inbox (conversations waiting first)', route: '/admin/support', file: 'src/app/admin/support.tsx', role: 'admin' },
+  { id: 'admin-support-desktop', group: 'Admin', name: 'Support inbox on a desktop: list and conversation side by side', route: '/admin/support', file: 'src/app/admin/support.tsx', role: 'admin', desktop: true, tap: 'ليلى حداد' },
+  { id: 'admin-desktop', group: 'Admin', name: 'Dashboard on a desktop (1280 px): side rail instead of bottom tabs', route: '/admin', file: 'src/app/admin/_layout.tsx', role: 'admin', desktop: true },
   { id: 'admin-orders', group: 'Admin', name: 'All orders', route: '/admin/orders', file: 'src/app/admin/orders.tsx', role: 'admin' },
   { id: 'admin-order', group: 'Admin', name: 'Parcel · delivery code recovery', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'admin' },
   { id: 'admin-users', group: 'Admin', name: 'Users', route: '/admin/users', file: 'src/app/admin/users.tsx', role: 'admin' },
@@ -363,7 +377,8 @@ for (const language of ['ar', 'en']) {
   mkdirSync(join(outDir, language), { recursive: true });
   for (const screen of screens) {
     if (screen.state) continue; // captured after the scenarios that set them up
-    const context = await browser.newContext({ viewport: phone, deviceScaleFactor: 2, locale: language === 'ar' ? 'ar-PS' : 'en-GB',
+    const viewport = screen.desktop ? { width: 1280, height: 800 } : phone; // Wind Control on a desktop: the side rail layout (1x: a desktop screen, and the PNG stays small)
+    const context = await browser.newContext({ viewport, deviceScaleFactor: screen.desktop ? 1 : 2, locale: language === 'ar' ? 'ar-PS' : 'en-GB',
       reducedMotion: screen.motion || screen.frames || screen.fresh ? 'no-preference' : 'reduce' });
     await context.addInitScript(({ token, language, onboarded }) => {
       if (sessionStorage.getItem('seeded')) return; // only before the first load; the app owns storage after that
@@ -395,6 +410,7 @@ for (const language of ['ar', 'en']) {
     await page.goto(base + screen.route, { waitUntil: 'load' });
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => console.log(`no network idle on ${screen.route}, capturing anyway`)); // a live screen holds a long-poll open
     await page.waitForTimeout(screen.fresh || screen.motion ? 2600 : 1200); // intro + first data load
+    if (screen.tap) { await page.getByText(screen.tap, { exact: true }).first().click(); await page.waitForTimeout(900); } // literal text, e.g. a seeded name
     for (const click of screen.clicks ?? []) {
       await page.getByText(copy[language][click], { exact: true }).first().click();
       await page.waitForTimeout(700);
@@ -407,11 +423,21 @@ for (const language of ['ar', 'en']) {
     const extra = fullScreenMap ? 0 : await page.evaluate(() => Math.max(0, ...[...document.querySelectorAll('div')]
       .filter(d => ['auto', 'scroll'].includes(getComputedStyle(d).overflowY) && d.scrollHeight > d.clientHeight + 4)
       .map(d => d.scrollHeight - d.clientHeight)));
-    if (extra) { await page.setViewportSize({ width: phone.width, height: Math.min(phone.height + extra, 2600) }); await page.waitForTimeout(400); }
+    if (extra) { await page.setViewportSize({ width: viewport.width, height: Math.min(viewport.height + extra, 2600) }); await page.waitForTimeout(400); }
     await mapsReady(page, `${screen.id} ${language}`);
     const file = join(outDir, language, `${screen.id}.png`);
     await page.screenshot({ path: file });
     shots.push({ ...screen, language, file });
+    if (screen.id === 'admin-desktop') {
+      // the tabs are a rail on the reading-start side, not a bottom bar
+      const tab = page.getByRole('tab', { name: copy[language].settings }).first();
+      const box = await tab.boundingBox();
+      assert.ok(box, 'the settings tab is on screen');
+      assert.ok(language === 'ar' ? box.x > viewport.width - 300 : box.x + box.width < 300, `${language}: rail on the reading-start side (x=${box.x})`);
+      assert.ok(box.y < viewport.height - 80, `${language}: not a bottom bar (y=${box.y})`);
+      const bottoms = await page.getByRole('tab').evaluateAll(tabs => tabs.map(t => t.getBoundingClientRect().bottom));
+      assert.ok(bottoms.length > 0 && bottoms.every(b => b < viewport.height - 80), `${language}: no tab sits in a bottom bar`);
+    }
     if (screen.id === 'driver-jobs') {
       await page.getByRole('button', { name: copy[language].activeOrder, exact: true }).waitFor();
       assert.equal(await page.getByRole('button', { name: copy[language].accept, exact: true }).count() > 0, true);

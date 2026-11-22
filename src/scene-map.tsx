@@ -16,6 +16,7 @@ export type SceneMapProps = {
   pickup?: Point | null; dropoff?: Point | null;
   driver?: RouteMapProps['driver']; road?: RouteMapProps['road']; approach?: RouteMapProps['approach']; closed?: RouteMapProps['closed'];
   focus?: RouteMapProps['focus']; stale?: boolean; follow?: boolean;
+  night?: boolean; // design system v2: the Night map (captains after sunset)
   user?: UserDot | null; insets?: SceneMapInsets; labels?: { pickup?: string; dropoff?: string } | null; eta?: string | null;
   label?: string; height?: number; fill?: boolean;
   /** Margin kept around framed stops, in points. */
@@ -44,7 +45,7 @@ export function SceneMap(props: SceneMapProps) {
   </View>;
   const liveDriver = driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading ?? null, accuracy: driver.accuracy ?? null } : null;
   const dot = user ? { latitude: user.latitude, longitude: user.longitude, accuracy: user.accuracy ?? null } : null;
-  const config = { mode, language, still, center, zoom, pickup, dropoff, driver: liveDriver, user: dot, insets, recenter: c.recenter,
+  const config = { mode, language, still, center, zoom, pickup, dropoff, driver: liveDriver, user: dot, insets, recenter: c.recenter, ...(props.night && { theme: 'night' as const }),
     padding: props.padding ?? (fill ? 56 : Math.round(Math.min(56, height / 5))) }; // markers clear of the edges without zooming a short map out
   const update = { mode, ...(center && { center, zoom }), ...(mode === 'route' && pickup && dropoff ? { pickup, dropoff } : {}), driver: liveDriver, road: road ?? null, approach: approach ?? null,
     closed: closed ?? [], focus, stale: !!stale, follow: !!follow, user: dot, ...(insets && { insets }), labels: labels ?? null, eta: eta ?? null, ...(label && { label }) };

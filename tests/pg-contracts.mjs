@@ -341,7 +341,7 @@ try {
       // On Postgres /api/ready reports the max applied migration version (503 below 21);
       // the frozen SQLite fixture keeps the SQLite schema version. Assert the real PG value, then normalize like the timestamp below.
       if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') {
-        if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 41, 'readiness reports the finance handover audit migration');
+        if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 42, 'readiness reports the support inbox migration');
         ex.response.schema = 3;
       }
       if (ex.id === 'quote' && ex.response && typeof ex.response === 'object') {

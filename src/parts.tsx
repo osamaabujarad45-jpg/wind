@@ -19,8 +19,8 @@ import {
 export const serviceMeta: Record<Service, { icon: IconName; color: string; pale: string }> = {
   parcel: { icon: 'cube-outline', color: palette.olive, pale: palette.olivePale },
   ride: { icon: 'car-outline', color: palette.blue, pale: palette.bluePale },
-  freight: { icon: 'bus-outline', color: palette.clay, pale: palette.clayPale },
-  shop: { icon: 'basket-outline', color: palette.olive, pale: palette.olivePale }, // ONE-12: the accent stays on the icon and badge
+  freight: { icon: 'bus-outline', color: palette.olive, pale: palette.olivePale }, // the Send line: clay now means only the logo pin and the destination
+  shop: { icon: 'basket-outline', color: palette.shop, pale: palette.shopPale }, // ONE-12: the Shop line's accent stays on the icon and badge
 };
 
 export { statusText };
@@ -308,13 +308,13 @@ export function PlanCard() {
   }
 
   return <Appear>
-    <Card tone={sub?.status === 'active' ? 'olive' : sub ? 'card' : 'clay'}>{/* waiting on support is not a call to action; the badge carries it */}
+    <Card tone={sub?.status === 'active' ? 'olive' : sub ? 'card' : 'muted'}>{/* waiting on support is not a call to action; the badge carries it */}
       <Row style={{ justifyContent: 'space-between', marginBottom: 6 }}>
         <Row gap={8}>
           <Ionicons name="sparkles" size={18} color={palette.clay} />
           <Txt variant="title">{isPlus ? c.plusTitle : c.proTitle}</Txt>
         </Row>
-        {sub && !(sub.status === 'active' && sub.endsAt) && <Badge label={c[sub.status]} tone={sub.status === 'active' ? tones.olive : tones.clay} />}{/* "active until" below already says it */}
+        {sub && !(sub.status === 'active' && sub.endsAt) && <Badge label={c[sub.status]} tone={sub.status === 'active' ? tones.olive : tones.warn} />}{/* "active until" below already says it */}
       </Row>
       <Txt>{sub?.status === 'active' && sub.endsAt ? fill(c.subActive, { date: date(sub.endsAt) }) : sub ? c.subPending : pitch}</Txt>
       {!sub && <View style={{ marginTop: 10, alignSelf: 'flex-start' }}><Button title={c.subscribe} size="sm" icon="sparkles-outline" onPress={subscribe} loading={busy} /></View>}
@@ -400,9 +400,9 @@ export function VerifyEmailNudge() {
   const { c } = useCopy();
   if (!me?.capabilities?.emailVerification || !me.user.email || me.user.emailVerifiedAt) return null;
   return <Press accessibilityLabel={c.emailVerifyTitle} onPress={() => router.push('/profile')} style={{ marginBottom: 12 }}>
-    <Card tone="clay" style={{ marginBottom: 0 }}>
+    <Card tone="warn" style={{ marginBottom: 0 }}>
       <Row gap={10}>
-        <Ionicons name="mail-unread-outline" size={22} color={palette.clayInk} />
+        <Ionicons name="mail-unread-outline" size={22} color={palette.warn} />
         <View style={{ flex: 1 }}>
           <Txt variant="title">{c.emailVerifyTitle}</Txt>
           <Txt variant="caption">{c.emailVerifyNudge}</Txt>
@@ -469,8 +469,8 @@ export function AccountScreen() {
                 {/* each role has its own app, so its own account restating 'customer' or 'driver' (beside the vehicle chip) said nothing; only admin is marked */}
                 {user.role === 'admin' &&<Badge label={c[user.role]} tone={tones.blue} />}
                 {user.vehicle && <Badge label={c[user.vehicle]} tone={tones.muted} />}
-                {user.rating != null && <Badge label={`★ ${user.rating}`} tone={tones.clay} />}
-                {user.priceRating != null && <Badge label={fill(c.priceStars, { r: user.priceRating })} tone={tones.clay} />}
+                {user.rating != null && <Badge label={`★ ${user.rating}`} tone={tones.muted} />}
+                {user.priceRating != null && <Badge label={fill(c.priceStars, { r: user.priceRating })} tone={tones.muted} />}
                 {user.role === 'driver' && !!user.trips && <Badge label={fill(c.tripsCount, { n: user.trips })} tone={tones.olive} />}
               </Row>
             </View>
@@ -483,12 +483,12 @@ export function AccountScreen() {
     <PlanCard />
     {user.role === 'customer' && <InviteCard />}
     <ListGroup>
-      <ListRow icon="language-outline" label={c.languageTitle} value={c.language} tone="clay" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
+      <ListRow icon="language-outline" label={c.languageTitle} value={c.language} tone="muted" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
       <PasswordCard />
       {pushSupported() ? <PushRow /> : Platform.OS !== 'web' && <NativePushRow />}
     </ListGroup>
     <ListGroup>
-      <ListRow icon="trail-sign-outline" label={c.roads} tone="clay" onPress={() => router.push('/roads')} />
+      <ListRow icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />
       {/* MER-05: merchant mode is a link inside this account, never a role switch; it appears only while shop delivery is on. */}
       {me?.user.role === 'customer' && me.capabilities?.enabledServices?.includes('shop') && <ListRow icon="storefront-outline" label={c.merchantMode} tone="olive" onPress={() => router.push('/merchant')} />}
       <ListRow icon="help-buoy-outline" label={c.help} onPress={() => router.push('/help')} />

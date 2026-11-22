@@ -7,6 +7,8 @@ const suites = [
   "journey-contracts.test.mjs",
   "runtime-config.test.mjs",
   "large-text.test.mjs",
+  "design-theme.test.mjs",
+  "support-inbox.test.mjs",
   "driver-command.test.mjs",
   "protected-recovery.test.mjs",
   "error-text.test.mjs",

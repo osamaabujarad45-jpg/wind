@@ -50,7 +50,7 @@ export default function MerchantOrder() {
         ? fill(s.office.closed.action === 'collected' ? c.officeShopCollectedAt : c[`officeClosed_${s.office.closed.action}`], { t: time(s.office.closed.at) })
         : fill(c.officeUntil, { t: time(s.office.until) })}</Txt>
     </Card>}
-    {!s.state && order.status === 'requested' && <Card tone="clay">
+    {!s.state && order.status === 'requested' && <Card tone="warn">
       <Txt variant="label">{c.merchantStateNew}</Txt>
       <Txt>{clock.left === 0 ? c.shopAcceptExpired : fill(c.shopAcceptTimer, { t: clock.text })}</Txt>
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantPrepMinutes}</Txt>
@@ -63,7 +63,7 @@ export default function MerchantOrder() {
         onPress={() => reject && confirm(c.merchantRejectConfirm, () => act('reject', `/merchant/orders/${order.id}/reject`, { reason: reject }), c.merchantReject, c.cancel)} />
     </Card>}
     {s.state === 'accepted' && <Button title={c.merchantStartPreparing} icon="construct-outline" loading={busy === 'prep'} onPress={() => act('prep', `/merchant/orders/${order.id}/preparing`)} />}
-    {s.handoverException && s.state === 'preparing' && <Card tone="clay"><Txt>{fill(c.merchantFixHandover, { problem: c[`handover_${s.handoverException}`] })}</Txt></Card>}
+    {s.handoverException && s.state === 'preparing' && <Card tone="warn"><Txt>{fill(c.merchantFixHandover, { problem: c[`handover_${s.handoverException}`] })}</Txt></Card>}
     {s.change && <Card tone="muted"><Txt>{c.merchantWaitingCustomer}</Txt></Card>}
     <Card>
       <Section title={c.shopItems} />
@@ -113,7 +113,7 @@ export default function MerchantOrder() {
       <Txt variant="label">{c.merchantShowCode}</Txt>
       <Txt variant="h1" selectable accessibilityLabel={fill(c.merchantCodeSpoken, { code: s.pickupCode.split('').join(' ') })} style={{ writingDirection: 'ltr', letterSpacing: 8, textAlign: 'center' }}>{s.pickupCode}</Txt>
     </Card>}
-    {s.returnCode && <Card tone="clay">
+    {s.returnCode && <Card tone="muted">
       <Txt variant="label">{c.merchantReturnCode}</Txt>
       <Txt variant="h1" selectable accessibilityLabel={fill(c.merchantCodeSpoken, { code: s.returnCode.split('').join(' ') })} style={{ writingDirection: 'ltr', letterSpacing: 8, textAlign: 'center' }}>{s.returnCode}</Txt>
     </Card>}

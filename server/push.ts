@@ -52,6 +52,7 @@ const pushWords: Record<string, { ar: string; en: string }> = {
   attention: { ar: 'أمر يحتاج إلى مراجعتك. افتح ويند.', en: 'Something needs your review. Open Wind.' },
   plan: { ar: 'تحديث على اشتراكك. افتح ويند للتفاصيل.', en: 'An update to your plan. Open Wind for details.' },
   support: { ar: 'تحديث من الدعم بخصوص طلبك.', en: 'An update from support about your order.' },
+  support_reply: { ar: 'رد دعم ويند على رسالتك. افتح ويند.', en: 'Wind support replied to your message. Open Wind.' },
   cash: { ar: 'تحديث في حساب النقد. افتح ويند للتفاصيل.', en: 'An update to your cash balance. Open Wind for details.' },
   safety: { ar: 'بلاغ أمان يحتاج إلى مراجعة فورية.', en: 'A safety report needs review now.' },
   destination_request: { ar: 'طلب الزبون تغيير الوجهة. افتح ويند للرد.', en: 'The customer asked to change the destination. Open Wind to respond.' },

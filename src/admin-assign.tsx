@@ -29,7 +29,7 @@ export function AdminAssign({ order, busy, act }: { order: Order; busy: boolean;
       { driverId: chosen.id, reason: reason.trim(), requestId: attempt.current!.id, expectedStatus: order.status, expectedDriverId: order.driverId ?? null },
       () => { attempt.current = null; setPicked(null); setReason(''); setDone(true); reload(); }), reassign ? c.reassignAction : c.assignAction, c.no);
   };
-  return <Card tone="clay">
+  return <Card tone="warn">
     <Txt variant="title">{reassign ? c.reassignTitle : c.assignTitle}</Txt>
     <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{reassign ? c.reassignHint : c.assignHint}</Txt>
     {done && <Txt variant="caption" style={{ marginBottom: 12 }}>{c.assignDone}</Txt>}

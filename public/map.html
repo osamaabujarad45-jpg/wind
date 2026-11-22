@@ -21,7 +21,7 @@
 <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
 <style>
   :root { --inset-top: 0px; --inset-bottom: 0px; --inset-left: 0px; --inset-right: 0px; }
-  html, body, #map { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #EEEFEC; }
+  html, body, #map { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #EEECE3; }
   /* The pin's point sits at the centre of the map area the app's chrome leaves visible. */
   #pin { position: absolute; left: calc(50% + (var(--inset-left) - var(--inset-right)) / 2); top: calc(50% + (var(--inset-top) - var(--inset-bottom)) / 2); width: 44px; height: 44px;
     margin: -42px 0 0 -22px; pointer-events: none; transition: transform .16s ease-out; }
@@ -41,6 +41,10 @@
   .stop-label[hidden] { display: none; }
   .stop-label span { overflow: hidden; text-overflow: ellipsis; }
   .stop-label b { flex: none; background: #12342A; color: #fff; border-radius: 9px; padding: 0 7px; font-weight: 700; }
+  /* Night (design system v2): surface, ink and the lime accent from the Night tokens */
+  .night #recenter { background: #121F1A; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+  .night .stop-label { background: #121F1A; color: #EEF1EA; box-shadow: 0 1px 6px rgba(0,0,0,.5); }
+  .night .stop-label b { background: #D3F27A; color: #0E1F19; }
   @media (prefers-reduced-motion: reduce) { #pin { transition: none; } }
 </style>
 </head>
@@ -63,6 +67,13 @@ const defaultColors = { forest: '#12342A', olive: '#34765A', clay: '#CB6845', bl
 const incomingColors = config.colors && typeof config.colors === 'object' && !Array.isArray(config.colors) ? config.colors : {};
 const C = Object.fromEntries(Object.entries(defaultColors).map(([key, fallback]) => [key,
   typeof incomingColors[key] === 'string' && incomingColors[key].length === 7 && /^#[0-9a-f]{6}$/i.test(incomingColors[key]) ? incomingColors[key] : fallback]));
+// Design system v2 map tokens. Night (captains after dark) is opt-in and accepts only the exact string 'night'.
+const NIGHT = config.theme === 'night';
+const M = NIGHT
+  ? { land: '#0F1B17', block: '#16241F', blockLine: '#0A1411', resid: '#132019', park: '#13261D', water: '#0B1C24', road: '#24352F', major: '#34463F', casing: '#0A1411', label: '#9AA8A1', route: '#D3F27A', routeCasing: '#0C1713', approach: '#8DB8E6', ring: '#EEF1EA', control: '#D3F27A' }
+  : { land: '#EEECE3', block: '#E3E0D4', blockLine: '#D6D3C6', resid: '#E8E6DC', park: '#DDE8D2', water: '#CBDBE4', road: '#FFFFFF', major: '#FBF3D9', casing: '#D6D3C6', label: '#56635C', route: C.forest, routeCasing: '#FFFFFF', approach: C.blue, ring: C.forest, control: C.blue };
+for (const el of [document.documentElement, document.body, document.getElementById?.('map')]) if (el?.style) el.style.background = M.land; // no light flash before Night tiles draw
+if (NIGHT) document.documentElement.classList?.add('night');
 // The live camera: the car is centred at street level (Uber keeps it in the middle, not zoomed in and out).
 const FOLLOW_ZOOM = 15;
 const validPoint = p => !!p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180;
@@ -260,7 +271,7 @@ function stopMarker(color, square) {
 }
 function noEntry() { // closed checkpoint
   const el = document.createElement('div');
-  el.innerHTML = '<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="9.5" fill="#C62828" stroke="#fff" stroke-width="2"/><rect x="5.5" y="9.5" width="11" height="3" rx="1" fill="#fff"/></svg>';
+  el.innerHTML = '<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="9.5" fill="#A3392A" stroke="#fff" stroke-width="2"/><rect x="5.5" y="9.5" width="11" height="3" rx="1" fill="#fff"/></svg>';
   el.style.cssText = 'width:22px;height:22px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))';
   return el;
 }
@@ -283,10 +294,11 @@ const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches || co
 const recenter = document.getElementById('recenter');
 recenter.setAttribute('aria-label', config.recenter ?? 'Recenter');
 if (config.language === 'ar') { recenter.style.right = 'auto'; recenter.style.left = 'calc(var(--inset-left) + 10px)'; } // mirrored like the app's useCopy().rtl
-recenter.style.color = C.blue;
+recenter.style.color = M.control;
 pinEl.querySelector('path').setAttribute('fill', C.clay);
 
 // A calm base map: pale ground, white streets, the main roads a soft yellow, landmarks kept because people navigate by them here.
+// Colours are the design system v2 map-* tokens (Day): map-land, map-block, map-park, map-water, map-road(-major/-casing), map-label.
 function restyle() {
   const paint = (id, property, value) => { try { map.setPaintProperty(id, property, value); } catch { /* the style changed: leave its own colour */ } };
   for (const layer of map.getStyle().layers) {
@@ -295,16 +307,21 @@ function restyle() {
       map.setLayoutProperty(id, 'text-field', config.language === 'ar' && layer['source-layer'] === 'transportation_name'
         ? ['coalesce', ['get', 'name:ar'], ''] : labelField(config.language));
     if (type === 'fill-extrusion' || id.includes('shield')) { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
-    if (type === 'background') paint(id, 'background-color', '#F2F2EE');
-    else if (type === 'fill' && id.startsWith('building')) { paint(id, 'fill-color', '#E8E8E3'); paint(id, 'fill-outline-color', '#DEDED8'); }
-    else if (type === 'fill' && /residential|landuse_(school|hospital|cemetery)/.test(id)) paint(id, 'fill-color', '#EDEDE8');
-    else if (type === 'fill' && /park|wood|grass|landcover/.test(id)) paint(id, 'fill-color', '#DDEBD6');
-    else if (type === 'fill' && /water/.test(id)) paint(id, 'fill-color', '#BFDDEF');
+    if (type === 'background') paint(id, 'background-color', M.land);
+    else if (type === 'fill' && id.startsWith('building')) { paint(id, 'fill-color', M.block); paint(id, 'fill-outline-color', M.blockLine); }
+    else if (type === 'fill' && /residential|landuse_(school|hospital|cemetery)/.test(id)) paint(id, 'fill-color', M.resid);
+    else if (type === 'fill' && /park|wood|grass|landcover/.test(id)) paint(id, 'fill-color', M.park);
+    else if (type === 'fill' && /water/.test(id)) paint(id, 'fill-color', M.water);
     else if (type === 'line' && /^(road|tunnel|bridge)_/.test(id)) {
       const main = /motorway|trunk|primary/.test(id), casing = /casing/.test(id);
-      paint(id, 'line-color', casing ? (main ? '#E6D39B' : '#DCDCD6') : main ? '#FBE8AE' : '#FFFFFF');
-    } else if (type === 'symbol' && id.startsWith('poi')) { paint(id, 'text-color', '#6F747A'); paint(id, 'icon-opacity', 0.75); }
-    else if (type === 'symbol' && id.startsWith('highway-name')) paint(id, 'text-color', '#5B6066');
+      paint(id, 'line-color', casing ? M.casing : main ? M.major : M.road);
+    } else if (type === 'symbol' && id.startsWith('poi')) { paint(id, 'text-color', M.label); paint(id, 'text-halo-color', M.land); paint(id, 'icon-opacity', 0.75); }
+    else if (type === 'symbol' && id.startsWith('highway-name')) { paint(id, 'text-color', M.label); paint(id, 'text-halo-color', M.land); }
+    else if (type === 'symbol' && NIGHT) { paint(id, 'text-color', M.label); paint(id, 'text-halo-color', M.land); } // place names: light on the dark ground
+    else if (NIGHT && type === 'fill') {
+      if (layer.paint?.['fill-pattern']) map.setLayoutProperty(id, 'visibility', 'none'); // a Day texture would glare on the dark ground
+      else { paint(id, 'fill-color', /water/.test(id) ? M.water : M.resid); paint(id, 'fill-outline-color', M.blockLine); }
+    } else if (NIGHT && type === 'line') paint(id, 'line-color', /water/.test(id) ? M.water : M.casing); // waterways, park outlines, runways, tracks
   }
 }
 
@@ -316,8 +333,8 @@ const placeStop = (existing, point, color, square) => {
   return stop;
 };
 function drawStops() {
-  startMarker = placeStop(startMarker, state.pickup, C.forest, false);
-  endMarker = placeStop(endMarker, state.dropoff, C.forest, true);
+  startMarker = placeStop(startMarker, state.pickup, M.ring, false);
+  endMarker = placeStop(endMarker, state.dropoff, C.clay, true); // design system v2: clay means where it is going
   // Reserve the stop markers and their chips in WebGL collision space so base city/town labels do not repeat underneath.
   map.getSource('stop-guard')?.setData({ type: 'FeatureCollection', features: [state.pickup, state.dropoff]
     .filter(validPoint).map(p => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] } })) });
@@ -362,11 +379,11 @@ map.once('style.load', () => { // style parsed: draw now, tiles stream in after
   restyle();
   // Lines follow roads only (OSRM geometry); never a straight pickup→dropoff line.
   map.addSource('road', { type: 'geojson', data: empty });
-  map.addLayer({ id: 'road-casing', type: 'line', source: 'road', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-width': 8 } });
-  map.addLayer({ id: 'road', type: 'line', source: 'road', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': C.forest, 'line-width': 4.5 } });
+  map.addLayer({ id: 'road-casing', type: 'line', source: 'road', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': M.routeCasing, 'line-width': 8 } });
+  map.addLayer({ id: 'road', type: 'line', source: 'road', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': M.route, 'line-width': 4.5 } });
   map.addSource('approach', { type: 'geojson', data: empty });
-  map.addLayer({ id: 'approach-casing', type: 'line', source: 'approach', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-width': 9 } });
-  map.addLayer({ id: 'approach', type: 'line', source: 'approach', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': C.blue, 'line-width': 5 } });
+  map.addLayer({ id: 'approach-casing', type: 'line', source: 'approach', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': M.routeCasing, 'line-width': 9 } });
+  map.addLayer({ id: 'approach', type: 'line', source: 'approach', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': M.approach, 'line-width': 5 } });
   map.addSource('accuracy', { type: 'geojson', data: empty });
   map.addLayer({ id: 'accuracy', type: 'circle', source: 'accuracy', paint: { 'circle-color': C.blue, 'circle-opacity': 0.12,
     'circle-stroke-color': C.blue, 'circle-stroke-opacity': 0.3, 'circle-stroke-width': 1 } });

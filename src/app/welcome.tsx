@@ -111,7 +111,7 @@ function HandoverArt({ label, steps }: { label: string; steps: string[] }) {
         </Row>
       </Animated.View>)}
     </View>
-    <Animated.View entering={reduced ? undefined : ZoomIn.duration(320).delay(460)} style={[styles.panel, { backgroundColor: palette.clayPale, borderColor: palette.clayPale }]}>
+    <Animated.View entering={reduced ? undefined : ZoomIn.duration(320).delay(460)} style={[styles.panel, { backgroundColor: palette.muted, borderColor: palette.muted }]}>
       <Row style={{ justifyContent: 'space-between' }}>
         <Txt variant="title">{label}</Txt>
         <Text maxFontSizeMultiplier={maxScale} style={styles.code}>4827</Text>
@@ -140,5 +140,5 @@ const styles = StyleSheet.create({
   parcelChip: { position: 'absolute', padding: 4, borderRadius: 14, backgroundColor: palette.card, boxShadow: '0px 2px 8px rgba(14,31,25,0.10)' },
   panel: { backgroundColor: palette.card, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: palette.line },
   stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: palette.field, alignItems: 'center', justifyContent: 'center' },
-  code: { fontSize: 28, fontFamily: headingFont.bold, color: palette.clayInk, letterSpacing: 6, writingDirection: 'ltr' },
+  code: { fontSize: 28, fontFamily: headingFont.bold, color: palette.ink, letterSpacing: 6, writingDirection: 'ltr' },
 });

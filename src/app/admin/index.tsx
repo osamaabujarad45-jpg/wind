@@ -15,7 +15,7 @@ import { fill } from '../../copy';
 type Stats = {
   gmv: number; commission: number; subscriptions: number; discounts: number; profit: number; completed: number; activeSubscriptions: number;
   statuses: Partial<Record<OrderStatus, number>>; users: Record<string, number>;
-  pendingDrivers: number; pendingSubscriptions: number; openIncidents: number; backupStale: boolean; blockReviewsOverdue?: number;
+  pendingDrivers: number; pendingSubscriptions: number; openSupport?: number | null; openIncidents: number; backupStale: boolean; blockReviewsOverdue?: number;
   pickupPayReviewsOpen: number;
   pickupPayReviews?: { orderId: number; orderCode: string; driverName: string | null; suggestedCents: number | null;
     reason: NonNullable<Order['pickupPayReview']>['reason'] }[];
@@ -36,15 +36,15 @@ export default function Dashboard() {
     {pushSupported() ? <ListGroup><PushRow /></ListGroup> : Platform.OS !== 'web' && <ListGroup><NativePushRow /></ListGroup>}{/* phones: the system permission (Haiku polish r2 N2) */}
     <ErrorText>{error && err(error)}</ErrorText>
     {!data ? <Loading failed={!!error} onRetry={reload} /> : <>
-      {data.backupStale && <View accessibilityLiveRegion="polite"><Card tone="clay">
+      {data.backupStale && <View accessibilityLiveRegion="polite"><Card tone="warn">
         <Txt variant="title">{c.backupStaleTitle}</Txt>
         <Txt variant="caption" style={{ marginTop: 4 }}>{c.backupStaleBody}</Txt>
       </Card></View>}
-      {!!data.blockReviewsOverdue && <View accessibilityLiveRegion="polite"><Card tone="clay">
+      {!!data.blockReviewsOverdue && <View accessibilityLiveRegion="polite"><Card tone="warn">
         <Txt variant="title">{fill(c.blockReviewsOverdue, { n: data.blockReviewsOverdue })}</Txt>
         <Txt variant="caption" style={{ marginTop: 4 }}>{c.blockReviewsOverdueBody}</Txt>
       </Card></View>}
-      {!!data.pickupPayReviewsOpen && <View accessibilityLiveRegion="polite"><Card tone="clay">
+      {!!data.pickupPayReviewsOpen && <View accessibilityLiveRegion="polite"><Card tone="warn">
         <Txt variant="title">{fill(c.pickupPayReviewsOpen, { n: data.pickupPayReviewsOpen })}</Txt>
         <Txt variant="caption" style={{ marginTop: 4 }}>{c.pickupPayReviewsOpenBody}</Txt>
         {data.pickupPayReviews?.map(review => {
@@ -70,7 +70,8 @@ export default function Dashboard() {
 
       <Appear index={7}><ProfitChart daily={data.daily} /></Appear>
 
-      {(data.pendingDrivers > 0 || data.pendingSubscriptions > 0) && <Appear index={8}>
+      {(data.pendingDrivers > 0 || data.pendingSubscriptions > 0 || !!data.openSupport) && <Appear index={8}>
+        {!!data.openSupport && <Shortcut label={c.supportOpenCount} count={data.openSupport} onPress={() => router.navigate('/admin/support')} />}
         {data.pendingDrivers > 0 && <Shortcut label={c.pendingDrivers} count={data.pendingDrivers} onPress={() => router.navigate('/admin/users')} />}
         {data.pendingSubscriptions > 0 && <Shortcut label={c.pendingSubs} count={data.pendingSubscriptions} onPress={() => router.navigate('/admin/subscriptions')} />}
       </Appear>}
@@ -99,11 +100,11 @@ export default function Dashboard() {
 function Shortcut({ label, count, onPress }: { label: string; count: number; onPress: () => void }) {
   const { rtl } = useCopy();
   return <Press accessibilityLabel={`${label}: ${count}`} onPress={onPress}>
-    <Card tone="clay">
+    <Card tone="warn">
       <Row>
         <View style={styles.count}><Txt variant="title" style={{ color: palette.onFill }} center>{count}</Txt></View>
         <Txt variant="title" style={{ flex: 1 }}>{label}</Txt>
-        <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={18} color={palette.clayInk} />
+        <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={18} color={palette.warn} />
       </Row>
     </Card>
   </Press>;
@@ -155,8 +156,8 @@ const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
 const GROW = { from: { transform: [{ scaleY: 0.1 }], opacity: 0 }, to: { transform: [{ scaleY: 1 }], opacity: 1 } };
 
 const styles = StyleSheet.create({
-  reviewLink: { color: palette.clayInk, textDecorationLine: 'underline', paddingVertical: 10 },
-  count: { minWidth: 30, minHeight: 30, borderRadius: 15, backgroundColor: palette.clayInk, justifyContent: 'center', paddingHorizontal: 6 },
+  reviewLink: { color: palette.warn, textDecorationLine: 'underline', paddingVertical: 10 },
+  count: { minWidth: 30, minHeight: 30, borderRadius: 15, backgroundColor: palette.warn, justifyContent: 'center', paddingHorizontal: 6 },
   swatch: { width: 10, height: 10, borderRadius: 3 },
   plot: { height: 150, marginTop: 10, borderBottomWidth: 1, borderBottomColor: palette.line },
   grid: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: palette.muted },

@@ -4,7 +4,7 @@ import { api, useApi } from '../../api';
 import { fractionSettings, invalidSetting, typedNumber, type Settings, defaultSettings } from '../../model';
 import { PasswordCard, useFormat } from '../../parts';
 import { useSession } from '../../session';
-import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, Loading, palette, Row, Screen, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, Loading, palette, Row, Screen, tones, Txt, useCopy } from '../../ui';
 import { router } from 'expo-router';
 
 const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits' | 'shopTimers'; keys: (keyof Settings)[] }[] = [
@@ -203,7 +203,7 @@ function Promos() {
     {data?.map(p => <Row key={p.id} gap={8} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: palette.hair }}>
       <View style={{ flex: 1 }}>
         <Row gap={8}><Txt variant="title">{`${p.code} · ${money(p.amount)}`}</Txt>
-          <Badge label={p.live ? c.promoActive : p.active ? c.promoExpired : c.promoEnded} status={p.live ? 'completed' : 'cancelled'} /></Row>
+          <Badge label={p.live ? c.promoActive : p.active ? c.promoExpired : c.promoEnded} tone={p.live ? tones.olive : tones.muted} />{/* a promo is not an order: no journey state */}</Row>
         <Txt variant="micro">{fill(c.promoUses, { n: p.uses, max: p.maxUses, t: date(p.expiresAt) })}{p.firstOrderOnly ? ` · ${c.promoFirstOnly}` : ''}</Txt>
         {stopError?.id === p.id && <ErrorText>{stopError.message}</ErrorText>}
       </View>
