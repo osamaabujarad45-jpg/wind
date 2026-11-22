@@ -1,6 +1,6 @@
-// Design system v2: Day and Night for the whole app. Day by default; captains go Night after sunset (afterDark), and anyone can
-// pick Day, Night or Automatic in Account, saved on this device. The swap is instant, with no animated transition, so reduced
-// motion has nothing to stop and the new theme reads at once.
+// Design system v2: Day and Night for the whole app. Day by default; captains go Night after sunset (afterDark), and a Day,
+// Night or Automatic choice is saved on this device (Account offers it to captains until every screen reads the theme).
+// The swap is instant, with no animated transition, so reduced motion has nothing to stop and the new theme reads at once.
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState, type ViewStyle } from 'react-native';
 import { storage } from './storage';
@@ -28,6 +28,8 @@ export interface ThemeKit {
 export interface Theme extends ThemeKit {
   choice: ThemeChoice;
   setChoice: (choice: ThemeChoice) => void;
+  /** The saved choice has been read: the launch intro stays up until then, so a saved Night never opens on a Day frame. */
+  ready: boolean;
 }
 
 const tonesFor = (p: Palette) => ({
@@ -46,34 +48,35 @@ const kit = (name: ThemeName): ThemeKit => ({
 });
 export const themeKits: Record<ThemeName, ThemeKit> = { day: kit('day'), night: kit('night') };
 
-const ThemeContext = createContext<Theme>({ ...themeKits.day, choice: 'auto', setChoice: () => {} });
+const ThemeContext = createContext<Theme>({ ...themeKits.day, choice: 'auto', setChoice: () => {}, ready: true });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { me } = useSession();
   const captain = me?.user.role === 'driver';
   const [choice, setChoiceState] = useState<ThemeChoice>('auto');
-  const [dark, setDark] = useState(() => afterDark(Date.now()));
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     let live = true;
-    storage.get(THEME_KEY).then(saved => { if (live && themeChoices.includes(saved as ThemeChoice)) setChoiceState(saved as ThemeChoice); }).catch(() => {});
+    storage.get(THEME_KEY).then(saved => { if (live && themeChoices.includes(saved as ThemeChoice)) setChoiceState(saved as ThemeChoice); })
+      .catch(() => {}).finally(() => { if (live) setReady(true); });
     return () => { live = false; };
   }, []);
-  // Sunset and sunrise are checked every minute while it matters, and again when the app comes back (timers sleep in the background).
-  const follows = choice === 'auto' && captain;
+  // Whether the sun is down, kept current all the time (a minute timer, and the return to the app, since timers sleep in the
+  // background): turning Automatic on or a captain signing in then uses the time now, not the time of launch. An unchanged
+  // value is no re-render.
+  const [dark, setDark] = useState(() => afterDark(Date.now()));
   useEffect(() => {
-    if (!follows) return;
     const check = () => setDark(afterDark(Date.now()));
-    check();
     const timer = setInterval(check, 60_000);
     const sub = AppState.addEventListener('change', state => { if (state === 'active') check(); });
     return () => { clearInterval(timer); sub.remove(); };
-  }, [follows]);
+  }, []);
   const setChoice = useCallback((next: ThemeChoice) => {
     setChoiceState(next);
     void storage.set(THEME_KEY, next).catch(() => {});
   }, []);
   const name = resolveTheme(choice, captain, dark);
-  const value = useMemo<Theme>(() => ({ ...themeKits[name], choice, setChoice }), [name, choice, setChoice]);
+  const value = useMemo<Theme>(() => ({ ...themeKits[name], choice, setChoice, ready }), [name, choice, setChoice, ready]);
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 

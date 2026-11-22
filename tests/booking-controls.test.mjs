@@ -31,20 +31,22 @@ const between = (source, from, to) => {
   return source.slice(start, end);
 };
 
-const palette = runInNewContext(`(${literal(ui, 'export const palette =')})`);
+// The Day palette (src/theme.ts palettes.day; ui.tsx `palette` is its alias): the sizes below do not change with the theme.
+const theme = read('../src/theme.ts');
+const palette = runInNewContext(`(${literal(theme.slice(theme.indexOf('export const palettes')), 'day: {')})`);
 const size = runInNewContext(`(${literal(ui, 'export const size =')})`);
 const styles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const size = ${JSON.stringify(size)};
   const shadow = {}; const headingFont = new Proxy({}, { get: (_, weight) => 'heading-' + String(weight) });
-  return (${literal(ui, 'const styles = StyleSheet.create(')}); })()`);
+  return (${literal(ui, 'StyleSheet.create(')}); })()`);
 const motion = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const size = ${JSON.stringify(size)};
   const cubicBezier = () => 'ease'; const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
-  return (${literal(ui, 'const motion = css.create(')}); })()`);
+  return (${literal(ui, 'css.create(')}); })()`);
 const partStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)};
-  return (${literal(parts, 'const styles = StyleSheet.create(')}); })()`);
+  return (${literal(parts, 'StyleSheet.create(')}); })()`);
 const bookStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const sheetShadow = {};
-  return (${literal(book, 'const styles = StyleSheet.create(')}); })()`);
+  return (${literal(book, 'StyleSheet.create(')}); })()`);
 const searchStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)};
-  return (${literal(search, 'const styles = StyleSheet.create(')}); })()`);
+  return (${literal(search, 'StyleSheet.create(')}); })()`);
 
 // ---------- the target is a box, not a slop over the neighbour ----------
 // Android's smallest comfortable tap target is 48dp. hitSlop only widens the touch over the control

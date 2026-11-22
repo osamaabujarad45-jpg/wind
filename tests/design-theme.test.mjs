@@ -106,10 +106,10 @@ assert.equal(resolveTheme('night', false, false), 'night');
 const themed = ['app/_layout.tsx', 'app/driver/earnings.tsx', 'app/driver/index.tsx', 'app/driver/trips.tsx', 'app/help.tsx', 'app/order/[id].tsx',
   'app/profile.tsx', 'app/receipt/[id].tsx', 'app/roads.tsx', 'custody.tsx', 'driver-presence-card.tsx', 'driver-support-card.tsx', 'freight-details.tsx',
   'google-map.native.tsx', 'google-map.web.tsx', 'map-provider-boundary.tsx', 'map-sheet.tsx', 'parts.tsx', 'phone-card.tsx', 'pin-sheet.tsx', 'road.tsx',
-  'route-map.native.tsx', 'route-preview.tsx', 'scene-map.tsx', 'shop-ui.tsx', 'driver-map.tsx'];
+  'route-map.native.tsx', 'route-preview.tsx', 'scene-map.tsx', 'shop-ui.tsx', 'driver-map.tsx', 'app/support.tsx'];
 for (const rel of themed) {
   const source = readFileSync(new URL(`../src/${rel}`, import.meta.url), 'utf8');
-  const fromUi = source.match(/import \{([^}]*)\} from '(?:\.\.?\/)+ui';/s)?.[1] ?? '';
+  const fromUi = [...source.matchAll(/import \{([^}]*)\} from '(?:\.\.?\/)+ui';/g)].map(m => m[1]).join(',');
   for (const fixed of ['palette', 'tones', 'statusTone', 'shadow', 'sheetShadow']) assert.ok(!new RegExp(`\\b${fixed}\\b`).test(fromUi), `${rel} imports the fixed Day ${fixed} from ui.tsx: read useTheme()`);
   assert.doesNotMatch(source, /\bafterDark\(/, `${rel} decides Night itself: the theme context does`);
 }

@@ -21,7 +21,7 @@ export function themeContextMock(name = 'day') {
   const kit = themeKit(name);
   return {
     themeChoices: theme.themeChoices, themeKits: { day: themeKit('day'), night: themeKit('night') },
-    useTheme: () => ({ ...kit, choice: 'auto', setChoice() {} }), usePalette: () => kit.palette,
+    useTheme: () => ({ ...kit, choice: 'auto', setChoice() {}, ready: true }), usePalette: () => kit.palette,
     themedStyles: make => () => make(kit.palette, kit),
   };
 }

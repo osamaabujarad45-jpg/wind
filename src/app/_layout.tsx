@@ -47,7 +47,8 @@ function DriverWorkRoutes() {
 // then fades away over whatever screen the session resolved to.
 const FADE_MS = 280;
 function IntroOverlay() {
-  const { ready } = useSession();
+  const session = useSession(), theme = useTheme();
+  const ready = session.ready && theme.ready;
   const reduced = useReducedMotion();
   const [played, setPlayed] = useState(false);
   const [gone, setGone] = useState(false);
@@ -150,10 +151,8 @@ function Routes() {
 // the library's light grey behind it.
 function NavigationThemed({ children }: { children: React.ReactNode }) {
   const { name, palette } = useTheme();
-  const value = useMemo(() => {
-    const base = name === 'night' ? DarkTheme : DefaultTheme;
-    return { ...base, dark: name === 'night', colors: { ...base.colors, primary: palette.forest, background: palette.paper, card: palette.card,
-      text: palette.ink, border: palette.hair, notification: palette.warn } };
-  }, [name, palette]);
+  // Day keeps the library theme as it was; Night takes the Night palette.
+  const value = useMemo(() => name === 'night' ? { ...DarkTheme, dark: true, colors: { ...DarkTheme.colors, primary: palette.forest,
+    background: palette.paper, card: palette.card, text: palette.ink, border: palette.hair, notification: palette.warn } } : DefaultTheme, [name, palette]);
   return <NavigationTheme value={value}>{children}</NavigationTheme>;
 }

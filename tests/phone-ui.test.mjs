@@ -105,7 +105,7 @@ assert.match(readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url),
   assert.match(map, /document\.documentElement\.lang = config\.language === 'ar' \? 'ar' : 'en'/);
   const scene = readFileSync(new URL('../src/scene-map.tsx', import.meta.url), 'utf8');
   assert.match(scene, /const config = \{ mode, language,/);
-  assert.match(scene, /const run = `\$\{language\}:\$\{attempt\}`/);
+  assert.match(scene, /const run = `\$\{language\}:\$\{night \? 'night' : 'day'\}:\$\{attempt\}`/); // a language or theme change redraws the page
 }
 for (const [input, expected] of [
   ['٠١٢٣٤٥', '012345'], ['٦٧٨٩', '6789'], ['۰۱۲۳۴۵', '012345'], ['۶۷۸۹', '6789'],

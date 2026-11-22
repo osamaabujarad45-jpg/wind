@@ -436,11 +436,11 @@ for (const language of ['ar', 'en']) {
     await page.screenshot({ path: file });
     shots.push({ ...screen, language, file });
     if (screen.theme === 'night') {
-      // A Night shot is evidence only if the app drew Night: the first painted ground is the dark Night ground, not Day's paper.
-      const ink = await page.evaluate(() => [...document.querySelectorAll('div')].map(el => getComputedStyle(el).backgroundColor)
-        .find(bg => bg && bg !== 'rgba(0, 0, 0, 0)'));
-      const dark = /^rgb\((\d+), (\d+), (\d+)/.exec(ink ?? '');
-      assert.ok(dark && Number(dark[1]) + Number(dark[2]) + Number(dark[3]) < 120, `${screen.id} ${language}: Night shot drew a light ground (${ink})`);
+      // A Night shot is evidence only if the app drew Night: the Night ground (palettes.night.paper #0C1713) is painted and the Day
+      // paper (#F3F2EC) and Day card (#FFFFFF) are nowhere on the page.
+      const grounds = new Set(await page.evaluate(() => [...document.querySelectorAll('div')].map(el => getComputedStyle(el).backgroundColor)));
+      assert.ok(grounds.has('rgb(12, 23, 19)'), `${screen.id} ${language}: no Night ground on a Night shot`);
+      for (const day of ['rgb(243, 242, 236)', 'rgb(255, 255, 255)']) assert.ok(!grounds.has(day), `${screen.id} ${language}: a Day surface (${day}) on a Night shot`);
     }
     if (screen.id === 'admin-desktop') {
       // the tabs are a rail on the reading-start side, not a bottom bar
