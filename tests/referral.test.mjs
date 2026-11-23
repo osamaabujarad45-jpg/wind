@@ -96,6 +96,18 @@ try {
   for (const r of db.prepare('SELECT order_id FROM referrals WHERE referrer_id = ?').all(extra.user.id)) await rewardReferral(r.order_id, Date.now());
   assert.equal((await call('/me/referral', { token: extra.token })).earned, 5);
 
+  // A friend's first order that ends returned pays the inviter nothing: a return is no completed trip (DRV-17; Haiku recheck, PR #117).
+  const backInviter = await register('0599130040', 'Back inviter'), backFriend = await register('0599130041', 'Back friend');
+  const backCode = (await call('/me/referral', { token: backInviter.token })).code;
+  let back = await book(backFriend.token, { contact: '0599130041', promoCode: backCode, expectedDiscount: 10 });
+  back = await call(`/jobs/${back.id}/accept`, { token: driver.token, body: {} });
+  back = await advance(driver.token, await advance(driver.token, back));
+  await call(`/orders/${back.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'refused', note: 'Refused at door' } });
+  back = await call(`/admin/orders/${back.id}/resolve`, { token: admin.token, body: { action: 'return', reason: 'Recipient refused parcel' } });
+  const { returnCode } = await call(`/orders/${back.id}`, { token: backFriend.token });
+  assert.equal((await advance(driver.token, back, { code: returnCode })).status, 'returned');
+  assert.equal((await call('/me/referral', { token: backInviter.token })).earned, 0, 'a returned order rewards nobody');
+
   // A blocked inviter's code stops working.
   db.prepare("UPDATE users SET status = 'blocked' WHERE id = ?").run(extra.user.id);
   const late = await register('0599130030', 'Late');

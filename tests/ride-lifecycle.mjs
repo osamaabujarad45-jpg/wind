@@ -5,6 +5,8 @@ import { acceptOffer, addDriver, assessRide, bookRide, myOffer } from './dispatc
 import { NON_LEGACY_TABLES } from '../server/migrate.ts';
 
 const rideFixture = label => fixture(label, { WIND_DISPATCH_TEST_ONLY: '1', WIND_BOARDING_TEST_ONLY: '1' });
+// D-7: a ride ends with the rider's trip code (handoverCode), separate from the boarding PIN.
+const tripCode = async (f, id) => ({ code: (await f.call(`/orders/${id}`, { token: f.customer.token })).handoverCode });
 const advance = (f, token, id, expectedStatus, extra = {}, expect = 200) =>
   f.call(`/orders/${id}/advance`, { token, body: { requestId: randomUUID(), expectedStatus, ...extra }, expect });
 const wrongFor = code => (code === '0000' ? '0001' : '0000');
@@ -78,7 +80,11 @@ try {
   assert.equal((await f.call(`/orders/${booked.id}`, { token: f.customer.token })).ride.boardingCode, undefined,
     'the customer no longer receives the PIN once boarding is complete');
 
-  const completionRequest = { requestId: randomUUID(), expectedStatus: 'in_transit' };
+  // The rider's trip code ends the ride once they have paid (owner, 23 Nov 2026); boarding used its own PIN above.
+  const tripCode = (await f.call(`/orders/${booked.id}`, { token: f.customer.token })).handoverCode;
+  assert.match(tripCode, /^\d{4}$/, 'a ride carries a trip code for its owner');
+  assert.equal((await advance(f, who.driver.token, booked.id, 'in_transit', {}, 400)).error, 'wrong_code', 'a ride cannot end without the trip code');
+  const completionRequest = { requestId: randomUUID(), expectedStatus: 'in_transit', code: tripCode };
   const completed = await f.call(`/orders/${booked.id}/advance`, { token: who.driver.token, body: completionRequest });
   assert.equal(completed.status, 'completed');
   assert.equal(completed.ride.arrivedAt, arrived.ride.arrivedAt);
@@ -161,7 +167,7 @@ try {
   assert.equal(await h.db.one('SELECT failures FROM proof_attempts WHERE order_id=?', order.id), undefined);
   const boardedEpoch = Number((await h.db.one('SELECT assignment_epoch FROM orders WHERE id=?', order.id)).assignment_epoch);
   assert.equal((await h.call(`/orders/${order.id}/ride/no-show`, { token: who.driver.token, body: { reason: 'absent', expectedAssignmentEpoch: boardedEpoch }, expect: 409 })).error, 'cannot_arrive');
-  await advance(h, who.driver.token, order.id, 'in_transit');
+  await advance(h, who.driver.token, order.id, 'in_transit', await tripCode(h, order.id));
   const missedOrder = await dispatchAssigned(h, who, await bookRide(h));
   const seenEpoch = Number((await h.db.one('SELECT assignment_epoch FROM orders WHERE id=?', missedOrder.id)).assignment_epoch);
   assert.equal((await h.call(`/orders/${missedOrder.id}/ride/grace-extension`, { token: h.customer.token, body: {}, expect: 400 })).error, 'invalid_input', 'the extension names the assignment the rider saw (Haiku M2)');
@@ -249,7 +255,7 @@ try {
   assert.equal(assigned.ride, undefined, 'a legacy assignment gains no boarding state');
   assert.equal((await advance(legacy, legacy.d1.token, ride.id, 'assigned')).status, 'at_pickup');
   assert.equal((await advance(legacy, legacy.d1.token, ride.id, 'at_pickup')).status, 'in_transit', 'legacy rides start without arrival or boarding outside the gate');
-  assert.equal((await advance(legacy, legacy.d1.token, ride.id, 'in_transit')).status, 'completed');
+  assert.equal((await advance(legacy, legacy.d1.token, ride.id, 'in_transit', await tripCode(legacy, ride.id))).status, 'completed');
   console.log('WP11 ride-lifecycle: legacy PG advance/release flow unchanged without the test gate passed');
 } finally { await legacy.close(); }
 

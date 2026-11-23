@@ -9,6 +9,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, API_URL, ApiError, apiSessionRevision, useApi, useLiveFix } from '../../api';
 import { canOrderAgain, canSendAnother, newRequestId, scheduleSlots } from '../../booking';
 import { delivered, outboxKey, outboxStore, sendText, without, type Unsent } from '../../chat-outbox';
+import { localAlert, useChange, useNewIds } from '../../local-alert';
 import { storage } from '../../storage';
 import { AdminAssign } from '../../admin-assign';
 import { acceptPosition, useDriverWork } from '../../driver-work';
@@ -150,6 +151,14 @@ export default function OrderScreen() {
   // booking, order again, shop checkout) lands on this screen, and "your driver accepted" is then the reason (product audit, 21 Nov).
   const customerLive = me?.user.role === 'customer' && !!order?.driverId && activeStatuses.includes(order.status);
   useEffect(() => { if (customerLive) void registerNativePush(language, 'once'); }, [customerLive, language]);
+  // Without phone push (local-alert.ts): the customer's screen rings for a new driver offer, the driver taking the order and arriving.
+  const customerView = me?.user.role === 'customer' && order && order.customerId === me.user.id;
+  useNewIds(customerView && order.status === 'searching' ? (order.offers ?? []).map(o => o.driverId) : undefined,
+    () => localAlert(c.alertOfferTitle, c.alertOfferBody, `/order/${order!.id}`));
+  useChange(customerView ? order.status : undefined, (_, next) => {
+    if (next === 'assigned') localAlert(c.alertAssignedTitle, order!.driverName ? fill(c.alertAssignedBody, { name: order!.driverName }) : c.alertAssignedTitle, `/order/${order!.id}`);
+    else if (next === 'at_pickup') localAlert(order!.service === 'ride' ? c.alertArrivedRide : c.alertArrivedTitle, c.alertArrivedBody, `/order/${order!.id}`);
+  });
 
   if (!order || !me) return <Screen><Header title={/^\d+$/.test(id) ? orderCode(Number(id)) : c.orders} back /><ErrorText>{error && err(error)}</ErrorText><Loading failed={!!error} onRetry={reload} /></Screen>;
 
@@ -192,7 +201,8 @@ export default function OrderScreen() {
   const doorReasons = doorDiffers ? allowedReasons(collectedCents, dueCents) : [];
   const doorReady = doorValid && varianceAllowed(collectedCents, dueCents, doorDiffers ? doorOwn.reason : null);
   const doorProof = doorStep && doorReady ? { collectedCents, ...(doorDiffers && doorOwn.reason ? { varianceReason: doorOwn.reason } : {}) } : {};
-  const needsCode = rideAction === 'boarding' || (order.status === 'in_transit' && order.service !== 'ride') || (order.status === 'returning' && !order.supportHasGoods);
+  // A ride ends with the rider's trip code too, given once they have paid (owner, 23 Nov 2026), like a parcel's delivery code.
+  const needsCode = rideAction === 'boarding' || order.status === 'in_transit' || (order.status === 'returning' && !order.supportHasGoods);
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
   const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
@@ -206,16 +216,18 @@ export default function OrderScreen() {
   const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - order.updatedAt <= 7 * 86_400_000;
 
   async function act(key: string, path: string, body: object = {}, after?: () => void) {
-    if (!order || busy || acting.current || key === 'accept' && (!work.known || !canTake(work.orders, order.service))) return;
+    if (!order || busy || acting.current || key === 'accept' && (!work.known || !canTake(work.orders, order.service, order, me?.user.vehicle ?? null))) return;
     acting.current = true;
     setBusy(key);
     setActionError('');
     const session = apiSessionRevision(), focus = focusRevision.current;
+    // D-7: "The rider has no code" ends a ride without the trip code; it must reach the server on both send paths below.
+    const noCode = key === 'advance' && (body as { noCode?: boolean }).noCode === true;
     try {
       if (mine && order.recovery && (key === 'advance' || key === 'problem')) {
         if (key === 'advance') setAdvanceLocked(order.status);
         const result = await recoverDriverAction(me!.user.id, order, key === 'advance' ? 'advance' : 'exception',
-          key === 'advance' ? { ...(needsCode && code ? { code } : {}), ...doorProof, ...shopProof } : { reason: problem.reason as ExceptionReason, ...(problem.reason === pickupRefusal && { detail: problem.detail }), note: problem.note.trim(), ...shopProof },
+          key === 'advance' ? { ...(noCode ? { noCode: true as const } : needsCode && code ? { code } : {}), ...doorProof, ...shopProof } : { reason: problem.reason as ExceptionReason, ...(problem.reason === pickupRefusal && { detail: problem.detail }), note: problem.note.trim(), ...shopProof },
           () => apiSessionRevision() === session && focusRevision.current === focus);
         if (result.state === 'previous') {
           // An earlier saved action was settled first: show where the order stands and let the driver repeat this one.
@@ -245,7 +257,7 @@ export default function OrderScreen() {
       if (key === 'advance') {
         setAdvanceLocked(order.status);
         const attempt = advanceAttempt.current = advanceRequest(advanceAttempt.current, order.id,
-          { expectedStatus: order.status, code: needsCode ? code : '', ...doorProof, ...shopProof, ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) }, newRequestId);
+          { expectedStatus: order.status, code: noCode || !needsCode ? '' : code, ...(noCode && { noCode: true as const }), ...doorProof, ...shopProof, ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) }, newRequestId);
         body = attempt.body;
       }
       if (key === 'problem') { // one request id per order, so a lost acknowledgement replays instead of failing
@@ -307,10 +319,10 @@ export default function OrderScreen() {
       <Card tone="muted">{/* a code to give, not a warning: neutral, like the design system HandoverCode */}
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
-            <Txt variant="title">{c.handoverCode}</Txt>
-            <Txt variant="caption">{c.handoverHint}</Txt>
+            <Txt variant="title">{order.service === 'ride' ? c.tripCode : c.handoverCode}</Txt>
+            <Txt variant="caption">{order.service === 'ride' ? c.tripCodeHint : c.handoverHint}</Txt>
           </View>
-          <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.handoverCode} ${order.handoverCode.split('').join(' ')}`}>
+          <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${order.service === 'ride' ? c.tripCode : c.handoverCode} ${order.handoverCode.split('').join(' ')}`}>
             {order.handoverCode.split('').map((d, i) => <CodeDigit key={i} digit={d} />)}
           </View>
         </Row>
@@ -406,7 +418,7 @@ export default function OrderScreen() {
         </View>}
         {live && order.sharedRun && location && !location.stale && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Ionicons name="layers-outline" size={16} color={palette.olive} />
-          <Txt variant="caption" style={{ flex: 1 }}>{c.courierRun}</Txt>
+          <Txt variant="caption" style={{ flex: 1 }}>{order.service === 'ride' ? c.sharedRideRun : c.courierRun}</Txt>
         </Row>}
         {/* The driver is close: get the parcel ready (Uber tells the rider when the car is around the corner). */}
         {live && isCustomer && !mine && order.status === 'assigned' && order.pickupPoint && order.driverLocation && !location?.stale
@@ -500,7 +512,8 @@ export default function OrderScreen() {
         <RouteLine from={from[language]} to={to[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} ride={order.service === 'ride'} />
         <View style={styles.divider}>
           {!!order.detail && <Detail label={c.details} value={order.detail} />}
-          {order.service !== 'shop' && <Detail label={order.service === 'ride' ? c.passengers : c.size} value={order.service === 'ride' ? order.option : c[order.option as 'small']} />}
+          {order.service === 'ride' && order.shared && <Detail label={c.rideKind} value={c.rideShared} />}
+          {order.service !== 'shop' && <Detail label={order.service === 'ride' ? order.shared ? c.seats : c.passengers : c.size} value={order.service === 'ride' ? order.option : c[order.option as 'small']} />}
           {order.service === 'parcel' && <Detail label={c.parcelPriority} value={order.priority === 'same_day' ? c.priority_same_day : c.priority_standard} />}
           {order.loadingHelp && <Detail label={c.loadingHelp} value={c.yes} />}
           <Detail label={c.payWith} value={c.cash} />
@@ -612,7 +625,7 @@ export default function OrderScreen() {
     {!live && <ErrorText>{actionError}</ErrorText>}
 
     <View style={{ gap: 8 }}>
-      {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || offlineIdle || !canTake(work.orders, order.service)}
+      {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || offlineIdle || !canTake(work.orders, order.service, order, me?.user.vehicle ?? null)}
         reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : offlineIdle ? c.accept_go_online : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
         onPress={() => act('accept', `/jobs/${order.id}/accept`)} />}
 
@@ -810,7 +823,7 @@ export default function OrderScreen() {
           </>}
         </>}
         {needsCode &&
-          <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? c.codeFromSender : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
+          <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? c.codeFromSender : order.service === 'ride' ? c.codeFromRider : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
             disabled={!!busy || advanceLocked === order.status} />}
         {needsCode && !busy && advanceLocked === order.status && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
         {order.status === 'returning' && order.supportHasGoods && <Txt variant="caption">{c.supportHasGoodsDriver}</Txt>}
@@ -824,6 +837,8 @@ export default function OrderScreen() {
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
             : parcelFarKm !== null ? confirm(farFill(c.parcelPickupFarConfirm, c.parcelPickupFarCityConfirm), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
             : act('advance', `/orders/${order.id}/advance`, { code })} />}
+        {order.service === 'ride' && order.status === 'in_transit' && !order.safetyHold && <Button title={c.rideNoCode} variant="ghost" size="sm" disabled={!!busy}
+          onPress={() => confirm(c.rideNoCodeConfirm, () => act('advance', `/orders/${order.id}/advance`, { noCode: true }), c.rideNoCodeAction, c.no)} />}
         {rideNoShow && <Button title={c.rideNoShow} variant="outline" disabled={!!busy} loading={busy === 'no-show'}
           onPress={() => confirm(c.rideNoShowConfirm, () => act('no-show', `/orders/${order.id}/ride/no-show`,
             { reason: 'absent', expectedAssignmentEpoch: order.recovery?.assignmentEpoch }, () => { void work.reload(); }), c.rideNoShow, c.no)} />}

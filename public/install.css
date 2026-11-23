@@ -29,3 +29,10 @@ footer { border-top:1px solid var(--line); padding-top:20px; font-size:14px; }
 footer a { display:inline-flex; min-height:44px; align-items:center; color:var(--forest); font-weight:700; }
 .note { font-size:14px; margin-top:20px; }
 [hidden] { display:none !important; }
+h2 { font-size:21px; margin:0 0 10px; }
+section { background:white; border:1px solid var(--line); border-radius:16px; padding:18px 18px 6px; margin:18px 0; }
+section.other { opacity:.92; }
+section ol { margin:18px 0 8px; }
+.meta { color:var(--muted); font-size:14px; margin:8px 0 4px; }
+.mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; word-break:break-all; color:var(--muted); }
+#apk { display:block; font-size:18px; padding:14px 16px; }

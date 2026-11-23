@@ -67,6 +67,10 @@ export default function Home() {
   // Before any fix: the last place this customer booked from, else the middle of the West Bank.
   const lastCity = orders[0]?.pickupCity;
   const camera = here ? { latitude: here.latitude, longitude: here.longitude } : lastCity ? { latitude: city(lastCity).latitude, longitude: city(lastCity).longitude } : { latitude: 31.95, longitude: 35.05 };
+  // RIDE-14: unnamed cars around the customer, the way a ride app opens. Only with rides on and a fix; a rough spot is enough.
+  const nearbyAt = here && enabledServices.includes('ride') && focused ? `${here.latitude.toFixed(3)},${here.longitude.toFixed(3)}` : null;
+  const nearby = useApi<{ cars: Point[]; count: number; nearestKm: number | null }>(nearbyAt ? `/drivers/nearby?service=ride&near=${nearbyAt}` : null, 15_000);
+  const cars = nearbyAt ? nearby.data?.cars ?? null : null;
   async function locate() {
     setLocating(true); setLocationNote('');
     try {
@@ -117,7 +121,8 @@ export default function Home() {
 
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     {/* The map is the screen, the way a ride app opens: you, where you are. Everything else sits on the sheet over it. */}
-    {focused && <SceneMap fill mode="browse" center={camera} zoom={here ? 15 : lastCity ? 12 : 8.6} user={here} insets={{ top: topBar, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} label={c.home} />}
+    {focused && <SceneMap fill mode="browse" center={camera} zoom={here ? 15 : lastCity ? 12 : 8.6} user={here} cars={cars} insets={{ top: topBar, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }}
+      label={cars ? `${c.home}. ${cars.length ? fill(c.nearbyCars, { n: cars.length, km: nearby.data?.nearestKm ?? '' }) : c.nearbyNone}` : c.home} />}
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.top, side && (rtl ? { left: SIDE_SHEET, right: 0 } : { right: SIDE_SHEET })]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
       <View style={[styles.topRow, { flexDirection: row }]} pointerEvents="box-none">
         <View style={[styles.hello, shadow, { flexDirection: row }]}>
@@ -153,6 +158,10 @@ export default function Home() {
             <Text key={language} maxFontSizeMultiplier={maxScale} style={styles.nowText}>{c.later}</Text>
           </Press>
         </View>
+        {cars && <Row gap={6} style={{ marginBottom: 8 }}>
+          <Ionicons name="car-outline" size={iconSize.sm} color={palette.olive} />
+          <Txt variant="caption" style={{ flex: 1 }}>{cars.length ? fill(c.nearbyCars, { n: cars.length, km: nearby.data?.nearestKm ?? '' }) : c.nearbyNone}</Txt>
+        </Row>}
         <Row gap={8} style={{ alignItems: 'stretch' }}>
           {services.filter(service => enabledServices.includes(service)).map((service, i) => <Appear key={service} index={i} style={{ flex: 1 }}>
             <Press tilt accessibilityLabel={c[service]} containerStyle={{ flexGrow: 1 }} onPress={() => service === 'shop' ? router.push('/shop') : book({ service })} style={[styles.tile, shadow, stacked ? styles.tileStacked : { flexDirection: row }]}>

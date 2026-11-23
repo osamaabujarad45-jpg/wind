@@ -147,7 +147,7 @@ section.
 | ID | Rule | Why |
 |---|---|---|
 | CON-01 | A customer MUST have at most one active **ride**. They MAY hold several shipping and delivery orders at once. | A person is in one car at a time; items are not |
-| CON-02 | A captain on an active ride MUST NOT receive or accept any other job until the ride ends, and a captain carrying jobs MUST NOT accept a ride (`canTake` enforces both directions). Pooling stays out of scope (`docs/SYSTEM.md` §10). | Passenger safety and attention |
+| CON-02 | A captain on an active ride MUST NOT receive or accept any other job until the ride ends, and a captain carrying jobs MUST NOT accept a ride (`canTake` enforces both directions). Pooling stays out of scope (`docs/SYSTEM.md` §10). **Amended 23 Nov 2026 (D-6):** shared rides pool with each other and with parcels up to the vehicle's seats; a private ride, a load and a shop order stay exclusive. | Passenger safety and attention |
 | CON-03 | A captain MAY carry several parcels together, up to the vehicle's load limit (kg and volume per vehicle class, ADM-06). The run sheet orders pickups, drop-offs and returns (PLAN D-11/D-12). Today `canTake` (`src/model.ts`) stacks parcels only with parcels, under a flat count `PARCEL_LOAD = 200`. Shop orders start one per trip (DLV-24); stacking them is a later phase. | Courier efficiency |
 | CON-04 | Job eligibility MUST be one server path: approved for the service line, vehicle class fits (§2.3), documents valid (ACC-05), not blocked, under the cash cap, not on a ride, under the load limit, not held-cash-overdue (WP-12). Today there are **two implementations**: production (SQLite) uses `canTake` plus `server/domain/driver-refusal.ts` (accept and admin-assign); `server/domain/eligibility.ts` (document expiry, measured capability) runs only on PostgreSQL. They MUST converge into one path that board, offer, accept and admin-assign all call. | No path bypasses a rule |
 | CON-05 | Cash exposure MUST be summed across all services before any accept (ONE-10). | One driver, one wallet |
@@ -290,6 +290,9 @@ PostgreSQL decision (ride lifecycle and dispatch are PostgreSQL-only today: `rid
 | RIDE-10 | Ride MUST obey CON-01 and CON-02. | P: CON-02 is enforced for captains by `canTake` (rides are exclusive); CON-01 (one active ride per customer) is N | |
 | RIDE-11 | Women-preference and accessibility needs (wheelchair, service animal) SHOULD be bookable attributes, shown to the captain, once supply exists. | N | UB-F F10 |
 | RIDE-12 | Scheduled rides MUST become an offer at T−N minutes, and the rider MUST be told if no captain accepted by T−M. | P: scheduled orders are released 30 minutes ahead (`server/main.ts`); the late-acceptance notice to the rider is N | UB-F F13 |
+| RIDE-13 | Shared seats (D-6): a ride MAY be booked as shared seats, priced per seat; a captain MAY carry shared riders and parcels together up to the vehicle's seats; a private ride stays exclusive. | E (1.1.6) | D-6 |
+| RIDE-14 | Nearby cars (D-8): the customer home map MUST show unnamed nearby cars that could take one more rider, kept 3 minutes in memory, rounded about 200 m. | E (1.1.6) | D-8 |
+| RIDE-15 | Trip code (D-7): a ride MUST end only with the rider's 4-digit code, with the SHIP-05 lockout and reset. | E (1.1.6) | D-7 |
 
 ---
 
@@ -602,6 +605,22 @@ installable web app from Safari (NFR-09); no App Store build is planned now.
 | D-4 | **iOS VoiceOver acceptance waiver** until an iPhone is available: until then the customer flow is checked with VoiceOver in desktop Safari (§12.1 item 7). Recorded under the owner's 16 Nov instruction to decide the open items by recommendation. | iOS customers use the Safari web app (NFR-09); no competitor basis needed |
 | D-5 | **Uncollected returns** (parcels and shop orders) are held at the Wind office for 7 days, or 24 hours for perishables, then donated if safe and sellable, otherwise destroyed (SHIP-19). Recorded under the owner's 16 Nov instruction to decide the open items by recommendation. | Common courier practice; no competitor study covers it |
 
+
+### 16b. Owner decisions, 23 November 2026 (pilot with real users)
+
+The owner asked for Wind to go to real users with rides (in town and between towns), shared seats, parcels and meals from
+shops, decided "based on knowledge" of the competitor apps and without further questions. Built in the pilot-ready release
+(1.1.6); each row names the requirement it adds or changes.
+
+| ID | Decision | Competitor basis |
+|---|---|---|
+| D-6 | **Shared seats (RIDE-13).** A ride may be booked as *shared seats*: priced per seat at (1 − `sharedDiscount`) of the private fare (default 0.7, so a Tulkarm → Ramallah seat is near ₪30, what a service taxi asks), and the car may pick up other shared riders and parcels going the same way. A car offers 4 seats, a motorcycle 1. Parcels and shared rides share a vehicle while it has seats (`canTake`, `src/model.ts`); a private ride, a load and a shop order stay alone. This **amends CON-02**: pooling is in scope for shared rides only. Built for the production path (SQLite, broadcast and offers); the PostgreSQL-only WP10 dispatch rounds and the measured eligibility cohort still treat any load as exclusive and must learn the seat rule before the G-PG cutover. | Palestinian service taxis (سرفيس) sell seats on fixed town pairs; Careem/Uber pool products; inDrive intercity. |
+| D-7 | **The trip code ends a ride (RIDE-15).** Every ride carries a 4-digit code shown to the rider; the rider pays the driver at the drop-off and then gives the code, which the driver must enter to finish. Same lockout (5 tries) and audited admin reset as SHIP-05. The PostgreSQL boarding PIN (RIDE-07) is unchanged and separate. A captain app older than build 10106 cannot ask for the code, so ending a ride from one gets 426 (update required); production also sets `WIND_MIN_CLIENT_BUILD=10106`. | The owner's own flow ("I deliver the code after the payment"); Wind's parcel handover code. |
+| D-8 | **Nearby cars (RIDE-14).** A customer sees unnamed cars of approved drivers whose job board is open within 8 km: positions kept in the API's memory for 3 minutes, never stored, rounded to about 200 m, with no name, plate or id. A full car (no free seat, or exclusive work) is not shown. | Uber and Careem show nearby cars before a request. |
+| D-9 | **Along the way.** A driver who sets "heading to" and whose board knows its position sees jobs whose two ends are on the way (going through a town adds at most a quarter of the straight distance plus 5 km) and that move toward the destination; without a position, the old rule (drop-off in the heading town) stays. | inDrive intercity and service-taxi practice. |
+| D-10 | **Restaurants open in the shop line** (amends DLV-19 and D-2's category list): a merchant may apply as `restaurant`; a meal is a counted item like any other. The food-handling policy remains the merchant's under its own licence. | HAAT, Talabat and Careem Food. |
+| D-11 | **Pilot service lines:** parcel, ride (with shared seats) and shop delivery in Tulkarm (`WIND_ENABLED_SERVICES=parcel,ride,shop`, `WIND_SHOP_TOWN=tulkarm`). This supersedes D-2's wait on G-PG for the first shop order: production keeps SQLite with hourly off-host backups and a tested restore. Legal permission for passenger transport (G-RIDE) and insurance stay the owner's responsibility. | — |
+| D-12 | **Distribution:** Android installs the signed APK from `/install.html` (served from `/download/wind.apk`); iPhone uses the Safari Home Screen web app from the same page (NFR-09). | — |
 ---
 
 ## 17. Release plan (phased, one app throughout)

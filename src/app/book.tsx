@@ -92,6 +92,9 @@ function BookForm() {
   const [recipientName, setRecipientName] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
   const [option, setOption] = useState(optionsFor(service)[0]);
+  const [shared, setShared] = useState(false); // RIDE-13: seats in a car that may pick up other riders going the same way
+  const pooling = !!me?.capabilities?.pooling;
+  const sharedSeats = service === 'ride' && shared && pooling;
   const [priority, setPriority] = useState<ParcelPriority>('standard'); // A12: parcels only
   // 12:00 Jerusalem, judged on the server's clock; the form re-judges it every 15 s.
   const [clock, setClock] = useState(Date.now);
@@ -359,7 +362,7 @@ function BookForm() {
         setPending(existing); setService(p.service); setPickupCity(p.pickupCity); setDropoffCity(p.dropoffCity);
         setPickupChosen(true); setDropoffChosen(true); setStep('trip'); pickupTouched.current = true;
         setPickupPoint(p.pickupPoint); setDropoffPoint(p.dropoffPoint ?? null); setPickupNote(p.pickupNote); setDropoffNote(p.dropoffNote);
-        setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp); setPriority(p.priority ?? 'standard');
+        setContact(p.contact); setDetail(p.detail); setOption(p.option); setLoadingHelp(p.loadingHelp); setShared(p.shared); setPriority(p.priority ?? 'standard');
         if (p.declaredScope) {
           setFreight(freightDraftFromScope(p.declaredScope));
           setLoadingHours((p.declaredScope.loadingBefore - p.declaredScope.loadingAfter) / 3_600_000);
@@ -380,7 +383,7 @@ function BookForm() {
         } else if (old) {
           const f = againForm(old);
           setService(f.service); setPickupCity(f.pickupCity); setDropoffCity(f.dropoffCity); setPickupPoint(f.pickupPoint); setDropoffPoint(f.dropoffPoint);
-          setPickupNote(f.pickupNote); setDropoffNote(f.dropoffNote); setDetail(f.detail); setOption(f.option); setLoadingHelp(f.loadingHelp); setPriority(f.priority ?? 'standard');
+          setPickupNote(f.pickupNote); setDropoffNote(f.dropoffNote); setDetail(f.detail); setOption(f.option); setLoadingHelp(f.loadingHelp); setShared(f.shared); setPriority(f.priority ?? 'standard');
           if (f.contact) setContact(f.contact);
           setRecipientName(f.recipientName); setRecipientPhone(f.recipientPhone);
           setSameFrom(false); setCopiedFrom(old.id);
@@ -424,16 +427,16 @@ function BookForm() {
   // Same day is booked now: a scheduled slot quotes and books standard (the server refuses same_day with a schedule).
   const sameDayAllowed = sameDayOpen && scheduledFor == null;
   const quotePriority: ParcelPriority = sameDayAllowed ? priority : 'standard'; // a closed or scheduled same-day quotes as standard
-  const priceKey = JSON.stringify([service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, declaredScope, quotePriority, priceTick]);
+  const priceKey = JSON.stringify([service, option, loadingHelp, sharedSeats, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, declaredScope, quotePriority, priceTick]);
   const [quoted, setQuoted] = useState<{ key: string; quote: PriceQuote | null; error?: unknown } | null>(null);
   useEffect(() => {
     if (!isCustomer || pending || !routeChosen || scopeIncomplete) return; // a pending booking keeps its complete terms
     let live = true;
-    const timer = setTimeout(() => api<PriceQuote>('/price', { service, option, loadingHelp, pickupCity, dropoffCity, ...(service === 'parcel' && quotePriority === 'same_day' && { priority: quotePriority }),
+    const timer = setTimeout(() => api<PriceQuote>('/price', { service, option, loadingHelp, ...(sharedSeats && { shared: true }), pickupCity, dropoffCity, ...(service === 'parcel' && quotePriority === 'same_day' && { priority: quotePriority }),
       ...(pickupPoint && { pickupPoint }), ...(dropoffPoint && { dropoffPoint }), ...(declaredScope && { declaredScope }), ...(scheduledFor !== null && { scheduledFor }) })
       .then(quote => { if (live) setQuoted({ key: priceKey, quote }); }, error => { if (live) setQuoted({ key: priceKey, quote: null, error }); }), 300);
     return () => { live = false; clearTimeout(timer); };
-  }, [isCustomer, pending, routeChosen, priceKey, service, option, loadingHelp, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, scopeIncomplete, declaredScope, quotePriority]);
+  }, [isCustomer, pending, routeChosen, priceKey, service, option, loadingHelp, sharedSeats, pickupCity, dropoffCity, pickupPoint, dropoffPoint, scheduledFor, scopeIncomplete, declaredScope, quotePriority]);
   const quoting = isCustomer && !pending && routeChosen && !scopeIncomplete && quoted?.key !== priceKey; // the Request button waits for it
   const quoteFailed = isCustomer && !pending && routeChosen && quoted?.key === priceKey && quoted.quote === null;
   const smart = quoted?.key === priceKey ? quoted.quote : null;
@@ -452,7 +455,7 @@ function BookForm() {
     : [smart.minutes, smart.minutes];
   const slowRoute = !!smart && (smart.slow.length > 0 || smart.closed.length > 0);
 
-  const price = pending?.payload.quotedPrice ?? smart?.price ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: false, plus });
+  const price = pending?.payload.quotedPrice ?? smart?.price ?? quote(settings, { service, pickupCity, dropoffCity, option, loadingHelp, shared: sharedSeats, plus });
   const reasons = smart && [quoteEta !== null && `${smart.estimated ? '≈ ' : ''}${etaShort(c, quoteEta, slowRoute)}` /* the km sits in the route card above */, smart.night && c.nightRate,
     ...smart.slow.map(name => fill(c.slowDelay, { name, m: SLOW_MINUTES })), ...smart.closed.map(name => fill(c.closedDelay, { name, m: CLOSED_MINUTES }))]
     .filter(Boolean).join(' · ');
@@ -481,6 +484,7 @@ function BookForm() {
     setOption(optionsFor(next)[0]);
     setPriority('standard');
     setLoadingHelp(false);
+    setShared(false);
     setError('');
     setSwapNotice('');
     setInvalid({});
@@ -526,7 +530,7 @@ function BookForm() {
       // Retry keeps the stored identity and payload: the server's command idempotency makes a lost answer safe to repeat.
       const command = pending ? { ...pending, attemptedAt: Date.now() }
         : newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
-          contact, detail, option, loadingHelp, shared: false, quotedPrice: price,
+          contact, detail, option, loadingHelp, shared: sharedSeats, quotedPrice: price,
           ...(declaredScope && { declaredScope }), ...(service === 'parcel' && priority === 'same_day' && sameDayAllowed && { priority }),
           ...(service !== 'ride' && recipientPhone.trim() && { recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() }), ...(scheduledFor !== null && { scheduledFor }),
           ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }), ...(smart?.quoteId && { quoteId: smart.quoteId }) });
@@ -746,10 +750,18 @@ function BookForm() {
           <Field label={c.recipientName} icon="person-outline" value={recipientName} onChangeText={setRecipientName} disabled={locked} maxLength={60} />
         </>}
         {service === 'ride'
-          ? <Row style={{ justifyContent: 'space-between' }}>
-            <Txt variant="label">{c.passengers}</Txt>
-            <Stepper label={c.passengers} value={Number(option)} min={1} max={4} onChange={n => setOption(String(n))} disabled={locked} />
-          </Row>
+          ? <>
+            {pooling && <>
+              <Txt variant="label" style={{ marginBottom: 6 }}>{c.rideKind}</Txt>
+              <Choices label={c.rideKind} items={[{ key: 'private', label: c.ridePrivate }, { key: 'shared', label: c.rideShared }]}
+                value={(pending ? pending.payload.shared : shared) ? 'shared' : 'private'} onChange={k => setShared(k === 'shared')} disabled={locked} />
+              <Txt variant="caption" style={{ marginBottom: 8 }}>{sharedSeats ? c.rideSharedHint : c.ridePrivateHint}</Txt>
+            </>}
+            <Row style={{ justifyContent: 'space-between' }}>
+              <Txt variant="label">{sharedSeats ? c.seats : c.passengers}</Txt>
+              <Stepper label={sharedSeats ? c.seats : c.passengers} value={Number(option)} min={1} max={4} onChange={n => setOption(String(n))} disabled={locked} />
+            </Row>
+          </>
           : <>
             <Txt variant="label" style={{ marginBottom: 6 }}>{c.size}</Txt>
             <Choices label={c.size} items={optionsFor(service).map(key => ({ key, label: c[key as 'small'] }))} value={option} onChange={setOption} disabled={locked} />
@@ -787,7 +799,7 @@ function BookForm() {
         <Row gap={12}>
           <View style={styles.cash}><Ionicons name="sparkles-outline" size={18} color={palette.olive} /></View>
           <View style={{ flex: 1 }}>
-            <Txt variant="micro">{smart?.standard ? c.standardParcel : c.recommendedPrice}</Txt>
+            <Txt variant="micro">{smart?.standard ? c.standardParcel : sharedSeats ? fill(c.sharedPriceLabel, { n: option }) : c.recommendedPrice}</Txt>
             <Txt variant="title">{quoting ? c.quote_calculating : quoteFailed ? '—' : smart ? money(smart.price) : c.quote_calculating}</Txt>
           </View>
         </Row>

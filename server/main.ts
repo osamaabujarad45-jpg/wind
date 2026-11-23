@@ -38,6 +38,7 @@ import { firebaseReset } from './domain/firebase-reset.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
+import { forgetDriver, registerNearbyRoutes, sawDriver } from './domain/nearby.ts';
 import { areaName, registerPlaceIndexRoutes, streetName } from './domain/place-index.ts';
 import { registerPlaceLinkRoutes } from './domain/place-link.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
@@ -47,7 +48,7 @@ import { registerAdminAssignRoutes } from './domain/admin-assign.ts';
 import { driverRefusal } from './domain/driver-refusal.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { registerCashReceiptRoutes } from './domain/cash-receipts.ts';
-import { cashClientFenced, clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
+import { cashClientFenced, clientUpdateRequired, registerRuntimeRoutes, tripCodeClientTooOld } from './domain/runtime-readiness.ts';
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
 import { registerCommandReceiptRoutes } from './domain/command-receipts.ts';
 import { registerCustodyRoutes } from './domain/custody.ts';
@@ -63,7 +64,7 @@ import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
   activeStatuses, cities, city, pickupPayCents as pickupPayFor, commissionOn, crowKm, distanceKm, exceptionReasons, finishedStatuses, pickupRefusal, pickupRefusalDetails, defaultSettings, fractionSettings, invalidSetting, isCity, nextStatus, normalizeEmail, normalizePhone,
-  canTake, CLOSED_MINUTES, HISTORY_PAGE, isNight, latinDigits, offerRange, overCashCeiling, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
+  alongTheWay, canTake, CLOSED_MINUTES, nearestCity, onTheWay, poolable, HISTORY_PAGE, isNight, latinDigits, offerRange, overCashCeiling, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { BOOKING_COMMAND_TTL_MS } from '../src/booking.ts';
@@ -308,7 +309,9 @@ const activeSql = inList(activeStatuses), finishedSql = inList(finishedStatuses)
 /** What a driver is carrying right now (SPEC-parcel-standard.md: many parcels, or one ride / freight load). */
 /** What a driver's vehicle may carry; no vehicle on file serves nothing (a NULL is never a car). */
 const servesFor = (vehicle: unknown): Service[] => vehicleServices[vehicle as Vehicle] ?? [];
-const activeLoad = async (driverId: number) => (await all(`SELECT service FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, driverId)) as { service: Service }[];
+// What a driver carries now, with what pooling needs (RIDE-13): which rides are shared and how many seats each holds.
+const activeLoad = async (driverId: number) => ((await all(`SELECT service, shared, option FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, driverId)) as Row[])
+  .map(r => ({ service: r.service as Service, shared: !!Number(r.shared ?? 0), option: r.option == null ? null : String(r.option) }));
 
 const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.phone driver_phone, d.vehicle driver_vehicle, d.plate driver_plate,
   l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at, l.heading loc_heading, l.accuracy loc_accuracy, od.status dispute_status, od.reason dispute_reason, od.resolution dispute_resolution,
@@ -415,8 +418,13 @@ async function toOrders(rows: Row[], viewer: User): Promise<Order[]> {
 // Driver offers (SPEC-driver-offers.md). An offer counts while it is fresh and its driver is active, free and has not
 // released the order; anything else is invisible and cannot be accepted.
 const OFFER_TTL = 10 * 60_000; // ponytail: inDrive-like window; tune from how long customers take to choose
+// An offer stays open while its driver is free, or (RIDE-13) when the order is a parcel or a shared ride and everything the driver
+// carries can share the vehicle too. Seats are counted in code (offersFor, the offer accept): SQL only keeps the shape.
+const poolableSql = (t: string) => `(${t}.service = 'parcel' OR (${t}.service = 'ride' AND ${t}.shared <> 0))`;
 const offerOpen = `AND f.created_at > ? AND u.status = 'active'
-  AND NOT EXISTS(SELECT 1 FROM orders b WHERE b.driver_id = u.id AND b.status IN (${activeSql}))
+  AND (NOT EXISTS(SELECT 1 FROM orders b WHERE b.driver_id = u.id AND b.status IN (${activeSql}))
+    OR (EXISTS(SELECT 1 FROM orders t WHERE t.id = f.order_id AND ${poolableSql('t')})
+      AND NOT EXISTS(SELECT 1 FROM orders b WHERE b.driver_id = u.id AND b.status IN (${activeSql}) AND NOT ${poolableSql('b')})))
   AND NOT EXISTS(SELECT 1 FROM order_releases x WHERE x.order_id = f.order_id AND x.driver_id = u.id)`;
 const driverStats = (id: number): Promise<DriverStats> => driverStatistics(persistence, id, finishedSql);
 /** The customer's record as drivers see it; fewer than three ratings never exposes an average. */
@@ -445,9 +453,16 @@ async function jobCardData(rows: Row[], driverId: number): Promise<JobCardData> 
   for (const row of rowsWithOffers) offers.set(Number(row.order_id), { price: Number(row.price), createdAt: Number(row.created_at) });
   return { customers, offers };
 }
-const offersFor = async (orderId: number): Promise<Offer[]> => (await Promise.all((await all(`SELECT f.driver_id, f.price, f.created_at, u.name, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id
-  WHERE f.order_id = ? ${offerOpen} ORDER BY f.price, f.created_at LIMIT 20`, orderId, Date.now() - OFFER_TTL))
-  .map(async f => ({ driverId: f.driver_id, name: f.name, vehicle: f.vehicle ?? null, price: f.price, createdAt: f.created_at, ...(await driverStats(f.driver_id)) }))));
+const offersFor = async (orderId: number): Promise<Offer[]> => {
+  const order = await one('SELECT service, shared, option FROM orders WHERE id = ?', orderId);
+  const rows = await all(`SELECT f.driver_id, f.price, f.created_at, u.name, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id
+    WHERE f.order_id = ? ${offerOpen} ORDER BY f.price, f.created_at LIMIT 20`, orderId, Date.now() - OFFER_TTL);
+  // A driver already carrying shared riders offers only while the seats still fit (the accept checks the same).
+  const fits = await Promise.all(rows.map(async f => !order || servesFor(f.vehicle).includes(order.service) && canTake(await activeLoad(Number(f.driver_id)), order.service as Service,
+    { shared: !!Number(order.shared ?? 0), option: order.option == null ? null : String(order.option) }, (f.vehicle ?? null) as Vehicle | null)));
+  return Promise.all(rows.filter((_, i) => fits[i])
+    .map(async f => ({ driverId: f.driver_id, name: f.name, vehicle: f.vehicle ?? null, price: f.price, createdAt: f.created_at, ...(await driverStats(f.driver_id)) })));
+};
 
 async function getOrder(id: number, viewer: User, liveProtocol = false): Promise<Order> {
   const r = (await one(`${orderSelect} WHERE o.id = ?`, id)) ?? fail(404, 'not_found');
@@ -971,7 +986,7 @@ async function startSession(userId: number) {
 
 async function me(user: User, payroll = false) {
   const rideOfferSeconds = user.role === 'driver' ? await dispatch.offerSeconds(user.id) : undefined;
-  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), ...settingsResponse(await settings(), payroll && user.role === 'admin'), rideOfferSeconds, capabilities: { enabledServices, pooling: false, ...(await presenceOffered() ? {} : { driverPresence: false }), emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
+  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), ...settingsResponse(await settings(), payroll && user.role === 'admin'), rideOfferSeconds, capabilities: { enabledServices, pooling: enabledServices.includes('ride'), ...(await presenceOffered() ? {} : { driverPresence: false }), emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
 }
 
 // Email (Cloudflare Email Service REST API): a 6-digit code verifies the address, resets a forgotten password, and lets
@@ -1141,6 +1156,7 @@ route('POST', '/api/auth/reset', async ({ body }) => {
 }, true);
 
 route('POST', '/api/auth/logout', async ({ user }) => {
+  forgetDriver(user.id); // off the nearby-cars map at once (nearby.ts)
   (await run('DELETE FROM sessions WHERE user_id = ?', user.id));
   (await run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id)); // every session ended, so every browser stops alerting
   return { ok: true };
@@ -1575,14 +1591,25 @@ async function newJobPush(service: Service, orderId: number, customerId: number,
   const reachable = (await nativePushAvailable(persistence))
     ? '(EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id) OR EXISTS(SELECT 1 FROM native_push_tokens n WHERE n.user_id = u.id AND n.disabled_at IS NULL))'
     : 'EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)';
-  const drivers = (await all(`SELECT u.id FROM users u WHERE u.role = 'driver' AND u.status = 'active' ${production && selfService ? 'AND u.approved_at IS NOT NULL' : ''}
+  // RIDE-13: a parcel or a shared ride also reaches drivers whose load can share (parcels, shared riders); seats are counted below.
+  const job = await one('SELECT shared, option FROM orders WHERE id = ?', orderId);
+  const next = { shared: !!Number(job?.shared ?? 0), option: job?.option == null ? null : String(job.option) };
+  const pooled = poolable({ service, shared: next.shared });
+  const candidates = (await all(`SELECT u.id, u.vehicle FROM users u WHERE u.role = 'driver' AND u.status = 'active' ${production && selfService ? 'AND u.approved_at IS NOT NULL' : ''}
     AND u.vehicle IN (${fits.map(() => '?').join(',')}) AND ${reachable}
     AND u.id <> ? AND NOT EXISTS(SELECT 1 FROM order_releases r WHERE r.order_id = ? AND r.driver_id = u.id)
     AND (u.heading_city IS NULL OR u.heading_until <= ? OR u.heading_city = (SELECT dropoff_city FROM orders WHERE id = ?))
-    AND ${service === 'parcel' // a parcel reaches couriers already carrying parcels, below the load limit
-    ? `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}) AND o.service <> 'parcel')
-       AND (SELECT COUNT(*) FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) < ${PARCEL_LOAD}`
-    : `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}))`} ORDER BY random() LIMIT 100`, ...fits, exceptDriver, orderId, Date.now(), orderId)); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
+    AND ${pooled // a parcel or shared ride reaches drivers whose whole load can share; the rest need an empty vehicle
+    ? `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}) AND NOT ${poolableSql('o')})`
+    : `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}))`} ORDER BY random() LIMIT ${pooled ? 400 : 100}`, ...fits, exceptDriver, orderId, Date.now(), orderId)); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
+  // Seats are counted after the random draw, so the pooled draw is wider and the 100 alerts come from cars that fit.
+  let drivers = candidates;
+  if (pooled && candidates.length) { // one query for every candidate's load, not one each
+    const loads = new Map<number, { service: Service; shared: boolean; option: string | null }[]>();
+    for (const o of await all(`SELECT driver_id, service, shared, option FROM orders WHERE status IN (${activeSql}) AND driver_id IN (${candidates.map(() => '?').join(',')})`, ...candidates.map(d => d.id)))
+      loads.set(Number(o.driver_id), [...(loads.get(Number(o.driver_id)) ?? []), { service: o.service as Service, shared: !!Number(o.shared ?? 0), option: o.option == null ? null : String(o.option) }]);
+    drivers = candidates.filter(d => canTake(loads.get(Number(d.id)) ?? [], service, next, (d.vehicle ?? null) as Vehicle | null)).slice(0, 100);
+  }
   await queuePush(drivers.map(d => d.id as number), 'job', orderId);
   return true;
 }
@@ -1686,6 +1713,7 @@ async function recommend(user: User, b: Row) {
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
   if (!isCity(b.pickupCity) || !isCity(b.dropoffCity)) fail(400, 'invalid_city');
   const option = optionsFor(service).includes(String(b.option)) ? String(b.option) : fail(400, 'invalid_option');
+  const shared = sharedRide(service, b.shared);
   const priority = bookingPriority(service, b.priority, fail, b.scheduledFor ?? null);
   const from = bookedPoint(b.pickupPoint, b.pickupCity) ?? city(b.pickupCity), to = bookedPoint(b.dropoffPoint, b.dropoffCity) ?? city(b.dropoffCity);
   const at = Number.isInteger(b.scheduledFor) ? b.scheduledFor as number : Date.now();
@@ -1701,9 +1729,15 @@ async function recommend(user: User, b: Row) {
   const closed = [...(trip?.through ?? []), ...reports.filter(r => r.status === 'closed' && (!r.point || !trip) && onTrip(r)).map(r => r.name as string)];
   const delayMinutes = slow.length * SLOW_MINUTES + closed.length * CLOSED_MINUTES;
   const price = smartPrice((await settings()), { service, option, loadingHelp: service === 'freight' && !!b.loadingHelp, km, minutes, delayMinutes, at,
-    plus: (await activePlan(user.id)) === 'plus' });
+    plus: (await activePlan(user.id)) === 'plus', shared });
   await guardCashCeiling(price); // the price screen and a destination change hear it before anyone commits
-  return { price, km, minutes, delayMinutes, night: isNight(at), slow, closed, avoids: trip?.avoids ?? [], estimated: !trip, standard: service === 'parcel', ...(service === 'parcel' && { priority }), line: trip?.line ?? null, at };
+  return { price, km, minutes, delayMinutes, night: isNight(at), slow, closed, avoids: trip?.avoids ?? [], estimated: !trip, standard: service === 'parcel', ...(service === 'parcel' && { priority }), ...(shared && { shared }), line: trip?.line ?? null, at };
+}
+/** RIDE-13: only a ride may be shared, and only while rides run; anything else asking for it is refused, as before. */
+function sharedRide(service: Service, value: unknown) {
+  if (value == null || value === false) return false;
+  if (value !== true || service !== 'ride' || !enabledServices.includes('ride')) fail(409, 'pooling_unavailable');
+  return true;
 }
 route('POST', '/api/price', async ({ user, body }) => {
   need(user, 'customer');
@@ -1926,7 +1960,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     if (currentFeasibility.verdict.feasibility === 'infeasible') fail(409, 'route_prohibited');
     const service = quoted.service as Service;
     if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
-    if (Number(quoted.shared) === 1) fail(409, 'pooling_unavailable');
+    if (Number(quoted.shared) === 1) sharedRide(service, true);
     const priority = bookingPriority(quoted.service, body.priority, fail, quoted.scheduled_for ?? null);
     if (priority !== (quoted.priority ?? 'standard')) fail(409, 'itinerary_changed');
     const price = Number(quoted.price_minor) / 100;
@@ -1963,7 +1997,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     effPickupNote, effDropoffNote, contact,
     pickupContact ?? contact,
     effDetail,
-    quoted.option as string, Number(quoted.loading_help), price, service === 'ride' ? null : String(randomInt(1000, 10000)), nowTs, nowTs, scheduledFor, promo?.discount ?? null,
+    quoted.option as string, Number(quoted.loading_help), price, String(randomInt(1000, 10000)), nowTs, nowTs, scheduledFor, promo?.discount ?? null,
     service === 'parcel' ? null : price, null, recipientName, recipientPhone, quoteId, priority)).lastInsertRowid);
     if (promo?.id) (await run('INSERT INTO promo_redemptions (promo_id, customer_id, order_id, created_at) VALUES (?, ?, ?, ?)', promo.id, user.id, id, nowTs));
     else if (promo) (await run(`INSERT INTO referrals (referee_id, referrer_id, order_id, created_at) VALUES (?, ?, ?, ?)
@@ -1989,7 +2023,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   // Parcels have one standard price: nothing to offer on, so no recommendation (SPEC-parcel-standard.md).
   const recommended = service === 'parcel' ? undefined : smart?.price;
   if (!enabledServices.includes(service)) fail(409, 'service_unavailable');
-  if (body.shared !== false && body.shared != null) fail(409, 'pooling_unavailable');
+  sharedRide(service, body.shared);
   if (!isCity(body.pickupCity) || !isCity(body.dropoffCity)) fail(400, 'invalid_city');
   const option = optionsFor(service).includes(String(body.option)) ? String(body.option) : fail(400, 'invalid_option');
   const contact = normalizePhone(String(body.contact ?? '')) ?? fail(400, 'invalid_phone');
@@ -2033,7 +2067,8 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
     text(body.pickupNote, 200), text(body.dropoffNote, 200), contact,
     body.pickupContact == null ? contact : normalizePhone(String(body.pickupContact)) ?? fail(400, 'invalid_phone'),
     text(body.detail, 500, service !== 'ride'),
-    option, loadingHelp ? 1 : 0, price, service === 'ride' ? null : String(randomInt(1000, 10000)), now, now, scheduledFor, promo?.discount ?? null,
+    // Every order gets its code; a ride's ends the trip once the rider has paid (owner, 23 Nov 2026, D-7).
+    option, loadingHelp ? 1 : 0, price, String(randomInt(1000, 10000)), now, now, scheduledFor, promo?.discount ?? null,
     recommended ?? null, smart?.km ?? null, recipientName, recipientPhone, priority)).lastInsertRowid); // the km the price used, shown on the driver's job card
   if (body.declaredScope !== undefined && body.declaredScope !== null) {
     if (!(await scopeAvailable(persistence))) fail(409, 'scope_unavailable');
@@ -2660,8 +2695,13 @@ route('GET', '/api/jobs', async ({ user, query }) => {
   const pageSize = paging ? 20 : 50; // keep legacy responses stable while bounding mobile rendering and per-request work
   if (!allowed.length) return paging ? { version: 1, jobs: [], nextCursor: null } : [];
   // Scheduled orders wait until shortly before pickup, then queue by pickup time like any other.
-  // A driver heading somewhere sees only jobs going there (SPEC-driver-destination.md).
+  // A driver heading somewhere sees only jobs going there (SPEC-driver-destination.md). Once the device says where it is, that
+  // widens to jobs along the way (RIDE-13): Tulkarm → Ramallah also shows a rider from Anabta to Nablus, never one going back.
   const heading = user.heading?.city ?? '';
+  const [nearLat, nearLng] = (query.get('near') ?? '').split(',').map(Number);
+  const here = finite(nearLat, 90) && finite(nearLng, 180) ? { latitude: nearLat, longitude: nearLng } : null;
+  const origin = heading && here ? nearestCity(here) : null;
+  const way = origin && heading ? onTheWay(origin, heading as CityId) : [];
   const after = query.get('after');
   let cursor: [number, number] | undefined;
   if (after !== null) {
@@ -2671,19 +2711,20 @@ route('GET', '/api/jobs', async ({ user, query }) => {
     cursor = [at, id];
   }
   const rows = await all(`${orderSelect} WHERE o.status = 'searching' AND o.service IN (${allowed.map(() => '?').join(',')})
-    AND (o.scheduled_for IS NULL OR o.scheduled_for <= ?) AND (? = '' OR o.dropoff_city = ?)
+    AND (o.scheduled_for IS NULL OR o.scheduled_for <= ?) AND (? = '' OR o.dropoff_city = ?${way.length ? ` OR (o.pickup_city IN (${way.map(() => '?').join(',')}) AND o.dropoff_city IN (${way.map(() => '?').join(',')}))` : ''})
     AND NOT EXISTS(SELECT 1 FROM order_releases r WHERE r.order_id = o.id AND r.driver_id = ?)
     ${cursor ? 'AND (COALESCE(o.scheduled_for, o.created_at) > ? OR (COALESCE(o.scheduled_for, o.created_at) = ? AND o.id > ?))' : ''}
-    ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT ${paging ? pageSize + 1 : pageSize}`, ...allowed, Date.now() + RELEASE_BEFORE, heading, heading, user.id,
+    ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT ${paging ? pageSize + 1 : pageSize}`, ...allowed, Date.now() + RELEASE_BEFORE, heading, heading, ...way, ...way, user.id,
     ...(cursor ? [cursor[0], cursor[0], cursor[1]] : []));
-  const visible = rows.slice(0, pageSize);
+  // The town list keeps a job whose two ends are on the way; the direction check drops one that would go backwards.
+  const fits = (r: Row) => !origin || r.dropoff_city === heading || alongTheWay(origin, heading as CityId, { pickupCity: r.pickup_city as CityId, dropoffCity: r.dropoff_city as CityId });
+  const page = rows.slice(0, pageSize), visible = page.filter(fits);
+  if (here) sawDriver(user.id, here, user.vehicle); // an approved, active driver with the board open (nearby.ts)
   const cards = await jobCardData(visible, user.id);
   const lang = query.get('lang') === 'en' ? 'en' : 'ar';
   // In one town the city names say nothing. A driver deciding sees the neighbourhoods and how far the pickup is;
   // the exact pins, notes and contacts still wait until the job is taken.
-  // The device says where it is for this answer only (an idle driver's position is not stored).
-  const [nearLat, nearLng] = (query.get('near') ?? '').split(',').map(Number);
-  const here = finite(nearLat, 90) && finite(nearLng, 180) ? { latitude: nearLat, longitude: nearLng } : null;
+  // The device says where it is for this answer; nearby customers see an unnamed car there for a few minutes (nearby.ts).
   const jobs = await Promise.all(visible.map(async r => {
     const job = await toOrder(r, user, cards);
     const pickup = r.pickup_lat != null ? { latitude: r.pickup_lat, longitude: r.pickup_lng } : null, dropoff = r.dropoff_lat != null ? { latitude: r.dropoff_lat, longitude: r.dropoff_lng } : null;
@@ -2692,7 +2733,7 @@ route('GET', '/api/jobs', async ({ user, query }) => {
   }));
   const result = query.get('capacityProtocol') === '1' ? await withMeasuredScopes(jobs) : jobs;
   if (!paging) return result;
-  const last = visible.at(-1);
+  const last = page.at(-1); // the page read, so a job the direction check dropped is not read again
   const nextCursor = rows.length > pageSize && last ? `${last.scheduled_for ?? last.created_at}:${last.id}` : null;
   return { version: 1, jobs: result, nextCursor };
 });
@@ -2711,14 +2752,14 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
       if (!enabledServices.includes(offered.service)) fail(409, 'service_unavailable');
       if (!servesFor(user.vehicle).includes(offered.service)) fail(409, 'wrong_vehicle');
       const carryingOffer = (await activeLoad(user.id));
-      if (!canTake(carryingOffer, offered.service)) fail(409, 'vehicle_busy');
+      if (!canTake(carryingOffer, offered.service, offered, user.vehicle)) fail(409, 'vehicle_busy');
       const offeredRate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
       await guardCashCap(user.id, offered.price, offeredRate);
       const changedOffer = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`, user.id, commissionOn(offered.price, offeredRate), Date.now(), Date.now(), offered.id, offered.id, user.id)).changes;
       if (!changedOffer) fail(409, 'already_taken');
       await run('UPDATE orders SET commission_rate = ? WHERE id = ?', offeredRate, offered.id); // T33: both backends bind the rate snapshot
       await rideLifecycle.ensureAssignment(offered.id, user.id, 'dispatch');
-      (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', offered.id, user.id));
+      (await run(`DELETE FROM order_offers WHERE order_id = ?${poolable(offered) ? '' : ' OR driver_id = ?'}`, offered.id, ...(poolable(offered) ? [] : [user.id])));
       if (!carryingOffer.length) (await run('DELETE FROM driver_locations WHERE driver_id = ?', user.id));
       const assignedResult = (await getOrder(offered.id, user));
       await queuePush([assignedResult.customerId!], 'assigned', offered.id);
@@ -2740,7 +2781,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
   if (order.status !== 'searching') fail(409, 'already_taken'); // say so before any cash message; the UPDATE below still decides
   // The driver checks shared with the admin assign (driver-refusal.ts). Parcels stack up to PARCEL_LOAD; rides and freight are exclusive.
   const refused = await driverRefusal({ one, enabledServices, servesFor, canTake, activeLoad, guardCashCap, permanentApprovalRequired: production && selfService, releaseBefore: RELEASE_BEFORE },
-    { id: order.id, service: order.service, price: order.price, scheduled_for: order.scheduledFor }, freshDriver!, rate);
+    { id: order.id, service: order.service, price: order.price, scheduled_for: order.scheduledFor, shared: order.shared, option: order.option }, freshDriver!, rate);
   if (refused) fail(409, refused);
   await guardRideAssignment(order.id);
   const now = Date.now();
@@ -2751,7 +2792,8 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
   if (!changed) fail(409, 'already_taken');
   await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, order.id); // T33: both backends bind the rate snapshot
   await rideLifecycle.ensureAssignment(order.id, user.id, 'legacy');
-  (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', order.id, user.id)); // settled, and this driver is busy now
+  // Settled. Taking exclusive work makes the driver busy, so their other offers end; a shared ride or a parcel leaves room (RIDE-13).
+  (await run(`DELETE FROM order_offers WHERE order_id = ?${poolable(order) ? '' : ' OR driver_id = ?'}`, order.id, ...(poolable(order) ? [] : [user.id])));
   // An older job's location is not this assignment's fix, unless the driver is still carrying other orders right now.
   if (!carrying.length) (await run('DELETE FROM driver_locations WHERE driver_id = ?', user.id));
   const result = (await getOrder(order.id, user));
@@ -2770,7 +2812,7 @@ route('POST', '/api/jobs/:id/offer', async ({ user, params, body }) => {
   if (order.status !== 'searching') fail(409, 'already_taken');
   const recommended = order.recommendedPrice ?? fail(409, 'fixed_price'); // Souq and older apps: accept at the shown price
   if (!enabledServices.includes(order.service) || !servesFor(user.vehicle).includes(order.service)) fail(409, 'wrong_vehicle');
-  if (!canTake((await activeLoad(user.id)), order.service)) fail(409, 'vehicle_busy');
+  if (!canTake((await activeLoad(user.id)), order.service, order, user.vehicle)) fail(409, 'vehicle_busy');
   const [min, max] = offerRange(recommended);
   if (!Number.isInteger(body.price) || body.price < min || body.price > max) fail(400, 'invalid_offer');
   await guardCashCeiling(body.price, order.id); // a driver's own price may not take the order past the ceiling either
@@ -2798,6 +2840,9 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
     const f = (await one(`SELECT f.price, u.id, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id WHERE f.order_id = ? AND f.driver_id = ? ${offerOpen}`,
       r.id, Number(params[1]), Date.now() - OFFER_TTL)) ?? fail(409, 'offer_expired');
     if (!servesFor(f.vehicle).includes(r.service)) fail(409, 'offer_expired');
+    // Offers outlive a driver's next job while they can still pool (RIDE-13): one that no longer fits the vehicle has lapsed.
+    const offerCarrying = await activeLoad(Number(f.id));
+    if (!canTake(offerCarrying, r.service, { shared: !!Number(r.shared ?? 0), option: r.option == null ? null : String(r.option) }, f.vehicle as Vehicle | null)) fail(409, 'offer_expired');
     await guardRideAssignment(r.id);
     await guardCashCeiling(Number(f.price), r.id); // lowered since the driver offered, or a goods COD added since
     const rate = (await activePlan(f.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
@@ -2809,8 +2854,9 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
       commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching'`, f.id, f.price, f.price, commissionOn(f.price, rate), now, now, r.id));
     await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, r.id); // T33: both backends bind the rate snapshot
     await rideLifecycle.ensureAssignment(r.id, Number(f.id), 'legacy');
-    (await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', r.id, f.id));
-    (await run('DELETE FROM driver_locations WHERE driver_id = ?', f.id));
+    const pooled = poolable({ service: r.service as Service, shared: !!Number(r.shared ?? 0) });
+    (await run(`DELETE FROM order_offers WHERE order_id = ?${pooled ? '' : ' OR driver_id = ?'}`, r.id, ...(pooled ? [] : [f.id])));
+    if (!offerCarrying.length) (await run('DELETE FROM driver_locations WHERE driver_id = ?', f.id)); // their other riders still follow this fix
     await queuePush([f.id as number], 'offer_accepted', r.id); // the driver has usually left the jobs screen
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
@@ -2868,7 +2914,7 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
   return { ok: true };
 });
 
-async function advanceOrder(user: User, id: number, body: Row, requestId: string) {
+async function advanceOrder(user: User, id: number, body: Row, requestId: string, oldCaptainApp = false) {
   // PostgreSQL: lock the row first, so a support takeover or custody recovery committing meanwhile is seen by the custody check
   // below instead of racing it (SQLite's BEGIN IMMEDIATE already serialises both; Sonnet L6 on PR #101, G-PG).
   const r = (await one(`SELECT * FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
@@ -2876,6 +2922,10 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const next = nextStatus(r.status);
   if (next === r.status) fail(409, 'cannot_advance'); // on_hold waits for an administrator decision
+  // D-7: only the last step of a ride may end without the rider's trip code (see below); anywhere else the flag is refused.
+  const noCode = body.noCode === true && r.service === 'ride' && next === 'completed';
+  if (body.noCode !== undefined && !noCode) fail(400, 'invalid_input');
+  if (r.service === 'ride' && next === 'completed' && r.handover_code && oldCaptainApp) fail(426, 'client_update_required'); // D-7: it cannot ask for the code
   if ((next !== 'completed' || (r.service !== 'parcel' && r.service !== 'shop')) && (body.collectedCents !== undefined || body.varianceReason !== undefined)) fail(400, 'invalid_input'); // A11: the parcel fee, or a shop order's goods and fees
   await shop.beforeAdvance(r, next, body, user.id);
   (await safetyFree(r.id));
@@ -2890,8 +2940,10 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
       if (supportHasGoods || custodyBlocked) fail(409, 'cannot_advance');
     }
     // Delivery needs the recipient's handover code; a return needs the sender's return code.
-    const expected = next === 'completed' ? r.handover_code : r.return_code;
-    if (((await one('SELECT failures FROM proof_attempts WHERE order_id = ?', r.id))?.failures ?? 0) >= 5) fail(409, 'proof_locked');
+    // A ride whose rider left without giving the trip code still ends, on the driver's word: the driver must not stay stuck
+    // on it (a private ride takes the whole car). It is recorded and support is told, so the rider can be phoned (D-7).
+    const expected = noCode ? null : next === 'completed' ? r.handover_code : r.return_code;
+    if (!noCode && ((await one('SELECT failures FROM proof_attempts WHERE order_id = ?', r.id))?.failures ?? 0) >= 5) fail(409, 'proof_locked');
     if (expected && latinDigits(String(body.code ?? '').trim()) !== expected) {
       (await run(`INSERT INTO proof_attempts (order_id, failures) VALUES (?, 1) ON CONFLICT(order_id) DO UPDATE SET failures = proof_attempts.failures + 1`, r.id));
       (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'PROOF_FAILED', ?)`, user.id, r.id, now));
@@ -2909,13 +2961,16 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
         now, now, door?.collectedCents ?? null, door?.varianceReason ?? null,
         door?.expectedCents ?? null, door ? user.id : null, door ? requestId : null, r.id, r.status)).changes) fail(409, 'order_changed');
       if (next === 'returned') { (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now)); await markNoFare(user.id, r.id); }
-      else (await rewardReferral(r.id, now));
+      else if (!noCode) (await rewardReferral(r.id, now)); // a ride ended on the driver's word proves no trip: no referral credit
+      // Written once the ride has really ended, so a refused completion leaves no record and pages nobody (Haiku PR #117).
+      if (noCode) (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RIDE_ENDED_WITHOUT_CODE', ?)`, user.id, r.id, now));
       await shop.afterFinish(r, next, user.id, body);
       await shippingTripPay(r, next, user.id);
       await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
     });
   } else (await run('UPDATE orders SET status = ?, updated_at = ?, picked_up_at = COALESCE(picked_up_at, ?) WHERE id = ?', next, now, next === 'in_transit' ? now : null, r.id));
   await rideLifecycle.markVerified(r, next);
+  if (noCode) await queuePush((await adminIds()), 'attention', r.id, '/admin/orders'); // support phones the rider (D-7)
   if (next === 'at_pickup' || next === 'in_transit' || next === 'completed' || next === 'returned') await queuePush([r.customer_id], next, r.id);
   return (await getOrder(r.id, user));
 }
@@ -3040,9 +3095,10 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req 
   return (await getOrder(id, user));
 });
 
-route('POST', '/api/orders/:id/advance', async ({ user, params, body }) => {
+route('POST', '/api/orders/:id/advance', async ({ user, params, body, req }) => {
   need(user, 'driver'); needActive(user);
-  return (await driverCommand(user, Number(params[0]), body, advanceOrder));
+  const oldCaptainApp = tripCodeClientTooOld(req.headers['x-wind-client'], production);
+  return (await driverCommand(user, Number(params[0]), body, (u, id, input, requestId) => advanceOrder(u, id, input, requestId, oldCaptainApp)));
 });
 
 // Lost acknowledgements replay the stored outcome instead of applying a driver command twice.
@@ -3432,6 +3488,13 @@ route('GET', '/api/route', async ({ user, query }) => {
 
 // Map search (real OpenStreetMap places, server/domain/place-search.ts).
 registerPlaceSearchRoutes(route, { fail, limit, limitKey: id => identityKey('place-search', id) }, process.env.GEOCODER_URL || undefined);
+registerNearbyRoutes(route, { fail, need, needActive, limit, limitKey: id => identityKey('nearby', id), enabledServices: () => enabledServices, servesFor,
+  available: async (driverId, service, vehicle) => {
+    const driver = await one('SELECT role, status FROM users WHERE id = ?', driverId);
+    if (!driver || driver.role !== 'driver' || driver.status !== 'active') return false;
+    // A car shows while it could take one more rider (idle, or a shared run with a seat free) or one more parcel.
+    return canTake(await activeLoad(driverId), service, service === 'ride' ? { shared: true, option: '1' } : undefined, vehicle);
+  } });
 registerPlaceIndexRoutes(route, { fail, limit, limitKey: id => identityKey('place-suggest', id) });
 registerPlaceLinkRoutes(route, { fail, limit, limitKey: id => identityKey('place-link', id) });
 

@@ -1006,7 +1006,7 @@
           "freightPerKm": 2.5,
           "freightLarge": 50,
           "loadingHelp": 30,
-          "sharedDiscount": 0.4,
+          "sharedDiscount": 0.7,
           "plusDiscount": 0.15,
           "commission": 0.15,
           "proCommission": 0.05,

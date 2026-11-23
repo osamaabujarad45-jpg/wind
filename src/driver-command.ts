@@ -4,7 +4,7 @@ import { newRequestId } from './booking.ts';
 export type DriverAction = 'advance' | 'exception';
 export type DriverCommand = { schemaVersion: 1; actorId: number; orderId: number; action: DriverAction; requestId: string;
   createdAt: number; expiresAt: number; expectedStatus: OrderStatus; expectedAssignedAt: number | null;
-  expectedVersion?: number; expectedAssignmentEpoch?: number; expectedPinRevision?: number; payload: { code?: string; reason?: string; detail?: PickupRefusalDetail; note?: string; collectedCents?: number; varianceReason?: VarianceReason; seals?: { no: number; intact: boolean }[] } };
+  expectedVersion?: number; expectedAssignmentEpoch?: number; expectedPinRevision?: number; payload: { code?: string; noCode?: true; reason?: string; detail?: PickupRefusalDetail; note?: string; collectedCents?: number; varianceReason?: VarianceReason; seals?: { no: number; intact: boolean }[] } };
 export type DriverReceipt = { schemaVersion: 1; orderId: number; requestId: string; state: 'unknown' | 'applied' | 'rejected'; error?: string; httpStatus?: number };
 export type CommandIO = { read: () => Promise<unknown>; write: (command: DriverCommand | null) => Promise<void>;
   valid: () => boolean; receipt: (command: DriverCommand) => Promise<DriverReceipt>; send: (command: DriverCommand) => Promise<Order> };
@@ -22,7 +22,8 @@ export function readDriverCommand(raw: unknown): DriverCommand | null {
     || (c.expectedAssignmentEpoch !== undefined && !integer(c.expectedAssignmentEpoch))
     || (c.expectedPinRevision !== undefined && !integer(c.expectedPinRevision))
     || !c.payload || typeof c.payload !== 'object' || Array.isArray(c.payload)
-    || Object.keys(c.payload).some(key => !['code', 'reason', 'detail', 'note', 'collectedCents', 'varianceReason', 'seals'].includes(key))
+    || Object.keys(c.payload).some(key => !['code', 'noCode', 'reason', 'detail', 'note', 'collectedCents', 'varianceReason', 'seals'].includes(key))
+    || (c.payload.noCode !== undefined && (c.payload.noCode !== true || c.action !== 'advance' || c.payload.code !== undefined)) // D-7: a ride ended without the rider's code
     || (c.payload.seals !== undefined && (!Array.isArray(c.payload.seals) || c.payload.seals.some(x => !x || !integer(x.no) || typeof x.intact !== 'boolean')))
     || (c.payload.code !== undefined && (typeof c.payload.code !== 'string' || !/^\d{4}$/.test(c.payload.code)))
     || (c.payload.collectedCents !== undefined && (c.action !== 'advance' || !integer(c.payload.collectedCents)))
@@ -46,12 +47,12 @@ export const driverCommandBody = (c: DriverCommand) => ({ ...c.payload, requestI
   ...(c.expectedVersion !== undefined ? { expectedVersion: c.expectedVersion } : {}),
   ...(c.expectedPinRevision !== undefined ? { expectedPinRevision: c.expectedPinRevision } : {}),
   ...(c.expectedAssignmentEpoch !== undefined ? { expectedAssignmentEpoch: c.expectedAssignmentEpoch } : {}) });
-export type AdvanceRequest = { requestId: string; expectedStatus: string; code: string; expectedPinRevision?: number; collectedCents?: number; varianceReason?: VarianceReason; seals?: { no: number; intact: boolean }[] };
+export type AdvanceRequest = { requestId: string; expectedStatus: string; code: string; noCode?: true; expectedPinRevision?: number; collectedCents?: number; varianceReason?: VarianceReason; seals?: { no: number; intact: boolean }[] };
 /** Screen-held advance (no saved recovery): a lost acknowledgement replays the same request; a new status, code
  * or rotated PIN is a new one, so a retry never pairs an old code with the new revision. */
 export function advanceRequest(cached: { orderId: number; body: AdvanceRequest } | null, orderId: number,
   proof: Omit<AdvanceRequest, 'requestId'>, newId: () => string) {
-  return cached?.orderId === orderId && cached.body.expectedStatus === proof.expectedStatus && cached.body.code === proof.code
+  return cached?.orderId === orderId && cached.body.expectedStatus === proof.expectedStatus && cached.body.code === proof.code && cached.body.noCode === proof.noCode
     && cached.body.expectedPinRevision === proof.expectedPinRevision && cached.body.collectedCents === proof.collectedCents
     && cached.body.varianceReason === proof.varianceReason && JSON.stringify(cached.body.seals) === JSON.stringify(proof.seals) ? cached : { orderId, body: { requestId: newId(), ...proof } };
 }

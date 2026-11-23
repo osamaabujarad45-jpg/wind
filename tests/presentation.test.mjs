@@ -110,12 +110,18 @@ const old = { id: 7, service: 'freight', pickupCity: 'hebron', dropoffCity: 'jen
   option: 'large', loadingHelp: true, price: 120, discount: 10, scheduledFor: 1_800_000_000_000, status: 'completed' };
 assert.deepEqual(againForm(old), { service: 'freight', pickupCity: 'hebron', dropoffCity: 'jenin', pickupPoint: old.pickupPoint,
   dropoffPoint: old.dropoffPoint, pickupNote: 'مخزن', dropoffNote: 'المحطة', detail: 'ثلاجة', contact: '0599000001', option: 'large', loadingHelp: true,
-  recipientName: '', recipientPhone: '' });
+  recipientName: '', recipientPhone: '', shared: false });
+// RIDE-13: a shared ride books shared seats again; a load never carries the flag.
+assert.equal(againForm({ ...old, service: 'ride', option: '2', shared: true }).shared, true);
+assert.equal(againForm({ ...old, shared: true }).shared, false);
+const sharedAgain = newBooking({ ...againForm({ ...old, service: 'ride', option: '2', shared: true }), quotedPrice: 30 });
+assert.equal(readBooking(JSON.stringify(sharedAgain)).payload.shared, true);
+assert.throws(() => readBooking(JSON.stringify({ ...sharedAgain, payload: { ...sharedAgain.payload, service: 'parcel', option: 'small' } })), 'only a ride is saved as shared');
 assert.deepEqual([againForm({ ...old, recipientName: 'هدى', recipientPhone: '0599000002' }).recipientName, againForm({ ...old, recipientPhone: '0599000002' }).recipientPhone],
   ['هدى', '0599000002']); // order again: same recipient (SPEC-parcel-recipient.md)
 assert.deepEqual(againForm({ ...old, service: 'ride', option: 'large', contact: null, dropoffPoint: undefined }),
   { ...againForm(old), service: 'ride', option: '1', contact: '', dropoffPoint: null }); // stale option → first valid one
-const again = newBooking({ ...againForm(old), shared: false, quotedPrice: 99 });
+const again = newBooking({ ...againForm(old), quotedPrice: 99 });
 assert.equal(readBooking(JSON.stringify(again)).payload.quotedPrice, 99); // the refilled form makes a valid, fresh command
 for (const status of ['completed', 'returned', 'cancelled']) assert.ok(canOrderAgain({ status, service: 'parcel' }, 'customer'), status);
 for (const status of ['searching', 'assigned', 'at_pickup', 'in_transit', 'on_hold', 'returning']) assert.ok(!canOrderAgain({ status, service: 'parcel' }, 'customer'), status);

@@ -45,7 +45,7 @@ function harness(overrides = {}) {
     checking: false, resolving: false, scopeInvalid: false, freightPinsMissing: false, routeChosen: true, pickupChosen: true, scheduledFor: null,
     service: 'parcel', priority: 'standard', sameDayOpen: true, pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: POINT_A, dropoffPoint: POINT_B,
     pickupNote: 'Gate 3', dropoffNote: 'Door B', detail: 'Fragile box', contact: '0599123456', recipientPhone: '', recipientName: '', goodsOk: true,
-    option: 'small', loadingHelp: false, declaredScope: undefined, price: 48, applied: null, smart: null, error: '',
+    option: 'small', loadingHelp: false, sharedSeats: false, declaredScope: undefined, price: 48, applied: null, smart: null, error: '',
     ...overrides,
   };
   // Derived like book.tsx: same day is booked now, never with a scheduled slot.

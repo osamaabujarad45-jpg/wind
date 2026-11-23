@@ -55,7 +55,7 @@ function screen(saved = null) {
     get refreshingAvailability() { return state.refreshingAvailability; },
     refresh: async report => { assert.equal(report, true); if (held) await held; if (failRefresh) throw new Error('offline'); },
     requote: () => { state.quotes++; },
-    setReady: value => { state.ready = value; }, setCopyFailed: value => { state.copyFailed = value; }, setError: value => { state.error = value; }, setPriority: () => {},
+    setReady: value => { state.ready = value; }, setCopyFailed: value => { state.copyFailed = value; }, setError: value => { state.error = value; }, setPriority: () => {}, setShared: () => {},
     setRefreshingAvailability: value => { state.refreshingAvailability = value; }, setStorageAttempt: fn => { state.attempts = fn(state.attempts); },
   };
   for (const name of ['Pending', 'Service', 'PickupCity', 'DropoffCity', 'PickupChosen', 'DropoffChosen', 'Step', 'PickupPoint', 'DropoffPoint',

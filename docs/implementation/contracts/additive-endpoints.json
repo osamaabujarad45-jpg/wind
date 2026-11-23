@@ -741,6 +741,14 @@
         { "method": "POST", "path": "/api/admin/support/:id/tags", "anonymousStatus": 401 },
         { "method": "GET", "path": "/api/admin/support/tags", "anonymousStatus": 401 }
       ]
+    },
+    {
+      "packet": "RIDE-14-nearby-cars",
+      "source": "server/domain/nearby.ts",
+      "registrar": "registerNearbyRoutes",
+      "endpoints": [
+        { "method": "GET", "path": "/api/drivers/nearby", "anonymousStatus": 401 }
+      ]
     }
   ]
 }

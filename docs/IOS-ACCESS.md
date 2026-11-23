@@ -2,7 +2,7 @@
 
 ## Available now: installable web app
 
-Open [Wind](https://wind-production-72aa.up.railway.app) in **Safari** on an iPhone, tap **Share**, then choose **Add to Home Screen**. The saved app opens in its own window and uses the same Wind account, API, role-based registration, trip history and foreground location flow as Android. Location works only while the web app is open and an active driver job is being tracked.
+Open the install page <https://20.217.202.98.sslip.io/install.html> in **Safari** on an iPhone, tap **Share**, then choose **Add to Home Screen** (the page shows the steps; Android phones get the APK from the same page). The saved app opens in its own window and uses the same Wind account, API, role-based registration, trip history and foreground location flow as Android. Location works only while the web app is open and an active driver job is being tracked.
 
 This is the free public access path. It avoids pretending that an unsigned `.ipa` download is a safe or supported way to distribute an iPhone app.
 
@@ -20,7 +20,7 @@ Apple requires its paid Developer Program for public App Store and TestFlight di
 ## Release requirements before native submission
 
 - Provide a privacy-policy URL, account-deletion URL, support contact and App Store review accounts.
-- Keep ride and freight disabled until the required operational licensing, driver vetting and payment/return workflows are ready.
+- Freight stays disabled. Rides (with shared seats) and Tulkarm shop delivery run in the pilot from 1.1.6 (SRS §16b); passenger-transport licensing stays the owner's.
 - Test the exact iOS build on a real iPhone: sign-up, driver approval, accepted-job GPS, denied GPS, order history, RTL and poor-network recovery.
 
 Sources: [Apple Developer Program membership](https://developer.apple.com/help/account/membership/program-enrollment/), [TestFlight overview](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/), and [Expo web publishing](https://docs.expo.dev/guides/publishing-websites/).
