@@ -63,6 +63,14 @@ export default function Dashboard() {
       </Card></View>}
       {data.openIncidents > 0 && <Shortcut label={c.safetyIncidents} count={data.openIncidents}
         onPress={() => router.navigate({ pathname: '/admin/orders', params: { filter: 'safety' } })} />}
+      {/* What waits for a decision leads, above the money: an ops screen opens on "needs you" (UI review, 23 Nov). */}
+      {(data.pendingDrivers > 0 || data.pendingSubscriptions > 0 || !!data.pendingShops || !!data.openSupport) && <Appear index={0}>
+        {!!data.openSupport && <Shortcut label={c.supportOpenCount} count={data.openSupport} onPress={() => router.navigate('/admin/support')} />}
+        {/* every approval opens the one Approvals queue */}
+        {data.pendingDrivers > 0 && <Shortcut label={c.pendingDrivers} count={data.pendingDrivers} onPress={() => router.navigate('/admin/approvals')} />}
+        {data.pendingSubscriptions > 0 && <Shortcut label={c.pendingSubs} count={data.pendingSubscriptions} onPress={() => router.navigate('/admin/approvals')} />}
+        {!!data.pendingShops && shopOn && <Shortcut label={c.approvalsShops} count={data.pendingShops} onPress={() => router.navigate('/admin/approvals')} />}
+      </Appear>}
       <Row gap={10} style={{ flexWrap: 'wrap', marginBottom: 14 }}>
         <Stat index={0} tone="olive" label={c.profit} value={money(data.profit)} />
         <Stat index={1} label={c.commissionRevenue} value={money(data.commission)} />
@@ -74,14 +82,6 @@ export default function Dashboard() {
       </Row>
 
       <Appear index={7}><ProfitChart daily={data.daily} /></Appear>
-
-      {(data.pendingDrivers > 0 || data.pendingSubscriptions > 0 || !!data.pendingShops || !!data.openSupport) && <Appear index={8}>
-        {!!data.openSupport && <Shortcut label={c.supportOpenCount} count={data.openSupport} onPress={() => router.navigate('/admin/support')} />}
-        {/* every approval opens the one Approvals queue */}
-        {data.pendingDrivers > 0 && <Shortcut label={c.pendingDrivers} count={data.pendingDrivers} onPress={() => router.navigate('/admin/approvals')} />}
-        {data.pendingSubscriptions > 0 && <Shortcut label={c.pendingSubs} count={data.pendingSubscriptions} onPress={() => router.navigate('/admin/approvals')} />}
-        {!!data.pendingShops && shopOn && <Shortcut label={c.approvalsShops} count={data.pendingShops} onPress={() => router.navigate('/admin/approvals')} />}
-      </Appear>}
 
       <OfficeShelf />
 

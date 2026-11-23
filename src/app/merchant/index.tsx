@@ -35,6 +35,7 @@ export default function MerchantHome() {
   const orders = inbox.data?.orders ?? [];
   const open = orders.filter(o => ['requested', 'searching', 'assigned', 'at_pickup', 'returning'].includes(o.status));
   const fresh = open.filter(o => o.status === 'requested' && !o.shop?.state);
+  const freshLabel = fresh.length === 1 ? c.merchantNewOrder : fill(c.merchantNewOrders, { n: fresh.length }); // one order is said in words, more by count
   async function pause(paused: boolean) {
     setBusy(true); setError('');
     try { await api('/merchant/settings', { paused }); await mine.reload(); }
@@ -44,9 +45,9 @@ export default function MerchantHome() {
   return <Screen onRefresh={async () => { await mine.reload(); await inbox.reload(); await statement.reload(); }}>
     <Header title={merchant.name} back subtitle={merchant.status === 'paused' ? c.merchantLicencePaused : merchant.pausedNew ? c.merchantPausedNew : merchant.open ? c.shopOpen : c.shopClosed} />
     {/* The banner opens the first new order: it named the work but led nowhere (design review 17 Nov). */}
-    {fresh.length > 0 && <Press onPress={() => router.push(`/merchant/order/${fresh[0].id}`)} accessibilityLabel={fill(c.merchantNewOrders, { n: fresh.length })}>
+    {fresh.length > 0 && <Press onPress={() => router.push(`/merchant/order/${fresh[0].id}`)} accessibilityLabel={freshLabel}>
       <Card tone="warn"><Row style={{ justifyContent: 'space-between' }}>
-        <Txt variant="label" style={{ flex: 1 }}>{fill(c.merchantNewOrders, { n: fresh.length })}</Txt>
+        <Txt variant="label" style={{ flex: 1 }}>{freshLabel}</Txt>
         <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={18} color={palette.warn} />
       </Row></Card>
     </Press>}

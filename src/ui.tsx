@@ -178,8 +178,10 @@ export function Header({ title, back = false, right, subtitle }: { title: string
   </View>;
 }
 
-export function IconButton({ icon, label, onPress, tone = 'card', disabled }: {
+export function IconButton({ icon, label, onPress, tone = 'card', disabled, edge }: {
   icon: IconName; label: string; onPress: () => void; tone?: 'card' | 'muted' | 'forest'; disabled?: boolean;
+  /** A 1px control edge while enabled: a card-tone button sitting on a card has no fill contrast of its own. */
+  edge?: boolean;
 }) {
   const { palette, shadow } = useTheme();
   const styles = useStyles();
@@ -187,7 +189,7 @@ export function IconButton({ icon, label, onPress, tone = 'card', disabled }: {
   const bg = disabled ? palette.muted : { card: palette.card, muted: palette.muted, forest: palette.forest }[tone];
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled}
     accessibilityState={{ disabled: !!disabled }}
-    style={({ pressed }) => [styles.iconButton, { backgroundColor: bg }, tone === 'card' && !disabled && shadow, pressed && { opacity: 0.7 }]}>
+    style={({ pressed }) => [styles.iconButton, { backgroundColor: bg }, tone === 'card' && !disabled && shadow, edge && !disabled && { borderWidth: 1, borderColor: palette.field }, pressed && { opacity: 0.7 }]}>
     <Ionicons name={icon} size={iconSize.lg} color={disabled ? palette.faint : tone === 'forest' ? palette.lime : palette.ink} />
   </Pressable>;
 }
