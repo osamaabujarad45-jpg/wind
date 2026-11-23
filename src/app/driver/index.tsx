@@ -18,11 +18,14 @@ import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts
 import { useSession } from '../../session';
 import { DriverSupportCard } from '../../driver-support-card';
 import { OfferClock } from '../../driver-offer-clock';
-import { shadow, Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, iconSize, Loading, palette, Press, Reason, Row, Screen, Txt, useCopy } from '../../ui';
+import { Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, iconSize, Loading, Press, Reason, Row, Screen, Txt, useCopy } from '../../ui';
+import { themedStyles, useTheme } from '../../theme-context';
 
 type JobsPage = { version: 1; jobs: Order[]; nextCursor: string | null };
 
 export default function Jobs() {
+  const { palette, shadow } = useTheme();
+  const styles = useStyles();
   const { me, refresh } = useSession();
   const { c, money, err, language, rtl } = useCopy();
   const side = useSideSheet();
@@ -335,9 +338,9 @@ export default function Jobs() {
   </View>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   top: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8 },
   title: { backgroundColor: palette.card, borderRadius: 16, paddingHorizontal: 14, justifyContent: 'center', minHeight: 44 },
   location: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 10 },
   note: { alignItems: 'flex-start', marginTop: 10, backgroundColor: palette.muted, borderRadius: 10, padding: 8 },
-});
+}));

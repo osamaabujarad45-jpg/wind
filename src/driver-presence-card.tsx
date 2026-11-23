@@ -5,7 +5,8 @@ import { useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { CopyKey } from './copy';
-import { Appear, Button, Card, IconName, maxScale, palette, Row, tones, Txt, useCopy } from './ui';
+import { Appear, Button, Card, IconName, maxScale, Row, Txt, useCopy } from './ui';
+import { themedStyles, useTheme } from './theme-context';
 
 // The server accepts only consentVersion 1; the consent text in copy.ts is version 1.
 export const PRESENCE_CONSENT_VERSION = 1;
@@ -25,16 +26,16 @@ export type DriverPresenceCardProps = {
   onOpenSettings?: () => void; // permission_denied only: opens the OS settings for location.
 };
 
-const VIEW: Record<PresenceState, { icon: IconName; tone: { bg: string; fg: string }; title: CopyKey; body: CopyKey }> = {
-  offline: { icon: 'power-outline', tone: tones.muted, title: 'presence_offline_title', body: 'presence_offline_body' },
-  starting: { icon: 'sync-outline', tone: tones.blue, title: 'presence_starting_title', body: 'presence_starting_body' },
-  online: { icon: 'radio-outline', tone: tones.olive, title: 'presence_online_title', body: 'presence_online_body' },
-  stale: { icon: 'time-outline', tone: tones.warn, title: 'presence_stale_title', body: 'presence_stale_body' },
-  reconnecting: { icon: 'sync-outline', tone: tones.blue, title: 'presence_reconnecting_title', body: 'presence_reconnecting_body' },
-  busy: { icon: 'navigate-outline', tone: tones.blue, title: 'presence_busy_title', body: 'presence_busy_body' },
-  unavailable: { icon: 'cloud-offline-outline', tone: tones.muted, title: 'presence_unavailable_title', body: 'presence_unavailable_body' },
-  ineligible: { icon: 'shield-outline', tone: tones.error, title: 'presence_ineligible_title', body: 'presence_ineligible_body' },
-  permission_denied: { icon: 'location-outline', tone: tones.warn, title: 'presence_permission_title', body: 'presence_permission_body' },
+const VIEW: Record<PresenceState, { icon: IconName; tone: 'muted' | 'blue' | 'olive' | 'warn' | 'error'; title: CopyKey; body: CopyKey }> = {
+  offline: { icon: 'power-outline', tone: 'muted', title: 'presence_offline_title', body: 'presence_offline_body' },
+  starting: { icon: 'sync-outline', tone: 'blue', title: 'presence_starting_title', body: 'presence_starting_body' },
+  online: { icon: 'radio-outline', tone: 'olive', title: 'presence_online_title', body: 'presence_online_body' },
+  stale: { icon: 'time-outline', tone: 'warn', title: 'presence_stale_title', body: 'presence_stale_body' },
+  reconnecting: { icon: 'sync-outline', tone: 'blue', title: 'presence_reconnecting_title', body: 'presence_reconnecting_body' },
+  busy: { icon: 'navigate-outline', tone: 'blue', title: 'presence_busy_title', body: 'presence_busy_body' },
+  unavailable: { icon: 'cloud-offline-outline', tone: 'muted', title: 'presence_unavailable_title', body: 'presence_unavailable_body' },
+  ineligible: { icon: 'shield-outline', tone: 'error', title: 'presence_ineligible_title', body: 'presence_ineligible_body' },
+  permission_denied: { icon: 'location-outline', tone: 'warn', title: 'presence_permission_title', body: 'presence_permission_body' },
 };
 
 // Going online is blocked for these states; the reason sentence under the button says what would unblock it.
@@ -44,9 +45,11 @@ const BLOCKED: Partial<Record<PresenceState, CopyKey>> = {
 
 export function DriverPresenceCard({ state, consentAccepted = false, requestsOn = false, pending = false, error, startDisabled = false, startReason,
   onConsentAndEnable, onDisable, onOpenSettings }: DriverPresenceCardProps) {
+  const { palette, tones } = useTheme();
+  const styles = useStyles();
   const { c, align } = useCopy();
   const [consenting, setConsenting] = useState(false);
-  const view = VIEW[state];
+  const view = VIEW[state], tone = tones[view.tone];
   const waiting = pending || state === 'starting';
   const blocker = BLOCKED[state];
   const showConnect = state === 'offline' || !!blocker;
@@ -62,12 +65,12 @@ export function DriverPresenceCard({ state, consentAccepted = false, requestsOn 
     {showDisconnect && <Button title={c.presence_go_offline} icon="power-outline" variant="outline" disabled={waiting} reason={disconnectReason} onPress={onDisable} />}
   </View>;
 
-  return <Card style={{ backgroundColor: view.tone.bg }}>
+  return <Card style={{ backgroundColor: tone.bg }}>
     {/* Polite: announces the state change once it is confirmed, never per tick. */}
     <View accessibilityLiveRegion="polite">
       <Row gap={10}>
         <View style={[styles.icon, { backgroundColor: palette.card }]}>
-          <Ionicons name={view.icon} size={18} color={view.tone.fg} />
+          <Ionicons name={view.icon} size={18} color={tone.fg} />
         </View>
         <View style={styles.text}>
           <Txt variant="title">{c[view.title]}</Txt>
@@ -100,6 +103,7 @@ export function DriverPresenceCard({ state, consentAccepted = false, requestsOn 
 // Optional and tapped on its own: never requested from going online, mount or an effect. Denial, or a provider that is off,
 // is a safe result that keeps foreground sharing. A granted permission still promises no background callbacks.
 export function BackgroundLocationAction({ onRequest }: { onRequest: () => Promise<boolean> }) {
+  const styles = useStyles();
   const { c, align } = useCopy();
   const [asking, setAsking] = useState(false);
   const [result, setResult] = useState<'granted' | 'not_on' | null>(null);
@@ -121,7 +125,7 @@ export function BackgroundLocationAction({ onRequest }: { onRequest: () => Promi
   </Card>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   result: { marginTop: 10, fontSize: 13, fontWeight: '700', color: palette.ink },
   icon:{ width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   text: { flex: 1 },
@@ -129,4 +133,4 @@ const styles = StyleSheet.create({
   actions: { gap: 8, marginTop: 12 },
   consent: { gap: 4, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: palette.line },
   error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, fontWeight: '700', marginTop: 10, overflow: 'hidden' },
-});
+}));

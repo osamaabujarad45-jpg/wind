@@ -8,9 +8,11 @@ import { useFormat } from '../parts';
 import { PhoneCard } from '../phone-card';
 import { codeInput } from '../phone/flow';
 import { useSession, type Me } from '../session';
-import { Appear, Avatar, Badge, Button, Card, ErrorText, Field, FilterChips, fill, haptic, Header, palette, Row, Screen, tones, Txt, useCopy } from '../ui';
+import { Appear, Avatar, Badge, Button, Card, ErrorText, Field, FilterChips, fill, haptic, Header, Row, Screen, Txt, useCopy } from '../ui';
+import { themedStyles, useTheme } from '../theme-context';
 
 export default function Profile() {
+  const { palette, tones } = useTheme();
   const { me, refresh } = useSession();
   const { c, err } = useCopy();
   const { date } = useFormat();
@@ -94,6 +96,8 @@ export default function Profile() {
 }
 
 function EmailCard() {
+  const { palette, tones } = useTheme();
+  const styles = useStyles();
   const { me, refresh } = useSession();
   const { c, err } = useCopy();
   const [code, setCode] = useState('');
@@ -146,6 +150,6 @@ function EmailCard() {
   </Card>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   locked: { minHeight: 44, borderRadius: 12, backgroundColor: palette.muted, paddingHorizontal: 12 },
-});
+}));

@@ -9,8 +9,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { farJump, fitBounds, glideMs, routeFramePoints, turn } from './map-math';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { mapReadyMs } from './runtime-config';
-import { maxScale, palette, shadow, useCopy } from './ui';
+import { maxScale, useCopy } from './ui';
 import { loadGoogleMaps } from './google-maps-loader';
+import { themedStyles, useTheme } from './theme-context';
+import { palettes } from './theme';
+// Google draws its map in the day style whatever the app theme, so what is drawn on the map keeps the Day colours.
+const onMap = palettes.day;
 
 // Referrer-restricted browser key: public by design, worthless off the licensed origins; the server's own
 // route-key secret is a different credential and never appears in web code.
@@ -28,7 +32,7 @@ function loadGoogle(): Promise<any> {
 
 /** SVG path symbols with the same shapes the other renderers draw: dots, square pin, no-entry, car arrow. */
 const symbol = (path: string, color: string, opts: { rotation?: number } = {}) => ({
-  path, fillColor: color, fillOpacity: 1, strokeColor: palette.onFill, strokeWeight: 3,
+  path, fillColor: color, fillOpacity: 1, strokeColor: onMap.onFill, strokeWeight: 3,
   rotation: opts.rotation ?? 0,
 });
 const DOT = 'M 0 -9 A 9 9 0 1 1 -0.01 -9 Z'; // circle
@@ -42,6 +46,8 @@ const FOLLOW_ZOOM = 15;
 /** Read live at each animation: the user can change the setting while the map is open. */
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 export default function RouteMap(props: RouteMapProps) {
+  const { palette, shadow } = useTheme();
+  const styles = useStyles();
   const { pickup, dropoff, driver, height = 220 } = props;
   const { c, rtl } = useCopy();
   const host = useRef<View>(null);
@@ -91,13 +97,13 @@ export default function RouteMap(props: RouteMapProps) {
       const tiles = map.addListener('tilesloaded', () => { if (disposed || terminal.current) return; tiles.remove(); setReady(true); });
       s.ls.push(tiles);
       map.fitBounds(toBounds(maps, fitBounds(latest.current.points)));
-      s.road = new maps.Polyline({ map, path: [], strokeColor: palette.forest, strokeOpacity: 0.85, strokeWeight: 4 });
-      s.approach = new maps.Polyline({ map, path: [], strokeColor: palette.blue, strokeOpacity: 0.9, strokeWeight: 5 });
-      s.halo = new maps.Circle({ map, center: toLng(maps, pickup), radius: 0, fillColor: palette.blue, fillOpacity: 0.12,
-        strokeColor: palette.blue, strokeOpacity: 0.3, strokeWeight: 1, clickable: false });
-      s.driver = new maps.Marker({ map, position: toLng(maps, pickup), clickable: false, icon: symbol(ARROW, palette.blue) });
+      s.road = new maps.Polyline({ map, path: [], strokeColor: onMap.forest, strokeOpacity: 0.85, strokeWeight: 4 });
+      s.approach = new maps.Polyline({ map, path: [], strokeColor: onMap.blue, strokeOpacity: 0.9, strokeWeight: 5 });
+      s.halo = new maps.Circle({ map, center: toLng(maps, pickup), radius: 0, fillColor: onMap.blue, fillOpacity: 0.12,
+        strokeColor: onMap.blue, strokeOpacity: 0.3, strokeWeight: 1, clickable: false });
+      s.driver = new maps.Marker({ map, position: toLng(maps, pickup), clickable: false, icon: symbol(ARROW, onMap.blue) });
       s.driver.setVisible(false);
-      for (const [p, path, color] of [[pickup, DOT, palette.olive], [dropoff, SQUARE, palette.clay]] as const)
+      for (const [p, path, color] of [[pickup, DOT, onMap.olive], [dropoff, SQUARE, onMap.clay]] as const)
         new maps.Marker({ map, position: toLng(maps, p), clickable: false, icon: symbol(path, color) });
       latest.current.drawLines(); latest.current.drawClosed(); latest.current.drawDriver();
     }).catch(() => { if (!disposed) { terminal.current = true; setFailed(true); } });
@@ -146,7 +152,7 @@ export default function RouteMap(props: RouteMapProps) {
     s.closed.forEach(m => m.setMap(null));
     s.closed = (props.closed ?? []).map(p => new s.maps.Marker({
       map: s.map, position: toLng(s.maps, p), clickable: false,
-      icon: symbol(NO_ENTRY, palette.error),
+      icon: symbol(NO_ENTRY, onMap.error),
     }));
   }
 
@@ -177,7 +183,7 @@ export default function RouteMap(props: RouteMapProps) {
       s.driver.setOpacity(props.stale ? 0.45 : 1);
       if (heading != null) {
         s.rotation = turn(turnFrom ?? heading, heading, k === 1 ? 1 : (t - s.at!) / 500);
-        s.driver.setIcon(symbol(ARROW, palette.blue, { rotation: s.rotation }));
+        s.driver.setIcon(symbol(ARROW, onMap.blue, { rotation: s.rotation }));
       }
       s.halo.setCenter({ lat, lng });
       s.halo.setRadius(driver.accuracy ?? 0);
@@ -224,6 +230,8 @@ export default function RouteMap(props: RouteMapProps) {
 
 /** Fixed centre pin over a draggable Google map; reports the centre when the map stops moving. */
 export function PinMap({ center, onChange, onGesture, onFail, onReady, height = 320 }: PinMapProps) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c } = useCopy();
   const host = useRef<View>(null);
   const callbacks = useRef({ onChange, onGesture, onFail, onReady });
@@ -309,10 +317,10 @@ const bearingOf = (a: { latitude: number; longitude: number }, b: { latitude: nu
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 };
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   placeholder: { justifyContent: 'center' },
   failure: { backgroundColor: palette.mapWash, justifyContent: 'center', alignItems: 'center' },
   recenter: { position: 'absolute', bottom: 34, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   pin: { position: 'absolute', left: '50%', top: '50%', marginLeft: -22, marginTop: -42 },
   retry: { padding: 12, backgroundColor: palette.card, borderRadius: 12 },
-});
+}));

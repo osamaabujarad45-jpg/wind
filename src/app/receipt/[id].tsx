@@ -7,9 +7,12 @@ import { statusText, useFormat } from '../../parts';
 import { fareLines, paymentLine, receiptTotal } from '../../receipt-payment';
 import { qtyLabel } from '../../shop-ui';
 import { useSession } from '../../session';
-import { Appear, Badge, Button, ErrorText, fill, Header, Loading, Logo, palette, Row, Screen, Txt, useCopy } from '../../ui';
+import { Appear, Badge, Button, ErrorText, fill, Header, Loading, Logo, Row, Screen, Txt, useCopy } from '../../ui';
+import { themedStyles, useTheme } from '../../theme-context';
 
 export default function Receipt() {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { me } = useSession();
   const { c, language, money, err, rtl } = useCopy();
@@ -93,9 +96,9 @@ export default function Receipt() {
   </Screen>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   paper: { backgroundColor: palette.card, borderRadius: 22, padding: 20, borderWidth: 1, borderColor: palette.line, marginBottom: 16 },
   tear: { borderBottomWidth: 2, borderStyle: 'dashed', borderColor: palette.line, marginVertical: 4 },
   line: { paddingVertical: 9, alignItems: 'flex-start' },
   sub: { justifyContent: 'space-between', paddingTop: 8 },
-});
+}));

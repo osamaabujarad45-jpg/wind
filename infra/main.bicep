@@ -56,8 +56,14 @@ param identityMode string = 'operator-verified'
 
 // The only non-loopback runtime available today is for isolated staging.
 var workloadsEnabled = !enableWorkloads ? false : (environment == 'staging' && enablePrivateServiceNetworking ? true : fail('Workloads require the staging environment and private service networking'))
-var checkedImage = !workloadsEnabled || !empty(trim(imageDigest)) ? imageDigest : fail('imageDigest is required when enableWorkloads is true')
-var checkedOsrmImage = !workloadsEnabled || !empty(trim(osrmImageDigest)) ? osrmImageDigest : fail('osrmImageDigest is required when enableWorkloads is true')
+var apiImageParts = split(imageDigest, '@sha256:')
+var osrmImageParts = split(osrmImageDigest, '@sha256:')
+var imageHashes = [last(apiImageParts) ?? '', last(osrmImageParts) ?? '']
+var validImageHashes = map(imageHashes, hash => length(hash) == 64 ? empty(filter(range(0, 64), index => !contains('0123456789abcdef', substring(hash, index, 1)))) : false)
+var apiImagePinned = length(apiImageParts) == 2 && !empty(first(apiImageParts)) && validImageHashes[0] && imageDigest == trim(imageDigest)
+var osrmImagePinned = length(osrmImageParts) == 2 && !empty(first(osrmImageParts)) && validImageHashes[1] && osrmImageDigest == trim(osrmImageDigest)
+var checkedImage = !workloadsEnabled || apiImagePinned ? imageDigest : fail('imageDigest must pin an image to a full SHA-256 digest')
+var checkedOsrmImage = !workloadsEnabled || osrmImagePinned ? osrmImageDigest : fail('osrmImageDigest must pin an image to a full SHA-256 digest')
 var checkedSupportContact = !workloadsEnabled || !empty(trim(supportContact)) ? supportContact : fail('supportContact is required when enableWorkloads is true')
 var checkedPushSubject = !workloadsEnabled || !empty(trim(pushSubject)) ? pushSubject : fail('pushSubject is required when enableWorkloads is true')
 var suffix = uniqueString(subscription().id, resourceGroup().id, prefix)
@@ -256,7 +262,7 @@ resource osrmStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
   scope: osrmStorage
   properties: { principalId: acaEnvironment.identity.principalId, principalType: 'ServicePrincipal', roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a235d3ee-5935-4cfb-8cc5-a3303ad5995e') }
 }
-resource osrmEnvironmentStorage 'Microsoft.App/managedEnvironments/storages@2026-03-02-preview' = {
+resource osrmEnvironmentStorage 'Microsoft.App/managedEnvironments/storages@2026-03-02-preview' = if (enablePrivateServiceNetworking) {
   parent: acaEnvironment
   name: 'osrm-graph'
   properties: {
@@ -272,7 +278,7 @@ resource dataFiles 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-0
   name: '${osrmStorage.name}/default/wind-data'
   properties: { shareQuota: 5, enabledProtocols: 'SMB' }
 }
-resource dataEnvironmentStorage 'Microsoft.App/managedEnvironments/storages@2026-03-02-preview' = {
+resource dataEnvironmentStorage 'Microsoft.App/managedEnvironments/storages@2026-03-02-preview' = if (enablePrivateServiceNetworking) {
   parent: acaEnvironment
   name: 'wind-data'
   properties: {
@@ -393,6 +399,12 @@ resource acsKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (enabl
   name: 'acs-key'
   properties: { value: acsAccessKey }
 }
+resource preseededAcsKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' existing = {
+  parent: vault
+  name: 'acs-key'
+}
+var acsKeyReady = !empty(trim(acsAccessKey)) ? true : !empty(preseededAcsKey.properties.secretUri)
+var acsKeyUrl = !enableAcs ? '' : acsKeyReady ? '${vault.properties.vaultUri}secrets/acs-key' : fail('Seed acs-key in Key Vault or provide acsAccessKey before enabling ACS for the API')
 resource vaultSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (workloadsEnabled) {
   name: guid(vault.id, environmentIdentity.id, '4633458b-17de-408a-b874-0445c86b69e6')
   scope: vault
@@ -444,7 +456,7 @@ module api 'modules/container-app.bicep' = if (workloadsEnabled) {
     ]
     keyVaultSecrets: [
       { name: 'database-url', envName: 'WIND_DATABASE_URL', keyVaultUrl: '${vault.properties.vaultUri}secrets/database-url', identity: environmentIdentity.id }
-      { name: 'acs-key', envName: 'WIND_ACS_KEY', keyVaultUrl: '${vault.properties.vaultUri}secrets/acs-key', identity: environmentIdentity.id, enabled: enableAcs }
+      { name: 'acs-key', envName: 'WIND_ACS_KEY', keyVaultUrl: acsKeyUrl, identity: environmentIdentity.id, enabled: enableAcs }
     ]
     volumeName: 'data'
     volumeMountPath: '/data'

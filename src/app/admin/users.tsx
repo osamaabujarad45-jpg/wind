@@ -7,10 +7,12 @@ import { isolate, ltr, vehicles, type Role, type User, type Vehicle } from '../.
 import { useFormat } from '../../parts';
 import { codeInput } from '../../phone/flow';
 import {
-  Appear, Badge, Button, Card, Choices, confirm, Empty, ErrorText, Field, fill, FilterChips, haptic, Header, Loading, palette, Press, Row, Screen, tones, Txt, useCopy,
+  Appear, Badge, Button, Card, Choices, confirm, Empty, ErrorText, Field, fill, FilterChips, haptic, Header, Loading, Press, Row, Screen, Txt, useCopy,
 } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 export default function Users() {
+  const { palette, tones } = useTheme();
   const { c, err } = useCopy();
   const { date, time } = useFormat();
   const { me } = useSession();

@@ -14,12 +14,14 @@ import { recoveryStorage } from '../../recovery-storage';
 import { useSession } from '../../session';
 import { cartGoods, clearCart, setPolicy, setQuantity, storedCart, useCart } from '../../shop-cart';
 import { QtyControl } from '../../shop-ui';
-import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
+import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Row, Screen, Section, Txt, useCopy } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 const deliveryRecoveryMs = 60 * 60_000;
-type CheckoutRecoveryAction = 'retry' | { discardDraftFor: string };
+type CheckoutRecoveryAction = 'retry' | { reenterFor: string };
 
 export default function ShopCart() {
+  const { palette } = useTheme();
   const { c, language, money } = useCopy();
   const { me } = useSession();
   const { changes } = useLocalSearchParams<{ changes?: string }>();
@@ -38,14 +40,14 @@ export default function ShopCart() {
   const [reenterRequestId, setReenterRequestId] = useState<string | null>(null);
   const placing = useRef(false);
   const visible = useRef(false);
-  const clearCheckout = useCallback(async (current: () => boolean) => {
+  const clearCheckout = useCallback(async (current: () => boolean, keepDraft = false) => {
     if (!key || !current()) return;
     await storage.set(key, null, true);
-    if (current()) await recoveryStorage.write('shop-checkout', null, 1).catch(() => {}); // encrypted and expiring even if removal fails
+    if (!keepDraft && current()) await recoveryStorage.write('shop-checkout', null, 1).catch(() => {}); // encrypted and expiring even if removal fails
   }, [key]);
   const finish = useCallback(async (command: ShopCheckout, orderId: number, current: () => boolean) => {
     if (!key || !current()) return;
-    const contents = await storedCart(); // the persisted basket, not this tab's copy (review M2)
+    const contents = await storedCart(true); // the persisted basket, not this tab's copy (review M2)
     if (!current()) return;
     if (contents && basketIdentity(contents) === command.basket) await clearCart(true);
     if (!current()) return;
@@ -92,20 +94,23 @@ export default function ShopCart() {
       if (answer.state === 'unknown' && (action !== 'retry' || Date.now() + serverOffset() >= command.commandExpiresAt)) return;
       // A confirmed-absent command older than the draft lifetime can release the form even if the ciphertext will not open.
       const draftExpired = answer.state === 'absent' && Date.now() + serverOffset() >= command.commandExpiresAt + deliveryRecoveryMs;
-      const discardDraft = answer.state === 'absent' && typeof action === 'object' && action.discardDraftFor === command.requestId;
-      const savedDelivery = draftExpired || discardDraft ? null : await recoveryStorage.read('shop-checkout').catch((error: unknown) => {
+      const reenter = answer.state === 'absent' && typeof action === 'object' && action.reenterFor === command.requestId;
+      let keepDraft = false;
+      const savedDelivery = draftExpired ? null : await recoveryStorage.read('shop-checkout').catch((error: unknown) => {
         // The recovery store removes expired or invalid envelopes. Other read failures can be retried.
         if (error instanceof Error && error.message === 'recovery_record_unavailable') return null;
+        // Re-entry can release a confirmed-absent command while leaving temporarily unreadable data until expiry.
+        if (reenter) { keepDraft = true; return null; }
         if (current() && answer.state === 'absent') setReenterRequestId(command.requestId);
         throw error;
       });
       const delivery = readShopDelivery(savedDelivery, command.requestId);
       if (!current()) return;
       if (answer.state === 'absent') {
-        const contents = delivery ? await storedCart() : null;
+        const contents = delivery ? await storedCart(true) : null;
         if (!current()) return;
         const restored = delivery && contents && basketIdentity(contents) === command.basket ? delivery : null;
-        await clearCheckout(current);
+        await clearCheckout(current, keepDraft);
         if (!current()) return;
         setPending(null);
         setReenterRequestId(null);
@@ -139,7 +144,7 @@ export default function ShopCart() {
     <ErrorText>{error}</ErrorText>
     {key && <Button title={c.retry} variant="soft" disabled={busy} onPress={() => recoverCheckout('retry')} />}
     {key && pending && canReenterDelivery &&
-      <Button title={c.shopReenterDelivery} variant="ghost" disabled={busy} onPress={() => recoverCheckout({ discardDraftFor: pending.requestId })} />}
+      <Button title={c.shopReenterDelivery} variant="ghost" disabled={busy} onPress={() => recoverCheckout({ reenterFor: pending.requestId })} />}
     {key && <Button title={c.orders} variant="ghost" onPress={() => router.replace('/(customer)/orders')} />}
   </Screen>;
   if (!cart) return <Screen><Header title={c.shopCart} back /><Empty icon="basket-outline" title={c.shopCartEmpty} action={<Button title={c.shopBrowse} onPress={() => router.replace('/shop')} />} /></Screen>;

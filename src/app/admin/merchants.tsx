@@ -7,7 +7,8 @@ import { View } from 'react-native';
 import { api, useApi } from '../../api';
 import { newRequestId } from '../../booking';
 import { city, minorFromText, orderCode, type Merchant, type Order } from '../../model';
-import { Badge, Button, Card, Empty, ErrorText, Field, fill, Header, Loading, Press, Row, Screen, Section, tones, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, Empty, ErrorText, Field, fill, Header, Loading, Press, Row, Screen, Section, Txt, useCopy } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 type AdminMerchant = Merchant & { balanceAgorot: number; payableAgorot: number };
 
@@ -40,6 +41,7 @@ export default function AdminMerchants() {
 }
 
 function MerchantCard({ merchant: m, onChange }: { merchant: AdminMerchant; onChange: () => void }) {
+  const { tones } = useTheme();
   const { c, language, money, err } = useCopy();
   const [open, setOpen] = useState(m.status === 'pending');
   const [min, setMin] = useState(String(m.minOrderAgorot / 100));

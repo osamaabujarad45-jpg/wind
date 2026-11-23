@@ -13,14 +13,15 @@ import { useSession } from './session';
 import { entraConfigured, prepareEntraRequest, signInWithEntra, type EntraRequest } from './entra-auth';
 import { statusText, type Copy } from './copy';
 import {
-  Appear, Avatar, Badge, Button, Card, confirm, ErrorText, Field, FilterChips, fill, Header, haptic, iconSize, ListGroup, ListRow, palette, Press, Row, Screen, tones, Txt, useCopy, type IconName,
+  Appear, Avatar, Badge, Button, Card, Choices, confirm, ErrorText, Field, FilterChips, fill, Header, haptic, iconSize, ListGroup, ListRow, Press, Row, Screen, Txt, useCopy, type IconName,
 } from './ui';
+import { themeChoices, themedStyles, useTheme } from './theme-context';
+import { lineOf } from './theme';
 
-export const serviceMeta: Record<Service, { icon: IconName; color: string; pale: string }> = {
-  parcel: { icon: 'cube-outline', color: palette.olive, pale: palette.olivePale },
-  ride: { icon: 'car-outline', color: palette.blue, pale: palette.bluePale },
-  freight: { icon: 'bus-outline', color: palette.olive, pale: palette.olivePale }, // the Send line: clay now means only the logo pin and the destination
-  shop: { icon: 'basket-outline', color: palette.shop, pale: palette.shopPale }, // ONE-12: the Shop line's accent stays on the icon and badge
+// Each service wears its line's accent (theme.ts lines): Ride blue, Send (parcel and freight) olive, Shop berry. Clay now means
+// only the logo pin and the destination; ONE-12: the accent stays on the icon and badge.
+export const serviceMeta: Record<Service, { icon: IconName }> = {
+  parcel: { icon: 'cube-outline' }, ride: { icon: 'car-outline' }, freight: { icon: 'bus-outline' }, shop: { icon: 'basket-outline' },
 };
 
 export { statusText };
@@ -58,9 +59,9 @@ export function SlotPicker({ slots, value, onChange }: { slots: number[]; value:
 }
 
 export function ServiceIcon({ service, size = 40 }: { service: Service; size?: number }) {
-  const meta = serviceMeta[service];
-  return <View style={{ width: size, height: size, borderRadius: size * 0.3, backgroundColor: meta.pale, alignItems: 'center', justifyContent: 'center' }}>
-    <Ionicons name={meta.icon} size={size * 0.5} color={meta.color} />
+  const meta = serviceMeta[service], line = useTheme().lines[lineOf[service]];
+  return <View style={{ width: size, height: size, borderRadius: size * 0.3, backgroundColor: line.tint, alignItems: 'center', justifyContent: 'center' }}>
+    <Ionicons name={meta.icon} size={size * 0.5} color={line.color} />
   </View>;
 }
 
@@ -69,6 +70,8 @@ export function ServiceIcon({ service, size = 40 }: { service: Service; size?: n
 export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo, ride }: {
   from: string; to: string; fromNote?: string; toNote?: string; onFrom?: () => void; onTo?: () => void; ride?: boolean;
 }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c, row } = useCopy();
   const stop = (label: string, place: string, note: string | undefined, first: boolean, onPress?: () => void) => {
     const body = <View style={[styles.stop, { flexDirection: row }]}>
@@ -98,6 +101,7 @@ export function RouteLine({ from, to, fromNote, toNote, onFrom, onTo, ride }: {
  * left and the latest arrival clock time. A slow-checkpoint estimate has no upper bound, so no clock time either.
  */
 export function EtaLine({ eta, toPickup, slow, km, now }: { eta: [number, number]; toPickup: boolean; slow: boolean; km?: number | null; now: number }) {
+  const { palette } = useTheme();
   const { c } = useCopy();
   const { stamp } = useFormat();
   const [lo, hi] = eta, here = arrivingNow(lo, slow); // a checkpoint delay keeps its "or more" wording to the end
@@ -178,6 +182,7 @@ export function tripTitle(order: Pick<Order, 'pickupCity' | 'dropoffCity' | 'pic
 }
 
 export function OrderRow({ order, index = 0, status = true }: { order: Order; index?: number; status?: boolean }) {
+  const { palette } = useTheme();
   const { c, language, money, rtl } = useCopy();
   const { time } = useFormat();
   const { me } = useSession();
@@ -250,6 +255,7 @@ export function PushRow() {
 // Invite friends (SPEC-referral.md): the code, a share sheet where one exists, progress and ready reward codes.
 const canShare = Platform.OS !== 'web' || (typeof navigator !== 'undefined' && typeof navigator.share === 'function');
 function InviteCard() {
+  const { palette } = useTheme();
   const { c, money } = useCopy();
   const { date } = useFormat();
   const { data } = useApi<Referral>('/me/referral');
@@ -282,6 +288,7 @@ function InviteCard() {
 }
 
 export function PlanCard() {
+  const { palette, tones } = useTheme();
   const { me, refresh } = useSession();
   const { c, err } = useCopy();
   const { date } = useFormat();
@@ -345,6 +352,7 @@ function useEntraReauth(challengePath: string, open: boolean) {
 }
 
 export function PasswordCard() {
+  const { palette } = useTheme();
   const { c, err } = useCopy();
   const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState('');
@@ -396,6 +404,7 @@ export function PasswordCard() {
 
 /** Unverified email while the server can send codes: one row that opens the profile, where the code goes in. */
 export function VerifyEmailNudge() {
+  const { palette } = useTheme();
   const { me } = useSession();
   const { c } = useCopy();
   if (!me?.capabilities?.emailVerification || !me.user.email || me.user.emailVerifiedAt) return null;
@@ -414,6 +423,7 @@ export function VerifyEmailNudge() {
 
 // Support and privacy policy: needed by both app stores and reachable before sign-in.
 export function HelpLinks({ help = true, privacy = true }: { help?: boolean; privacy?: boolean }) {
+  const styles = useStyles();
   const { c, language } = useCopy();
   return <Row gap={16} style={{ justifyContent: 'center', flexWrap: 'wrap', marginTop: 6 }}>
     {help && <Press accessibilityRole="link" accessibilityLabel={c.help} style={styles.helpLinkTarget} onPress={() => router.push('/help')}>
@@ -428,7 +438,20 @@ export function HelpLinks({ help = true, privacy = true }: { help?: boolean; pri
   </Row>;
 }
 
+// Day, Night or Automatic, saved on this device (design system v2). Automatic is Night after sunset for captains.
+function ThemeCard({ captain }: { captain: boolean }) {
+  const { c } = useCopy();
+  const { choice, setChoice } = useTheme();
+  return <Card>
+    <Txt variant="title" header style={{ marginBottom: 8 }}>{c.themeTitle}</Txt>
+    <Choices label={c.themeTitle} value={choice} onChange={setChoice}
+      items={themeChoices.map(key => ({ key, label: c[key === 'auto' ? 'themeAuto' : key === 'day' ? 'themeDay' : 'themeNight'] }))} />
+    <Txt variant="caption">{captain ? c.themeAutoCaptain : c.themeAutoOthers}</Txt>
+  </Card>;
+}
+
 export function AccountScreen() {
+  const { palette, tones } = useTheme();
   const { me, signOut, forget, language, setLanguage } = useSession();
   const { c, err } = useCopy();
   const [deleteError, setDeleteError] = useState('');
@@ -487,6 +510,7 @@ export function AccountScreen() {
       <PasswordCard />
       {pushSupported() ? <PushRow /> : Platform.OS !== 'web' && <NativePushRow />}
     </ListGroup>
+    <ThemeCard captain={user.role === 'driver'} />
     <ListGroup>
       <ListRow icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />
       {/* MER-05: merchant mode is a link inside this account, never a role switch; it appears only while shop delivery is on. */}
@@ -514,7 +538,7 @@ export function AccountScreen() {
   </Screen>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   helpLinkTarget: { minHeight: 44, justifyContent: 'center' },
   link: { color: palette.olive, fontWeight: '800', textDecorationLine: 'underline', paddingVertical: 8 },
   stop: { alignItems: 'stretch', gap: 10, minHeight: 48 },
@@ -522,4 +546,4 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: palette.olive },
   square: { width: 10, height: 10, borderRadius: 2, backgroundColor: palette.clay },
   spine: { flex: 1, width: 2, borderRadius: 1, backgroundColor: palette.line, marginTop: 4 },
-});
+}));

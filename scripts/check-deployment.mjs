@@ -1,16 +1,21 @@
 // Read-only deployment wiring check. This does not create accounts or orders.
 import { readFile } from 'node:fs/promises';
 
-const originIndex = process.argv.indexOf('--origin');
-const rawOrigin = originIndex < 0 ? undefined : process.argv[originIndex + 1];
-let url;
-try { url = new URL(rawOrigin); } catch { throw new Error('Provide --origin https://your-public-api-origin'); }
-const localFixture = process.argv.includes('--fixture') && process.env.NODE_ENV === 'test'
-  && url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
-if ((!localFixture && url.protocol !== 'https:') || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
-  throw new Error('The deployment origin must be HTTPS and contain no credentials, path, query or fragment');
+function readOrigin(flag, fallback) {
+  const index = process.argv.indexOf(flag);
+  if (index < 0 && fallback !== undefined) return fallback;
+  let url;
+  try { url = new URL(index < 0 ? undefined : process.argv[index + 1]); }
+  catch { throw new Error(`Provide ${flag} https://your-public-api-origin`); }
+  const localFixture = process.argv.includes('--fixture') && process.env.NODE_ENV === 'test'
+    && url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+  if ((!localFixture && url.protocol !== 'https:') || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    throw new Error(`${flag} must be an HTTPS origin with no credentials, path, query or fragment`);
+  }
+  return url.origin;
 }
-const origin = url.origin;
+const origin = readOrigin('--origin');
+const apiOrigin = readOrigin('--api-origin', origin);
 const checks = [];
 const record = (name, ok, detail = '') => checks.push({ name, ok, detail });
 async function get(path) {
@@ -61,8 +66,8 @@ await check('web bundle API origin', async () => {
     .map(match => match[1]).filter(path => path.includes('/_expo/static/js/web/'));
   if (home.status !== 200 || !scripts.length) return record('web bundle API origin', false, 'Web bundle is missing');
   const bundles = await Promise.all(scripts.map(get));
-  record('web bundle API origin', bundles.every(bundle => bundle.status === 200) && bundles.some(bundle => bundle.body.includes(origin)),
-    `Expected ${origin} in the served bundle`);
+  record('web bundle API origin', bundles.every(bundle => bundle.status === 200) && bundles.some(bundle => bundle.body.includes(apiOrigin)),
+    `Expected ${apiOrigin} in the served bundle`);
 });
 for (const result of checks) console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.name}${result.detail ? `: ${result.detail}` : ''}`);
 if (checks.some(result => !result.ok)) process.exitCode = 1;

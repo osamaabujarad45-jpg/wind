@@ -1,11 +1,13 @@
 import { Pressable } from 'react-native';
 import type { DriverLocationDiagnostics } from './driver-location-diagnostics';
 import { useFormat } from './parts';
-import { Card, palette, Row, Txt, useCopy } from './ui';
+import { useTheme } from './theme-context';
+import { Card, Row, Txt, useCopy } from './ui';
 
 // Presentation only: opening support cannot start tracking, request permission or send a location.
 // Collapsed by default: the facts are for a support call, not for the driver's everyday job list.
 export function DriverSupportCard({ diagnostics, open, onToggle }: { diagnostics: DriverLocationDiagnostics; open: boolean; onToggle: () => void }) {
+  const { palette } = useTheme();
   const { c } = useCopy();
   const { time } = useFormat();
   const recordedAt = (value: number | null) => value === null ? c.locSupport_notRecorded : time(value);

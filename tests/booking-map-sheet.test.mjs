@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { themeModules } from './theme-mock.mjs';
 
 const require = createRequire(import.meta.url);
 const ts = require('typescript');
@@ -51,7 +52,8 @@ function renderer(file, rtl = false) {
     'react-native': native,
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
     './motion': { useReducedMotion: () => true },
-    './ui': { palette: { paper: 'paper', olive: 'olive', card: 'card', hair: 'hair' }, sheetShadow: { boxShadow: 'sheet' }, useCopy: () => ({ c: copy, rtl: state.rtl, language: state.language }) },
+    ...themeModules('./'),
+    './ui': { useCopy: () => ({ c: copy, rtl: state.rtl, language: state.language }) },
     './map-page': { MAP_GROUND: 'ground', MapPage: 'MapPage' },
     './route-preview': { default: 'RoutePreview' },
   };
@@ -142,10 +144,9 @@ check('Arabic landscape sheet is on the reading end and expanded body remains us
   const scroll = find(expandedSheet, node => node.type === 'ScrollView');
   const scrollStyle = flatten(scroll.props.style);
   assert.equal(scrollStyle.flex, 1);
-  const sheetChildren = children(expandedSheet);
-  const footerSpacer = sheetChildren.at(-1);
-  assert.equal(flatten(footerSpacer.props.style).height, 70, 'the expanded form reserves the footer height');
-  assert.equal(flatten(footerSpacer.props.style).flexShrink, 0, 'the footer reserve cannot collapse');
+  assert.equal(scrollStyle.marginBottom, undefined, 'the web refresh wrapper must not inherit the footer reserve');
+  const footerSpacer = children(expandedSheet).at(-1);
+  assert.deepEqual(flatten(footerSpacer.props.style), { height: 70, flexShrink: 0 });
   assert.equal(scroll.props.accessibilityElementsHidden, false);
   assert.equal(scroll.props.importantForAccessibility, 'auto');
   assert.ok(360 - 48 - 58 - 70 > 0, 'the expanded form has a positive scroll viewport');
@@ -164,12 +165,12 @@ check('map Retry is 48dp and translates into the inset-visible map region', () =
   assert.deepEqual(style.transform, [{ translateX: -170 }, { translateY: -70 }], 'top/bottom/right booking overlays cannot cover Retry');
   retry.props.onPress();
   tree = view.render(view.exports.SceneMap, props);
-  assert.equal(find(tree, node => node.type === 'MapPage').key, 'en:1', 'Retry advances only the map attempt generation');
+  assert.equal(find(tree, node => node.type === 'MapPage').key, 'en:day:1', 'Retry advances only the map attempt generation');
 
   view.state.rtl = true; view.state.language = 'ar';
   const arabic = { ...props, insets: { top: 80, bottom: 0, left: 340 } };
   tree = view.render(view.exports.SceneMap, arabic);
-  assert.equal(find(tree, node => node.type === 'MapPage').key, 'ar:1', 'language remains part of the map generation');
+  assert.equal(find(tree, node => node.type === 'MapPage').key, 'ar:day:1', 'language remains part of the map generation');
   find(tree, node => node.type === 'MapPage').props.onFail();
   tree = view.render(view.exports.SceneMap, arabic);
   assert.deepEqual(flatten(find(tree, node => node.type === 'Pressable').props.style).transform, [{ translateX: 170 }, { translateY: 40 }], 'a left-side Arabic sheet leaves Retry on its right');

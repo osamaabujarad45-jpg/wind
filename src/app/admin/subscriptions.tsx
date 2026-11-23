@@ -3,9 +3,11 @@ import { ScrollView, View } from 'react-native';
 import { api, useApi } from '../../api';
 import type { Subscription } from '../../model';
 import { useFormat } from '../../parts';
-import { Appear, Badge, Button, Card, confirm, Empty, ErrorText, fill, haptic, Header, Loading, Row, Screen, tones, Txt, useCopy } from '../../ui';
+import { Appear, Badge, Button, Card, confirm, Empty, ErrorText, fill, haptic, Header, Loading, Row, Screen, Txt, useCopy } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 export default function Subscriptions() {
+  const { tones } = useTheme();
   const { c, money, err } = useCopy();
   const { date } = useFormat();
   const { data, error, reload } = useApi<Subscription[]>('/admin/subscriptions', 30_000);

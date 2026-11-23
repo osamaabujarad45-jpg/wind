@@ -20,7 +20,8 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const only = args.find(a => a.startsWith('--only='))?.slice(7).split(',');
-const API_PORT = 4100, WEB_PORT = 4101;
+// SCREENS_API_PORT / SCREENS_WEB_PORT let two runs share one machine (a gate sandbox serving several branches).
+const API_PORT = Number(process.env.SCREENS_API_PORT) || 4100, WEB_PORT = Number(process.env.SCREENS_WEB_PORT) || 4101;
 const webDir = join(root, '.screens', 'web');
 const outDir = join(root, 'docs', 'screens');
 const phone = { width: 390, height: 844 };
@@ -271,6 +272,7 @@ await new Promise(resolve => web.listen(WEB_PORT, resolve));
 
 // ---------- 3. what to capture ----------
 // role: whose session (null = signed out). motion: keep animations running (default: reduced motion for stable shots).
+// theme: 'night' captures the Night theme (design system v2); every other shot pins Day, so a run after sunset still matches.
 const screens = [
   { id: 'intro', group: 'Launch', name: 'Animated intro', route: '/', file: 'src/intro.tsx', role: null, fresh: true, frames: [150, 450, 750, 1050, 1400] },
   { id: 'welcome-1', group: 'Launch', name: 'Welcome · services', route: '/', file: 'src/app/welcome.tsx', role: null, fresh: true },
@@ -298,6 +300,8 @@ const screens = [
   { id: 'order-done', group: 'Customer', name: 'Order · delivered', route: `/order/${completed.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
   { id: 'receipt', group: 'Customer', name: 'Receipt', route: `/receipt/${completed.id}`, file: 'src/app/receipt/[id].tsx', role: 'customer' },
   { id: 'account', group: 'Customer', name: 'Account', route: '/account', file: 'src/parts.tsx (AccountScreen)', role: 'customer' },
+  { id: 'account-night', group: 'Customer', name: 'Account · Night theme (Appearance: Automatic stays Day for customers)', route: '/account', file: 'src/parts.tsx (ThemeCard)', role: 'customer', theme: 'night' },
+  { id: 'orders-night', group: 'Customer', name: 'My orders · Night theme', route: '/orders', file: 'src/app/(customer)/orders.tsx', role: 'customer', theme: 'night' },
   { id: 'profile', group: 'Customer', name: 'Edit profile', route: '/profile', file: 'src/app/profile.tsx', role: 'customer' },
   { id: 'profile-phone-ready', group: 'Customer', name: 'Edit profile · phone verification available (synthetic reply, Verify live)', route: '/profile', file: 'src/phone-card.tsx', role: 'customer', state: 'phone-ready' },
   { id: 'profile-phone-code', group: 'Customer', name: 'Edit profile · code requested, provider accepted (synthetic), not confirmed as delivered', route: '/profile', file: 'src/phone-card.tsx', role: 'customer', state: 'phone-code' },
@@ -322,13 +326,21 @@ const screens = [
   { id: 'driver-earnings', group: 'Driver', name: 'Earnings', route: '/driver/earnings', file: 'src/app/driver/earnings.tsx', role: 'driver' },
   { id: 'driver-receipt', group: 'Driver', name: 'Receipt (driver view)', route: `/receipt/${completed.id}`, file: 'src/app/receipt/[id].tsx', role: 'driver' },
   { id: 'driver-account', group: 'Driver', name: 'Account', route: '/driver/account', file: 'src/parts.tsx (AccountScreen)', role: 'driver' },
+  // Night (design system v2): captains switch after sunset, or choose it in Account. The same screens, saved choice Night.
+  { id: 'driver-jobs-night', group: 'Driver', name: 'Jobs · Night theme', route: '/driver', file: 'src/app/driver/index.tsx', role: 'driver', theme: 'night' },
+  { id: 'driver-order-night', group: 'Driver', name: 'Active trip · Night theme', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'driver', theme: 'night' },
+  { id: 'driver-earnings-night', group: 'Driver', name: 'Earnings · Night theme', route: '/driver/earnings', file: 'src/app/driver/earnings.tsx', role: 'driver', theme: 'night' },
+  { id: 'driver-account-night', group: 'Driver', name: 'Account · Night theme (Appearance: Automatic, Day, Night)', route: '/driver/account', file: 'src/parts.tsx (ThemeCard)', role: 'driver', theme: 'night' },
   { id: 'driver-offer-range', group: 'Driver', name: 'Jobs · offer price outside the band (Send offer disabled, band shown)', route: '/driver', file: 'src/app/driver/index.tsx', role: 'freshDriver', state: 'offer-range' },
 
   { id: 'support', group: 'Customer', name: 'Message Wind support (in-app conversation)', route: '/support', file: 'src/app/support.tsx', role: 'customer' },
   { id: 'admin-dashboard', group: 'Admin', name: 'Dashboard', route: '/admin', file: 'src/app/admin/index.tsx', role: 'admin' },
+  { id: 'admin-approvals', group: 'Admin', name: 'Approvals: captains, plan requests and shops waiting for a decision', route: '/admin/approvals', file: 'src/app/admin/approvals.tsx', role: 'admin' },
+  { id: 'admin-approvals-desktop', group: 'Admin', name: 'Approvals on a desktop (side rail)', route: '/admin/approvals', file: 'src/app/admin/approvals.tsx', role: 'admin', desktop: true },
   { id: 'admin-support', group: 'Admin', name: 'Support inbox (conversations waiting first)', route: '/admin/support', file: 'src/app/admin/support.tsx', role: 'admin' },
   { id: 'admin-support-desktop', group: 'Admin', name: 'Support inbox on a desktop: list and conversation side by side', route: '/admin/support', file: 'src/app/admin/support.tsx', role: 'admin', desktop: true, tap: 'ليلى حداد' },
   { id: 'admin-desktop', group: 'Admin', name: 'Dashboard on a desktop (1280 px): side rail instead of bottom tabs', route: '/admin', file: 'src/app/admin/_layout.tsx', role: 'admin', desktop: true },
+  { id: 'admin-desktop-night', group: 'Admin', name: 'Dashboard on a desktop · Night theme', route: '/admin', file: 'src/app/admin/_layout.tsx', role: 'admin', desktop: true, theme: 'night' },
   { id: 'admin-orders', group: 'Admin', name: 'All orders', route: '/admin/orders', file: 'src/app/admin/orders.tsx', role: 'admin' },
   { id: 'admin-order', group: 'Admin', name: 'Parcel · delivery code recovery', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'admin' },
   { id: 'admin-users', group: 'Admin', name: 'Users', route: '/admin/users', file: 'src/app/admin/users.tsx', role: 'admin' },
@@ -384,15 +396,16 @@ for (const language of ['ar', 'en']) {
     const viewport = screen.desktop ? { width: 1280, height: 800 } : phone; // Wind Control on a desktop: the side rail layout (1x: a desktop screen, and the PNG stays small)
     const context = await browser.newContext({ viewport, deviceScaleFactor: screen.desktop ? 1 : 2, locale: language === 'ar' ? 'ar-PS' : 'en-GB',
       reducedMotion: screen.motion || screen.frames || screen.fresh ? 'no-preference' : 'reduce' });
-    await context.addInitScript(({ token, language, onboarded, cart }) => {
+    await context.addInitScript(({ token, language, onboarded, theme, cart }) => {
       if (sessionStorage.getItem('seeded')) return; // only before the first load; the app owns storage after that
       sessionStorage.setItem('seeded', '1');
       localStorage.clear();
       localStorage.setItem('language', language);
+      localStorage.setItem('theme', theme);
       if (onboarded) localStorage.setItem('onboarded', '1');
       if (token) localStorage.setItem('token', token);
       if (cart) localStorage.setItem('wind.shopCart.v1', JSON.stringify(cart));
-    }, { token: screen.role ? tokens[screen.role] : null, language, onboarded: !screen.fresh,
+    }, { token: screen.role ? tokens[screen.role] : null, language, onboarded: !screen.fresh, theme: screen.theme ?? 'day',
       cart: screen.id === 'shop-cart' ? exampleCart : null });
     const page = await context.newPage();
     const base = `http://localhost:${WEB_PORT}`;
@@ -457,6 +470,13 @@ for (const language of ['ar', 'en']) {
       assert.equal(sends.length, 2, 'the order is sent once per explicit attempt');
       assert.equal(sends[1], sends[0], 'restored checkout retries the exact command body');
       console.log(`Shop checkout passed a browser restart in ${language}`);
+    }
+    if (screen.theme === 'night') {
+      // A Night shot is evidence only if the app drew Night: the Night ground (palettes.night.paper #0C1713) is painted and the Day
+      // paper (#F3F2EC) and Day card (#FFFFFF) are nowhere on the page.
+      const grounds = new Set(await page.evaluate(() => [...document.querySelectorAll('div')].map(el => getComputedStyle(el).backgroundColor)));
+      assert.ok(grounds.has('rgb(12, 23, 19)'), `${screen.id} ${language}: no Night ground on a Night shot`);
+      for (const day of ['rgb(243, 242, 236)', 'rgb(255, 255, 255)']) assert.ok(!grounds.has(day), `${screen.id} ${language}: a Day surface (${day}) on a Night shot`);
     }
     if (screen.id === 'admin-desktop') {
       // the tabs are a rail on the reading-start side, not a bottom bar
@@ -690,6 +710,7 @@ if (!only || only.some(id => id === 'book-calculating' || id === 'driver-offer-r
       sessionStorage.setItem('seeded', '1');
       localStorage.clear();
       localStorage.setItem('language', language);
+      localStorage.setItem('theme', 'day');
       localStorage.setItem('onboarded', '1');
       localStorage.setItem('token', token);
     }, { token, language });
@@ -746,6 +767,7 @@ const phoneShot = async (screen, language, token, { setup, run }) => {
     sessionStorage.setItem('seeded', '1');
     localStorage.clear();
     localStorage.setItem('language', language);
+    localStorage.setItem('theme', 'day');
     localStorage.setItem('onboarded', '1');
     if (token) localStorage.setItem('token', token);
   }, { token, language });

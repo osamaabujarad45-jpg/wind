@@ -8,11 +8,13 @@ import { cities, city, type CityId, type Point, type Road } from '../model';
 import PinSheet from '../pin-sheet';
 import { canPin } from '../route-map';
 import { useSession } from '../session';
-import { Badge, Button, Card, confirm, Empty, ErrorText, Field, fill, haptic, Header, Loading, palette, Press, Row, Screen, Txt, useCopy } from '../ui';
+import { Badge, Button, Card, confirm, Empty, ErrorText, Field, fill, haptic, Header, Loading, Press, Row, Screen, Txt, useCopy } from '../ui';
+import { useTheme } from '../theme-context';
 
-const roadTone = { open: { bg: palette.olivePale, fg: palette.olive }, slow: { bg: palette.warnPale, fg: palette.warn }, closed: { bg: palette.errorPale, fg: palette.error } } as const;
+const roadTone = { open: 'olive', slow: 'warn', closed: 'error' } as const;
 
 export default function Roads() {
+  const { palette, tones } = useTheme();
   const { me } = useSession();
   const { c, err, language, row } = useCopy();
   const { data, error, reload, setData } = useApi<Road[]>('/roads', 60_000);
@@ -54,7 +56,7 @@ export default function Roads() {
             <Txt variant="title">{road.name}</Txt>
             <Txt variant="caption">{road.cities.map(id => city(id)[language]).join(' · ')}</Txt>
           </View>
-          <Badge label={road.status ? c[`road_${road.status}`] : c.roadUnknown} tone={road.status ? roadTone[road.status] : { bg: palette.muted, fg: palette.secondary }} />
+          <Badge label={road.status ? c[`road_${road.status}`] : c.roadUnknown} tone={road.status ? tones[roadTone[road.status]] : tones.muted} />
         </Row>
         {road.reportedAt && <Txt variant="caption" style={{ marginTop: 6 }}>{`${ago(road.reportedAt)} · ${fill(c.roadAgreeing, { n: road.agreeing })}`}</Txt>}
         {!!road.note && <Txt style={{ marginTop: 4 }}>{road.note}</Txt>}

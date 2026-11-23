@@ -5,9 +5,11 @@ import { useApi } from '../../api';
 import { city, type Merchant } from '../../model';
 import { useCart, cartGoods } from '../../shop-cart';
 import { todayHours } from '../../shop-ui';
-import { Badge, Button, Card, Empty, ErrorText, fill, Header, Loading, palette, Press, Row, Screen, tones, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, Empty, ErrorText, fill, Header, Loading, Press, Row, Screen, Txt, useCopy } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 export default function ShopList() {
+  const { palette, tones } = useTheme();
   const { c, language, money } = useCopy();
   const { data, error, reload } = useApi<{ town: string | null; merchants: Merchant[] }>('/shop/merchants', 60_000);
   const cart = useCart();

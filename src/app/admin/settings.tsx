@@ -4,8 +4,9 @@ import { api, useApi } from '../../api';
 import { fractionSettings, invalidSetting, typedNumber, type Settings, defaultSettings } from '../../model';
 import { PasswordCard, useFormat } from '../../parts';
 import { useSession } from '../../session';
-import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, Loading, palette, Row, Screen, tones, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, Loading, Row, Screen, Txt, useCopy } from '../../ui';
 import { router } from 'expo-router';
+import { useTheme } from '../../theme-context';
 
 const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits' | 'shopTimers'; keys: (keyof Settings)[] }[] = [
   { title: 'pricing', keys: ['parcelPrice', 'parcelLarge', 'pickupPayPerKm', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp', 'perMinute', 'nightExtra'] },
@@ -43,7 +44,7 @@ export default function AdminSettings() {
 
 function AdminSettingsForm({ initial, payroll }: { initial: Settings; payroll: SettingsResponse | null }) {
   const { me, refresh, signOut, language, setLanguage } = useSession();
-  const { c, err } = useCopy();
+  const { c, money, err } = useCopy();
   const [values, setValues] = useState(() => toText(initial));
   // Keys this admin has typed into since the server last confirmed the form. Only these are reviewed and sent:
   // comparing text against the mount value would miss a reversal (12 → 10 looks unedited when 10 was loaded).
@@ -143,7 +144,7 @@ function AdminSettingsForm({ initial, payroll }: { initial: Settings; payroll: S
       && (key !== 'pickupPayPerKm' || latest.payrollAvailable));
     if (!keys.length) { setMessage(c.saved); return; }
     // Shown the way the field shows it (percent for rates, ₪ for money), so the review reads like the form.
-    const shown = (key: keyof Settings, value: number) => fractionSettings.includes(key) ? `${Math.round(value * 100)}%` : unitless(key) ? String(value) : `${value} ₪`;
+    const shown = (key: keyof Settings, value: number) => fractionSettings.includes(key) ? `${Math.round(value * 100)}%` : unitless(key) ? String(value) : money(value);
     const changes = keys.map(key => `${c[`set_${key}`]}: ${shown(key, before[key])} → ${shown(key, numbers[key])}`);
     const patch = Object.fromEntries(keys.map(key => [key, numbers[key]]));
     const expected = Object.fromEntries(keys.map(key => [key, before[key]]));
@@ -177,6 +178,7 @@ const blank = { code: '', amount: '10', maxUses: '100', days: '30', firstOrderOn
 
 // Promo codes (SPEC-promo-codes.md): fixed shekel discounts Wind funds through the driver cash ledger.
 function Promos() {
+  const { palette, tones } = useTheme();
   const { c, money, err } = useCopy();
   const { date } = useFormat();
   const { data, error: loadError, reload } = useApi<Promo[]>('/admin/promos');

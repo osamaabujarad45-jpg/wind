@@ -19,7 +19,7 @@ if (Platform.OS !== 'web') {
   });
   // T37: a tap that LAUNCHED the app never reaches the listener — the response is waiting in
   // getLastNotificationResponseAsync. Hold every tap until the session and its route guards are ready.
-  type Tap = { identifier: string; url: string; recipient?: number };
+  type Tap = { identifier: string; url: string; kind?: string; recipient?: number };
   type PendingTarget = Tap & { credential: string | null };
   let readyRevision: number | undefined, account: NavigationAccount = null, pending: PendingTarget | null = null;
   let lastOpened: string | undefined, received = 0;
@@ -34,10 +34,10 @@ if (Platform.OS !== 'web') {
   };
   const tapFrom = (response: Notifications.NotificationResponse | null): Tap | null => {
     const request = response?.notification.request;
-    const { url, recipient } = request?.content.data ?? {};
+    const { url, kind, recipient } = request?.content.data ?? {};
     if (!request?.identifier || typeof url !== 'string' || url !== url.trim() || !/^\/(?!\/)[^\\]*$/.test(url)) return null;
     if (recipient !== undefined && (typeof recipient !== 'number' || !Number.isSafeInteger(recipient) || recipient < 1)) return null;
-    return { identifier: request.identifier, url, recipient };
+    return { identifier: request.identifier, url, kind: typeof kind === 'string' ? kind : undefined, recipient };
   };
   const consume = (identifier: string) => {
     // Expo keeps the last response until it is cleared. Leave a later notification intact.
@@ -52,9 +52,13 @@ if (Platform.OS !== 'web') {
     pending = null; // a stale or refused tap is never retried under another account
     consume(target.identifier);
     if (!target.credential || target.credential !== apiSessionCredential() || target.identifier === lastOpened
-      || !account || (account.user.status !== 'active' && !(account.user.status === 'pending' && target.url === '/support'))
-      || (target.recipient !== undefined && target.recipient !== account.user.id)
+      || !account || (target.recipient !== undefined && target.recipient !== account.user.id)
       || !allowed(target.url, account.user.role)) return;
+    const user = account.user;
+    // An approval tap can arrive before the foreground session refresh. The driver screen has its own pending gate.
+    const pendingDriverTap = user.status === 'pending' && user.role === 'driver' && target.recipient === user.id
+      && ((target.kind === 'support_reply' && target.url === '/support') || (target.kind === 'approved' && target.url === '/driver'));
+    if (user.status !== 'active' && !pendingDriverTap) return;
     lastOpened = target.identifier;
     router.replace(target.url as never);
   };

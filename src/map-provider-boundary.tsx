@@ -5,7 +5,8 @@ import { effectiveMapProvider } from './map-provider';
 import { recordMapFailure, retryMapProviders } from './map-failures';
 import { currentMapMode, useMapMode } from './map-mode';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
-import { maxScale, palette, useCopy } from './ui';
+import { maxScale, useCopy } from './ui';
+import { useTheme } from './theme-context';
 
 /** One owner for provider attempts: each attempt mounts the Google or the platform's baseline map fresh, and
  * renderers never retry or revive a failed policy attempt. Pass route or pin; google/baseline draw that kind. */
@@ -13,6 +14,7 @@ export function MapProviderBoundary({ platform, route, pin, google: Google, base
   platform: string; route?: RouteMapProps; pin?: PinMapProps;
   google: ComponentType<RouteMapProps> | ComponentType<PinMapProps>; baseline: ComponentType<RouteMapProps> | ComponentType<PinMapProps>;
 }) {
+  const { palette } = useTheme();
   const [mode] = useMapMode();
   const baked = Constants.expoConfig?.extra?.googleMaps;
   const forceBaseline = route?.forceBaseline ?? pin?.forceBaseline;

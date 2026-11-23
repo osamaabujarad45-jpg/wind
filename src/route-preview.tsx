@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { Point } from './model';
-import { maxScale, palette, useCopy } from './ui';
+import { maxScale, useCopy } from './ui';
+import { themedStyles } from './theme-context';
 
 /** What the app's own chrome covers at the map's edges, in points: the camera and the pin keep clear of it. */
 export type MapInsets = { top?: number; bottom?: number; left?: number; right?: number };
@@ -41,6 +42,7 @@ export type PinMapProps = { center: Point; onChange: (point: Point) => void; onG
 // `plain` draws the shapes without words: it is the placeholder behind a loading map, so it must not
 // announce the city names twice or repeat them on screen.
 export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false }: RouteMapProps & { plain?: boolean }) {
+  const styles = useStyles();
   const { rtl, c, language } = useCopy();
   const [w, setW] = useState(0);
   const h = 156;
@@ -66,7 +68,7 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false 
   </View>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   preview: { height: 156, backgroundColor: palette.mapWash, overflow: 'hidden' },
   fill: { height: '100%' },
   road: { position: 'absolute', backgroundColor: palette.card, opacity: 0.75, borderRadius: 4 },
@@ -75,4 +77,4 @@ const styles = StyleSheet.create({
   dropoff: { position: 'absolute', width: 16, height: 16, borderRadius: 4, backgroundColor: palette.clay, borderWidth: 3, borderColor: palette.card },
   label: { position: 'absolute', width: 120, textAlign: 'center', fontSize: 12, fontWeight: '800', color: palette.ink },
   diagram: { position: 'absolute', top: 8, left: 12, right: 12, textAlign: 'center', fontSize: 11, fontWeight: '600', color: palette.secondary },
-});
+}));

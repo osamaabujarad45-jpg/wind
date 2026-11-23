@@ -46,6 +46,43 @@ for (const file of examples) {
 
 execFileSync('node', ['scripts/check-azure.mjs'], { cwd: root, stdio: 'inherit', env: process.env });
 const compiled=JSON.parse(readFileSync(path.join(root,'.expo/implementation/azure-main.json'),'utf8'));
+const backupAccess = JSON.parse(readFileSync(path.join(root, '.expo/implementation/azure-backup-access.json'), 'utf8'));
+const backupRole = backupAccess.resources.find(resource => resource.type === 'Microsoft.Authorization/roleDefinitions');
+assert.deepEqual(backupRole.properties.permissions, [{
+  actions: [], notActions: [],
+  dataActions: ['Microsoft.Storage/storageAccounts/blobServices/containers/blobs/add/action'],
+  notDataActions: [],
+}], 'the backup writer can create blobs without read, update, or delete permissions');
+const backupGrant = backupAccess.resources.find(resource => resource.type === 'Microsoft.Authorization/roleAssignments');
+assert.match(backupGrant.scope, /storageAccounts\/blobServices\/containers/);
+assert.equal(backupGrant.properties.principalId, "[parameters('writerPrincipalId')]");
+const backupMonitor = JSON.parse(readFileSync(path.join(root, '.expo/implementation/azure-backup-monitor.json'), 'utf8'));
+const backupLogs = backupMonitor.resources.find(resource => resource.type === 'Microsoft.Insights/diagnosticSettings');
+assert.deepEqual(backupLogs.properties.logs, [{ category: 'StorageWrite', enabled: true }]);
+assert.equal(backupMonitor.parameters.enableBackupAlert.defaultValue, false, 'seed the workspace before validating the log query');
+const freshness = backupMonitor.resources.find(resource => resource.type === 'Microsoft.Insights/scheduledQueryRules');
+assert.equal(freshness.condition, "[parameters('enableBackupAlert')]");
+assert.equal(freshness.properties.overrideQueryTimeRange, 'PT3H');
+assert.equal(freshness.properties.skipQueryValidation, false);
+assert.deepEqual(freshness.properties.actions.actionGroups, ["[variables('alertActionGroup')]"]);
+assert.match(backupMonitor.variables.alertActionGroup, /fail\('An action group is required/);
+const [backupCriterion] = freshness.properties.criteria.allOf;
+assert.equal(backupCriterion.metricMeasureColumn, 'SuccessfulBackups');
+assert.deepEqual([backupCriterion.operator, backupCriterion.threshold], ['LessThan', 1]);
+assert.match(backupMonitor.variables.freshnessQuery, /StorageBlobLogs.*RequesterObjectId.*summarize SuccessfulBackups = count\(\)/s);
+for (const name of ['accountLiteral', 'pathLiteral', 'uploaderLiteral']) {
+  assert.ok(backupMonitor.variables.freshnessQuery.includes(`variables('${name}')`), `the compiled query binds ${name}`);
+}
+const availability = JSON.parse(readFileSync(path.join(root, '.expo/implementation/azure-api-availability.json'), 'utf8'));
+const readinessTest = availability.resources.find(resource => resource.type.toLowerCase() === 'microsoft.insights/webtests');
+assert.equal(readinessTest.kind, 'standard');
+assert.equal(readinessTest.properties.Request.RequestUrl, "[parameters('readinessUrl')]");
+assert.equal(readinessTest.properties.ValidationRules.SSLCheck, true);
+assert.equal(readinessTest.properties.ValidationRules.ContentValidation.ContentMatch, '"ok":true');
+const outage = availability.resources.find(resource => resource.type === 'Microsoft.Insights/metricAlerts');
+assert.equal(outage.properties.criteria.failedLocationCount, 2);
+assert.equal(readinessTest.properties.Locations.length, 3);
+assert.equal(outage.properties.actions[0].actionGroupId, "[parameters('actionGroupResourceId')]");
 const deployment=name=>compiled.resources.find(resource=>resource.type==='Microsoft.Resources/deployments' && resource.name===name);
 const api=deployment('api').properties.parameters,worker=deployment('worker').properties.parameters;
 assert.equal(api.minReplicas.value, 1, 'process-local quota and presence state still require one API replica');
@@ -56,6 +93,10 @@ assert.match(compiled.variables.workloadsEnabled,
   /if\(not\(parameters\('enableWorkloads'\)\), false\(\), if\(and\(equals\(parameters\('environment'\), 'staging'\), parameters\('enablePrivateServiceNetworking'\)\), true\(\), fail\(/,
   'activating workloads outside private staging fails evaluation');
 assert.equal(compiled.parameters.enablePrivateServiceNetworking.defaultValue, false, 'private networking is an explicit staging rollout');
+const registeredShares = compiled.resources.filter(resource => resource.type === 'Microsoft.App/managedEnvironments/storages');
+assert.equal(registeredShares.length, 2);
+assert.ok(registeredShares.every(resource => resource.condition === privateNetworkingCondition),
+  'the environment registers its shares only after private connectivity can be prepared');
 const registry = compiled.resources.find(resource => resource.type === 'Microsoft.ContainerRegistry/registries');
 assert.match(registry.sku.name, /enablePrivateServiceNetworking.*'Premium'.*'Basic'/, 'private ACR endpoints require Premium');
 assert.match(registry.properties.publicNetworkAccess, /enablePrivateServiceNetworking.*'Disabled'.*'Enabled'/);
@@ -110,12 +151,17 @@ assert.ok(fileZone && fileLink && fileGroup, 'File zone, link and zone group are
 assert.ok(fileGroup.dependsOn.some(dependency => dependency.includes('virtualNetworkLinks')), 'private File DNS waits for its VNet link');
 assert.ok(deployment('api').dependsOn.some(dependency => dependency.includes('wind-data') && dependency.includes('managedEnvironments/storages')),
   'the app waits for the environment to register its volume');
-assert.match(compiled.variables.checkedImage, /fail\('imageDigest is required/);
-assert.match(compiled.variables.checkedOsrmImage, /fail\('osrmImageDigest is required/);
+assert.match(compiled.variables.checkedImage, /apiImagePinned.*fail\('imageDigest must pin/);
+assert.match(compiled.variables.checkedOsrmImage, /osrmImagePinned.*fail\('osrmImageDigest must pin/);
+assert.match(compiled.variables.validImageHashes, /64.*0123456789abcdef/);
+assert.match(compiled.variables.apiImageParts, /@sha256:/);
+assert.match(compiled.variables.osrmImageParts, /@sha256:/);
+assert.match(compiled.variables.apiImagePinned, /validImageHashes.*\[0\]/);
+assert.match(compiled.variables.osrmImagePinned, /validImageHashes.*\[1\]/);
 assert.match(compiled.variables.checkedPushSubject, /pushSubject is required/);
 assert.match(compiled.outputs.imageValidation.value, /checkedImage/);
 const paramFile = path.join(root, '.expo/implementation/wp16-enabled.bicepparam');
-writeFileSync(paramFile, `using '../../infra/main.bicep'\nparam prefix = 'fsstage'\nparam environment = 'staging'\nparam postgresAdministratorPassword = 'compile-only-not-a-secret'\nparam enableWorkloads = true\nparam enablePrivateServiceNetworking = true\nparam imageDigest = 'example/api@sha256:1234'\nparam osrmImageDigest = 'example/osrm@sha256:1234'\n`);
+writeFileSync(paramFile, `using '../../infra/main.bicep'\nparam prefix = 'fsstage'\nparam environment = 'staging'\nparam postgresAdministratorPassword = 'compile-only-not-a-secret'\nparam enableWorkloads = true\nparam enablePrivateServiceNetworking = true\nparam imageDigest = 'registry.example/api@sha256:${'a'.repeat(64)}'\nparam osrmImageDigest = 'registry.example/osrm@sha256:${'b'.repeat(64)}'\n`);
 const bicep = process.env.BICEP_COMMAND || 'az';
 const prefix = bicep === 'az' ? ['bicep'] : [];
 execFileSync(bicep, [...prefix, 'build-params', ...(bicep === 'az' ? ['--file', paramFile] : [paramFile]), '--outfile', path.join(root, '.expo/implementation/wp16-enabled.parameters.json')], { cwd: root, stdio: 'inherit', env: process.env, shell: process.platform === 'win32' && !bicep.toLowerCase().endsWith('.exe') });
@@ -131,6 +177,7 @@ assert.ok(api.keyVaultSecrets.value.some(secret => secret.name === 'database-url
 const acsSecret = api.keyVaultSecrets.value.find(secret => secret.envName === 'WIND_ACS_KEY');
 assert.equal(acsSecret.enabled, "[parameters('enableAcs')]");
 assert.match(acsSecret.keyVaultUrl, /secrets\/acs-key'/, 'the app follows the versionless Key Vault key');
+assert.match(acsSecret.keyVaultUrl, /reference\(.*acs-key.*\)\.secretUri/, 'without a bootstrap key, the deployment checks the existing secret before starting the app');
 assert.equal(compiled.parameters.acsAccessKey.type, 'securestring');
 assert.ok(!Object.hasOwn(api, 'acsAccessKey'), 'the ACS access key does not enter the app module');
 assert.ok(deployment('api').dependsOn.some(dependency => dependency.includes('acs-key')), 'the app waits for a key seeded by this deployment');

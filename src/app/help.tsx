@@ -9,12 +9,15 @@ import { api, privacyUrl, SUPPORT_URL } from '../api';
 import { ltr } from '../model';
 import { InstallLink } from '../install-link';
 import { useSession } from '../session';
-import { Appear, Button, Card, Header, palette, Row, Screen, Txt, useCopy } from '../ui';
+import { Appear, Button, Card, Header, Row, Screen, Txt, useCopy } from '../ui';
+import { themedStyles, useTheme } from '../theme-context';
 
 const topics = ['price', 'code', 'recipient', 'cancel', 'pay', 'password', 'driver', 'delete'] as const;
 type Topic = typeof topics[number];
 
 export default function Help() {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { topic, order } = useLocalSearchParams<{ topic?: string; order?: string }>();
   const { c, language } = useCopy();
   const { me } = useSession();
@@ -78,7 +81,7 @@ export default function Help() {
   </Screen>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   icon: { width: 42, height: 42, borderRadius: 14, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   item: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: palette.line },
-});
+}));

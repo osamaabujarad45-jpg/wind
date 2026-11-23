@@ -361,6 +361,36 @@
     "session": "customer"
   },
   {
+    "id": "account-night",
+    "group": "Customer",
+    "name": "Account · Night theme (Appearance: Automatic stays Day for customers)",
+    "route": "/account",
+    "file": "src/parts.tsx (ThemeCard)",
+    "theme": "night",
+    "ar": [
+      "ar/account-night.png"
+    ],
+    "en": [
+      "en/account-night.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "orders-night",
+    "group": "Customer",
+    "name": "My orders · Night theme",
+    "route": "/orders",
+    "file": "src/app/(customer)/orders.tsx",
+    "theme": "night",
+    "ar": [
+      "ar/orders-night.png"
+    ],
+    "en": [
+      "en/orders-night.png"
+    ],
+    "session": "customer"
+  },
+  {
     "id": "profile",
     "group": "Customer",
     "name": "Edit profile",
@@ -444,6 +474,20 @@
     ],
     "en": [
       "en/shop-store.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "shop-cart",
+    "group": "Customer",
+    "name": "Shop · checkout and delivery details",
+    "route": "/shop/cart",
+    "file": "src/app/shop/cart.tsx",
+    "ar": [
+      "ar/shop-cart.png"
+    ],
+    "en": [
+      "en/shop-cart.png"
     ],
     "session": "customer"
   },
@@ -672,6 +716,66 @@
     "session": "driver"
   },
   {
+    "id": "driver-jobs-night",
+    "group": "Driver",
+    "name": "Jobs · Night theme",
+    "route": "/driver",
+    "file": "src/app/driver/index.tsx",
+    "theme": "night",
+    "ar": [
+      "ar/driver-jobs-night.png"
+    ],
+    "en": [
+      "en/driver-jobs-night.png"
+    ],
+    "session": "driver"
+  },
+  {
+    "id": "driver-order-night",
+    "group": "Driver",
+    "name": "Active trip · Night theme",
+    "route": "/order/2",
+    "file": "src/app/order/[id].tsx",
+    "theme": "night",
+    "ar": [
+      "ar/driver-order-night.png"
+    ],
+    "en": [
+      "en/driver-order-night.png"
+    ],
+    "session": "driver"
+  },
+  {
+    "id": "driver-earnings-night",
+    "group": "Driver",
+    "name": "Earnings · Night theme",
+    "route": "/driver/earnings",
+    "file": "src/app/driver/earnings.tsx",
+    "theme": "night",
+    "ar": [
+      "ar/driver-earnings-night.png"
+    ],
+    "en": [
+      "en/driver-earnings-night.png"
+    ],
+    "session": "driver"
+  },
+  {
+    "id": "driver-account-night",
+    "group": "Driver",
+    "name": "Account · Night theme (Appearance: Automatic, Day, Night)",
+    "route": "/driver/account",
+    "file": "src/parts.tsx (ThemeCard)",
+    "theme": "night",
+    "ar": [
+      "ar/driver-account-night.png"
+    ],
+    "en": [
+      "en/driver-account-night.png"
+    ],
+    "session": "driver"
+  },
+  {
     "id": "driver-offer-range",
     "group": "Driver",
     "name": "Jobs · offer price outside the band (Send offer disabled, band shown)",
@@ -711,6 +815,35 @@
     ],
     "en": [
       "en/admin-dashboard.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-approvals",
+    "group": "Admin",
+    "name": "Approvals: captains, plan requests and shops waiting for a decision",
+    "route": "/admin/approvals",
+    "file": "src/app/admin/approvals.tsx",
+    "ar": [
+      "ar/admin-approvals.png"
+    ],
+    "en": [
+      "en/admin-approvals.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-approvals-desktop",
+    "group": "Admin",
+    "name": "Approvals on a desktop (side rail)",
+    "route": "/admin/approvals",
+    "file": "src/app/admin/approvals.tsx",
+    "desktop": true,
+    "ar": [
+      "ar/admin-approvals-desktop.png"
+    ],
+    "en": [
+      "en/admin-approvals-desktop.png"
     ],
     "session": "admin"
   },
@@ -756,6 +889,22 @@
     ],
     "en": [
       "en/admin-desktop.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-desktop-night",
+    "group": "Admin",
+    "name": "Dashboard on a desktop · Night theme",
+    "route": "/admin",
+    "file": "src/app/admin/_layout.tsx",
+    "desktop": true,
+    "theme": "night",
+    "ar": [
+      "ar/admin-desktop-night.png"
+    ],
+    "en": [
+      "en/admin-desktop-night.png"
     ],
     "session": "admin"
   },

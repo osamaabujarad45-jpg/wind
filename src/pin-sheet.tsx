@@ -5,15 +5,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Point } from './model';
 import { pickupErrorKey } from './customer-location';
 import { PinMap } from './route-map';
-import { Button, palette, sheetShadow, Txt, useCopy } from './ui';
+import { Button, Txt, useCopy } from './ui';
 import { useReducedMotion } from './motion';
 import { mapReadyMs } from './runtime-config';
+import { themedStyles, useTheme } from './theme-context';
 
 // Full-height sheet: drag the map under a fixed pin, then confirm. The landmark field stays the human address.
 export default function PinSheet({ title, hint, unavailable, start, onClose, onConfirm, onLocate, autoLocate = false }: {
   title: string; hint?: string; unavailable?: string; start: Point; onClose: () => void; onConfirm: (point: Point) => void;
   onLocate?: (signal: AbortSignal, canRequest: boolean) => Promise<Point>; autoLocate?: boolean;
 }) {
+  const { sheetShadow } = useTheme();
+  const styles = useStyles();
   const { c } = useCopy();
   const still = useReducedMotion();
   const { height } = useWindowDimensions();
@@ -94,8 +97,8 @@ export default function PinSheet({ title, hint, unavailable, start, onClose, onC
   </Modal>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   shade: { flex: 1, backgroundColor: palette.shade },
   sheet: { backgroundColor: palette.paper, paddingHorizontal: 16, paddingTop: 8, borderTopLeftRadius: 22, borderTopRightRadius: 22, width: '100%', maxWidth: 640, alignSelf: 'center' },
   grip: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: palette.dash, marginBottom: 12 },
-});
+}));

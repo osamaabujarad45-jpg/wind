@@ -6,6 +6,7 @@ import * as booking from '../src/booking.ts';
 import { copy, fill } from '../src/copy.ts';
 import * as model from '../src/model.ts';
 import * as checkout from '../src/shop-checkout.ts';
+import { themeModules } from './theme-mock.mjs';
 
 const c = copy.en;
 const cart = { merchantId: 1, merchantName: 'Market', city: 'ramallah', minOrderAgorot: 0,
@@ -14,7 +15,7 @@ const cart = { merchantId: 1, merchantName: 'Market', city: 'ramallah', minOrder
 const state = [], references = [], posts = [], navigation = [];
 const store = new Map();
 const protectedStore = new Map();
-let cursor, refCursor, focus, failFirst, firstStatus, rejectRetry, cartCleared, receiptNow, receiptOrderId, protectedWriteFails, protectedReadFails;
+let cursor, refCursor, focus, failFirst, firstStatus, rejectRetry, cartCleared, receiptNow, receiptOrderId, protectedWriteFails, protectedReadFails, cartReadFails;
 class ApiError extends Error {
   constructor(message, status) { super(message); this.status = status; }
 }
@@ -62,10 +63,11 @@ const modules = {
   '../../model': model,
   '../../pin-sheet': { __esModule: true, default: 'PinSheet' },
   '../../session': { useSession: () => ({ me: { user: { id: 17, role: 'customer', phone: '0599100017' } } }) },
-  '../../shop-cart': { useCart: () => cart, storedCart: async () => cart, clearCart: async () => { cartCleared = true; },
+  '../../shop-cart': { useCart: () => cart, storedCart: async required => { if (cartReadFails && required) throw new Error('basket unavailable'); return cart; }, clearCart: async () => { cartCleared = true; },
     cartGoods: () => 2000, setPolicy() {}, setQuantity() {} },
   '../../shop-ui': { QtyControl: 'QtyControl' },
   '../../ui': ui,
+  ...themeModules('../../'),
 };
 const source = readFileSync(new URL('../src/app/shop/cart.tsx', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } });
@@ -133,11 +135,18 @@ for (const receiptState of ['unknown', 'absent', 'present']) {
   state.length = references.length = 0; // the app was restarted, only storage survives
   if (receiptState === 'absent') receiptNow = posts[0].commandExpiresAt + 60_000;
   if (receiptState === 'present') receiptOrderId = 13;
+  cartReadFails = receiptState === 'absent';
   render();
   const dismiss = focus();
   try {
     await flush();
     if (receiptState === 'absent') {
+      assert.equal(find(render(), 'ErrorText').children, c.bookingStorageError);
+      assert.equal(store.size, 1, 'basket read failure keeps pending checkout');
+      assert.equal(protectedStore.size, 1, 'basket read failure keeps encrypted details');
+      cartReadFails = false;
+      find(render(), 'Button', props => props.title === c.retry).onPress();
+      await flush();
       assert.equal(find(render(), 'Field', props => props.label === c.shopLandmark).value, 'Blue door', 'an absent restarted checkout restores the draft');
       assert.equal(posts.length, 1);
     } else if (receiptState === 'present') {
@@ -153,7 +162,7 @@ for (const receiptState of ['unknown', 'absent', 'present']) {
   } finally { dismiss(); }
 }
 
-for (const outcome of ['restored', 'reenter', 'expired', 'committed']) {
+for (const outcome of ['restored', 'restored-on-reentry', 'reenter', 'expired', 'committed']) {
   state.length = references.length = posts.length = navigation.length = 0;
   failFirst = true;
   receiptNow = undefined;
@@ -178,17 +187,18 @@ for (const outcome of ['restored', 'reenter', 'expired', 'committed']) {
     assert.equal(store.size, 1, 'a transient read failure preserves the command');
     assert.equal(protectedStore.size, 1, 'a transient read failure preserves the encrypted draft');
     assert.equal(find(render(), 'ErrorText').children, c.bookingStorageError);
-    protectedReadFails = outcome !== 'restored';
+    protectedReadFails = outcome !== 'restored' && outcome !== 'restored-on-reentry';
     if (outcome === 'expired') receiptNow += 60 * 60_000;
     if (outcome === 'committed') receiptOrderId = 14;
-    const action = outcome === 'reenter' || outcome === 'committed' ? c.shopReenterDelivery : c.retry;
+    const action = ['restored-on-reentry', 'reenter', 'committed'].includes(outcome) ? c.shopReenterDelivery : c.retry;
     find(render(), 'Button', props => props.title === action).onPress();
     await flush();
     if (outcome === 'committed') assert.deepEqual(navigation, ['/order/14'], 're-entry still honors a committed receipt');
-    else assert.equal(find(render(), 'Field', props => props.label === c.shopLandmark).value, outcome === 'restored' ? 'Blue door' : '');
+    else assert.equal(find(render(), 'Field', props => props.label === c.shopLandmark).value, outcome.startsWith('restored') ? 'Blue door' : '');
     assert.equal(posts.length, 1, 'retry after a storage failure cannot resend an expired POST');
     assert.equal(store.size, 0);
-    assert.equal(protectedStore.size, 0);
+    assert.equal(protectedStore.size, outcome === 'reenter' ? 1 : 0, 're-entry leaves a temporarily unreadable draft until expiry');
+    protectedStore.clear();
   } finally {
     protectedReadFails = false;
     closeAfterRead();

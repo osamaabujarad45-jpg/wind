@@ -7,8 +7,10 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { copy, fill } from '../src/copy.ts';
+import { formatMoney } from '../src/format-money.ts';
 import * as model from '../src/model.ts';
 import * as cashCommand from '../src/admin-cash-command.ts';
+import { themeModules } from './theme-mock.mjs';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -74,9 +76,9 @@ function screen(file, language, { data = {}, errors = {}, me = {}, store = new M
   };
   const c = copy[language];
   const ui = new Proxy({
-    fill, palette: {}, tones: {}, haptic: { success() {}, error() {} },
+    fill, haptic: { success() {}, error() {} },
     confirm: (message, yes, yesLabel, noLabel) => dialogs.push({ message, yes, yesLabel, noLabel }),
-    useCopy: () => ({ c, rtl: language === 'ar', err: e => typeof e === 'string' ? e : e.message, money: n => String(n), largeText: false }),
+    useCopy: () => ({ c, rtl: language === 'ar', err: e => typeof e === 'string' ? e : e.message, money: file === 'settings' ? n => formatMoney(n, language, c.nis) : String, largeText: false }),
   }, { get: (target, name) => name in target ? target[name] : String(name) });
   const session = { me, refresh: async () => {}, signOut: async () => {}, language, setLanguage() {} };
   class ApiError extends Error {}
@@ -93,6 +95,7 @@ function screen(file, language, { data = {}, errors = {}, me = {}, store = new M
     '../../storage': { storage: { exclusive: run => run(), get: async key => store.get(key) ?? null, set: async (key, value) => { if (value === null) store.delete(key); else store.set(key, value); } } },
     '../../booking': { newRequestId: () => randomUUID() }, // a real UUID: a saved cash command with any other id is refused
     '../../ui': ui,
+    ...themeModules('../../'),
     'expo-router': { router: {} },
     '@expo/vector-icons': { Ionicons: 'Ionicons' },
   };
@@ -163,7 +166,7 @@ for (const language of ['ar', 'en']) {
     assert.equal(config.calls.length, 0, 'no request before the admin confirms');
     assert.equal(config.dialogs.length, 1);
     const [review] = config.dialogs;
-    assert.equal(review.message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 10 ₪ → 12 ₪` }), 'only the changed key, old → new');
+    assert.equal(review.message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: ${formatMoney(10, language, c.nis)} → ${formatMoney(12, language, c.nis)}` }), 'only the changed key, old → new');
     assert.equal(review.yesLabel, c.save);
     assert.equal(review.noLabel, c.cancel);
     review.yes(); await flush();
@@ -204,7 +207,7 @@ for (const language of ['ar', 'en']) {
     config.dialogs[0].yes(); await flush();
     field(config.render(), c.set_parcelPrice).onChangeText('10');
     await tap(config, c.save);
-    assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 ₪ → 10 ₪` }), 'compared against the saved 12, not the stale 10');
+    assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: ${formatMoney(12, language, c.nis)} → ${formatMoney(10, language, c.nis)}` }), 'compared against the saved 12, not the stale 10');
     config.dialogs.at(-1).yes(); await flush();
     assert.equal(config.server().parcelPrice, 10);
   }
@@ -255,7 +258,7 @@ for (const language of ['ar', 'en']) {
     assert.ok(!shows(config.render(), c.saved));
     await tap(config, c.save);
     assert.equal(config.calls.at(-1).path, '/me', 'the next review is built from the server value');
-    assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 15 ₪ → 12 ₪` }));
+    assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: ${formatMoney(15, language, c.nis)} → ${formatMoney(12, language, c.nis)}` }));
     config.dialogs.at(-1).yes(); await flush();
     assert.deepEqual(config.calls.at(-1).body, { parcelPrice: 12, expected: { parcelPrice: 15 } });
     assert.equal(config.server().parcelPrice, 12);
@@ -308,7 +311,7 @@ for (const language of ['ar', 'en']) {
     await tap(config, c.save);
     assert.equal(config.calls.at(-1).path, '/me', 'the stale baseline is replaced by a direct read of /me');
     assert.equal(config.dialogs.length, 2);
-    assert.equal(config.dialogs[1].message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 ₪ → 10 ₪` }));
+    assert.equal(config.dialogs[1].message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: ${formatMoney(12, language, c.nis)} → ${formatMoney(10, language, c.nis)}` }));
     assert.ok(!shows(config.render(), c.saved), 'no "Saved" before the reversal is written');
     config.dialogs[1].yes(); await flush();
     assert.equal(config.server().parcelPrice, 10, 'the confirmed reversal reaches the server');
@@ -326,7 +329,7 @@ for (const language of ['ar', 'en']) {
     config.concurrentServerEdit({ commission: 0.2 });
     field(config.render(), c.set_parcelPrice).onChangeText(typed14);
     await tap(config, c.save);
-    assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: 12 ₪ → 14 ₪` }), 'only the edited field is reviewed');
+    assert.equal(config.dialogs.at(-1).message, fill(c.settingsReview, { changes: `${c.set_parcelPrice}: ${formatMoney(12, language, c.nis)} → ${formatMoney(14, language, c.nis)}` }), 'only the edited field is reviewed');
     config.dialogs.at(-1).yes(); await flush();
     assert.deepEqual(config.calls.filter(settingsCall('/admin/settings')).at(-1).body, { parcelPrice: 14, expected: { parcelPrice: 12 } }, 'the untouched commission is not sent');
     assert.equal(config.server().commission, 0.2, 'the other admin commission survives');

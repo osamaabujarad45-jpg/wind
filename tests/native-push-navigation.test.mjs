@@ -36,7 +36,7 @@ const hooks = registerHooks({
     return next(url, context);
   },
 });
-const response = (identifier, url, recipient) => ({ notification: { request: { identifier, content: { data: { url, recipient } } } } });
+const response = (identifier, url, recipient, kind) => ({ notification: { request: { identifier, content: { data: { url, recipient, kind } } } } });
 const account = (role = 'customer', status = 'active') => ({ user: { id: 1, role, status } });
 const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve)); };
 let sequence = 0;
@@ -152,12 +152,19 @@ try {
     const { fake, navigation } = await setup();
     navigation.syncNativePushNavigation(true, account('driver', 'pending'));
     fake.listener(response('pending-jobs', '/driver', 1));
-    fake.listener(response('someone-elses-reply', '/support', 2));
-    fake.listener(response('own-reply', '/support', 1));
-    assert.deepEqual(fake.nav, [['replace', '/support']], 'pending captains can open their own inbox only');
+    fake.listener(response('someone-elses-reply', '/support', 2, 'support_reply'));
+    fake.listener(response('unbound-reply', '/support', undefined, 'support_reply'));
+    fake.listener(response('non-reply', '/support', 1, 'attention'));
+    navigation.syncNativePushNavigation(true, account('customer', 'pending'));
+    fake.listener(response('other-role-reply', '/support', 1, 'support_reply'));
+    assert.deepEqual(fake.nav, []);
+    navigation.syncNativePushNavigation(true, account('driver', 'pending'));
+    fake.listener(response('own-reply', '/support', 1, 'support_reply'));
+    fake.listener(response('own-approval-before-refresh', '/driver', 1, 'approved'));
+    assert.deepEqual(fake.nav, [['replace', '/support'], ['replace', '/driver']], 'pending captains can open their own support reply and approval');
     navigation.syncNativePushNavigation(true, account('driver', 'blocked'));
-    fake.listener(response('blocked-reply', '/support', 1));
-    assert.deepEqual(fake.nav, [['replace', '/support']], 'a blocked account cannot open the inbox');
+    fake.listener(response('blocked-reply', '/support', 1, 'support_reply'));
+    assert.deepEqual(fake.nav, [['replace', '/support'], ['replace', '/driver']], 'a blocked account cannot open the inbox');
   }
   const layout = readFileSync(new URL('../src/app/_layout.tsx', import.meta.url), 'utf8');
   assert.match(layout, /const rootKey = useRootNavigationState\(\)\?\.key/);

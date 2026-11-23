@@ -949,9 +949,11 @@ export function registerShop(route: Register, deps: ShopDeps) {
   }
 
   // ---------- admin ----------
-  route('GET', '/api/admin/merchants', async ({ user }) => {
+  route('GET', '/api/admin/merchants', async ({ user, query }) => {
     need(user, 'admin'); await available();
-    const rows = await db.all('SELECT * FROM merchants ORDER BY CASE status WHEN \'pending\' THEN 0 ELSE 1 END, id DESC LIMIT 500');
+    // ?status=pending: the Approvals queue reads only applications, not every shop's statement.
+    const rows = query.get('status') === 'pending' ? await db.all("SELECT * FROM merchants WHERE status = 'pending' ORDER BY id ASC LIMIT 500")
+      : await db.all('SELECT * FROM merchants ORDER BY CASE status WHEN \'pending\' THEN 0 ELSE 1 END, id DESC LIMIT 500');
     const out = [];
     for (const m of rows) out.push({ ...(await merchantView(m, true)), ...(await statement(Number(m.id))) });
     return { merchants: out };

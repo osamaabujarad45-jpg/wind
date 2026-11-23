@@ -7,13 +7,16 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { api, useApi } from '../api';
 import { newRequestId } from '../command-id';
 import { useFormat } from '../parts';
-import { Button, Card, ErrorText, Field, fill, haptic, Header, Loading, palette, Press, Row, Screen, Txt, useCopy } from '../ui';
+import { Button, Card, ErrorText, Field, fill, haptic, Header, Loading, Press, Row, Screen, Txt, useCopy } from '../ui';
+import { themedStyles, useTheme } from '../theme-context';
 
 type Message = { id: number; fromStaff: boolean; mine: boolean; body: string; orderId: number | null; createdAt: number };
 type Thread = { thread: { id: number; status: 'open' | 'closed'; orderId: number | null } | null; messages: Message[]; more: boolean };
 const code = (id: number) => `W-${String(id).padStart(5, '0')}`;
 
 export default function SupportScreen() {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c, err, rtl } = useCopy();
   const { stamp } = useFormat();
   const params = useLocalSearchParams<{ order?: string }>();
@@ -99,9 +102,9 @@ export default function SupportScreen() {
   </Screen>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   bubble: { maxWidth: '85%', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
   attach: { minHeight: 44, justifyContent: 'center' },
   box: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: palette.field, alignItems: 'center', justifyContent: 'center' },
   boxOn: { backgroundColor: palette.forest, borderColor: palette.forest },
-});
+}));

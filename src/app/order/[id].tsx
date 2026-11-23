@@ -35,8 +35,9 @@ import { registerNativePush } from '../../native-push';
 import { useSession } from '../../session';
 import { journeyState } from '../../theme';
 import {
-  Appear, Avatar, Badge, BoundedFooter, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, iconSize, Loading, maxScale, palette, Press, Pulse, Radar, Row, Screen, shadow, statusTone, Txt, useCopy,
+  Appear, Avatar, Badge, BoundedFooter, Button, Card, confirm, ErrorText, Field, FilterChips, fill, haptic, Header, headingFont, IconButton, iconSize, Loading, maxScale, Press, Pulse, Radar, Row, Screen, Txt, useCopy,
 } from '../../ui';
+import { themedStyles, useTheme } from '../../theme-context';
 
 const DONE = ZoomIn.duration(300);
 const steps = statusFlow.slice(1); // assigned → completed
@@ -58,6 +59,8 @@ const tapTime = () => Date.now();
 const allowedReasons = (collected: number, due: number) => varianceReasons.filter(reason => varianceAllowed(collected, due, reason));
 
 export default function OrderScreen() {
+  const { palette, shadow, statusTone } = useTheme();
+  const styles = useStyles();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { me } = useSession();
   const work = useDriverWork();
@@ -562,7 +565,9 @@ export default function OrderScreen() {
 
     {isAdmin && order.status === 'returning' && <Card tone="warn">
       <Txt variant="title">{c.confirmReturnTitle}</Txt>
-      {order.supportHasGoods && <Txt variant="caption" style={{ marginTop: 4, color: palette.warn }}>{c.supportHasGoodsAdmin}</Txt>}
+      {(order.supportReturnRequired || order.supportHasGoods) && <Txt variant="caption" style={{ marginTop: 4, color: palette.warn }}>
+        {order.supportHasGoods ? c.supportHasGoodsAdmin : c.supportReturnPendingAdmin}
+      </Txt>}
       <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setDecision({ id, reason })} />
       <View style={{ gap: 8 }}>
@@ -838,6 +843,7 @@ export default function OrderScreen() {
 // Uber-style safety toolkit: emergency numbers work without Wind's server; a report reaches Wind's safety team.
 const emergency = [['police', '100', 'shield-outline'], ['ambulance', '101', 'medkit-outline'], ['civilDefence', '102', 'flame-outline']] as const;
 function Safety({ order, driver, onChange }: { order: Order; driver: boolean; onChange: (order: Order) => void }) {
+  const { palette } = useTheme();
   const { c, err } = useCopy();
   const [open, setOpen] = useState(order.safetyReport?.status === 'open');
   // only a ride passenger sits through the driving; nothing is preselected but the neutral "other"
@@ -887,6 +893,8 @@ const quickReplies = ['qrOnMyWay', 'qrArrived', 'qrCallMe', 'qrLate'] as const;
 
 // In-trip chat: cheaper than calls on local plans and kept for support. Polls while the order screen is open.
 function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean; live: boolean }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c, err, row, rtl } = useCopy();
   const { stamp } = useFormat();
   const { data, error, reload, setData } = useApi<Message[]>(`/orders/${orderId}/messages`, live ? 5000 : undefined);
@@ -997,6 +1005,7 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
 }
 
 function Person({ title, name, sub, plate, phone, approved }: { title: string; name: string; sub?: string; plate?: string; phone?: string | null; approved?: boolean }) {
+  const { palette } = useTheme();
   const { c } = useCopy();
   return <Row gap={12}>
     <Avatar name={name} size={44} />
@@ -1018,6 +1027,8 @@ function Person({ title, name, sub, plate, phone, approved }: { title: string; n
 
 // Label at the start, value pushed to the far end: reads like a receipt line.
 function Detail({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { rtl } = useCopy();
   return <Row style={styles.detail} gap={12}>
     <Txt variant="caption">{label}</Txt>
@@ -1052,6 +1063,7 @@ function RateCustomer({ order, onRate }: { order: Order; onRate: (n: number) => 
 }
 
 function IconStar({ n, label, on, disabled, onPress }: { n: number; label: string; on: boolean; disabled: boolean; onPress: () => void }) {
+  const { palette } = useTheme();
   return <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${n}/5`} disabled={disabled} aria-disabled={disabled} onPress={onPress} style={{ minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}>
     <Ionicons name={on ? 'star' : 'star-outline'} size={28} color={palette.forest} /> {/* a rating, not an attention state */}
   </Pressable>;
@@ -1060,10 +1072,11 @@ function IconStar({ n, label, on, disabled, onPress }: { n: number; label: strin
 // Each digit sits in a box that sizes itself and centres the Text, which carries no height: iOS ignores textAlignVertical,
 // so a fixed Text height clipped the digits at larger text sizes. The box grows with the font up to maxScale.
 function CodeDigit({ digit }: { digit: string }) {
+  const styles = useStyles();
   return <View style={styles.digit}><Text maxFontSizeMultiplier={maxScale} style={styles.digitText}>{digit}</Text></View>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   topBar: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8 },
   topCard: { alignItems: 'center', gap: 10, backgroundColor: palette.card, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 8 },
   nav: { alignItems: 'center', gap: 12, backgroundColor: palette.forest, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10 },
@@ -1081,7 +1094,7 @@ const styles = StyleSheet.create({
   bubbleMeta: { color: palette.secondary }, // faint is under 4.5:1 on the tinted bubbles
   send: { width: 48, height: 48, borderRadius: 24, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, // Field's bottom margin: aligns with the box
   quick: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 24, backgroundColor: palette.olivePale },
-});
+}));
 
 function PickupPayReviewCard({ orderId, fareCents, review, onDone }: { orderId: number; fareCents: number; review: NonNullable<Order['pickupPayReview']>; onDone: () => unknown }) {
   const { c, money, err } = useCopy();
@@ -1132,12 +1145,12 @@ function PickupPayReviewCard({ orderId, fareCents, review, onDone }: { orderId: 
 
 // DRV-17: a second admin decides whether the captain is cleared and the trip pay can be posted.
 function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; review: NonNullable<Order['blockReview']>; me: number; now: number; onDone: () => unknown }) {
-  const { c, err } = useCopy();
+  const { c, money, err } = useCopy();
   const { time } = useFormat();
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState<'' | 'yes' | 'no'>('');
   const [error, setError] = useState('');
-  const pay = `${(review.tripPayCents / 100).toFixed(2)} ₪`;
+  const pay = money(review.tripPayCents / 100);
   async function decide(cleared: boolean) {
     if (busy) return;
     setBusy(cleared ? 'yes' : 'no'); setError('');
@@ -1147,7 +1160,7 @@ function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; rev
   }
   if (review.decidedAt != null) return <Card>
     <Txt variant="title">{c.blockReview}</Txt>
-    <Txt variant="caption">{review.cleared ? fill(c.blockReviewCleared, { pay, paid: `${((review.paidCents ?? 0) / 100).toFixed(2)} ₪` }) : c.blockReviewNotCleared}</Txt>
+    <Txt variant="caption">{review.cleared ? fill(c.blockReviewCleared, { pay, paid: money((review.paidCents ?? 0) / 100) }) : c.blockReviewNotCleared}</Txt>
   </Card>;
   const self = review.blockedBy === me, noteOk = note.trim().length >= 5;
   return <Card tone={review.dueAt < now ? 'warn' : undefined}>

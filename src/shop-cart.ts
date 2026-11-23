@@ -52,10 +52,14 @@ export const otherShop = (merchantId: number) => !!cart && cart.merchantId !== m
 export async function currentCart(): Promise<Cart | null> { await load(); return cart; }
 /** What storage holds now, after this tab's queued writes: another tab may have changed the basket since this one loaded it.
  *  ponytail: no cross-tab lock, so a write landing between this read and the clear can still be lost; add a revision if that shows up. */
-export async function storedCart(): Promise<Cart | null> {
+export async function storedCart(required = false): Promise<Cart | null> {
   await load(); await writes;
   let stored: Cart | null = null;
-  try { stored = readCart(JSON.parse((await storage.get(KEY)) ?? 'null')); } catch { /* damaged: treat as empty */ }
+  const raw = await storage.get(KEY, required).catch(error => {
+    if (required) throw error;
+    return null;
+  });
+  try { stored = readCart(JSON.parse(raw ?? 'null')); } catch { /* damaged: treat as empty */ }
   if (JSON.stringify(stored) !== JSON.stringify(cart)) { cart = stored; emit(); }
   return stored;
 }

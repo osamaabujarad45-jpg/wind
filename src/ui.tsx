@@ -15,44 +15,18 @@ import { formatMoney } from './format-money';
 import { ApiError, errorCode } from './api';
 import { useSession } from './session';
 import { ltr, type OrderStatus } from './model';
-import { colors, journeyState, stateLook, type JourneyState, type StateLook } from './theme';
+import { journeyState, palettes, type JourneyState, type StateLook } from './theme';
+import { themedStyles, themeKits, useTheme } from './theme-context';
 
-// Shared with the Souq app (client/src/styles/index.css): same ground, ink, forest, lime and clay.
-export const palette = {
-  paper: '#F3F2EC',
-  card: '#FFFFFF',
-  ink: '#0E1F19',
-  secondary: '#56635C',
-  faint: '#66716B', // 4.5:1 on paper and white: the lightest grey allowed for text (same as Souq's ink-faint)
-  olive: '#34765A',
-  olivePale: '#E2EEE5',
-  forest: '#12342A', // lead surfaces: primary button, search pill, logo tile
-  lime: '#D3F27A', // only ever on forest
-  clay: '#CB6845', // logo pin and markers; too light for text
-  clayInk: '#A94A28',
-  clayPale: '#F9E9E1',
-  blue: '#2F5E8C',
-  bluePale: '#E6EDF6',
-  shop: '#8A3D6A', // Shop line accent (design system v2): icon and badge only, never a state or an action
-  shopPale: '#F5E6EE',
-  line: '#E2E1D8', // dividers only: 1.2:1, too faint to mark a control's edge
-  field: '#7D867F', // control edges (inputs, outline buttons, chips, unselected choices): 3.3:1 on paper, 3.8:1 on white (WCAG 1.4.11)
-  hair: '#ECEBE4',
-  mapWash: '#E6ECE3', // map placeholder and failure ground, before tiles draw
-  dash: '#B4B3A8', // non-text marks on paper, muted or white (1.7–2.1:1): disabled button edge, sheet grip
-  muted: '#EAE8DF',
-  error: '#A3392A',
-  onFill: '#FFFFFF', // text and icons on forest, olive, blue and clayInk fills
-  errorPale: '#F8E6E2',
-  warn: '#8A5A00', // waiting/pending text: ochre, apart from brand clay and from error red (5.3:1 on paper)
-  warnPale: '#FBF0D9',
-  shade: '#0E1F1966', // modal scrim over full-screen sheets
-};
+// The Day palette, shared with the Souq app (client/src/styles/index.css): same ground, ink, forest, lime and clay. Values live in
+// theme.ts (palettes.day / palettes.night). Components read the active theme with useTheme(); this Day alias is for brand marks
+// (the logo never changes colour) and for screens not yet moved over.
+export const palette = palettes.day;
 
-// Soft lift instead of hairline borders. Small blur: large glows read as cheap on a phone.
-export const shadow: ViewStyle = { boxShadow: '0px 1px 2px rgba(14,31,25,0.06), 0px 4px 14px rgba(14,31,25,0.06)' };
+// Soft lift instead of hairline borders (Day; useTheme().shadow is the active theme's). Small blur: large glows read as cheap on a phone.
+export const shadow: ViewStyle = themeKits.day.shadow;
 // Bottom sheets over the map cast upward.
-export const sheetShadow: ViewStyle = { boxShadow: '0px -2px 16px rgba(14,31,25,0.16)' };
+export const sheetShadow: ViewStyle = themeKits.day.sheetShadow;
 
 // Compact scale (Material 3 / Apple HIG): 14pt body, 36–48pt controls, every tap target ≥ 48dp in its own box.
 // A hitSlop only reaches over the control beside it, and the sibling on top takes the tap, so the box carries the target.
@@ -125,7 +99,7 @@ export const logoHoleStyle = (s: number): ViewStyle => {
 
 export function Logo({ size: s = 36, decorative }: { size?: number; decorative?: boolean /* the name is written beside it: one stop for screen readers */ }) {
   const { c } = useCopy(); // the name is read in the reader's language: ويند in Arabic
-  return <View {...decorative ? { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' as const } : { accessibilityRole: 'image' as const, accessibilityLabel: c.brand }} style={[styles.logo, { width: s, height: s, borderRadius: s * logoMark.radius }]}>
+  return <View {...decorative ? { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' as const } : { accessibilityRole: 'image' as const, accessibilityLabel: c.brand }} style={[logoTile, { width: s, height: s, borderRadius: s * logoMark.radius }]}>
     {logoMark.bars.map((bar, i) => <View key={i} style={logoBarStyle(s, bar)} />)}
     <View style={logoPinStyle(s)} />
     <View style={logoHoleStyle(s)} />
@@ -134,6 +108,9 @@ export function Logo({ size: s = 36, decorative }: { size?: number; decorative?:
 
 // ---------- layout ----------
 
+// The brand tile is forest in both themes (the Night action is lime, but the logo never changes colour).
+const logoTile: ViewStyle = { backgroundColor: palette.forest, overflow: 'hidden' };
+
 // Design system v2: a desktop layout (Wind Control beside its side rail) lets pages use more than the phone column.
 export const WideContext = React.createContext(false);
 
@@ -141,6 +118,8 @@ export function Screen({ children, onRefresh, footer, scrollRef }: {
   children: React.ReactNode; onRefresh?: () => Promise<unknown>; footer?: React.ReactNode;
   scrollRef?: React.RefObject<ScrollView | null>;
 }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const [refreshing, setRefreshing] = useState(false);
   const refresh = onRefresh && (async () => { setRefreshing(true); await onRefresh(); setRefreshing(false); });
   // Inside tabs the TabBar already clears the system navigation bar; a second bottom inset left a dead band (A53).
@@ -160,6 +139,7 @@ export function Screen({ children, onRefresh, footer, scrollRef }: {
 }
 
 export function Header({ title, back = false, right, subtitle }: { title: string; back?: boolean; right?: React.ReactNode; subtitle?: string }) {
+  const styles = useStyles();
   const { row, c } = useCopy();
   return <View style={[styles.header, { flexDirection: row }]}>
     {back && <IconButton icon={row === 'row-reverse' ? 'arrow-forward' : 'arrow-back'} label={c.back}
@@ -175,6 +155,8 @@ export function Header({ title, back = false, right, subtitle }: { title: string
 export function IconButton({ icon, label, onPress, tone = 'card', disabled }: {
   icon: IconName; label: string; onPress: () => void; tone?: 'card' | 'muted' | 'forest'; disabled?: boolean;
 }) {
+  const { palette, shadow } = useTheme();
+  const styles = useStyles();
   // Disabled looks disabled (muted fill, faint glyph), like Button: a forest "+" on a closed shop read as pressable.
   const bg = disabled ? palette.muted : { card: palette.card, muted: palette.muted, forest: palette.forest }[tone];
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled}
@@ -192,7 +174,7 @@ export function Row({ children, style, gap = 10 }: { children: React.ReactNode; 
 // Headings are Readex Pro (Arabic and Latin drawn together; the Arabic extension of Lexend, made for quick reading).
 // One family per weight file, so no fontWeight: Android would fake-bold an already bold face. Body stays the system font.
 export const headingFont = { bold: 'ReadexPro-Bold', semibold: 'ReadexPro-SemiBold' } as const;
-const textVariants = {
+const useTextVariants = themedStyles(palette => ({
   // Design review 17 Nov: the floor was 11 px and nothing was bigger than 21, so ETA, prices and shares had no weight.
   display: { fontSize: 28, lineHeight: 34, fontFamily: headingFont.bold, color: palette.ink, fontVariant: ['tabular-nums'] }, // ETA, amounts, earnings
   h1: { fontSize: 22, lineHeight: 30, fontFamily: headingFont.bold, color: palette.ink },
@@ -202,7 +184,8 @@ const textVariants = {
   label: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: palette.ink },
   caption: { fontSize: 13, lineHeight: 18, color: palette.secondary },
   micro: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: palette.secondary }, // faint fell to 4.1–4.3:1 on muted and pale cards
-} satisfies Record<string, TextStyle>;
+} satisfies Record<string, TextStyle>));
+type TextVariant = 'display' | 'h1' | 'h2' | 'title' | 'body' | 'label' | 'caption' | 'micro';
 
 export { maxScale };
 export function useLines(n?: number) { return linesFor(n, useWindowDimensions().fontScale); }
@@ -215,13 +198,14 @@ export function BoundedFooter({ children }: { children: React.ReactNode }) {
 }
 
 export function Txt({ children, variant = 'body', style, center, numberOfLines, clamp, selectable, header, accessibilityLabel }: {
-  children: React.ReactNode; variant?: keyof typeof textVariants; style?: StyleProp<TextStyle>; center?: boolean; numberOfLines?: number; selectable?: boolean;
+  children: React.ReactNode; variant?: TextVariant; style?: StyleProp<TextStyle>; center?: boolean; numberOfLines?: number; selectable?: boolean;
   /** Line cap kept at every text scale, for chrome that must not swallow the map (the driving banner). */
   clamp?: number;
   header?: boolean; // screen-reader heading (rotor / TalkBack); the visual size still comes from the variant
   accessibilityLabel?: string;
 }) {
   const { align, language } = useCopy();
+  const textVariants = useTextVariants();
   const scaled = useLines(numberOfLines);
   const lines = clamp ?? scaled;
   // T42/X-01: OS text scaling stays on up to maxScale; line heights scale with it and containers use minHeight.
@@ -231,6 +215,7 @@ export function Txt({ children, variant = 'body', style, center, numberOfLines, 
 
 // Section heading with an optional trailing link ("See all").
 export function Section({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
+  const { palette } = useTheme();
   return <Row style={{ justifyContent: 'space-between', marginTop: 6, marginBottom: 10 }}>
     <Txt variant="h2" header>{title}</Txt>
     {action && onAction && <Pressable accessibilityRole="button" accessibilityLabel={action} onPress={onAction} hitSlop={13}>
@@ -241,6 +226,8 @@ export function Section({ title, action, onAction }: { title: string; action?: s
 }
 
 export function Card({ children, style, tone = 'card' }: { children: React.ReactNode; style?: StyleProp<ViewStyle>; tone?: 'card' | 'muted' | 'olive' | 'forest' | 'warn' }) {
+  const { palette, shadow } = useTheme();
+  const styles = useStyles();
   // warn: something waiting on a person (attention). Clay is not a card tone: it means only the logo pin and the destination.
   const bg = { card: palette.card, muted: palette.muted, olive: palette.olivePale, forest: palette.forest, warn: palette.warnPale }[tone];
   return <View style={[styles.card, { backgroundColor: bg }, tone === 'card' && shadow, style]}>{children}</View>;
@@ -256,6 +243,7 @@ export function Appear({ index = 0, children, style }: { index?: number; childre
 }
 
 export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; size?: number; tone?: 'forest' | 'olive' | 'blue' }) {
+  const { palette } = useTheme();
   const t = { forest: [palette.forest, palette.lime], olive: [palette.olivePale, palette.olive], blue: [palette.bluePale, palette.blue] }[tone];
   return <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
     style={{ width: s, height: s, borderRadius: s / 2, backgroundColor: t[0], alignItems: 'center', justifyContent: 'center' }}>
@@ -286,6 +274,8 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   size?: 'md' | 'sm'; trailing?: string; label?: string;
   reason?: string; // why it waits, shown under it only while disabled and not busy itself (design §10)
 }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { row } = useCopy();
   const tone = {
     primary: { bg: palette.forest, fg: palette.onFill }, soft: { bg: palette.olivePale, fg: palette.olive },
@@ -315,6 +305,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
 
 /** A labelled checkbox: the whole row is the target, and a refusal reason sits under it in the error colour. */
 export function Check({ checked, onChange, label, disabled, error }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean; error?: string }) {
+  const { palette } = useTheme();
   return <View>
     <Press accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{ checked }} disabled={disabled}
       onPress={() => onChange(!checked)} style={{ minHeight: size.control, justifyContent: 'center' }}>
@@ -337,14 +328,17 @@ export function Reason({ children }: { children: string }) {
 export function Choices<K extends string>({ items, value, onChange, disabled, label }: {
   items: { key: K; label: string; disabled?: boolean }[]; value: K; onChange: (key: K) => void; disabled?: boolean; label?: string;
 }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { row } = useCopy();
+  const choiceMotion = useChoiceMotion();
   const wraps = items.length > 3; // five vehicles in one row split words: "Motorc/ycle"
   return <View style={[styles.choices, { flexDirection: row }, wraps && { flexWrap: 'wrap' }]} accessibilityRole="radiogroup" accessibilityLabel={label}>
     {items.map(item => {
       const on = item.key === value, off = !!disabled || !!item.disabled;
       return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} accessibilityState={{ checked: on, disabled: off }} disabled={off} aria-checked={on}
         onPress={() => onChange(item.key)} style={wraps ? { flexGrow: 1, flexBasis: '30%' } : { flex: 1 }}>
-        <Animated.View style={[motion.choice, on && motion.choiceOn]}>
+        <Animated.View style={[choiceMotion.choice, on && choiceMotion.choiceOn]}>
           <Text maxFontSizeMultiplier={maxScale} style={[styles.choiceText, on && { color: palette.onFill }, off && !on && { color: palette.faint }]}>{item.label}</Text>
         </Animated.View>
       </Pressable>;
@@ -354,6 +348,8 @@ export function Choices<K extends string>({ items, value, onChange, disabled, la
 
 // Plus/minus counter: passengers, quantities.
 export function Stepper({ value, min = 1, max = 99, onChange, label, disabled }: { value: number; min?: number; max?: number; onChange: (n: number) => void; label: string; disabled?: boolean }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { row, c } = useCopy();
   const previous = React.useRef(value);
   useEffect(() => {
@@ -398,6 +394,8 @@ export function Rail({ children, gap = 8, style, contentStyle, reveal }: { child
 }
 
 export function FilterChips<K extends string>({ items, value, onChange, disabled, label }: { items: { key: K; label: string }[]; value: K; onChange: (key: K) => void; disabled?: boolean; label?: string }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   // The selected chip's box as laid out, so a rail that opens on a later choice (a driver's far heading, a reschedule slot)
   // shows it. A tap only recolours chips, so it never relays out and never scrolls.
   const [box, setBox] = useState<{ key: K; layout: LayoutRectangle }>();
@@ -418,6 +416,8 @@ export function FilterChips<K extends string>({ items, value, onChange, disabled
 export function CodeField({ label, value, onChangeText, length = 6, disabled, onSubmitEditing }: {
   label: string; value: string; onChangeText: (text: string) => void; length?: number; disabled?: boolean; onSubmitEditing?: () => void;
 }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const [focused, setFocused] = useState(false);
   const ref = React.useRef<TextInput>(null);
   return <View style={styles.field}>
@@ -444,6 +444,8 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, multili
   keyboardType?: 'default' | 'phone-pad' | 'decimal-pad' | 'number-pad' | 'email-address'; secureTextEntry?: boolean; autoComplete?: 'tel' | 'password' | 'new-password' | 'name' | 'email' | 'username' | 'one-time-code';
   onSubmitEditing?: () => void; onBlur?: () => void; returnKeyType?: 'go' | 'next'; inputRef?: React.RefObject<TextInput | null>; icon?: IconName; error?: string; disabled?: boolean; maxLength?: number;
 }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { align, row } = useCopy();
   const inputAlign = keyboardType === 'phone-pad' || keyboardType === 'decimal-pad' || keyboardType === 'number-pad' || keyboardType === 'email-address' ? 'left' : align;
   const [focused, setFocused] = useState(false);
@@ -486,6 +488,7 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, multili
 }
 
 export function ErrorText({ children }: { children?: string }) {
+  const styles = useStyles();
   useEffect(() => { if (children && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(children); }, [children]);
   if (!children) return null;
   return <Animated.View entering={FadeInDown.duration(200)}>
@@ -498,14 +501,15 @@ export function ErrorText({ children }: { children?: string }) {
 // Design system v2: every status is one of five journey states (wait, live, attention, problem, done), each with a word and an
 // icon or pulse, never colour alone. `fg` is the badge text on `bg`; `mark` is the state's colour on a plain card (dots, the ETA).
 // Live is the brand pair (lime on forest); waiting is an outline; only a real problem is solid red.
-export const statusTone = Object.fromEntries(
-  (Object.entries(journeyState) as [OrderStatus, JourneyState][]).map(([status, state]) => [status, stateLook.day[state]] as const),
-) as Record<OrderStatus, StateLook>;
+/** Day; components read useTheme().statusTone. */
+export const statusTone: Record<OrderStatus, StateLook> = themeKits.day.statusTone;
 const stateIcon: Record<JourneyState, IconName | undefined> = {
   wait: 'hourglass-outline', live: undefined, attention: 'alert-circle-outline', problem: 'close-circle-outline', done: 'checkmark',
 };
 
 export function Badge({ label, status, tone, icon }: { label: string; status?: OrderStatus; tone?: { bg: string; fg: string; edge?: string }; icon?: IconName }) {
+  const { statusTone } = useTheme();
+  const styles = useStyles();
   const t = tone ?? statusTone[status ?? 'completed'] ?? statusTone.completed; // a status newer than this build still renders
   // the state comes from the status even when a caller recolours it; a status newer than this build gets no glyph, never a check
   const state = status ? journeyState[status] : undefined;
@@ -518,15 +522,13 @@ export function Badge({ label, status, tone, icon }: { label: string; status?: O
   </View>;
 }
 
-export const tones = {
-  olive: { bg: palette.olivePale, fg: palette.olive },
-  blue: { bg: palette.bluePale, fg: palette.blue }, muted: { bg: palette.muted, fg: palette.secondary },
-  error: { bg: palette.errorPale, fg: palette.error }, warn: { bg: palette.warnPale, fg: palette.warn },
-  shop: { bg: palette.shopPale, fg: palette.shop },
-};
+/** Day; components read useTheme().tones. */
+export const tones = themeKits.day.tones;
 
 // Settings list: one card per group, hairline between rows. Destructive rows go in their own group at the end.
 export function ListGroup({ children }: { children: React.ReactNode }) {
+  const { shadow } = useTheme();
+  const styles = useStyles();
   const items = React.Children.toArray(children);
   return <View style={[styles.group, shadow]}>
     {items.map((child, i) => <View key={i} style={i > 0 && styles.groupDivider}>{child}</View>)}
@@ -536,6 +538,8 @@ export function ListGroup({ children }: { children: React.ReactNode }) {
 export function ListRow({ icon, label, value, onPress, tone = 'olive', danger }: {
   icon: IconName; label: string; value?: string; onPress: () => void; tone?: keyof typeof tones; danger?: boolean;
 }) {
+  const { palette, tones } = useTheme();
+  const styles = useStyles();
   const { row, rtl, align, language } = useCopy();
   const t = danger ? tones.error : tones[tone];
   return <Press accessibilityLabel={value ? `${label}: ${value}` : label} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
@@ -547,7 +551,9 @@ export function ListRow({ icon, label, value, onPress, tone = 'olive', danger }:
 }
 
 // Looping "live" dot: state indication for anything in progress.
-export function Pulse({ color = palette.olive, size: s = 8 }: { color?: string; size?: number }) {
+export function Pulse({ color: given, size: s = 8 }: { color?: string; size?: number }) {
+  const { palette } = useTheme();
+  const color = given ?? palette.olive;
   const reduced = useReducedMotion();
   return <Animated.View style={[{ width: s, height: s, borderRadius: s, backgroundColor: color },
     !reduced && {
@@ -558,7 +564,9 @@ export function Pulse({ color = palette.olive, size: s = 8 }: { color?: string; 
 
 // "Looking for a driver": rings ripple out from the centre while the order is unassigned.
 // Reduced motion keeps one static ring so the state still reads without movement.
-export function Radar({ color = palette.olive, size: s = 120, children }: { color?: string; size?: number; children?: React.ReactNode }) {
+export function Radar({ color: given, size: s = 120, children }: { color?: string; size?: number; children?: React.ReactNode }) {
+  const { palette } = useTheme();
+  const color = given ?? palette.olive;
   const reduced = useReducedMotion();
   const ring = (delay: number): StyleProp<ViewStyle> => [
     { position: 'absolute', width: s, height: s, borderRadius: s / 2, borderWidth: 2, borderColor: color, backgroundColor: `${color}22` },
@@ -575,6 +583,8 @@ export function Radar({ color = palette.olive, size: s = 120, children }: { colo
 }
 
 export function Empty({ icon, title, body, action }: { icon: IconName; title: string; body?: string; action?: React.ReactNode }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   return <Appear style={styles.empty}>
     <View style={styles.emptyIcon}><Ionicons name={icon} size={26} color={palette.olive} /></View>
     <Txt variant="h2" center>{title}</Txt>
@@ -597,6 +607,7 @@ export function Stat({ label, value, tone = 'card', index = 0, detail }: { label
 
 /** The first load in flight; once it has failed, a retry instead of a spinner that never ends (the screen's ErrorText says why). */
 export function Loading({ failed, onRetry }: { failed?: boolean; onRetry?: () => void }) {
+  const { palette } = useTheme();
   const { c } = useCopy();
   if (failed && onRetry) return <View style={{ paddingVertical: 16 }}><Button title={c.retry} icon="refresh" variant="soft" onPress={onRetry} /></View>;
   return <View style={{ padding: 32 }}><ActivityIndicator color={palette.olive} /></View>;
@@ -607,6 +618,8 @@ export function Loading({ failed, onRetry }: { failed?: boolean; onRetry?: () =>
 // Docked bar (Uber/Careem pattern): compact, label under icon, a lime pill marks the current tab.
 // Custom so tab order follows the in-app language (OS RTL flipping is off).
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { row, language } = useCopy();
   // expo-router gives `href: null` screens (and its internal routes) this style; the default bar hides them, so this one must too.
   const hidden = (key: string) => StyleSheet.flatten(descriptors[key].options.tabBarItemStyle)?.display === 'none';
@@ -638,6 +651,8 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 // Design system v2 (Wind Control on a desktop): the same tabs as a rail on the reading-start side. Labels beside icons,
 // the current page on action-soft, counts as pills at the end. The navigator places it (tabBarPosition left/right).
 export function SideRail({ state, descriptors, navigation, title }: BottomTabBarProps & { title: string }) {
+  const { palette, colors } = useTheme();
+  const styles = useStyles();
   const { row, align, rtl } = useCopy();
   const hidden = (key: string) => StyleSheet.flatten(descriptors[key].options.tabBarItemStyle)?.display === 'none';
   // The app does not force RTL, so `end` is the physical right: in Arabic the rail sits right and its edge faces left.
@@ -651,7 +666,7 @@ export function SideRail({ state, descriptors, navigation, title }: BottomTabBar
         const { options } = descriptors[route.key];
         if (hidden(route.key)) return null;
         const focused = state.index === index;
-        const color = focused ? railOn : palette.secondary;
+        const color = focused ? colors.onActionSoft : palette.secondary; // 7.2:1 on olivePale (action-soft) by day
         const label = String(options.title ?? route.name);
         return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={options.tabBarBadge ? `${label}, ${options.tabBarBadge}` : label} aria-selected={focused}
           onPress={() => {
@@ -668,7 +683,6 @@ export function SideRail({ state, descriptors, navigation, title }: BottomTabBar
     </View>
   </SafeAreaView>;
 }
-const railOn = colors.day.onActionSoft; // 7.2:1 on olivePale (action-soft)
 
 // Outline icon normally, filled when the tab is current.
 export const tabIcon =(name: IconName) => function TabIcon({ color, size: s, focused }: { color: ColorValue; size: number; focused: boolean }) {
@@ -676,24 +690,25 @@ export const tabIcon =(name: IconName) => function TabIcon({ color, size: s, foc
   return <Ionicons name={focused && filled in Ionicons.glyphMap ? filled : name} size={s} color={color as string} />;
 };
 
-// Reanimated CSS transitions: run on the UI thread.
+// Reanimated CSS transitions: run on the UI thread. Press feedback is the same in both themes; choice tiles take the theme's colours.
 const motion = css.create({
   pressable: { transform: [{ scale: 1 }], transitionProperty: 'transform', transitionDuration: '120ms', transitionTimingFunction: EASE_OUT },
   pressed: { transform: [{ scale: 0.97 }] },
+});
+const useChoiceMotion = themedStyles(palette => css.create({
   choice: {
     minHeight: 48, borderRadius: 12, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 6,
     borderWidth: 1.5, borderColor: palette.field,
     transitionProperty: ['backgroundColor', 'borderColor'], transitionDuration: '160ms', transitionTimingFunction: EASE_OUT,
   },
   choiceOn: { backgroundColor: palette.forest, borderColor: palette.forest }, // selected is filled: a white tile with a hairline read as unselected
-});
+}));
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   safe: { flex: 1, width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: palette.paper },
   safeWide: { maxWidth: 1120, paddingHorizontal: 8 },
   content: { paddingHorizontal: size.gutter, paddingTop: 8, paddingBottom: 28 },
   footer: { paddingHorizontal: size.gutter, paddingTop: 10, paddingBottom: 8, backgroundColor: palette.card, borderTopWidth: 1, borderTopColor: palette.hair },
-  logo: { backgroundColor: palette.forest, overflow: 'hidden' },
   header: { alignItems: 'center', gap: 10, marginBottom: 14, minHeight: size.control },
   iconButton: { width: size.control, height: size.control, borderRadius: size.control / 2, alignItems: 'center', justifyContent: 'center' },
   card: { backgroundColor: palette.card, borderRadius: size.radius, padding: 14, marginBottom: 12 },
@@ -747,4 +762,4 @@ const styles = StyleSheet.create({
   barText: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
   barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, minHeight: 16, borderRadius: 8, backgroundColor: palette.warn, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   barBadgeText: { color: palette.onFill, fontSize: 12, fontWeight: '800' }, // 5.7:1 on clayInk; clay itself is too light for text
-});
+}));

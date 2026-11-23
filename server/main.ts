@@ -1515,9 +1515,12 @@ export async function alertMissedBackup(now = Date.now()) {
   const savedAt = lastBackupAt();
   const alertKey = identityKey('backup-alert', 'system');
   const sent = await persistence.atomic({ purpose: 'backup_alert' }, async () => {
+    if (!isBackupStale(now, savedAt)) {
+      await run('DELETE FROM request_limits WHERE key = ?', alertKey);
+      return false;
+    }
     // A successful backup ends the outage even if it was never fresh during a sweep. A newer alert keeps its allowance.
     if (savedAt !== null) await run('DELETE FROM request_limits WHERE key = ? AND until < ?', alertKey, savedAt + DAY);
-    if (!isBackupStale(now, savedAt)) return false;
     const admins = await adminIds();
     if (!admins.length) return false; // an admin added later today still gets the day's alert
     try { await limit(alertKey, 1, DAY); } catch { return false; }
@@ -3805,6 +3808,8 @@ route('GET', '/api/admin/stats', async ({ user }) => {
     // null for staff without the support scope: the app hides the Support tab and shortcut they could not open.
     openSupport: await supportScoped(user) ? (await one("SELECT COUNT(*) n FROM support_threads WHERE status = 'open' AND last_from = 'user'"))!.n : null,
     pendingSubscriptions: (await one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'pending'"))!.n,
+    // shop applications for the Approvals queue; 0 while the shop service is off or its tables are absent (PostgreSQL before 33)
+    pendingShops: enabledServices.includes('shop') && await shopTables(persistence) ? (await one("SELECT COUNT(*) n FROM merchants WHERE status = 'pending'"))!.n : 0,
     openIncidents: (await one("SELECT COUNT(*) n FROM safety_incidents WHERE status = 'open'"))!.n,
     backupStale: backupStale(),
     // DRV-17: block reviews past their 2 working days; their trip pay stays unposted until a second admin decides.
