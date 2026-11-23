@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { api, useApi } from '../../api';
 import { type CashBalance, cashLines } from '../../cash-lines';
 import { PlanCard, useFormat } from '../../parts';
-import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading, Row, Screen, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, confirm, ErrorText, fill, haptic, Header, Loading, Row, Screen, Stat, Txt, useCopy } from '../../ui';
 import { useTheme } from '../../theme-context';
 
 type Bucket = { jobs: number; gross: number; commission: number; net: number; earnedNet?: number; tripPayCents?: number };
@@ -19,23 +19,31 @@ export default function Earnings() {
     <Header title={c.earnings} />
     <Txt variant="caption" style={{ marginBottom: 12 }}>{c.earningsNote}</Txt>
     <ErrorText>{error && err(error)}</ErrorText>
-    {!data ? <Loading failed={!!error} onRetry={reload} /> :
-      ([[c.today, data.today], [c.week, data.week], [c.allTime, data.all]] as const).map(([title, bucket]) => {
-        const lines: [string, number][] = [
-          [c.gross, bucket.gross],
-          [c.commission, -bucket.commission],
-          [c.tripPay, (bucket.tripPayCents ?? 0) / 100],
-          [c.earnedPay, bucket.earnedNet ?? bucket.net],
-        ];
-        return <Card key={title}>
-          <Txt variant="title">{title}</Txt>
-          <Txt variant="micro" style={{ marginTop: 2, marginBottom: 8 }}>{fill(c.tripsCount, { n: bucket.jobs })}</Txt>
-          {lines.map(([label, value]) => <Row key={label} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
-            <Txt style={{ flex: 1 }}>{label}</Txt>
-            <Txt variant="title">{money(value)}</Txt>
-          </Row>)}
-        </Card>;
-      })}
+    {/* What a captain opens this for is today's pay: it leads, large, with how it was made under it. The week and all time
+        follow as two tiles with the same figure, instead of three identical tables (UI review 23 Nov). */}
+    {!data ? <Loading failed={!!error} onRetry={reload} /> : <>
+      <Card tone="olive">
+        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Txt variant="title">{c.today}</Txt>
+          <Txt variant="micro">{fill(c.tripsCount, { n: data.today.jobs })}</Txt>
+        </Row>
+        <Txt variant="caption" style={{ marginTop: 8 }}>{c.earnedPay}</Txt>
+        <Txt variant="display" style={{ fontVariant: ['tabular-nums'] }}>{money(data.today.earnedNet ?? data.today.net)}</Txt>
+        <View style={{ marginTop: 8 }}>
+          {([[c.gross, data.today.gross], [c.commission, -data.today.commission], [c.tripPay, (data.today.tripPayCents ?? 0) / 100]] as [string, number][])
+            .filter(([label, value]) => value !== 0 || label === c.gross) // a zero line of pay only adds a row to read past
+            .map(([label, value]) => <Row key={label} gap={8} style={{ justifyContent: 'space-between', paddingVertical: 4 }}>
+              <Txt variant="caption" style={{ flex: 1 }}>{label}</Txt>
+              <Txt variant="label" style={{ fontVariant: ['tabular-nums'] }}>{money(value)}</Txt>
+            </Row>)}
+        </View>
+      </Card>
+      <Row gap={10} style={{ flexWrap: 'wrap', marginBottom: 12 }}>
+        {([[c.week, data.week, 1], [c.allTime, data.all, 2]] as const).map(([title, bucket, index]) =>
+          <Stat key={title} index={index} label={title} value={money(bucket.earnedNet ?? bucket.net)}
+            detail={`${fill(c.tripsCount, { n: bucket.jobs })} · ${c.gross} ${money(bucket.gross)}`} />)}
+      </Row>
+    </>}
     <CashCard />
     <View style={{ marginTop: 4 }}><PlanCard /></View>
   </Screen>;

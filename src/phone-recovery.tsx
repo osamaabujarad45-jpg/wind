@@ -118,7 +118,7 @@ export function PhoneRecovery({ gate, onBack, onDone }: { gate: Gate; onBack: ()
         <Txt variant="caption" style={{ marginBottom: 12, color: palette.olive, fontWeight: '700' }}>{c.phone_recovery_recorded}</Txt>
         <Field label={c.phone_code_label} value={code} onChangeText={next => setCode(codeInput(next))} keyboardType="number-pad" autoComplete="one-time-code"
           maxLength={6} disabled={busy} />
-        <Field label={c.newPassword} value={password} onChangeText={setPassword} placeholder={c.passwordMinimum} secureTextEntry maxLength={100}
+        <Field label={c.newPassword} value={password} onChangeText={setPassword} hint={c.passwordMinimum} secureTextEntry maxLength={100}
           autoComplete="new-password" disabled={busy} />
         <Button title={c.phone_recovery_save} icon="key-outline" onPress={save} loading={busy} disabled={!open || code.length !== 6 || !passwordOk || busy}
           reason={saveReason} />

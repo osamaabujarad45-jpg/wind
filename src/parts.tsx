@@ -188,13 +188,15 @@ export function tripTitle(order: Pick<Order, 'pickupCity' | 'dropoffCity' | 'pic
 }
 
 export function OrderRow({ order, index = 0, status = true }: { order: Order; index?: number; status?: boolean }) {
-  const { palette } = useTheme();
+  const { palette, statusTone } = useTheme();
   const { c, language, money, rtl } = useCopy();
   const { time } = useFormat();
   const { me } = useSession();
   const mine = me?.user.role === 'driver' && order.driverId === me.user.id;
   // A shop order's door cash, as on its detail page; the captain's own trips keep the fare, which is what they earn from.
   const total = order.shop && !mine ? order.shop.cashAgorot / 100 : order.price;
+  // The shop asked the customer about a change: the order waits on them, so the row asks for attention, not patience (UI review 23 Nov).
+  const yourTurn = !mine && order.shop?.state === 'awaiting_approval';
   return <Appear index={index}>
     <Card style={{ padding: 12 }}>
       {/* Announce every fact the row shows; a container label replaces the children for screen readers. */}
@@ -213,7 +215,7 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
             {/* private is the default and sat on every row; only shared, the exception, is marked */}
             <Txt variant="caption" numberOfLines={1}>{c[order.service]}{order.shared ? `, ${c.shared}` : ''}</Txt>
             <Row style={{ justifyContent: 'space-between', marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
-              {status ? <Badge label={statusText(c, order, mine)} status={order.status} /> : <View />}
+              {status ? <Badge label={statusText(c, order, mine)} status={order.status} {...yourTurn && { tone: statusTone.on_hold, icon: 'alert-circle-outline' as const }} /> : <View />}
               {/* time and code are separate facts: two plain labels, no separator glyph */}
               {/* wraps at large text: on one line the code ran off the card's edge (A53, 200%) */}
               <Row gap={8} style={{ flexWrap: 'wrap', flexShrink: 1 }}>
@@ -324,7 +326,7 @@ export function PlanCard() {
     <Card tone={sub?.status === 'active' ? 'olive' : sub ? 'card' : 'muted'}>{/* waiting on support is not a call to action; the badge carries it */}
       <Row style={{ justifyContent: 'space-between', marginBottom: 6 }}>
         <Row gap={8}>
-          <Ionicons name="sparkles" size={18} color={palette.clay} />
+          <Ionicons name="sparkles" size={18} color={palette.olive} />{/* clay is the logo dot and destinations only (design system v2) */}
           <Txt variant="title">{isPlus ? c.plusTitle : c.proTitle}</Txt>
         </Row>
         {sub && !(sub.status === 'active' && sub.endsAt) && <Badge label={c[sub.status]} tone={sub.status === 'active' ? tones.olive : tones.warn} />}{/* "active until" below already says it */}
@@ -528,7 +530,7 @@ export function AccountScreen() {
     <ErrorText>{deleteError}</ErrorText>
     <ListGroup>
       {/* Signing out is undone by signing in, so it is neutral; deleting the account cannot be undone, so it carries the danger tone. */}
-      <ListRow icon="log-out-outline" label={c.logout} tone="muted" onPress={() => confirm(c.logoutConfirm, () => { void signOut().catch(e => setDeleteError(err(e))); }, c.logout, c.no)} />
+      <ListRow icon="log-out-outline" label={c.logout} tone="muted" action onPress={() => confirm(c.logoutConfirm, () => { void signOut().catch(e => setDeleteError(err(e))); }, c.logout, c.no)} />
       {!deleteOpen ? <ListRow icon="trash-outline" label={c.deleteAccount} danger onPress={() => setDeleteOpen(true)} />
         : <View style={{ padding: 16, gap: 8 }}>
           <Txt>{c.deleteReauth}</Txt>

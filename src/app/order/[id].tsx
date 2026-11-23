@@ -650,15 +650,16 @@ export default function OrderScreen() {
       {isCustomer && order.status === 'completed' && <RateDriver order={order} onRate={body => act('rate', `/orders/${order.id}/rate`, body)} />}
       {isDriver && mine && order.status === 'completed' && <RateCustomer order={order} onRate={n => act('rate', `/orders/${order.id}/rate`, { customerRating: n })} />}
 
-      {order.status === 'completed' && (isCustomer || mine || isAdmin) &&
-        <Button title={c.viewReceipt} icon="receipt-outline" variant="ghost" onPress={() => router.push(`/receipt/${order.id}`)} />}
-
       {canSendAnother(order, role) && <Button title={c.sendAnother} icon="add-circle-outline" variant="soft"
         onPress={() => router.push({ pathname: '/book', params: { again: String(order.id), keep: 'pickup' } })} />}
 
       {/* one primary on a finished order: repeating it is the likely next step; receipt and send-another stay quieter */}
       {canOrderAgain(order, role) && <Button title={c.orderAgain} icon="refresh-outline" variant="primary"
         onPress={() => router.push({ pathname: '/book', params: { again: String(order.id) } })} />}
+
+      {/* the quiet links follow the two booking actions, so the one filled button is not sandwiched (UI review 23 Nov) */}
+      {order.status === 'completed' && (isCustomer || mine || isAdmin) &&
+        <Button title={c.viewReceipt} icon="receipt-outline" variant="ghost" onPress={() => router.push(`/receipt/${order.id}`)} />}
 
       {(isCustomer || isAdmin) && (order.service === 'parcel' || order.service === 'freight') && <CustodyChain orderId={order.id} />}
 

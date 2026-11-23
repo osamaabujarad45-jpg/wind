@@ -212,11 +212,13 @@ export default function Jobs() {
     {/* Forest while sharing; a plain ochre warning when off, not a pill boxed inside a dark card. */}
     {assigned && work.known && <Card tone={located ? 'forest' : 'warn'} style={{ paddingVertical: 12 }}>
       <Press accessibilityLabel={located ? c.sharingLocation : c.locationOff} onPress={() => { void enableTracking(); }}>
-        <Row gap={8} style={[styles.location, { backgroundColor: located ? 'rgba(211,242,122,0.14)' : palette.card }]}>
+        {/* Off: the ochre card itself is the warning (a white pill inside it read as a second box, 23 Nov), and the chevron shows it acts. */}
+        <Row gap={8} style={[styles.location, located ? { backgroundColor: 'rgba(211,242,122,0.14)' } : styles.locationOff]}>
           <Ionicons name={located ? 'locate' : 'location-outline'} size={16} color={located ? palette.lime : palette.warn} />
           <Txt variant="caption" style={{ flex: 1, fontWeight: '700', color: located ? palette.lime : palette.warn }}>
             {located ? c.sharingLocation : locating ? c.locationStarting : c.locationOff}
           </Txt>
+          {!located && !locating && <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={16} color={palette.warn} />}
         </Row>
       </Press>
       {located && work.backgroundGranted === false && <Txt variant="caption" style={{ marginTop: 8, color: palette.warnPale }}>{c.backgroundTrackingWarn}</Txt>}{/* on forest: clayInk read 2.4:1 */}
@@ -348,5 +350,6 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   top: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8 },
   title: { backgroundColor: palette.card, borderRadius: 16, paddingHorizontal: 14, justifyContent: 'center', minHeight: 44 },
   location: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 10 },
+  locationOff: { marginTop: 0, paddingHorizontal: 0, paddingVertical: 4, minHeight: 44 },
   note: { alignItems: 'flex-start', marginTop: 10, backgroundColor: palette.muted, borderRadius: 10, padding: 8 },
 }));

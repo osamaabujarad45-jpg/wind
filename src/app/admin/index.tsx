@@ -66,11 +66,11 @@ export default function Dashboard() {
       <Row gap={10} style={{ flexWrap: 'wrap', marginBottom: 14 }}>
         <Stat index={0} tone="olive" label={c.profit} value={money(data.profit)} />
         <Stat index={1} label={c.commissionRevenue} value={money(data.commission)} />
-        <Stat index={2} label={c.subscriptionRevenue} value={money(data.subscriptions)} />
+        {/* six tiles divide evenly (3 x 2 on a phone, one row on a desktop); a seventh sat alone across a whole row (UI review 23 Nov) */}
+        <Stat index={2} label={c.subscriptionRevenue} value={money(data.subscriptions)} detail={`${c.activeSubs}: ${data.activeSubscriptions}`} />
         <Stat index={3} label={c.promoCost} value={money(data.discounts)} />
         <Stat index={4} label={c.gmv} value={money(data.gmv)} />
         <Stat index={5} label={c.completedCount} value={String(data.completed)} />
-        <Stat index={6} label={c.activeSubs} value={String(data.activeSubscriptions)} />
       </Row>
 
       <Appear index={7}><ProfitChart daily={data.daily} /></Appear>

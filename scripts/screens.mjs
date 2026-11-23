@@ -218,6 +218,8 @@ const consentView = await call(`/orders/${shopConsent.id}`, baker.token);
 await call(`/merchant/orders/${shopConsent.id}/lines/${consentView.shop.lines.find(l => l.itemId === cheese.id).id}`, baker.token, { weightGrams: 550 });
 await call(`/merchant/orders/${shopConsent.id}/lines/${consentView.shop.lines.find(l => l.itemId === kaak.id).id}`, baker.token, { substituteItemId: labneh.id, qtyMilli: 1000 });
 const shopNew = await shopOrder(omar, [{ itemId: kaak.id, qtyMilli: 6000, policy: 'remove' }, { itemId: labneh.id, qtyMilli: 1000, policy: 'ask_first' }]);
+// The accept screen hides its controls once the five minutes are up; give this order an hour so its capture shows them.
+db.prepare('UPDATE shop_orders SET accept_deadline = ? WHERE order_id = ?').run(Date.now() + 3_600_000, shopNew.id);
 const shopReady = await shopOrder(omar, [{ itemId: bread.id, qtyMilli: 5000, policy: 'remove' }]);
 await call(`/merchant/orders/${shopReady.id}/accept`, baker.token, { prepMinutes: 10 });
 await call(`/merchant/orders/${shopReady.id}/preparing`, baker.token, {});

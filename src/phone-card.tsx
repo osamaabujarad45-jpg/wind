@@ -64,6 +64,7 @@ export function PhoneCard() {
   // Why the number cannot be verified or changed right now. Null means the control is live.
   const blockKey: string | null = gate !== 'ready' ? gateReasonKey(gate) : !view ? 'phone_reason_checking' : !reviewed ? 'phone_reason_review' : null;
   const changeBlock: string | null = user?.role === 'admin' ? 'phone_reason_admin' : blockKey;
+  const featureOff = gate === 'unavailable' || gate === 'disabled'; // off on this server, not a passing state
   const reason = (key: string | null) => key ? c[key as CopyKey] : undefined;
 
   // The pending verification: one this screen just requested, or the newest one the server still holds for this session.
@@ -216,7 +217,10 @@ export function PhoneCard() {
     {(gate === 'ready' || gate === 'checking') && <Txt variant="caption" style={{ marginTop: 8 }}>{status}</Txt>}
     {verifiedNow && <Txt variant="caption" style={{ marginTop: 6, color: palette.olive, fontWeight: '700' }}>{c.phone_done_verified}</Txt>}
 
-    {!isVerified && !shown && !form && <View style={{ marginTop: 12 }}>
+    {/* Phone codes switched off: one line says so, instead of two disabled buttons around it (UI review 23 Nov) */}
+    {featureOff && <Txt variant="caption" style={{ marginTop: 8 }}>{reason(blockKey)}</Txt>}
+
+    {!isVerified && !shown && !form && !featureOff && <View style={{ marginTop: 12 }}>
       <Txt variant="caption" style={{ marginBottom: 10 }}>{c.phone_verify_body}</Txt>
       <Button title={c.phone_verify_send} icon="shield-checkmark-outline" onPress={() => issue('verify', user.phone, '')} loading={busy}
         disabled={!!blockKey || busy} reason={reason(blockKey) ?? c.wait_busy} />
@@ -238,7 +242,7 @@ export function PhoneCard() {
       {shown.purpose === 'change' && <Button title={c.cancel} variant="ghost" onPress={closeChange} disabled={busy} />}
     </View>}
 
-    {!form && !shown && <View style={{ marginTop: 10 }}>
+    {!form && !shown && !featureOff && <View style={{ marginTop: 10 }}>
       <Button title={c.phone_change} icon="create-outline" variant="ghost" onPress={() => { setActive(null); setForm({ phone: '', password: '' }); setError(''); }}
         // The verify button just above already gives the same reason when both are blocked by one cause: say it once.
         disabled={!!changeBlock || busy} reason={!isVerified && !busy && changeBlock && changeBlock === blockKey ? undefined : reason(changeBlock) ?? c.wait_busy} />
