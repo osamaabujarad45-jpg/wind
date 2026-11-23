@@ -31,4 +31,18 @@ assert.ok(Math.abs((box.left + box.right) / 2 - 50) <= 1 && Math.abs((box.top + 
 assert.match(markSvg(64), /^<svg[^>]+width="64"/);
 assert.doesNotMatch(markSvg(64, { monochrome: true }), /#D3F27A|#CB6845/, 'monochrome uses white only');
 
+// The web app paints the same 120 px tile before its JavaScript arrives (public/index.html); the old pin mark lingered there and
+// in public/icons after the 23 Nov logo change, so the shapes are checked here and make_icon.mjs writes the web icons too.
+const shell = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+assert.ok(shell.includes(markSvg(120).replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '')), 'index.html paints the current mark');
+const iconScript = readFileSync(new URL('../scripts/make_icon.mjs', import.meta.url), 'utf8');
+for (const icon of ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png']) assert.ok(iconScript.includes(`public/icons/${icon}`), `make_icon.mjs writes ${icon}`);
+// Icons are served immutable for a week: every reference carries a version so a regenerated icon reaches browsers (Haiku, PR #118).
+for (const file of ['index.html', 'install.html', 'manifest.webmanifest', 'sw.js']) {
+  const text = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
+  const refs = text.match(/\/icons\/[a-z0-9-]+\.png[^"' )]*/g) ?? [];
+  assert.ok(refs.length, `${file} names an icon`);
+  for (const ref of refs) assert.match(ref, /\.png\?v=[a-z0-9]+$/, `${file}: ${ref} carries a version`);
+}
+
 console.log('Brand mark: <Logo /> and the icon/poster SVG share one geometry, continuous, centred, inside the tile');

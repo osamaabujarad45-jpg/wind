@@ -8,6 +8,7 @@ import { BRAND, markSvg } from './brand-mark.mjs';
 
 const OUT = new URL('../assets/', import.meta.url);
 mkdirSync(OUT, { recursive: true });
+mkdirSync(new URL('../public/icons/', import.meta.url), { recursive: true });
 
 const jobs = [
   // App icon (iOS, web manifest): the tile on paper, like the splash.
@@ -19,6 +20,11 @@ const jobs = [
   // Native splash: the tile alone; the animated intro (src/intro.tsx) picks up from this exact frame.
   ['splash-icon.png', markSvg(512), true],
   ['favicon.png', markSvg(64, { background: BRAND.paper, inset: 0.04 }), false],
+  // The web app and its install page (public/manifest.webmanifest, index.html, install.html). The tile on transparency for the
+  // manifest; iOS fills transparency with black and rounds its own corners, so the Home Screen icon is the tile full-bleed.
+  ['../public/icons/icon-192.png', markSvg(192), true],
+  ['../public/icons/icon-512.png', markSvg(512), true],
+  ['../public/icons/apple-touch-icon.png', markSvg(180, { background: BRAND.forest }), false],
 ];
 
 const browser = await chromium.launch();
@@ -29,7 +35,7 @@ try {
     await page.setViewportSize({ width: size, height: size });
     await page.setContent(`<html><body style="margin:0;background:transparent">${svg}</body></html>`);
     await page.locator('svg').screenshot({ path: fileURLToPath(new URL(file, OUT)), omitBackground: transparent });
-    console.log(`wrote assets/${file}`);
+    console.log(`wrote ${fileURLToPath(new URL(file, OUT))}`);
   }
 } finally {
   await browser.close();

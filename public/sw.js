@@ -33,7 +33,7 @@ self.addEventListener('push', event => {
   const body = `${t[kind] ?? t.message}${data.order && kind !== 'job' ? ` · ${code(data.order)}` : ''}`;
   event.waitUntil(self.registration.showNotification(t.title, {
     body, lang: data.lang === 'en' ? 'en' : 'ar', dir: data.lang === 'en' ? 'ltr' : 'rtl',
-    icon: '/icons/icon-192.png', badge: '/icons/icon-192.png',
+    icon: '/icons/icon-192.png?v=mark2', badge: '/icons/icon-192.png?v=mark2',
     tag: data.kind === 'job' ? 'jobs' : data.order ? `order-${data.order}` : data.kind, renotify: true,
     data: { url: sameOrigin(data.url) },
   }));
