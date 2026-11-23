@@ -1,7 +1,9 @@
 // Deliberately minimal WP02 adapter schema: proves the existing HTTP handler graph actually uses pg.
 // This is NOT the WP03 application schema or an import/parity migration.
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { Persistence } from '../server/db/persistence.ts';
 import { apiCaller } from './support/api.mjs';
 const connectionString = process.env.WIND_TEST_DATABASE_URL ?? 'postgresql://fastship_test@127.0.0.1:55473/fastship_test';
@@ -49,10 +51,20 @@ try {
   await setup.run('INSERT INTO schema_migrations VALUES(31, 0)');
   assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' }, 'A12 priority migration 32 is required');
   await setup.run('INSERT INTO schema_migrations VALUES(32, 0)');
-  assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'captain_pay_schema_required' });
+  assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' }, 'migrations through 42 are required');
   await setup.run('INSERT INTO schema_migrations VALUES(33, 0)');
-  assert.deepEqual(await call('/ready'), { ok: true, schema: 33 });
+  assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' }, 'migration 33 alone is not a complete schema');
+  await setup.run('INSERT INTO schema_migrations SELECT generate_series(34,41), 0');
+  await setup.run('INSERT INTO schema_migrations SELECT generate_series(22,23), 0');
+  await setup.run('INSERT INTO schema_migrations SELECT generate_series(25,29), 0');
+  assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' }, 'support migration 42 is required');
+  const worker = spawnSync(process.execPath, [fileURLToPath(new URL('../server/worker.ts', import.meta.url))], { encoding: 'utf8', timeout: 8_000 });
+  assert.equal(worker.status, 1, worker.stderr);
+  assert.match(worker.stderr, /Durable worker requires the complete PostgreSQL migration ledger/);
+  await setup.run('INSERT INTO schema_migrations VALUES(42, 0)');
+  assert.deepEqual(await call('/ready'), { ok: true, backend: 'postgres', schema: 42 });
   await setup.run('DELETE FROM schema_migrations WHERE version=19');
+  await setup.run('INSERT INTO schema_migrations VALUES(24, 0)');
   assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' });
   await setup.run('INSERT INTO schema_migrations VALUES(19, 0)');
   const registered = await call('/auth/register', { body: { name: 'WP02 synthetic customer', phone: '0599610001', password: 'synthetic-pass-only' } });

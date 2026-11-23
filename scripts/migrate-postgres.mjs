@@ -1,9 +1,9 @@
 // Owner-run migration for the only non-loopback PostgreSQL gate the runtime accepts.
 // Never called by CI, the API or the worker: enabling workloads with an empty/old schema
-// would make every query fail. Creates wp16_staging and applies migrations 3..36 under
+// would make every query fail. Creates wp16_staging and applies the required migrations under
 // the same advisory lock as the tests.
 import { Persistence } from '../server/db/persistence.ts';
-import { initializePostgres } from '../server/db/postgres-schema.ts';
+import { initializePostgres, postgresSchemaVersion } from '../server/db/postgres-schema.ts';
 
 if (process.env.WIND_POSTGRES_STAGING !== '1') throw new Error('Set WIND_POSTGRES_STAGING=1 for the staging cutover');
 if (!process.argv.includes('--confirm')) throw new Error('Refusing to migrate without --confirm');
@@ -27,8 +27,9 @@ const database = new Persistence({
 });
 try {
   await initializePostgres(database, 'wp16_staging');
-  const row = await database.one('SELECT MAX(version) AS version FROM schema_migrations');
-  console.log(`wp16_staging migrated; schema version ${row?.version ?? 0}; runtimeActivated=false`);
+  const version = await postgresSchemaVersion(database);
+  if (version === null) throw new Error('The staging migration ledger is incomplete');
+  console.log(`wp16_staging migrated; schema version ${version}; runtimeActivated=false`);
 } finally {
   await database.close();
 }

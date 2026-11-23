@@ -2,6 +2,17 @@ import { readFileSync } from 'node:fs';
 import type { Persistence } from './persistence.ts';
 
 export const MIGRATION_LOCK = 5703001;
+export const POSTGRES_SCHEMA_VERSION = 42;
+const firstMigration = 3, skippedMigration = 24;
+
+/** Runtime probes inspect the migration ledger without creating or changing it. */
+export async function postgresSchemaVersion(database: Persistence): Promise<number | null> {
+  const row = await database.one(`SELECT MAX(version) AS version,
+    COUNT(*) FILTER (WHERE version BETWEEN ? AND ? AND version <> ?) AS applied FROM schema_migrations`,
+  firstMigration, POSTGRES_SCHEMA_VERSION, skippedMigration);
+  const required = POSTGRES_SCHEMA_VERSION - firstMigration; // inclusive range, with the one skipped migration removed
+  return row && row.version >= POSTGRES_SCHEMA_VERSION && row.applied === required ? row.version : null;
+}
 export const isolatedSchema = (schema: string) => {
   if (!/^(?:wp0[0-9]_[a-z0-9_]{1,48}|wp16_staging)$/.test(schema)) throw new Error('WP03/04 requires a named isolated test schema');
   return schema;
