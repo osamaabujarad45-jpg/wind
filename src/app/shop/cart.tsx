@@ -13,11 +13,13 @@ import PinSheet from '../../pin-sheet';
 import { useSession } from '../../session';
 import { cartGoods, clearCart, setPolicy, setQuantity, storedCart, useCart } from '../../shop-cart';
 import { QtyControl } from '../../shop-ui';
-import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, palette, Row, Screen, Section, Txt, useCopy } from '../../ui';
+import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Row, Screen, Section, Txt, useCopy } from '../../ui';
+import { useTheme } from '../../theme-context';
 
 const limits = [0, 0.1, 0.2] as const;
 
 export default function ShopCart() {
+  const { palette } = useTheme();
   const { c, language, money } = useCopy();
   const { me } = useSession();
   const { changes } = useLocalSearchParams<{ changes?: string }>();

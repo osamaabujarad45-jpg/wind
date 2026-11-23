@@ -4,8 +4,9 @@ import { api, useApi } from '../../api';
 import { fractionSettings, invalidSetting, typedNumber, type Settings, defaultSettings } from '../../model';
 import { PasswordCard, useFormat } from '../../parts';
 import { useSession } from '../../session';
-import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, Loading, palette, Row, Screen, tones, Txt, useCopy } from '../../ui';
+import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, Loading, Row, Screen, Txt, useCopy } from '../../ui';
 import { router } from 'expo-router';
+import { useTheme } from '../../theme-context';
 
 const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits' | 'shopTimers'; keys: (keyof Settings)[] }[] = [
   { title: 'pricing', keys: ['parcelPrice', 'parcelLarge', 'pickupPayPerKm', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp', 'perMinute', 'nightExtra'] },
@@ -162,6 +163,7 @@ const blank = { code: '', amount: '10', maxUses: '100', days: '30', firstOrderOn
 
 // Promo codes (SPEC-promo-codes.md): fixed shekel discounts Wind funds through the driver cash ledger.
 function Promos() {
+  const { palette, tones } = useTheme();
   const { c, money, err } = useCopy();
   const { date } = useFormat();
   const { data, error: loadError, reload } = useApi<Promo[]>('/admin/promos');

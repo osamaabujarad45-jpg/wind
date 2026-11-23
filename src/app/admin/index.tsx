@@ -10,8 +10,9 @@ import { PushRow } from '../../parts';
 import { NativePushRow } from '../../native-push-row';
 import { pushSupported } from '../../push';
 import { isolate, ltr, type Order, type OrderStatus } from '../../model';
-import { Appear, Badge, Card, ErrorText, Header, ListGroup, Loading, palette, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
+import { Appear, Badge, Card, ErrorText, Header, ListGroup, Loading, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
 import { fill } from '../../copy';
+import { themedStyles, useTheme } from '../../theme-context';
 
 type Stats = {
   gmv: number; commission: number; subscriptions: number; discounts: number; profit: number; completed: number; activeSubscriptions: number;
@@ -24,11 +25,13 @@ type Stats = {
 };
 
 // Validated with the dataviz palette checker (CVD-safe on the paper surface);
-// both series hold ≥3:1 against the white card.
+// both series hold ≥3:1 against the white Day card and the Night card (#121F1A), so they stay fixed in both themes.
 const SERIES = { commission: '#2F6DB5', subscriptions: '#C77420' };
 
 export default function Dashboard() {
   const shopOn = !!useSession().me?.capabilities?.enabledServices?.includes('shop'); // the shop shortcut only with the shop service
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c, money, err } = useCopy();
   const { data, error, reload } = useApi<Stats>('/admin/stats', 30_000);
 
@@ -102,6 +105,8 @@ export default function Dashboard() {
 }
 
 function Shortcut({ label, count, onPress }: { label: string; count: number; onPress: () => void }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { rtl } = useCopy();
   return <Press accessibilityLabel={`${label}: ${count}`} onPress={onPress}>
     <Card tone="warn">
@@ -116,6 +121,8 @@ function Shortcut({ label, count, onPress }: { label: string; count: number; onP
 
 // Stacked bars, one per day. Tap a bar for its values (the mobile stand-in for hover).
 function ProfitChart({ daily }: { daily: Stats['daily'] }) {
+  const { palette } = useTheme();
+  const styles = useStyles();
   const { c, money, row, language } = useCopy();
   const reduced = useReducedMotion();
   const [selected, setSelected] = useState(daily.length - 1);
@@ -159,7 +166,7 @@ function ProfitChart({ daily }: { daily: Stats['daily'] }) {
 const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
 const GROW = { from: { transform: [{ scaleY: 0.1 }], opacity: 0 }, to: { transform: [{ scaleY: 1 }], opacity: 1 } };
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   reviewLink: { color: palette.warn, textDecorationLine: 'underline', paddingVertical: 10 },
   count: { minWidth: 30, minHeight: 30, borderRadius: 15, backgroundColor: palette.warn, justifyContent: 'center', paddingHorizontal: 6 },
   swatch: { width: 10, height: 10, borderRadius: 3 },
@@ -170,4 +177,4 @@ const styles = StyleSheet.create({
   column: { gap: 2, transformOrigin: 'bottom' },
   segment: { minHeight: 2 },
   top: { borderTopLeftRadius: 4, borderTopRightRadius: 4 },
-});
+}));

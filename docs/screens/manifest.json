@@ -361,6 +361,36 @@
     "session": "customer"
   },
   {
+    "id": "account-night",
+    "group": "Customer",
+    "name": "Account · Night theme (Appearance: Automatic stays Day for customers)",
+    "route": "/account",
+    "file": "src/parts.tsx (ThemeCard)",
+    "theme": "night",
+    "ar": [
+      "ar/account-night.png"
+    ],
+    "en": [
+      "en/account-night.png"
+    ],
+    "session": "customer"
+  },
+  {
+    "id": "orders-night",
+    "group": "Customer",
+    "name": "My orders · Night theme",
+    "route": "/orders",
+    "file": "src/app/(customer)/orders.tsx",
+    "theme": "night",
+    "ar": [
+      "ar/orders-night.png"
+    ],
+    "en": [
+      "en/orders-night.png"
+    ],
+    "session": "customer"
+  },
+  {
     "id": "profile",
     "group": "Customer",
     "name": "Edit profile",
@@ -845,6 +875,22 @@
     ],
     "en": [
       "en/admin-desktop.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-desktop-night",
+    "group": "Admin",
+    "name": "Dashboard on a desktop · Night theme",
+    "route": "/admin",
+    "file": "src/app/admin/_layout.tsx",
+    "desktop": true,
+    "theme": "night",
+    "ar": [
+      "ar/admin-desktop-night.png"
+    ],
+    "en": [
+      "en/admin-desktop-night.png"
     ],
     "session": "admin"
   },

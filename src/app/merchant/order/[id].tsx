@@ -8,9 +8,11 @@ import { api, useApi } from '../../../api';
 import { isolate, merchantRejects, type MerchantItem, type Order, type ShopLine } from '../../../model';
 import { useFormat } from '../../../parts';
 import { qtyLabel, ShopLines, useCountdown } from '../../../shop-ui';
-import { Button, Card, Choices, confirm, ErrorText, Field, fill, Header, Loading, palette, Row, Screen, Section, Stepper, Txt, useCopy } from '../../../ui';
+import { Button, Card, Choices, confirm, ErrorText, Field, fill, Header, Loading, Row, Screen, Section, Stepper, Txt, useCopy } from '../../../ui';
+import { useTheme } from '../../../theme-context';
 
 export default function MerchantOrder() {
+  const { palette } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { c, language, money, rtl, err } = useCopy();
   const { time } = useFormat();

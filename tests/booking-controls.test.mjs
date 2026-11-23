@@ -45,7 +45,7 @@ const partStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(pa
   return (${literal(parts, 'StyleSheet.create(')}); })()`);
 const bookStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const sheetShadow = {};
   return (${literal(book, 'StyleSheet.create(')}); })()`);
-const searchStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)};
+const searchStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const theme = { name: 'day', shadow: {} };
   return (${literal(search, 'StyleSheet.create(')}); })()`);
 
 // ---------- the target is a box, not a slop over the neighbour ----------
