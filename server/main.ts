@@ -1603,8 +1603,14 @@ async function newJobPush(service: Service, orderId: number, customerId: number,
     ? `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}) AND NOT ${poolableSql('o')})`
     : `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}))`} ORDER BY random() LIMIT ${pooled ? 400 : 100}`, ...fits, exceptDriver, orderId, Date.now(), orderId)); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
   // Seats are counted after the random draw, so the pooled draw is wider and the 100 alerts come from cars that fit.
-  const drivers = pooled ? (await Promise.all(candidates.map(async d => canTake(await activeLoad(Number(d.id)), service, next, (d.vehicle ?? null) as Vehicle | null) ? d : null))).filter(d => d !== null).slice(0, 100) : candidates;
-  await queuePush(drivers.map(d => d!.id as number), 'job', orderId);
+  let drivers = candidates;
+  if (pooled && candidates.length) { // one query for every candidate's load, not one each
+    const loads = new Map<number, { service: Service; shared: boolean; option: string | null }[]>();
+    for (const o of await all(`SELECT driver_id, service, shared, option FROM orders WHERE status IN (${activeSql}) AND driver_id IN (${candidates.map(() => '?').join(',')})`, ...candidates.map(d => d.id)))
+      loads.set(Number(o.driver_id), [...(loads.get(Number(o.driver_id)) ?? []), { service: o.service as Service, shared: !!Number(o.shared ?? 0), option: o.option == null ? null : String(o.option) }]);
+    drivers = candidates.filter(d => canTake(loads.get(Number(d.id)) ?? [], service, next, (d.vehicle ?? null) as Vehicle | null)).slice(0, 100);
+  }
+  await queuePush(drivers.map(d => d.id as number), 'job', orderId);
   return true;
 }
 /** WP10: a ride starts a deterministic dispatch round when enabled; otherwise the legacy broadcast is unchanged. */
@@ -2955,7 +2961,7 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
         now, now, door?.collectedCents ?? null, door?.varianceReason ?? null,
         door?.expectedCents ?? null, door ? user.id : null, door ? requestId : null, r.id, r.status)).changes) fail(409, 'order_changed');
       if (next === 'returned') { (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now)); await markNoFare(user.id, r.id); }
-      else (await rewardReferral(r.id, now));
+      else if (!noCode) (await rewardReferral(r.id, now)); // a ride ended on the driver's word proves no trip: no referral credit
       // Written once the ride has really ended, so a refused completion leaves no record and pages nobody (Haiku PR #117).
       if (noCode) (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RIDE_ENDED_WITHOUT_CODE', ?)`, user.id, r.id, now));
       await shop.afterFinish(r, next, user.id, body);
