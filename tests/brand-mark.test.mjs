@@ -37,5 +37,12 @@ const shell = readFileSync(new URL('../public/index.html', import.meta.url), 'ut
 assert.ok(shell.includes(markSvg(120).replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '')), 'index.html paints the current mark');
 const iconScript = readFileSync(new URL('../scripts/make_icon.mjs', import.meta.url), 'utf8');
 for (const icon of ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png']) assert.ok(iconScript.includes(`public/icons/${icon}`), `make_icon.mjs writes ${icon}`);
+// Icons are served immutable for a week: every reference carries a version so a regenerated icon reaches browsers (Haiku, PR #118).
+for (const file of ['index.html', 'install.html', 'manifest.webmanifest', 'sw.js']) {
+  const text = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
+  const refs = text.match(/\/icons\/[a-z0-9-]+\.png[^"' )]*/g) ?? [];
+  assert.ok(refs.length, `${file} names an icon`);
+  for (const ref of refs) assert.match(ref, /\.png\?v=[a-z0-9]+$/, `${file}: ${ref} carries a version`);
+}
 
 console.log('Brand mark: <Logo /> and the icon/poster SVG share one geometry, continuous, centred, inside the tile');
