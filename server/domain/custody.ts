@@ -1,13 +1,13 @@
 import { exceptionReasons, pickupRefusal, type User } from '../../src/model.ts';
 import type { Persistence } from '../db/persistence.ts';
-import { OFFICE_HOLD } from './office.ts';
+import { isSupportTransfer, OFFICE_HOLD } from './office.ts';
 type Register = (method: string, path: string, handler: (ctx: { user: User; params: string[] }) => Promise<unknown>) => unknown;
 type Deps = { db: Persistence; fail: (status: number, message: string) => never };
 
 /** One step of who held a parcel and when (SHIP-10). Reason codes only: notes are free text and can carry phone numbers. */
 export type CustodyStep = { at: number; kind: CustodyKind; by: 'sender' | 'driver' | 'support'; reason?: string; driver?: string; until?: number; attempt?: number };
 export type CustodyKind = 'booked' | 'released' | 'assigned' | 'picked_up' | 'pickup_failed' | 'held' | 'decided' | 'blocked'
-  | 'delivered' | 'returned' | 'cancelled' | 'office_received' | 'office_collected' | 'office_donated' | 'office_destroyed';
+  | 'support_took_custody' | 'delivered' | 'returned' | 'cancelled' | 'office_received' | 'office_collected' | 'office_donated' | 'office_destroyed';
 
 // Only codes from these lists reach the sender: support's resolve reason and every note are free text and stay with support.
 const failureCodes = new Set<string>([...exceptionReasons, 'wrong_or_missing_item', pickupRefusal]);
@@ -26,7 +26,7 @@ export function registerCustodyRoutes(route: Register, deps: Deps) {
   route('GET', '/api/orders/:id/custody', async ({ user, params }) => {
     const id = Number(params[0]);
     if (!Number.isSafeInteger(id) || id < 1) deps.fail(400, 'invalid_input');
-    const o = await deps.db.one(`SELECT o.id, o.customer_id, o.service, o.status, o.created_at, o.assigned_at, o.picked_up_at, o.completed_at,
+    const o = await deps.db.one(`SELECT o.id, o.customer_id, o.driver_id, o.assignment_epoch, o.service, o.status, o.created_at, o.assigned_at, o.picked_up_at, o.completed_at,
       u.name AS driver_name FROM orders o LEFT JOIN users u ON u.id = o.driver_id WHERE o.id = ?`, id);
     // Not the driver's view: a courier sees their own job; the chain is for the sender and support.
     if (!o || o.service === 'ride' || o.service === 'shop' || (user.role !== 'admin' && user.id !== o.customer_id)) deps.fail(404, 'not_found');
@@ -38,11 +38,20 @@ export function registerCustodyRoutes(route: Register, deps: Deps) {
     if (o!.picked_up_at) steps.push({ at: Number(o!.picked_up_at), kind: 'picked_up', by: 'driver' });
     const events = await deps.db.all(`SELECT e.action, e.detail, e.created_at, a.role FROM security_events e JOIN users a ON a.id = e.actor_id
       WHERE e.order_id = ? AND e.action IN ('PICKUP_FAILED','DELIVERY_EXCEPTION','EXCEPTION_RESOLVED','COURIER_BLOCKED','RETURN_COMPLETED','ORDER_CANCELLED_BY_ADMIN',
-        'OFFICE_RECEIVED','OFFICE_COLLECTED','OFFICE_DONATED','OFFICE_DESTROYED') ORDER BY e.created_at, e.id`, id);
+        'CUSTODY_TAKEN','ELIGIBILITY_CUSTODY_RECOVERY','OFFICE_RECEIVED','OFFICE_COLLECTED','OFFICE_DONATED','OFFICE_DESTROYED') ORDER BY e.created_at, e.id`, id);
+    let supportTransferShown = false;
     for (const e of events) {
-      let detail: Record<string, unknown> = {};
-      try { detail = typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail ?? {}; } catch { /* an unreadable row still shows its step */ }
       const action = String(e.action);
+      if (action === 'CUSTODY_TAKEN' || action === 'ELIGIBILITY_CUSTODY_RECOVERY') {
+        if (!supportTransferShown && isSupportTransfer(deps.db, o!, e)) {
+          steps.push({ at: Number(e.created_at), kind: 'support_took_custody', by: 'support' });
+          supportTransferShown = true;
+        }
+        continue;
+      }
+      let detail: Record<string, unknown> = {};
+      try { detail = (typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail) ?? {}; } catch { /* an unreadable row still shows its step */ }
+      if (action === 'EXCEPTION_RESOLVED' && detail.action === 'support_takeover') continue; // the transfer event names the holder
       const kind = action === 'EXCEPTION_RESOLVED' && detail.action === 'confirm_return' && detail.handoff !== 'office'
         ? 'returned' : fromEvent[action];
       const reason = (action === 'PICKUP_FAILED' || action === 'DELIVERY_EXCEPTION') && failureCodes.has(String(detail.reason)) ? String(detail.reason)

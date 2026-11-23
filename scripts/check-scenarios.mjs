@@ -20,6 +20,7 @@ process.env.WEB_ROOT = join(root, '.expo/location-review-web');
 process.env.WIND_LOCAL_TEST = '1';
 process.env.WIND_IDENTITY_MODE = 'self-service';
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
+delete process.env.WIND_DRIVER_PRESENCE; // Check the offline card after approval before testing direct acceptance.
 if (!process.argv.includes('--no-build')) {
   // --clear: Metro's cache does not key on EXPO_PUBLIC_* values, so another build's API URL could be baked in.
   const build = spawnSync(process.execPath, [join(root, 'node_modules/expo/bin/cli'), 'export', '-p', 'web', '--max-workers', '1', '--clear', '--output-dir', process.env.WEB_ROOT], {
@@ -223,6 +224,8 @@ try {
   await driverPage.getByText(c.presence_offline_title, { exact: true }).waitFor(); // approved drivers land on the jobs screen with the presence card offline (SPEC-driver-presence)
   const driverToken = await driverPage.evaluate(() => localStorage.getItem('token'));
   pass('customer and driver UI registration, pending gate, admin approval, driver login');
+  process.env.WIND_DRIVER_PRESENCE = 'off'; // The SQLite pilot uses direct acceptance.
+  await driverPage.reload();
 
   stage = 'admin action errors on long lists';
   const subscriptionsPath = apiRoute('/api/admin/subscriptions'), subscriptionAction = apiRoute('/api/admin/subscriptions/918');
@@ -414,6 +417,26 @@ try {
   await customerPage.screenshot({ path: join(output, 'customer-receipt.png'), fullPage: true });
   pass('arrival, pickup, wrong-code rejection, handover, GPS stop, both ratings and truthful receipt');
 
+  stage = 'cash settlement';
+  // Settle this delivery before the later return earns pickup pay and offsets the commission.
+  const beforeCash = await call('/driver/cash', { token: driverToken });
+  assert.ok(beforeCash.owedCents > 0);
+  await adminPage.goto(base + '/admin/cash');
+  await button(adminPage, c.cashRecord).click();
+  await field(adminPage, c.cashAmount).fill(String(beforeCash.owedCents / 100));
+  await field(adminPage, c.problemNote).fill('QA cash handover at office.');
+  const cashPrompts = [];
+  const notePrompt = dialog => cashPrompts.push(dialog.message());
+  adminPage.on('dialog', notePrompt); // the page-level handler still accepts it
+  await button(adminPage, c.cashRecord).click();
+  await until(() => cashPrompts.length, n => n === 1, 'The cash handover was not confirmed exactly once');
+  adminPage.off('dialog', notePrompt);
+  assert.ok(cashPrompts[0].includes(String(beforeCash.owedCents / 100).split('.')[0]), `The confirm names the amount: ${cashPrompts[0]}`);
+  await driverPage.goto(base + '/driver/earnings');
+  await button(driverPage, c.cashConfirm).click();
+  await until(() => call('/driver/cash', { token: driverToken }), cash => cash.owedCents === 0, 'Confirmed handover did not settle the ledger');
+  pass('admin cash record, driver confirmation and zero reconciled balance');
+
   stage = 'rebook and cancellation';
   await customerPage.goto(`${base}/order/${id}`);
   await button(customerPage, c.sendAnother).click();
@@ -477,25 +500,6 @@ try {
   await advance(driverPage, returnId, 'returning', 'returned', returning.returnCode);
   pass('recipient absent, admin return decision, sender-code return closure');
 
-  stage = 'cash settlement';
-  const beforeCash = await call('/driver/cash', { token: driverToken });
-  assert.ok(beforeCash.owedCents > 0);
-  await adminPage.goto(base + '/admin/cash');
-  await button(adminPage, c.cashRecord).click();
-  await field(adminPage, c.cashAmount).fill(String(beforeCash.owedCents / 100));
-  await field(adminPage, c.problemNote).fill('QA cash handover at office.');
-  const cashPrompts = [];
-  const notePrompt = dialog => cashPrompts.push(dialog.message());
-  adminPage.on('dialog', notePrompt); // the page-level handler still accepts it
-  await button(adminPage, c.cashRecord).click();
-  await until(() => cashPrompts.length, n => n === 1, 'The cash handover was not confirmed exactly once');
-  adminPage.off('dialog', notePrompt);
-  assert.ok(cashPrompts[0].includes(String(beforeCash.owedCents / 100).split('.')[0]), `The confirm names the amount: ${cashPrompts[0]}`);
-  await driverPage.goto(base + '/driver/earnings');
-  await button(driverPage, c.cashConfirm).click();
-  await until(() => call('/driver/cash', { token: driverToken }), cash => cash.owedCents === 0, 'Confirmed handover did not settle the ledger');
-  pass('admin cash record, driver confirmation and zero reconciled balance');
-
   stage = 'ride service';
   const rideId = await booking(customerPage, { service: 'ride' });
   await driverPage.goto(base + '/driver');
@@ -530,7 +534,7 @@ try {
   await customerPage.getByText('QA Driver', { exact: true }).waitFor();
   const swapRecipient = await newPage();
   await swapRecipient.goto(base + swapShare.path);
-  await swapRecipient.getByText(/^QA/).first().waitFor();
+  await swapRecipient.getByText(/QA/).first().waitFor();
   await until(() => liveWatcherCount(swapId), n => n >= 2, 'Both live trackers did not subscribe');
   await customerPage.route(apiRoute(`/api/orders/${swapId}`), route => route.abort());
   await swapRecipient.route(`**/api/track/${swapShare.token}`, route => route.abort());
@@ -538,12 +542,12 @@ try {
   await call(`/jobs/${swapId}/accept`, { token: replacement.token, body: {} });
   await call('/location', { token: replacement.token, body: { latitude: 31.92, longitude: 35.22, accuracy: 10 } });
   await until(() => customerPage.getByText('QA Driver', { exact: true }).count(), n => n === 0, 'Old driver remained on the customer page after release');
-  await until(() => swapRecipient.getByText(/^QA/).count(), n => n === 0, 'Old driver remained on the public page after release');
+  await until(() => swapRecipient.getByText(/QA/).count(), n => n === 0, 'Old driver remained on the public page after release');
   assert.equal(await customerPage.locator('.driver-marker').count(), 0, 'Old map stays hidden when the snapshot refresh fails');
   await customerPage.unroute(apiRoute(`/api/orders/${swapId}`));
   await swapRecipient.unroute(`**/api/track/${swapShare.token}`);
   await customerPage.getByText('Baker Driver', { exact: true }).waitFor({ timeout: 35_000 });
-  await swapRecipient.getByText(/^Baker/).first().waitFor({ timeout: 35_000 });
+  await swapRecipient.getByText(/Baker/).first().waitFor({ timeout: 35_000 });
   await call(`/orders/${swapId}/release`, { token: replacement.token, body: {} });
   await call(`/orders/${swapId}/cancel`, { token: customerToken, body: {} });
   pass('reassignment hides the old driver during failed refresh and shows the replacement after recovery');
@@ -557,7 +561,7 @@ try {
   await customerPage.getByText('QA Driver', { exact: true }).waitFor();
   const raceRecipient = await newPage();
   await raceRecipient.goto(base + raceShare.path);
-  await raceRecipient.getByText(/^QA/).first().waitFor();
+  await raceRecipient.getByText(/QA/).first().waitFor();
   await until(() => liveWatcherCount(raceId), n => n >= 2, 'Both trackers did not subscribe for the in-flight test');
   let customerIntercepted = false, recipientIntercepted = false, customerHeld = false, recipientHeld = false;
   let customerReleased = false, recipientReleased = false, unblock, allowFresh;
@@ -581,7 +585,7 @@ try {
   await call(`/jobs/${raceId}/accept`, { token: replacement.token, body: {} });
   allowFresh();
   await customerPage.getByText('Baker Driver', { exact: true }).waitFor({ timeout: 6_000 });
-  await raceRecipient.getByText(/^Baker/).first().waitFor({ timeout: 6_000 });
+  await raceRecipient.getByText(/Baker/).first().waitFor({ timeout: 6_000 });
   let laterPolls = 0;
   const observePoll = request => { if (customerReleased && new URL(request.url()).pathname === `/api/orders/${raceId}`) laterPolls++; };
   customerPage.on('request', observePoll);
@@ -590,7 +594,7 @@ try {
   await customerPage.unroute(apiRoute(`/api/orders/${raceId}`));
   await raceRecipient.unroute(`**/api/track/${raceShare.token}`);
   await customerPage.getByText('Baker Driver', { exact: true }).waitFor();
-  await raceRecipient.getByText(/^Baker/).first().waitFor();
+  await raceRecipient.getByText(/Baker/).first().waitFor();
   await until(() => laterPolls, n => n > 0, 'A superseded 404 stopped future snapshot polls');
   customerPage.off('request', observePoll);
   await call(`/orders/${raceId}/release`, { token: replacement.token, body: {} });
@@ -868,11 +872,11 @@ try {
   for (const [width, height] of [[360, 780], [768, 1024], [1440, 1000]]) {
     await adminPage.setViewportSize({ width, height });
     await adminPage.goto(base + '/admin');
-    await adminPage.getByRole('tab', { name: c.dashboard, exact: true }).waitFor();
+    await adminPage.getByRole('tab', { name: c.dashboardTab, exact: true }).waitFor();
     assert.equal(await adminPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Admin overflow at ${width}`);
   }
   await driverPage.goto(base + '/driver/earnings');
-  await driverPage.getByText(c.cashOwed, { exact: true }).waitFor();
+  await driverPage.getByText(c.cashSettlement, { exact: true }).waitFor();
   await customerPage.goto(base + '/account');
   await button(customerPage, `${c.languageTitle}: ${c.language}`).click();
   await until(() => customerPage.evaluate(() => document.documentElement.lang), lang => lang === 'ar', 'Arabic language did not apply');

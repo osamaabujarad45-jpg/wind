@@ -338,11 +338,12 @@ try {
       // The new capability is asserted above; installed clients ignore the
       // optional PostgreSQL extension. Keep every frozen field in the comparison.
       if (ex.id === 'customer-session' && persistence.backend === 'postgres') delete ex.response.capabilities.declaredScope;
-      // On Postgres /api/ready reports the max applied migration version (503 below 21);
-      // the frozen SQLite fixture keeps the SQLite schema version. Assert the real PG value, then normalize like the timestamp below.
-      if (ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') {
-        if (persistence.backend === 'postgres') assert.equal(ex.response.schema, 42, 'readiness reports the support inbox migration');
+      // Assert the selected backend and the real PG migration version before comparing the frozen SQLite contract.
+      if (persistence.backend === 'postgres' && ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') {
+        assert.equal(ex.response.schema, 42, 'readiness reports the support inbox migration');
+        assert.equal(ex.response.backend, 'postgres', 'readiness exposes the selected persistence backend');
         ex.response.schema = 3;
+        delete ex.response.backend;
       }
       if (ex.id === 'quote' && ex.response && typeof ex.response === 'object') {
         delete ex.response.quoteId;

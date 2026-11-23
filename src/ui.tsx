@@ -11,6 +11,7 @@ import { router } from 'expo-router';
 import { BottomTabBarHeightContext, type BottomTabBarProps } from 'expo-router/js-tabs';
 import { linesFor, maxScale } from './text-scale';
 import { copy, errorText, fill } from './copy';
+import { formatMoney } from './format-money';
 import { ApiError, errorCode } from './api';
 import { useSession } from './session';
 import { ltr, type OrderStatus } from './model';
@@ -48,8 +49,7 @@ export function useCopy() {
       // A failure the server logged carries its id: the first eight characters are enough for support to find it.
       return error instanceof ApiError && error.reference ? `${text} ${copy[language].errorRef} ${ltr(error.reference.slice(0, 8))}` : text;
     },
-    // No-break space: a narrow column put the shekel sign on one line and the amount on the next.
-    money: (n: number) => `${n < 0 ? '−' : ''}${copy[language].nis} ${Number.isInteger(n) ? Math.abs(n) : Math.abs(n).toFixed(2)}`,
+    money: (n: number) => formatMoney(n, language, copy[language].nis),
   };
 }
 

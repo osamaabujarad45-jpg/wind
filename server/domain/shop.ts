@@ -11,8 +11,7 @@
 import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
 import { needStaff, staffActor } from './ops.ts';
-import { custodyBlockFrom } from './block-review.ts';
-import { legacySupportCollected, officeState } from './office.ts';
+import { officeState, returnCustody } from './office.ts';
 import {
   adminShopCancels, goodsCapFor, handoverExceptions, isCity, lineAgorot, merchantRejects, shopCategories, shopExceptionReasons, shopPolicies,
   varianceAllowed, doorCashMaxCents, latinDigits,
@@ -893,16 +892,13 @@ export function registerShop(route: Register, deps: ShopDeps) {
     await db.run('UPDATE orders SET commission = 0 WHERE id = ?', r.id);
     // Pay follows how custody entered the return, whichever route closes it (Sol R2-H3), from the order's own audit:
     // DRV-17: the captain holding it was blocked: the trip so far is paid only by a cleared block review (none on a schema without one).
-    const history = await db.all("SELECT action, detail, created_at FROM security_events WHERE order_id = ? AND action IN ('COURIER_BLOCKED', 'CUSTODY_TAKEN')", r.id);
-    const said = (row: Row) => { try { return JSON.parse(String(row.detail ?? '{}')); } catch { return {}; } };
-    if (history.some(e => e.action === 'COURIER_BLOCKED' && custodyBlockFrom(r, e) !== null)) return;
+    const { supportHasGoods, custodyBlocked } = await returnCustody(db, r);
+    if (custodyBlocked) return;
     // Support recovered the goods from the captain: the trip so far (one fee), no return leg.
-    const recovered = history.some(e => e.action === 'CUSTODY_TAKEN'
-      && said(e).assignmentEpoch === r.assignment_epoch && said(e).driverId === r.driver_id) || await legacySupportCollected(db, r);
-    const pay = (recovered ? 1 : deliveredToOffice ? 3 : 2) * Number(s.delivery_fee_agorot);
+    const pay = (supportHasGoods ? 1 : deliveredToOffice ? 3 : 2) * Number(s.delivery_fee_agorot);
     if (pay && r.driver_id) {
       await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay,
-        recovered ? 'Trip so far, support recovered the goods' : deliveredToOffice ? 'Trip, return and office delivery' : 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
+        supportHasGoods ? 'Trip so far, support recovered the goods' : deliveredToOffice ? 'Trip, return and office delivery' : 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
       await ledger('wind', { driver: Number(r.driver_id), order: r.id }, 'opex_trip', -pay, 'Captain pay for a failed delivery', actor, `shop-trip-opex-${r.id}`);
       await deps.journal(r.id, Number(r.driver_id), 'trip', { trip: pay });
     }

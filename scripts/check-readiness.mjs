@@ -17,6 +17,7 @@ process.env.WEB_ROOT = join(root, '.expo/location-review-web');
 process.env.WIND_LOCAL_TEST = '1';
 process.env.WIND_IDENTITY_MODE = 'self-service';
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,freight';
+process.env.WIND_DRIVER_PRESENCE = 'off'; // Exercise the SQLite pilot's direct offers.
 const osrm = createServer((req, res) => {
   const coordinates = decodeURIComponent(new URL(req.url, base).pathname.split('/').pop()).split(';').map(p => p.split(',').map(Number));
   res.setHeader('Content-Type', 'application/json');
@@ -60,7 +61,10 @@ async function form(page, service = 'parcel') {
   await page.goto(`${base}/book?from=ramallah&to=nablus&service=${service}`);
   await field(page, c.pickupNote).fill('Readiness pickup shop');
   await field(page, c.dropoffNote).fill('Readiness destination office');
-  await field(page, c[`${service}Detail`]).fill('Sealed test box');
+  if (service !== 'ride') {
+    await field(page, c[`${service}Detail`]).fill('Sealed test box');
+    await page.getByRole('checkbox', { name: c.prohibitedConfirm, exact: true }).check();
+  }
 }
 async function submit(page) {
   await button(page, new RegExp(`^${c.request}`)).click();
@@ -119,7 +123,7 @@ try {
   await button(customerPage, c.cancelOrder).click();
   await state(promoId, 'cancelled');
   await customerPage.goto(base + '/book?service=parcel&from=ramallah&pick=to'); // with a pickup, the saved place completes the trip
-  await button(customerPage, `${c.place_home}, Ramallah · Readiness pickup shop`).click(); // the search row: name, then city and landmark
+  await button(customerPage, `${c.place_home}, ${c.placeNoPin} · Ramallah · Readiness pickup shop`).click();
   await button(customerPage, c.confirmDropoffSpot).click(); // a saved place with no pin is confirmed on the map first
   assert.equal(await field(customerPage, c.dropoffNote).inputValue(), 'Readiness pickup shop');
   pass('save a Home landmark, reuse it from search, apply promo and preserve server fare/discount');
@@ -140,7 +144,7 @@ try {
 
   stage = 'freight offer and destination filter';
   await form(customerPage, 'freight');
-  await customerPage.getByRole('radio', { name: c.yes, exact: true }).click();
+  await customerPage.getByRole('radiogroup', { name: c.loadingHelp }).getByRole('radio', { name: c.yes, exact: true }).check();
   const freightId = await submit(customerPage);
   await driverPage.goto(base + '/driver');
   await driverPage.getByRole('radio', { name: 'Hebron', exact: true }).click();
@@ -168,7 +172,7 @@ try {
   assert.equal((await call(`/orders/${freightId}`, { token: driver.token })).safetyHold, true);
   // The Orders tab may already be mounted when a dashboard alert opens it.
   await adminPage.goto(base + '/admin/orders');
-  await adminPage.getByRole('tab', { name: c.dashboard, exact: true }).click();
+  await adminPage.getByRole('tab', { name: c.dashboardTab, exact: true }).click();
   await button(adminPage, `${c.safetyIncidents}: 1`).click();
   await field(adminPage, c.resolution).fill('Synthetic review complete; both parties safe');
   await button(adminPage, c.resolveDispute).click();

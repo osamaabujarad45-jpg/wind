@@ -48,7 +48,7 @@ TOKEN=$(curl -fsS -m 10 -H 'Metadata: true' \
 NAME="wind-$(date -u +%Y%m%dT%H%M%SZ).db"
 # The bearer token goes to curl in a private header file, never on its command line (Haiku PR #101 M3).
 HDR=$(mktemp); chmod 600 "$HDR"
-printf 'Authorization: Bearer %s\nx-ms-version: 2023-11-03\nx-ms-blob-type: BlockBlob\n' "$TOKEN" > "$HDR"; unset TOKEN
+printf 'Authorization: Bearer %s\nx-ms-version: 2023-11-03\nx-ms-blob-type: BlockBlob\nIf-None-Match: *\n' "$TOKEN" > "$HDR"; unset TOKEN
 curl -fsS -m 300 -X PUT -T "$DIR/wind-$STAMP.db" -H @"$HDR" \
   "https://$ACCOUNT.blob.core.windows.net/$CONTAINER/$NAME" -o /dev/null
 touch "$DIR/last-ok"

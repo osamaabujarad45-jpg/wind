@@ -22,6 +22,12 @@ if (!/0\.48\.1(?:\s|$)/m.test(version.stdout)) throw new Error(`Expected pinned 
 const mainFileArgs = bicep === 'az' ? ['--file', 'infra/main.bicep'] : ['infra/main.bicep'];
 run([...prefix, 'build', ...mainFileArgs, '--outfile', '.expo/implementation/azure-main.json'], 'Bicep compile');
 run([...prefix, 'lint', ...mainFileArgs], 'Bicep lint');
+for (const name of ['backup-access', 'backup-monitor', 'api-availability']) {
+  const file = `infra/vm-israel/${name}.bicep`;
+  const args = bicep === 'az' ? ['--file', file] : [file];
+  run([...prefix, 'build', ...args, '--outfile', `.expo/implementation/azure-${name}.json`], `${name} compile`);
+  run([...prefix, 'lint', ...args], `${name} lint`);
+}
 // Exercise secure-parameter syntax without reading or forwarding any operator secret.
 const compileOnlyEnv = { ...process.env, FASTSHIP_PG_ADMIN_PASSWORD: 'IaC-compile-only-not-a-secret-009!' };
 for (const file of readdirSync(path.join(root, 'infra', 'examples')).filter((name) => name.endsWith('.bicepparam'))) {

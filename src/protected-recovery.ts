@@ -1,4 +1,4 @@
-export type RecoverySlot = 'command' | 'summary' | 'diagnostics';
+export type RecoverySlot = 'command' | 'summary' | 'diagnostics' | 'shop-checkout';
 type IO = { read: (key: string) => Promise<string | null>; write: (key: string, value: string | null) => Promise<void>;
   credential: () => Promise<string | null>; revision: () => number; now: () => number;
   namespace: (token: string) => Promise<string>; currentCredential?: (token: string) => Promise<boolean>;
@@ -7,7 +7,7 @@ type IO = { read: (key: string) => Promise<string | null>; write: (key: string, 
   clearDeadlines?: () => Promise<void>;
   seal: (plaintext: string, token: string, slot: RecoverySlot) => Promise<string>;
   open: (ciphertext: string, token: string, slot: RecoverySlot) => Promise<string> };
-const slots: RecoverySlot[] = ['command', 'summary', 'diagnostics'];
+const slots: RecoverySlot[] = ['command', 'summary', 'diagnostics', 'shop-checkout'];
 const MAX_CIPHERTEXT = 2000;
 const key = (slot: RecoverySlot, namespace: string) => `wind.recovery.v1.${namespace}.${slot}`;
 const INDEX = 'wind.recovery.v1.index';
@@ -26,6 +26,7 @@ export function createProtectedRecovery(io: IO) {
     return value;
   };
   const deadline = async (scope: string, slot: RecoverySlot, expiresAt: number | null, remaining: number) => {
+    if (slot === 'shop-checkout') return; // Receipt recovery runs when the cart is open.
     try { await io.deadline?.(scope, slot, expiresAt, remaining); }
     catch { /* An advisory scheduler failure must never discard an encrypted pending intent. */ }
   };
@@ -47,11 +48,12 @@ export function createProtectedRecovery(io: IO) {
         const scope = await namespace(token), recordKey = key(slot, scope); guard(revision);
         const ciphertext = await io.read(recordKey); guard(revision);
         if (ciphertext === null) return null;
+        // A crypto provider or credential store can fail temporarily. Only discard a record we can validate as unusable.
+        const plaintext = ciphertext.length <= MAX_CIPHERTEXT ? await io.open(ciphertext, token, slot) : null;
+        guard(revision);
         let envelope;
         try {
-          if (ciphertext.length > MAX_CIPHERTEXT) throw new Error('invalid_recovery_record');
-          envelope = JSON.parse(await io.open(ciphertext, token, slot)); guard(revision);
-          if (!await same(token)) throw new Error('session_changed');
+          envelope = plaintext === null ? null : JSON.parse(plaintext);
           const now = io.now();
           if (!envelope || envelope.schemaVersion !== 1 || !Number.isSafeInteger(envelope.createdAt) || !Number.isSafeInteger(envelope.expiresAt)
             || envelope.createdAt > now + 5_000 || envelope.expiresAt <= now || envelope.expiresAt <= envelope.createdAt

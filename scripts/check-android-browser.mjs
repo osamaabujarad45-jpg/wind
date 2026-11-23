@@ -97,6 +97,7 @@ try {
   // Dismiss the keyboard before CDP clicks: a shifted visual viewport hits the sheet handle instead.
   await page.evaluate(() => document.activeElement?.blur());
   await page.waitForFunction(() => visualViewport.height >= innerHeight - 1 && Math.abs(visualViewport.offsetTop) < 1);
+  await page.getByRole('checkbox', { name: c.prohibitedConfirm, exact: true }).check();
   await page.getByRole('button', { name: /^Request/ }).click();
   await page.waitForURL(/\/order\/\d+$/);
   await page.getByText(c.findingTitle, { exact: true }).waitFor();

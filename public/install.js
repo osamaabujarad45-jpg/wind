@@ -1,7 +1,14 @@
 const toggle = document.getElementById('language');
 const copy = document.getElementById('copy-link');
 const status = document.getElementById('copy-status');
-let language = navigator.language.startsWith('ar') ? 'ar' : 'en';
+function preferredLanguage() {
+  try {
+    const saved = localStorage.getItem('language');
+    if (saved === 'ar' || saved === 'en') return saved;
+  } catch { /* The install guide also works when browser storage is unavailable. */ }
+  return navigator.language.startsWith('ar') ? 'ar' : 'en';
+}
+let language = preferredLanguage();
 function translate() {
   document.documentElement.lang = language;
   document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
@@ -12,7 +19,11 @@ function translate() {
   status.textContent = '';
 }
 toggle.hidden = false;
-toggle.addEventListener('click', () => { language = language === 'ar' ? 'en' : 'ar'; translate(); });
+toggle.addEventListener('click', () => {
+  language = language === 'ar' ? 'en' : 'ar';
+  try { localStorage.setItem('language', language); } catch { /* The choice still applies for this visit. */ }
+  translate();
+});
 copy.hidden = false;
 copy.addEventListener('click', async () => {
   try {
