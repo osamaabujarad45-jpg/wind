@@ -638,7 +638,7 @@ export function Stat({ label, value, tone = 'card', index = 0, detail }: { label
     <Card tone={tone} style={{ marginBottom: 0, paddingVertical: 12, flex: 1 }}>
       <Txt variant="caption" numberOfLines={2}>{label}</Txt>{/* two lines: "Completed order value" was cut to "Completed order va…" */}
       <Txt variant="h1" style={{ marginTop: 2, fontVariant: ['tabular-nums'] }}>{value}</Txt>
-      {!!detail && <Txt variant="caption" numberOfLines={1} style={{ marginTop: 2 }}>{detail}</Txt>}
+      {!!detail && <Txt variant="caption" numberOfLines={2} style={{ marginTop: 2 }}>{detail}</Txt>}{/* two lines: "Trips: 1 · Wind commission −₪ 2.55" was cut */}
     </Card>
   </Appear>;
 }
