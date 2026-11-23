@@ -3,7 +3,7 @@
 // Privacy: positions live in this process's memory for three minutes and are never written down (an idle driver's
 // position is still not stored), the map gets a spot rounded to about 200 m, and no name, plate or id leaves the server.
 // What remains (Haiku review, PR #117): someone polling could follow an unnamed car's rough moves while its board is open.
-// That is the price of the feature every ride app has; the rate limit keeps it to one look every ten seconds, signing out
+// That is the price of the feature every ride app has; the limits allow 12 looks a minute and 60 in ten minutes, signing out
 // takes the car off at once, and a blocked or busy car is never shown.
 // ponytail: one API process. Several processes would each see only the boards polled through them; share it then.
 import { crowKm, type Point, type Service, type Vehicle } from '../../src/model.ts';
@@ -43,7 +43,9 @@ export function registerNearbyRoutes(route: Register, deps: Deps): void {
   route('GET', '/api/drivers/nearby', async ({ user, query }) => {
     deps.need(user, 'customer');
     deps.needActive(user);
-    await deps.limit(deps.limitKey(user.id), 60, 10 * 60_000); // one look every ten seconds; the home map asks every fifteen
+    // The home map asks every fifteen seconds: 4 a minute. The minute window stops a burst; the ten-minute one bounds the rest.
+    await deps.limit(`${deps.limitKey(user.id)}:minute`, 12, 60_000);
+    await deps.limit(deps.limitKey(user.id), 60, 10 * 60_000);
     const [lat, lng] = (query.get('near') ?? '').split(',').map(Number);
     if (!(Number.isFinite(lat) && Math.abs(lat) <= 90 && Number.isFinite(lng) && Math.abs(lng) <= 180)) deps.fail(400, 'invalid_location');
     const service = (query.get('service') ?? 'ride') as Service;

@@ -1601,8 +1601,9 @@ async function newJobPush(service: Service, orderId: number, customerId: number,
     AND (u.heading_city IS NULL OR u.heading_until <= ? OR u.heading_city = (SELECT dropoff_city FROM orders WHERE id = ?))
     AND ${pooled // a parcel or shared ride reaches drivers whose whole load can share; the rest need an empty vehicle
     ? `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}) AND NOT ${poolableSql('o')})`
-    : `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}))`} ORDER BY random() LIMIT 100`, ...fits, exceptDriver, orderId, Date.now(), orderId)); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
-  const drivers = pooled ? (await Promise.all(candidates.map(async d => canTake(await activeLoad(Number(d.id)), service, next, (d.vehicle ?? null) as Vehicle | null) ? d : null))).filter(d => d !== null) : candidates;
+    : `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}))`} ORDER BY random() LIMIT ${pooled ? 400 : 100}`, ...fits, exceptDriver, orderId, Date.now(), orderId)); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
+  // Seats are counted after the random draw, so the pooled draw is wider and the 100 alerts come from cars that fit.
+  const drivers = pooled ? (await Promise.all(candidates.map(async d => canTake(await activeLoad(Number(d.id)), service, next, (d.vehicle ?? null) as Vehicle | null) ? d : null))).filter(d => d !== null).slice(0, 100) : candidates;
   await queuePush(drivers.map(d => d!.id as number), 'job', orderId);
   return true;
 }
@@ -2954,9 +2955,9 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
         now, now, door?.collectedCents ?? null, door?.varianceReason ?? null,
         door?.expectedCents ?? null, door ? user.id : null, door ? requestId : null, r.id, r.status)).changes) fail(409, 'order_changed');
       if (next === 'returned') { (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now)); await markNoFare(user.id, r.id); }
+      else (await rewardReferral(r.id, now));
       // Written once the ride has really ended, so a refused completion leaves no record and pages nobody (Haiku PR #117).
       if (noCode) (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RIDE_ENDED_WITHOUT_CODE', ?)`, user.id, r.id, now));
-      else (await rewardReferral(r.id, now));
       await shop.afterFinish(r, next, user.id, body);
       await shippingTripPay(r, next, user.id);
       await postOrderJournals(r.id); // T29: balanced commission/discount journals in the same transaction
@@ -3090,7 +3091,7 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req 
 
 route('POST', '/api/orders/:id/advance', async ({ user, params, body, req }) => {
   need(user, 'driver'); needActive(user);
-  const oldCaptainApp = tripCodeClientTooOld(req.headers['x-wind-client']);
+  const oldCaptainApp = tripCodeClientTooOld(req.headers['x-wind-client'], production);
   return (await driverCommand(user, Number(params[0]), body, (u, id, input, requestId) => advanceOrder(u, id, input, requestId, oldCaptainApp)));
 });
 

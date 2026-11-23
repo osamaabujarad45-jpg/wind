@@ -66,9 +66,9 @@ const command = newDriverCommand(9, order, 'advance', { code: '1234' }, 1000, 60
 // D-7: "The rider has no code" survives a restart as its own payload, never beside a code and never on an exception.
 const noCodeCommand = newDriverCommand(9, order, 'advance', { noCode: true }, 1000, 60_000);
 assert.equal(driverCommandBody(noCodeCommand).noCode, true);
-assert.equal(readDriverCommand({ ...noCodeCommand, payload: { noCode: true, code: '1234' } }), null);
-assert.equal(readDriverCommand({ ...noCodeCommand, payload: { noCode: false } }), null);
-assert.equal(readDriverCommand({ ...noCodeCommand, action: 'exception', payload: { noCode: true, reason: 'absent', note: '' } }), null);
+assert.throws(() => readDriverCommand({ ...noCodeCommand, payload: { noCode: true, code: '1234' } }), /invalid_pending_command/);
+assert.throws(() => readDriverCommand({ ...noCodeCommand, payload: { noCode: false } }), /invalid_pending_command/);
+assert.throws(() => readDriverCommand({ ...noCodeCommand, action: 'exception', payload: { noCode: true, reason: 'absent', note: '' } }), /invalid_pending_command/);
 const noCodeAttempt = advanceRequest(null, 5, { expectedStatus: 'in_transit', code: '', noCode: true }, () => 'id-1');
 assert.equal(noCodeAttempt.body.noCode, true);
 assert.notEqual(advanceRequest(noCodeAttempt, 5, { expectedStatus: 'in_transit', code: '' }, () => 'id-2').body.requestId, 'id-1', 'a code attempt is a new request');
