@@ -1,5 +1,6 @@
 import type { User } from '../../src/model.ts';
 import type { Persistence } from '../db/persistence.ts';
+import { custodyBlockFrom } from './block-review.ts';
 import { needStaff, staffActor, staffRoleOf } from './ops.ts';
 type Row = Record<string, any>;
 type Register = (method: string, path: string, handler: (ctx: { user: User; params: string[]; body: Row }) => Promise<unknown>) => unknown;
@@ -98,12 +99,23 @@ async function viaOffice(db: Persistence, orderId: number) {
   });
 }
 
-/** Shipped eligibility builds recorded the return without a separate CUSTODY_TAKEN event. */
-export async function legacySupportCollected(db: Persistence, order: Row) {
-  if (db.backend !== 'postgres') return false;
-  const events = await db.all(`SELECT detail FROM security_events WHERE order_id = ? AND action = 'ELIGIBILITY_CUSTODY_RECOVERY'
-    AND created_at >= ?`, order.id, order.assigned_at ?? 0);
-  return events.some(event => parse(event.detail).action === 'return');
+/** A takeover records that support already has the goods from the current assignment. */
+export function isSupportTransfer(db: Persistence, order: Row, event: Row) {
+  const detail = parse(event.detail);
+  if (event.action === 'CUSTODY_TAKEN')
+    return detail.assignmentEpoch === order.assignment_epoch && detail.driverId === order.driver_id;
+  // Older PostgreSQL releases recorded the recovery without a separate takeover event.
+  return db.backend === 'postgres' && event.action === 'ELIGIBILITY_CUSTODY_RECOVERY'
+    && event.created_at >= (order.assigned_at ?? 0) && detail.action === 'return';
+}
+
+/** A block requires support to carry the return even before they collect the goods. */
+export async function returnCustody(db: Persistence, order: Row) {
+  const events = await db.all(`SELECT action, detail, created_at FROM security_events WHERE order_id = ?
+    AND action IN ('CUSTODY_TAKEN','ELIGIBILITY_CUSTODY_RECOVERY','COURIER_BLOCKED')`, order.id);
+  const supportHasGoods = events.some(event => isSupportTransfer(db, order, event));
+  const custodyBlocked = events.some(event => event.action === 'COURIER_BLOCKED' && custodyBlockFrom(order, event) !== null);
+  return { supportHasGoods, custodyBlocked };
 }
 
 async function notifyOffice(db: Persistence, push: Deps['push'], order: Row) {

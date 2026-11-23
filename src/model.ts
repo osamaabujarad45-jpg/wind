@@ -213,6 +213,7 @@ export type Order = {
   returnCode: string | null; exceptionReason: ExceptionReason | typeof pickupRefusal | null; exceptionDetail: PickupRefusalDetail | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null; discount: number;
   reattemptAllowed?: boolean; // SHIP-08, admin view of a held parcel or freight order
   supportHasGoods?: boolean; // a returning order whose goods support took from this captain (admin and the captain only)
+  supportReturnRequired?: true; // only support can confirm office intake (admin only)
   pickupPayReview?: { reason: ExceptionReason | typeof pickupRefusal | 'support_cancelled' | 'customer_cancelled' | 'partner_cancelled';
     rate: number; drivenKm: number | null; originKm?: number | null; currentKm?: number | null; suggestedCents?: number | null;
     originFixAt?: number | null; currentFixAt?: number | null;

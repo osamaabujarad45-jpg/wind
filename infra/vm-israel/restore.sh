@@ -20,12 +20,32 @@ cd / # the service user's commands never start in a directory it cannot read
 [ -z "$OPEN" ] || [ "$OPEN" = --open ] || { echo "usage: restore.sh <file> [--open]" >&2; exit 1; }
 DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold
 [ -f "$COPY" ] || { echo "no such backup: $COPY" >&2; exit 1; }
+command -v ss >/dev/null || { echo "restore needs ss (iproute2) to verify the API listener" >&2; exit 1; }
 # Both unit guards (provision.sh) must be in place first: the Caddy hold check and the API's missing-database check (Haiku M1).
 # The loaded units, not just the files on disk (Haiku N4), matched without a pipe.
 case "$(systemctl show -p ExecStartPre --value caddy 2>/dev/null)" in *wind-ingress-hold*) ;; *) echo "re-run provision.sh first: the Caddy hold check is not loaded" >&2; exit 1 ;; esac
 case "$(systemctl show -p ExecStartPre --value wind-api 2>/dev/null)" in *wind-db-expected*) ;; *) echo "re-run provision.sh first: the API database check is not loaded" >&2; exit 1 ;; esac
 exec 8<"$DATA"
 flock -n 8 || { echo "another install, restore or backup is running" >&2; exit 1; }
+API_ENV=/etc/wind-api.env
+config_check=0
+grep -Eq '^[[:blank:]]*(export[[:blank:]]+)?(DB_PATH|WIND_DATABASE_URL|WIND_POSTGRES_STAGING)[[:blank:]]*=' "$API_ENV" || config_check=$?
+case "$config_check" in
+  0) echo "the SQLite procedure refuses database overrides in $API_ENV" >&2; exit 1 ;;
+  1) ;;
+  *) echo "cannot read the API environment" >&2; exit 1 ;;
+esac
+api_uses_expected_db() {
+  local pid=$1 process_env pg=0
+  process_env="/proc/$pid/environ"
+  grep -zEq '^(WIND_DATABASE_URL|WIND_POSTGRES_STAGING)=.' "$process_env" || pg=$?
+  [ "$pg" = 1 ] && grep -zFxq -- "DB_PATH=$DB" "$process_env"
+}
+pid=$(systemctl show -p MainPID --value wind-api)
+[[ "$pid" =~ ^[0-9]+$ ]] || { echo "cannot determine the live API process" >&2; exit 1; }
+if [ "$pid" != 0 ] && ! api_uses_expected_db "$pid"; then
+  echo "cannot prove the live API uses $DB on SQLite" >&2; exit 1
+fi
 KEPT="$DATA/wind.db.before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
 WORK=$(sudo -u wind mktemp -d "$DATA/restore.XXXXXX" 8<&-)   # wind's own, on the live file's filesystem: the final move is a rename
 PHASE=prepare # prepare -> frozen -> swapped -> live
@@ -36,7 +56,22 @@ PREHOLD=""; [ ! -e "$HOLD" ] || PREHOLD=1 # an earlier restore still awaiting re
 # could be steered by a symlink or a swapped directory; as wind it can only reach what wind already can (Haiku H1, N1, N5).
 as_wind() { sudo -u wind "$@" 8<&-; }
 say() { echo "restore: $*" >&2; }
-ready() { local i; for i in $(seq 1 60); do curl -fsS -m 3 http://127.0.0.1:4000/api/ready >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
+# The HTTP answer must come from the listener owned by the API unit, including when reopening after rollback.
+api_listener() { ss -H -ltnp 'src 127.0.0.1 and sport = :4000'; }
+sqlite_response() {
+  /opt/node/bin/node -e 'try {const body = JSON.parse(require("node:fs").readFileSync(0, "utf8")); process.exit(body.ok === true && body.schema === 3 && body.backend !== "postgres" ? 0 : 1)} catch {process.exit(1)}'
+}
+ready() {
+  local i pid listeners
+  for i in $(seq 1 60); do
+    pid=$(systemctl show -p MainPID --value wind-api) && [[ "$pid" =~ ^[1-9][0-9]*$ ]] &&
+      api_uses_expected_db "$pid" &&
+      listeners=$(api_listener) && [[ "$listeners" == *"pid=$pid,"* ]] &&
+      curl -fsS -m 3 http://127.0.0.1:4000/api/ready 2>/dev/null | sqlite_response && return 0
+    sleep 1
+  done
+  return 1
+}
 stopped() { systemctl stop "$1" || return 1; ! systemctl is-active --quiet "$1" && [ "$(systemctl show -p MainPID --value "$1")" = "0" ]; }
 state() { echo "Caddy: $(systemctl is-active caddy 2>/dev/null || true); hold $HOLD: $([ -e "$HOLD" ] && echo present || echo absent)"; }
 fatal() { HALT=1; say "MANUAL RECOVERY NEEDED: $*"; say "$(state). The database that was live is at $KEPT (if it was moved)."; }

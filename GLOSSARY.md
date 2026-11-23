@@ -16,6 +16,20 @@ _Avoid_: Receipt (bare), ack, result
 A command whose outcome the sender does not yet know because its reply was lost; it stays unconfirmed until a command receipt or a definite refusal settles it, and is never shown as done or failed by guess.
 _Avoid_: Failed, pending (alone), lost
 
+## Parcel and shop custody
+
+**Custody block**
+
+A courier block recorded while the courier holds the goods for the current assignment. Support must handle the return and may still need to collect the goods.
+
+**Support custody transfer**
+
+The recorded handover of goods from the currently assigned courier to support. The parcel's custody history shows this as “Support took custody.”
+
+**Support return requirement**
+
+The requirement for support to confirm the return at the office after a custody block or support custody transfer.
+
 ## Money
 
 **Fare receipt**:

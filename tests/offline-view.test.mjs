@@ -6,16 +6,18 @@ import ts from 'typescript';
 import { themeModules } from './theme-mock.mjs';
 
 const require = createRequire(import.meta.url), model = require('../src/model.ts'), copy = require('../src/copy.ts');
-let language = 'en', mustUpdate = false;
+let language = 'en', mustUpdate = false, navigationReady;
 let session = { ready: true, offline: true, me: null, onboarded: true, refresh() {},
   offlineSummary: { actorId: 7, role: 'driver', savedAt: 1, orders: [{ id: 1, service: 'parcel', status: 'assigned', pickupCity: 'ramallah', dropoffCity: 'nablus' }] } };
 const ui = { Button: 'Button', Card: 'Card', Empty: 'Empty', Txt: 'Txt', fill: copy.fill,
   useCopy: () => ({ c: copy.copy[language], language, rtl: language === 'ar' }) };
 const modules = {
-  react: { useSyncExternalStore: () => mustUpdate, useMemo: fn => fn() }, 'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
+  react: { useSyncExternalStore: () => mustUpdate, useMemo: fn => fn(), useEffect: effect => effect() }, 'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
   'react-native': { View: 'View', Platform: { OS: 'android' }, StyleSheet: { create: x => x, absoluteFill: {} } },
-  'expo-router': { Stack: { Protected: 'Protected', Screen: 'Route' }, ThemeProvider: 'NavigationTheme', DefaultTheme: { colors: {} }, DarkTheme: { colors: {} } }, 'expo-status-bar': {}, 'expo-splash-screen': { preventAutoHideAsync() {} }, 'expo-font': { loadAsync: async () => {} },
+  'expo-router': { Stack: { Protected: 'Protected', Screen: 'Route' }, ThemeProvider: 'NavigationTheme', DefaultTheme: { colors: {} }, DarkTheme: { colors: {} }, useRootNavigationState: () => ({ key: 'test-root' }) },
+  'expo-status-bar': {}, 'expo-splash-screen': { preventAutoHideAsync() {} }, 'expo-font': { loadAsync: async () => {} },
   '../motion': {}, '../intro': {}, '../driver-work': {}, '../session': { useSession: () => session }, '../api': {}, '../api-client': {},
+  '../native-push': { syncNativePushNavigation: ready => { navigationReady = ready; } },
   '../model': model, '../parts': { useFormat: () => ({ time: () => 'saved-time' }) }, '../copy': copy, '../ui': ui, ...themeModules('../'),
 };
 const source = ts.transpileModule(readFileSync(new URL('../src/app/_layout.tsx', import.meta.url), 'utf8'),
@@ -30,6 +32,7 @@ function hasSummary(node) {
 for (language of ['en', 'ar']) {
   session = { ...session, me: null };
   assert.equal(hasSummary(context.exports.TestRoutes()), true, 'an offline launch may show its saved read-only context');
+  assert.equal(navigationReady, false, 'offline views hold notification navigation');
   const text = JSON.stringify(context.exports.TestOfflineOrders({ summary: session.offlineSummary }));
   assert.ok(text.includes(copy.copy[language].offlineSavedWarning));
   session = { ...session, me: { user: { id: 8, role: 'driver', status: 'active' } } };
@@ -39,4 +42,7 @@ for (language of ['en', 'ar']) {
 }
 mustUpdate = true;
 assert.equal(hasSummary(context.exports.TestRoutes()), false, 'a required upgrade takes precedence over offline data');
+session = { ...session, offline: false };
+context.exports.TestRoutes();
+assert.equal(navigationReady, false, 'an upgrade blocks notification navigation even while online');
 console.log('Offline view warns about staleness and preserves actor and forced-update boundaries');

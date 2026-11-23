@@ -277,6 +277,11 @@ try {
     'a valid captain code no longer closes the return');
   for (const carrier of ['captain', 'staff']) // neither carried it after support took it
     assert.equal((await call(`/admin/orders/${midReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier, reason: 'Wrong carrier' }, expect: 409 })).error, 'cannot_resolve');
+  assert.equal((await call(`/admin/orders/${midReturn.id}/resolve`, { token: admin.token,
+    body: { action: 'confirm_sender_return', reason: 'Wrong handoff' }, expect: 409 })).error, 'cannot_resolve');
+  const chain = await call(`/orders/${midReturn.id}/custody`, { token: customer.token });
+  assert.deepEqual(chain.steps.filter(s => s.kind === 'support_took_custody').map(({ kind, by, reason }) => ({ kind, by, reason })),
+    [{ kind: 'support_took_custody', by: 'support', reason: undefined }], 'the sender sees the transfer without its private note');
   assert.deepEqual(tripEntries(await call('/driver/cash', { token: driver.token }), midReturn), [], 'nothing is paid before the office closes it');
   const intake = await call(`/admin/orders/${midReturn.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'support', reason: 'Support brought it to the office' } });
   assert.equal(intake.status, 'returned');

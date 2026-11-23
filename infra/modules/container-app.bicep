@@ -15,15 +15,14 @@ param ingressPort int = 0
 param maxReplicas int = 1
 param minReplicas int = 1
 param environmentVariables array = []
-@secure()
-param acsAccessKey string = ''
 param probes array = []
 param volumeName string = ''
 param volumeMountPath string = ''
 param storageName string = ''
 param keyVaultSecrets array = []
-var secretConfigs = [for secret in keyVaultSecrets: { name: secret.name, keyVaultUrl: secret.keyVaultUrl, identity: secret.identity }]
-var secretEnvs = [for secret in keyVaultSecrets: { name: secret.envName, secretRef: secret.name }]
+var activeSecrets = filter(keyVaultSecrets, secret => secret.?enabled ?? true)
+var secretConfigs = [for secret in activeSecrets: { name: secret.name, keyVaultUrl: secret.keyVaultUrl, identity: secret.identity }]
+var secretEnvs = [for secret in activeSecrets: { name: secret.envName, secretRef: secret.name }]
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
@@ -35,7 +34,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       registries: empty(registryServer) ? [] : [{ server: registryServer, identity: identityId }]
-      secrets: concat(empty(acsAccessKey) ? [] : [{ name: 'acs-key', value: acsAccessKey }], secretConfigs)
+      secrets: secretConfigs
       ...(ingressEnabled ? { ingress: { external: true, targetPort: ingressPort, transport: 'http', allowInsecure: false } } : {})
     }
     template: {
@@ -43,8 +42,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         name: containerName
         image: image
         ...(empty(command) ? {} : { command: command })
-        env: concat([{ name: 'NODE_ENV', value: 'production' }], environmentVariables,
-          empty(acsAccessKey) ? [] : [{ name: 'WIND_ACS_KEY', secretRef: 'acs-key' }], secretEnvs)
+        env: concat([{ name: 'NODE_ENV', value: 'production' }], environmentVariables, secretEnvs)
         resources: { cpu: json(cpu), memory: memory }
         ...(empty(probes) ? {} : { probes: probes })
         ...(empty(volumeName) ? {} : { volumeMounts: [{ volumeName: volumeName, mountPath: volumeMountPath }] })

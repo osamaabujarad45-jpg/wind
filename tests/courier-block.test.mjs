@@ -62,12 +62,18 @@ try {
   }
   assert.equal((await call(`/jobs/${assigned.id}/accept`, { token: spare.token, body: {} })).status, 'assigned');
 
-  // In custody: it returns to the sender, and support confirms the handback.
+  // In custody: support must bring the goods to the office.
   const back = await call(`/orders/${carried.id}`, { token: customer.token });
   assert.equal(back.status, 'returning');
   assert.match(back.returnCode, /^\d{4}$/);
+  assert.equal(back.supportReturnRequired, undefined, 'the carrier restriction is for operators');
+  const adminBack = await call(`/orders/${carried.id}`, { token: admin.token });
+  assert.deepEqual([adminBack.supportHasGoods, adminBack.supportReturnRequired], [false, true], 'a block requires support intake before recording a takeover');
+  for (const body of [{ action: 'confirm_sender_return' }, ...['captain', 'staff'].map(carrier => ({ action: 'confirm_office_return', carrier }))])
+    assert.equal((await call(`/admin/orders/${carried.id}/resolve`, { token: admin.token, body: { ...body, reason: 'Wrong handoff' }, expect: 409 })).error, 'cannot_resolve');
   const returned = await call(`/admin/orders/${carried.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Support collected it from the courier' } });
   assert.equal(returned.status, 'returned');
+  assert.equal((await call(`/admin/orders/${carried.id}/office`, { token: admin.token })).canReceive, true, 'compatible block closure opens office intake');
   assert.equal(returned.blockReview.tripPayCents, 2000);
   assert.equal(returned.blockReview.decidedAt, null);
   assert.equal(db.prepare("SELECT id FROM cash_entries WHERE source = 'trip_pay' AND order_id = ?").get(carried.id), undefined);

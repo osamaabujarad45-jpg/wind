@@ -36,8 +36,8 @@ const server = createServer((request, response) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 origin = `http://127.0.0.1:${server.address().port}`;
-async function run() {
-  const child = spawn(process.execPath, [script, '--origin', origin, '--fixture'], { env: { ...process.env, NODE_ENV: 'test' }, windowsHide: true });
+async function run(...options) {
+  const child = spawn(process.execPath, [script, '--origin', origin, '--fixture', ...options], { env: { ...process.env, NODE_ENV: 'test' }, windowsHide: true });
   let output = ''; child.stdout.on('data', part => { output += part; }); child.stderr.on('data', part => { output += part; });
   const [status] = await once(child, 'exit'); return { status, output };
 }
@@ -52,5 +52,8 @@ try {
     assert.ok(result.output.includes(`FAIL ${label}`), result.output);
     if (name === 'external-script') assert.ok(result.output.includes('Unexpected cross-origin URL'));
   }
-  console.log('Deployment probe: healthy fixture and six stale, unsafe or unavailable deployment failures passed');
+  defect = 'wrong-origin';
+  assert.equal((await run('--api-origin', 'https://old.example')).status, 0, 'an HTTPS alias may use the existing bundled API origin');
+  assert.equal((await run('--api-origin', 'https://old.example/path')).status, 1, 'the alternate API origin has the same validation');
+  console.log('Deployment probe: healthy fixture, alias, and stale, unsafe or unavailable deployment failures passed');
 } finally { await new Promise(resolve => server.close(resolve)); }

@@ -4,6 +4,7 @@
 import { createServer, type IncomingMessage } from 'node:http';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { initializeSqlite } from './db/sqlite-schema.ts';
+import { postgresSchemaVersion } from './db/postgres-schema.ts';
 import { runtimePersistence } from './db/runtime.ts';
 import { databaseUnavailable } from './http/database-errors.ts';
 import { customerStatistics, driverStatistics } from './domain/statistics.ts';
@@ -50,7 +51,7 @@ import { cashClientFenced, clientUpdateRequired, registerRuntimeRoutes } from '.
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
 import { registerCommandReceiptRoutes } from './domain/command-receipts.ts';
 import { registerCustodyRoutes } from './domain/custody.ts';
-import { legacySupportCollected, registerOfficeRoutes, remindOffice } from './domain/office.ts';
+import { registerOfficeRoutes, remindOffice, returnCustody } from './domain/office.ts';
 import { bestRoute, checkpointDelaySeconds, expectedMinutes } from './domain/route-quality.ts';
 import { quotesAvailable, createQuoteRecord, evaluateQuoteFeasibility, tariffBasisPoints, tariffVersionFor, minorUnits } from './domain/quotes.ts';
 import { bookingPriority, checkPriorityCutoff, priorityIdentity } from './domain/priority.ts';
@@ -324,6 +325,8 @@ type JobCardData = { customers: Map<number, { rating: number | null; trips: numb
 async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order> {
   const owner = viewer.role === 'admin' || viewer.id === r.customer_id;
   const assigned = viewer.id === r.driver_id;
+  const custody = (viewer.role === 'admin' || assigned) && r.status === 'returning' && r.service !== 'ride'
+    ? await returnCustody(persistence, r) : null;
   const live = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
   const partyPhones = (owner || assigned) && (activeStatuses.includes(r.status) || r.status === 'searching' || r.status === 'requested' || Date.now() - r.updated_at <= DAY);
   const dispatchInfo = await dispatch.summary(r.id, viewer.role === 'driver' ? viewer.id : undefined);
@@ -365,8 +368,8 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
       && { reattemptAllowed: (await orderDeliveryAttempts(r.id)) < 3 }),
     // Support took the goods from this assignment's captain mid-return (CUSTODY_TAKEN): the captain's return code no longer closes
     // the order, and only office intake by support remains (Sol recheck of PR #101, HIGH 1).
-    ...((viewer.role === 'admin' || assigned) && r.status === 'returning' && r.service !== 'ride'
-      && { supportHasGoods: !!(await assignmentEvidence(r, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, r)) }), // legacy: PostgreSQL only
+    ...(custody && { supportHasGoods: custody.supportHasGoods }),
+    ...(viewer.role === 'admin' && custody && (custody.supportHasGoods || custody.custodyBlocked) && { supportReturnRequired: true }),
     // DRV-17: support sees a courier block's review on the order it ended.
     ...(viewer.role === 'admin' && ['cancelled', 'returning', 'returned'].includes(r.status) && await blockReviewsAvailable()
       && await (async () => { const b = await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', r.id); return b ? { blockReview: blockReviewView(b) } : {}; })()),
@@ -718,12 +721,11 @@ async function shippingTripPay(o: Row, status: 'completed' | 'returned', actorId
     await captainPay(o.id, o.driver_id, attempts * fareCents(o), 'trip_pay', actorId);
     return;
   }
-  const history = await all("SELECT detail, created_at FROM security_events WHERE order_id = ? AND action = 'COURIER_BLOCKED'", o.id);
+  const { supportHasGoods, custodyBlocked } = await returnCustody(persistence, o);
   // A custody block is paid only by a clearing review.
-  if (history.some(event => custodyBlockFrom(o, event) !== null)) return;
-  const supportCollected = await assignmentEvidence(o, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, o);
+  if (custodyBlocked) return;
   const trips = Math.max(1, attempts);
-  const returnLegs = supportCollected ? 0 : deliveredToOffice ? 2 : 1;
+  const returnLegs = supportHasGoods ? 0 : deliveredToOffice ? 2 : 1;
   await captainPay(o.id, o.driver_id, (trips + returnLegs) * fareCents(o), 'trip_pay', actorId);
 }
 const pickupFixAge = 120_000;
@@ -757,15 +759,15 @@ async function recordAssignedFrom(orderId: number, driverId: number, actorId: nu
   await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'ASSIGNED_FROM', ?, ?)`,
     actorId, orderId, JSON.stringify({ km, fixAt: Number(fix.good_at), driverId, assignmentEpoch: Number(order.assignment_epoch) + 1 }), now);
 }
-async function assignmentEvidence(order: Row, action: 'ASSIGNED_FROM' | 'CUSTODY_TAKEN') {
-  const events = await all('SELECT detail FROM security_events WHERE order_id = ? AND action = ? ORDER BY id DESC', order.id, action);
+async function assignmentOrigin(order: Row) {
+  const events = await all("SELECT detail FROM security_events WHERE order_id = ? AND action = 'ASSIGNED_FROM' ORDER BY id DESC", order.id);
   return events.map(auditDetail).find(detail => detail.assignmentEpoch === order.assignment_epoch && detail.driverId === order.driver_id);
 }
 const pickupPayCents = (order: Row, km: number, rate: number) => pickupPayFor(fareCents(order), km, rate);
 // DRV-18 evidence informs a support decision even when both fixes are available.
 async function pickupPay(order: Row, actorId: number, reason: NonNullable<Order['pickupPayReview']>['reason']) {
   if (!shippingOrder(order) || order.driver_id == null) return;
-  const from = await assignmentEvidence(order, 'ASSIGNED_FROM');
+  const from = await assignmentOrigin(order);
   const originKm = from && Number.isFinite(from.km) ? from.km : null;
   const current = await currentPickupEvidence(order, order.driver_id, order.assigned_at ?? 0);
   const currentKm = current?.km ?? null;
@@ -855,17 +857,14 @@ route('GET', '/api/ready', async () => {
       accessSync(process.env.DB_PATH ?? 'wind.db', constants.W_OK);
       await one('SELECT COUNT(*) n FROM sqlite_schema');
     } else {
-      schema = Number((await one('SELECT MAX(version) AS version FROM schema_migrations'))?.version ?? 0);
-      const applied = Number((await one('SELECT COUNT(DISTINCT version) AS n FROM schema_migrations WHERE version BETWEEN 3 AND 21'))?.n ?? 0);
-      if (schema < 32 || applied !== 19 || !(await one('SELECT version FROM schema_migrations WHERE version = 30'))
-        || !(await one('SELECT version FROM schema_migrations WHERE version = 31')) || !(await one('SELECT version FROM schema_migrations WHERE version = 32'))) fail(503, 'unavailable');
+      const version = await postgresSchemaVersion(persistence);
+      if (version === null) return fail(503, 'unavailable');
+      schema = version;
     }
     (await persistence.exec('BEGIN IMMEDIATE')); (await persistence.exec('ROLLBACK'));
   } catch { fail(503, 'unavailable'); }
-  if (persistence.backend === 'postgres' && !(await one('SELECT version FROM schema_migrations WHERE version=33')))
-    fail(503, 'captain_pay_schema_required');
 
-  return { ok: true, schema };
+  return { ok: true, schema, ...(persistence.backend === 'postgres' && { backend: 'postgres' }) };
 }, true);
 
 
@@ -1504,19 +1503,27 @@ const backupMarker = process.env.WIND_BACKUP_MARKER ?? (production && persistenc
 // value that is not 1 to 336 hours, an empty one included, stops startup rather than quietly changing the alarm (Haiku PR #103 L4, L5).
 const backupMaxAgeHours = process.env.WIND_BACKUP_MAX_AGE_HOURS === undefined ? 26 : Number(process.env.WIND_BACKUP_MAX_AGE_HOURS);
 if (!(backupMaxAgeHours >= 1 && backupMaxAgeHours <= 14 * 24)) throw new Error('WIND_BACKUP_MAX_AGE_HOURS must be a number of hours from 1 to 336');
-const backupStale = (now = Date.now()) => {
-  if (!backupMarker) return false;
-  try { return now - statSync(backupMarker).mtimeMs > backupMaxAgeHours * 60 * 60_000; } catch { return true; }
+const lastBackupAt = () => {
+  try { return backupMarker ? Math.floor(statSync(backupMarker).mtimeMs) : null; } catch { return null; }
 };
+const backupAgeLimitMs = backupMaxAgeHours * 60 * 60_000;
+const isBackupStale = (now: number, savedAt: number | null) => savedAt === null || now - savedAt > backupAgeLimitMs;
+const backupStale = () => !!backupMarker && isBackupStale(Date.now(), lastBackupAt());
 /** One alert per outage, at most one a day. The dashboard keeps saying it until a backup succeeds, because a push can be missed. */
 export async function alertMissedBackup(now = Date.now()) {
-  // A backup that succeeded ends the outage, so the next one alerts again the same day instead of waiting out the first one's
-  // daily allowance (Haiku PR #103 M1; with an hourly job, two outages in a day are no longer rare).
-  if (!backupStale(now)) { if (backupMarker) await run('DELETE FROM request_limits WHERE key = ?', identityKey('backup-alert', 'system')); return false; }
+  if (!backupMarker) return false;
+  const savedAt = lastBackupAt();
+  const alertKey = identityKey('backup-alert', 'system');
   const sent = await persistence.atomic({ purpose: 'backup_alert' }, async () => {
+    if (!isBackupStale(now, savedAt)) {
+      await run('DELETE FROM request_limits WHERE key = ?', alertKey);
+      return false;
+    }
+    // A successful backup ends the outage even if it was never fresh during a sweep. A newer alert keeps its allowance.
+    if (savedAt !== null) await run('DELETE FROM request_limits WHERE key = ? AND until < ?', alertKey, savedAt + DAY);
     const admins = await adminIds();
     if (!admins.length) return false; // an admin added later today still gets the day's alert
-    try { await limit(identityKey('backup-alert', 'system'), 1, DAY); } catch { return false; }
+    try { await limit(alertKey, 1, DAY); } catch { return false; }
     await queuePush(admins, 'attention', 0, '/admin');
     return true;
   });
@@ -2878,9 +2885,10 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
     // Support holds the goods once it took them from this assignment's captain, or once that captain was blocked holding them: the
     // captain's old return code no longer closes the order as a sender handback (Sol full review 21 Nov, item 3).
     // A recovery by an eligibility build from before CUSTODY_TAKEN counts too (PostgreSQL only; Haiku M4 / Sol money 3 on PR #101).
-    if (next === 'returned' && (await assignmentEvidence(r, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, r)
-      || (await all("SELECT detail, created_at FROM security_events WHERE order_id = ? AND action = 'COURIER_BLOCKED'", r.id)).some(event => custodyBlockFrom(r, event) !== null)))
-      fail(409, 'cannot_advance');
+    if (next === 'returned') {
+      const { supportHasGoods, custodyBlocked } = await returnCustody(persistence, r);
+      if (supportHasGoods || custodyBlocked) fail(409, 'cannot_advance');
+    }
     // Delivery needs the recipient's handover code; a return needs the sender's return code.
     const expected = next === 'completed' ? r.handover_code : r.return_code;
     if (((await one('SELECT failures FROM proof_attempts WHERE order_id = ?', r.id))?.failures ?? 0) >= 5) fail(409, 'proof_locked');
@@ -2968,14 +2976,13 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req 
   // price, and office intake needs the typed command (historical rows without a handoff keep their old meaning).
   // 'support': support collected the goods from the captain before the office, so the captain's pay stops at the trip so far
   // (DRV-17); SQLite has no other way to record that transfer (Sol full review 21 Nov, item 2).
-  const carrier = deliveredToOffice ? body.carrier : undefined;
-  if (deliveredToOffice ? carrier !== 'captain' && carrier !== 'staff' && carrier !== 'support' : body.carrier !== undefined) fail(400, 'invalid_input');
+  const officeCarrier = deliveredToOffice ? body.carrier : undefined;
+  if (deliveredToOffice ? officeCarrier !== 'captain' && officeCarrier !== 'staff' && officeCarrier !== 'support' : body.carrier !== undefined) fail(400, 'invalid_input');
   // A plain confirmation is priced as a sender handback and cannot be told apart from an office one. An installed build older
   // than this release gets the update screen for it in production, as for cash writes, instead of a price it cannot correct
   // (Sol full review 21 Nov, item 1). Scripts and tests elsewhere send no build.
   if (action === 'confirm_return' && cashClientFenced(req.headers['x-wind-client'], production)) fail(426, 'client_update_required');
-  const officeLeg = deliveredToOffice && carrier === 'captain';
-  const handoff = deliveredToOffice ? 'office' : deliveredToSender ? 'sender' : action === 'confirm_return' ? 'unspecified' : undefined;
+  const officeLeg = officeCarrier === 'captain';
   const from = confirmsReturn || takeover ? 'returning' : action === 'reattempt' || action === 'return' ? 'on_hold' : null;
   const to = confirmsReturn ? 'returned' : action === 'reattempt' ? 'in_transit' : 'returning';
   if (reason.length < 5 || !from) fail(400, 'invalid_input');
@@ -2993,15 +3000,20 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req 
     // Each update re-checks the state it leaves, so two concurrent resolves (a double submit, two admins) decide once:
     // PostgreSQL's BEGIN does not lock the row read above.
     const moved = (changes: number | bigint) => { if (!changes) fail(409, 'cannot_resolve'); };
-    const custodyTaken = order.status === 'returning' && !!(await assignmentEvidence(order, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, order));
-    // Once support holds the goods, neither the captain nor a staff pickup after the captain's return leg brought them in.
-    if (custodyTaken && (carrier === 'captain' || carrier === 'staff')) fail(409, 'cannot_resolve');
+    const { supportHasGoods, custodyBlocked } = order.status === 'returning'
+      ? await returnCustody(persistence, order) : { supportHasGoods: false, custodyBlocked: false };
+    const supportRequired = supportHasGoods || custodyBlocked;
+    if (supportRequired && (deliveredToSender || deliveredToOffice && officeCarrier !== 'support')) fail(409, 'cannot_resolve');
+    // When support is the only valid carrier, the compatible untyped command can only mean office intake.
+    const supportConfirmation = action === 'confirm_return' && supportRequired;
+    const carrier = supportConfirmation ? 'support' : officeCarrier;
+    const handoff = deliveredToOffice || supportConfirmation ? 'office' : deliveredToSender ? 'sender' : action === 'confirm_return' ? 'unspecified' : undefined;
     const recordCustody = async () => {
-      if (!custodyTaken) (await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'CUSTODY_TAKEN', ?, ?)",
+      if (!supportHasGoods) (await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'CUSTODY_TAKEN', ?, ?)",
         user.id, id, JSON.stringify({ assignmentEpoch: order.assignment_epoch, driverId: order.driver_id, reason }), Date.now()));
     };
     if (takeover) {
-      if (custodyTaken) fail(409, 'cannot_resolve'); // already recorded: a double submit decides once
+      if (supportHasGoods) fail(409, 'cannot_resolve'); // already recorded: a double submit decides once
       // The row write takes PostgreSQL's row lock and re-checks the state, as the other branches do.
       moved((await run("UPDATE orders SET updated_at = ? WHERE id = ? AND status = 'returning'", Date.now(), id)).changes);
       await recordCustody();
@@ -3864,7 +3876,7 @@ const editUser: Handler = async ({ user, params, body }) => {
       if (persistence.backend === 'postgres' && (await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id)).some(r => !prelocked.includes(Number(r.id)))) fail(409, 'order_changed');
       carrying = (await all(`SELECT id, status, service, customer_id, driver_id, price, discount, recommended_price, assignment_epoch, assigned_at FROM orders WHERE driver_id = ? AND status IN (${activeSql})${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, target.id)); // a goods COD waits (ADM-12)
       // Orders whose goods support already took (CUSTODY_TAKEN) strand nothing: they need no recovery choice (Sol recheck 3).
-      for (const o of carrying) o.supportHolds = o.status === 'returning' && !!(await assignmentEvidence(o, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, o));
+      for (const o of carrying) o.supportHolds = o.status === 'returning' && (await returnCustody(persistence, o)).supportHasGoods;
       if (carrying.some(o => !o.supportHolds) && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
     (await run(`UPDATE users SET name = ?, phone = ?, email = ?, status = ?, role = ?, vehicle = ?, plate = ?,
@@ -4035,7 +4047,7 @@ route('POST', '/api/admin/users/:id/approve', async ({ user, params, body }) => 
     if (target.role === 'driver' && target.status === 'blocked') {
       const carrying = await all(`SELECT id, status, driver_id, assignment_epoch, assigned_at FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, target.id);
       const stranded = [];
-      for (const o of carrying) if (!(o.status === 'returning' && (await assignmentEvidence(o, 'CUSTODY_TAKEN') || await legacySupportCollected(persistence, o)))) stranded.push(o);
+      for (const o of carrying) if (!(o.status === 'returning' && (await returnCustody(persistence, o)).supportHasGoods)) stranded.push(o);
       if (stranded.length && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
     (await run("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?", Date.now(), target.id));
@@ -4542,10 +4554,10 @@ if (import.meta.main) {
     (await run('DELETE FROM checkpoint_reports WHERE created_at < ?', Date.now() - 30 * DAY)); // only the last two hours are ever shown
     (await pruneExpired());
     const maintenance = async () => { try { (await pruneExpired()); (await alertMissedBackup()); } catch (error) { logServerError('maintenance_failed', error); } };
-    // Ten minutes after start too, so a restart does not wait an hour to notice a stale backup (and a stale alert allowance is
+    // Five minutes after start too, so a restart does not wait an hour to notice a stale backup (and a stale alert allowance is
     // cleared before the next outage; Haiku PR #103 recheck 5). An install's dry run is stopped within about four minutes (60 tries
     // of a 3 s probe and 1 s pause), so it never gets here; even if it did, its database copy has every push target removed.
-    setTimeout(maintenance, 10 * 60_000).unref();
+    setTimeout(maintenance, 5 * 60_000).unref();
     setInterval(maintenance, 60 * 60_000).unref(); // expired throttles never pile up
     const port = Number(process.env.PORT ?? 4000);
     server.listen(port, process.env.HOST ?? (production ? '127.0.0.1' : '0.0.0.0'), () => console.log(`Wind API on :${port}`));
