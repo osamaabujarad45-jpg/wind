@@ -58,10 +58,16 @@ export function SlotPicker({ slots, value, onChange }: { slots: number[]; value:
   </>;
 }
 
+// A raised chip: the line's tint face on a deeper base of the line colour, so each service reads as a small solid object
+// (UI polish 23 Nov: "more depth"). The base is the line colour at 35%, which stays a darker edge on the Day and Night tints.
 export function ServiceIcon({ service, size = 40 }: { service: Service; size?: number }) {
   const meta = serviceMeta[service], line = useTheme().lines[lineOf[service]];
-  return <View style={{ width: size, height: size, borderRadius: size * 0.3, backgroundColor: line.tint, alignItems: 'center', justifyContent: 'center' }}>
-    <Ionicons name={meta.icon} size={size * 0.5} color={line.color} />
+  const depth = Math.max(2, Math.round(size * 0.09)), corner = size * 0.3;
+  return <View style={{ width: size, height: size + depth }}>
+    <View style={{ position: 'absolute', top: depth, width: size, height: size, borderRadius: corner, backgroundColor: `${line.color}59` }} />
+    <View style={{ width: size, height: size, borderRadius: corner, backgroundColor: line.tint, alignItems: 'center', justifyContent: 'center' }}>
+      <Ionicons name={meta.icon} size={size * 0.5} color={line.color} />
+    </View>
   </View>;
 }
 

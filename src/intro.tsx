@@ -1,9 +1,9 @@
 // Animated intro played once per launch, straight after the native splash.
-// Its first frame is the native splash (same tile, same size, same place), so there is no jump:
-// a gust blows through the three trails, the pin drops onto its spot, then the tile rises and the name appears.
+// Its first frame is the native splash (same tile, same size, same place), so there is no jump: the tile catches the wind
+// and tilts in depth, the destination dot drops into the ring, then the tile rises and the name appears.
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { cubicBezier, useReducedMotion } from './motion';
-import { headingFont, logoBarStyle, logoHoleStyle, logoMark, logoPinStyle, maxScale, palette, useCopy } from './ui';
+import { headingFont, logoDotStyle, LogoGust, logoMark, maxScale, palette, useCopy } from './ui';
 
 export const INTRO_MS = 1600;
 export const TILE = 120; // keep equal to expo-splash-screen "imageWidth" in app.json
@@ -15,34 +15,29 @@ export function Intro() {
   const { c } = useCopy();
   const still = useReducedMotion(); // reduced motion: hold the splash frame, no movement
 
-  const gust = (i: number) => still ? null : {
-    animationName: {
-      '0%': { opacity: 1, transform: [{ translateX: 0 }] },
-      '38%': { opacity: 0, transform: [{ translateX: 16 * u }] },
-      '39%': { opacity: 0, transform: [{ translateX: -16 * u }] },
-      '100%': { opacity: 1, transform: [{ translateX: 0 }] },
-    },
-    animationDuration: '720ms', animationDelay: `${120 + i * 90}ms`, animationTimingFunction: 'ease-in-out', animationFillMode: 'both' as const,
-  };
-
   return <View style={styles.fill} accessibilityLabel={c.brand}>
     <Animated.View style={[styles.stage, !still && {
       animationName: { from: { transform: [{ translateY: 0 }] }, to: { transform: [{ translateY: -44 }] } },
       animationDuration: '520ms', animationDelay: '820ms', animationTimingFunction: EASE, animationFillMode: 'both',
     }]}>
-      <View style={styles.tile}>
-        {logoMark.bars.map((bar, i) => <Animated.View key={i} style={[logoBarStyle(TILE, bar), gust(i)]} />)}
-        <Animated.View style={[StyleSheet.absoluteFill, !still && {
+      {/* A gust: the tile turns in depth and settles back, flat again before it rises. */}
+      <Animated.View style={[styles.tile, !still && {
+        animationName: {
+          '0%': { transform: [{ perspective: 600 }, { rotateY: '0deg' }, { rotateX: '0deg' }] },
+          '45%': { transform: [{ perspective: 600 }, { rotateY: '-24deg' }, { rotateX: '8deg' }] },
+          '100%': { transform: [{ perspective: 600 }, { rotateY: '0deg' }, { rotateX: '0deg' }] },
+        },
+        animationDuration: '700ms', animationDelay: '100ms', animationTimingFunction: 'ease-in-out', animationFillMode: 'both',
+      }]}>
+        <LogoGust size={TILE} />
+        <Animated.View style={[logoDotStyle(TILE), !still && {
           animationName: {
-            '0%': { transform: [{ translateY: 0 }] }, '40%': { transform: [{ translateY: -10 * u }] },
-            '75%': { transform: [{ translateY: 2 * u }] }, '100%': { transform: [{ translateY: 0 }] },
+            '0%': { transform: [{ translateY: 0 }, { scale: 1 }] }, '40%': { transform: [{ translateY: -12 * u }, { scale: 0.8 }] },
+            '75%': { transform: [{ translateY: 2 * u }, { scale: 1.08 }] }, '100%': { transform: [{ translateY: 0 }, { scale: 1 }] },
           },
           animationDuration: '560ms', animationDelay: '380ms', animationTimingFunction: 'ease-in-out', animationFillMode: 'both',
-        }]}>
-          <View style={logoPinStyle(TILE)} />
-          <View style={logoHoleStyle(TILE)} />
-        </Animated.View>
-      </View>
+        }]} />
+      </Animated.View>
       <Animated.View style={[styles.words, !still && {
         animationName: { from: { opacity: 0, transform: [{ translateY: 14 }] }, to: { opacity: 1, transform: [{ translateY: 0 }] } },
         animationDuration: '460ms', animationDelay: '900ms', animationTimingFunction: EASE, animationFillMode: 'both',

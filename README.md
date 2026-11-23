@@ -101,7 +101,7 @@ npm run screens                     # every screen, Arabic + English, into docs/
 
 `docs/screens/README.md` maps each screenshot to its route and source file, and `docs/screens/index.html` shows them side by side. In Claude Code, `/screens` re-shoots and reviews them. The script builds the web app and seeds a temporary API, so your `wind.db` is untouched.
 
-The logo is drawn by `scripts/make_icon.py` (icons, splash, favicon) and by `<Logo />` in `src/ui.tsx` from the same geometry; the animated intro is `src/intro.tsx`.
+The logo is the Arabic و drawn as a gust of wind holding a destination dot. `scripts/brand-mark.mjs` holds its geometry; `node scripts/make_icon.mjs` writes the icons, splash and favicon from it, `node scripts/make_promo.mjs` the posters in `docs/brand/`, and `<Logo />` in `src/ui.tsx` draws the same numbers with views (`tests/brand-mark.test.mjs` keeps them equal). The animated intro is `src/intro.tsx`.
 
 ## Deploy
 

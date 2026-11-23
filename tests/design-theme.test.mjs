@@ -82,7 +82,7 @@ for (const theme of ['day', 'night']) {
   const p = palettes[theme], c = colors[theme];
   const text = (fg, bg, min = 4.5) => atLeast(p[fg], p[bg], min, `${theme} palette.${fg} on palette.${bg}`);
   for (const ground of ['paper', 'card', 'muted']) for (const fg of ['ink', 'secondary']) text(fg, ground); // body text; secondary on muted is the disabled button
-  for (const ground of ['paper', 'card']) text('faint', ground); // faint is never set on muted (4.1:1 by day)
+  for (const ground of ['paper', 'card', 'muted']) text('faint', ground); // faint passes on the sunken surface too, so it is safe anywhere
   for (const ground of ['paper', 'card']) for (const fg of ['olive', 'blue', 'warn', 'error', 'shop', 'clayInk', 'forest']) text(fg, ground);
   text('error', 'muted');
   for (const [fg, bg] of [['olive', 'olivePale'], ['blue', 'bluePale'], ['warn', 'warnPale'], ['error', 'errorPale'], ['shop', 'shopPale'], ['clayInk', 'clayPale']]) text(fg, bg);
@@ -92,7 +92,12 @@ for (const theme of ['day', 'night']) {
   atLeast(c.onActionSoft, p.olivePale, 4.5, `${theme} current rail item on action-soft`);
   for (const ground of ['paper', 'card', 'muted']) text('field', ground, 3); // control edges (WCAG 1.4.11)
   text('forest', 'card', 3); // focus ring and selected outline
+  // The raised service chip: each line's icon on its tint face (non-text, 3:1), whatever the theme.
+  for (const [name, line] of Object.entries(lines[theme])) atLeast(line.color, line.tint, 3, `${theme} ${name} icon on its chip`);
 }
+// The logo never changes colour: lime gust and clay destination dot on the forest tile (non-text, 3:1).
+atLeast(colors.day.lime, colors.day.forest, 3, 'logo gust on the tile');
+atLeast(colors.day.clay, colors.day.forest, 3, 'logo dot on the tile');
 
 // which theme: Day by default; Automatic is Night only for a captain after sunset; a saved Day or Night always wins
 assert.deepEqual([...themeChoices], ['auto', 'day', 'night']);

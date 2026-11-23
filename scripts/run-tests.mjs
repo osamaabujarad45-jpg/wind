@@ -8,6 +8,7 @@ const suites = [
   "runtime-config.test.mjs",
   "large-text.test.mjs",
   "design-theme.test.mjs",
+  "brand-mark.test.mjs",
   "theme-context.test.mjs",
   "support-inbox.test.mjs",
   "driver-command.test.mjs",

@@ -71,38 +71,64 @@ export const haptic = {
 
 // ---------- brand ----------
 
-// Wind mark: three lime wind trails pulling a terracotta location pin, on a forest tile.
-// 0..100 box, identical to scripts/make_icon.py (app icon, splash, favicon). Never mirrored for RTL.
+// Never mirrored for RTL: the و reads the same in both languages.
+// The Wind mark: the Arabic و (waw, the first letter of ويند) drawn as a gust, a streak of wind that curls up into a ring
+// holding a clay destination dot. Geometry in a 0..100 box, the same numbers as scripts/brand-mark.mjs (icons, posters);
+// tests/brand-mark.test.mjs keeps them equal. Built from views: a bar, a clipped quarter circle and a ring, all one stroke.
 export const logoMark = {
-  bars: [[26, 48, 38, 7], [14, 48, 51, 8], [32, 48, 64, 7]] as const, // x1, x2, y, thickness
-  pin: [70, 45, 16, 6.5] as const, // head centre x, centre y, head radius, hole radius; the tip points down
-  radius: 0.29,
+  stroke: 8.5,
+  ring: [63.75, 43.25, 12.5] as const, // centre x, centre y, stroke centreline radius
+  turn: [50.25, 43.25, 26] as const, // the quarter circle from the streak up into the ring (6 o'clock to 3 o'clock)
+  streakX: 23.75, // the streak's round left end
+  dot: 5, // radius, at the ring's centre
+  radius: 0.29, // tile corner, of the tile width
 };
 
-export const logoBarStyle = (s: number, [x1, x2, y, t]: readonly [number, number, number, number]): ViewStyle => ({
-  position: 'absolute', left: x1 * s / 100, top: (y - t / 2) * s / 100, width: (x2 - x1) * s / 100,
-  height: t * s / 100, borderRadius: t * s / 200, backgroundColor: palette.lime,
-});
+const markPart = (s: number, left: number, top: number, width: number, height: number): ViewStyle =>
+  ({ position: 'absolute', left: left * s / 100, top: top * s / 100, width: width * s / 100, height: height * s / 100 });
 
-// Teardrop: a square with three fully rounded corners, turned 45° so the sharp one points down.
-export const logoPinStyle = (s: number): ViewStyle => {
-  const [cx, cy, r] = logoMark.pin;
-  return { position: 'absolute', left: (cx - r) * s / 100, top: (cy - r) * s / 100, width: 2 * r * s / 100, height: 2 * r * s / 100,
-    borderRadius: r * s / 100, borderBottomRightRadius: 0, backgroundColor: palette.clay, transform: [{ rotate: '45deg' }] };
+export const logoRingStyle = (s: number): ViewStyle => {
+  const [cx, cy, r] = logoMark.ring, o = r + logoMark.stroke / 2;
+  return { ...markPart(s, cx - o, cy - o, 2 * o, 2 * o), borderRadius: o * s / 100, borderWidth: logoMark.stroke * s / 100, borderColor: palette.lime };
 };
 
-export const logoHoleStyle = (s: number): ViewStyle => {
-  const [cx, cy, , h] = logoMark.pin;
-  return { position: 'absolute', left: (cx - h) * s / 100, top: (cy - h) * s / 100, width: 2 * h * s / 100, height: 2 * h * s / 100,
-    borderRadius: h * s / 100, backgroundColor: palette.forest };
+/** The turn: a full ring clipped to its lower-right quarter. Wrap logoTurnArcStyle in this. */
+export const logoTurnClipStyle = (s: number): ViewStyle => {
+  const [cx, cy, r] = logoMark.turn, o = r + logoMark.stroke / 2;
+  return { ...markPart(s, cx, cy, o, o), overflow: 'hidden' };
 };
+
+export const logoTurnArcStyle = (s: number): ViewStyle => {
+  const [, , r] = logoMark.turn, o = r + logoMark.stroke / 2;
+  return { ...markPart(s, -o, -o, 2 * o, 2 * o), borderRadius: o * s / 100, borderWidth: logoMark.stroke * s / 100, borderColor: palette.lime };
+};
+
+export const logoStreakStyle = (s: number): ViewStyle => {
+  const [cx, cy, r] = logoMark.turn, h = logoMark.stroke / 2, left = logoMark.streakX - h;
+  // Half a unit into the turn, so no hairline shows where the bar meets the clipped arc.
+  return { ...markPart(s, left, cy + r - h, cx - left + 0.5, logoMark.stroke), borderTopLeftRadius: h * s / 100,
+    borderBottomLeftRadius: h * s / 100, backgroundColor: palette.lime };
+};
+
+export const logoDotStyle = (s: number): ViewStyle => {
+  const [cx, cy] = logoMark.ring, d = logoMark.dot;
+  return { ...markPart(s, cx - d, cy - d, 2 * d, 2 * d), borderRadius: d * s / 100, backgroundColor: palette.clay };
+};
+
+/** The gust (streak, turn, ring) without the dot, for the intro, which moves the dot on its own. */
+export function LogoGust({ size: s }: { size: number }) {
+  return <>
+    <View style={logoStreakStyle(s)} />
+    <View style={logoTurnClipStyle(s)}><View style={logoTurnArcStyle(s)} /></View>
+    <View style={logoRingStyle(s)} />
+  </>;
+}
 
 export function Logo({ size: s = 36, decorative }: { size?: number; decorative?: boolean /* the name is written beside it: one stop for screen readers */ }) {
   const { c } = useCopy(); // the name is read in the reader's language: ويند in Arabic
   return <View {...decorative ? { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' as const } : { accessibilityRole: 'image' as const, accessibilityLabel: c.brand }} style={[logoTile, { width: s, height: s, borderRadius: s * logoMark.radius }]}>
-    {logoMark.bars.map((bar, i) => <View key={i} style={logoBarStyle(s, bar)} />)}
-    <View style={logoPinStyle(s)} />
-    <View style={logoHoleStyle(s)} />
+    <LogoGust size={s} />
+    <View style={logoDotStyle(s)} />
   </View>;
 }
 
@@ -256,16 +282,17 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
 // ---------- controls ----------
 
 // Press feedback: 3% scale over 120ms on the UI thread.
-export function Press({ children, onPress, style, containerStyle, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true }: {
+export function Press({ children, onPress, style, containerStyle, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true, tilt }: {
   children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; containerStyle?: StyleProp<ViewStyle>; disabled?: boolean;
   accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean; expanded?: boolean };
   hitSlop?: number | { top?: number; bottom?: number; left?: number; right?: number }; // for controls drawn smaller than 44pt
   dim?: boolean; // false when the control draws its own disabled colours: a 50% wash turns white labels on forest into grey
+  tilt?: boolean; // a tile that leans back in depth as it is pressed, like a key going down (home service tiles)
 }) {
   const [pressed, setPressed] = useState(false);
   return <Pressable style={containerStyle} onPress={onPress} disabled={!!disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
     aria-disabled={!!disabled} aria-busy={!!accessibilityState?.busy} aria-checked={accessibilityState?.checked} aria-expanded={accessibilityState?.expanded} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
-    <Animated.View style={[motion.pressable, style, pressed && motion.pressed, disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
+    <Animated.View style={[tilt ? motion.tiltable : motion.pressable, style, pressed && (tilt ? motion.tilted : motion.pressed), disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
   </Pressable>;
 }
 
@@ -694,6 +721,10 @@ export const tabIcon =(name: IconName) => function TabIcon({ color, size: s, foc
 const motion = css.create({
   pressable: { transform: [{ scale: 1 }], transitionProperty: 'transform', transitionDuration: '120ms', transitionTimingFunction: EASE_OUT },
   pressed: { transform: [{ scale: 0.97 }] },
+  // Same transform list in both states, so the transition interpolates each part. Reduced motion keeps the press feedback
+  // (it is instant in both cases on web, where the OS setting disables CSS transitions).
+  tiltable: { transform: [{ perspective: 600 }, { rotateX: '0deg' }, { scale: 1 }], transitionProperty: 'transform', transitionDuration: '140ms', transitionTimingFunction: EASE_OUT },
+  tilted: { transform: [{ perspective: 600 }, { rotateX: '10deg' }, { scale: 0.96 }] },
 });
 const useChoiceMotion = themedStyles(palette => css.create({
   choice: {

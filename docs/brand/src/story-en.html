@@ -1,0 +1,49 @@
+<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8"><style>
+@font-face { font-family: Readex; src: url(../../../assets/fonts/ReadexPro-Bold.ttf); font-weight: 700; }
+@font-face { font-family: Readex; src: url(../../../assets/fonts/ReadexPro-SemiBold.ttf); font-weight: 600; }
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 1080px; height: 1920px; overflow: hidden; }
+body { font-family: Readex, sans-serif; color: #F3F2EC; position: relative;
+  background: radial-gradient(120% 90% at 15% 0%, #1E4B3C 0%, #12342A 55%, #0B2119 100%); }
+.flourish { position: absolute; opacity: .09; width: 1620px; right: -594px; top: 760px; }
+.brand { position: absolute; top: 84px; inset-inline-start: 84px; display: flex; align-items: center; gap: 22px; }
+.brand b { font-size: 64px; font-weight: 700; letter-spacing: -1px; }
+.copy { position: absolute; inset-inline-start: 84px; top: 274px; width: 912px; }
+h1 { font-size: 112px; line-height: 1.04; font-weight: 700; }
+h1 span:nth-child(1) { color: #F3F2EC; } h1 span:nth-child(2) { color: #D3F27A; } h1 span:nth-child(3) { color: #F3F2EC; }
+h1 span { display: block; } h1 span + span { margin-inline-start: 0; }
+p.tag { margin-top: 30px; font-size: 40px; font-weight: 600; color: #C9D6CE; max-width: 760px; line-height: 1.35; }
+.stage { position: absolute; perspective: 1800px; inset-inline-end: 340px; bottom: 220px; }
+.phone { width: 400px; aspect-ratio: 780 / 1688; border-radius: 52px; padding: 14.000000000000002px; background: #0A1712;
+  transform: rotateY(-16deg) rotateX(6deg) rotateZ(2deg); transform-style: preserve-3d;
+  box-shadow: 40px 60px 90px rgba(0,0,0,.45), 0 0 0 2px #2A3B35 inset; }
+.phone img { width: 100%; height: 100%; border-radius: 40px; display: block; object-fit: cover; object-position: top; }
+.chips { position: absolute; inset: 0; transform-style: preserve-3d; pointer-events: none; }
+.chip { position: relative; display: flex; align-items: center; gap: 14px; transform-style: preserve-3d; }
+.chip .face { width: var(--s); height: var(--s); border-radius: calc(var(--s) * .3); background: var(--t); display: grid; place-items: center;
+  box-shadow: 0 calc(var(--s) * .09) 0 color-mix(in srgb, var(--c) 55%, #12342A), 0 calc(var(--s) * .35) calc(var(--s) * .45) rgba(0,0,0,.35); }
+.chip span { font-size: 30px; font-weight: 600; background: rgba(243,242,236,.96); color: #0E1F19; padding: 10px 18px; border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25); white-space: nowrap; }
+.c1, .c2, .c3 { position: absolute; transform-style: preserve-3d; }
+.c1 { top: 5%; inset-inline-start: -90px; transform: translateZ(120px) rotate(-6deg); }
+.c2 { top: 44%; inset-inline-end: -10px; transform: translateZ(160px) rotate(5deg); }
+.c3 { bottom: 9%; inset-inline-start: -110px; transform: translateZ(100px) rotate(-3deg); }
+.cta { position: absolute; inset-inline-start: 84px; bottom: 84px; display: flex; align-items: center; gap: 16px;
+  background: #D3F27A; color: #12342A; font-size: 34px; font-weight: 700; padding: 22px 34px; border-radius: 999px;
+  box-shadow: 0 6px 0 #9DBD3F, 0 20px 40px rgba(0,0,0,.3); }
+.cta i { font-style: normal; font-size: 22px; font-weight: 600; opacity: .75; }
+</style></head><body>
+<svg class="flourish" viewBox="0 0 100 100" overflow="visible"><circle cx="63.75" cy="43.25" r="12.5" fill="none" stroke="#D3F27A" stroke-width="8.5"/><path d="M -376.25 69.25 H 50.25 A 26 26 0 0 0 76.25 43.25" fill="none" stroke="#D3F27A" stroke-width="8.5" stroke-linecap="round"/></svg>
+<div class="brand"><svg xmlns="http://www.w3.org/2000/svg" width="104" height="104" viewBox="0 0 104 104"><rect x="0" y="0" width="104" height="104" rx="30.159999999999997" fill="#12342A"/><g transform="translate(0 0) scale(1.04)"><circle cx="63.75" cy="43.25" r="12.5" fill="none" stroke="#D3F27A" stroke-width="8.5"/><path d="M 23.75 69.25 H 50.25 A 26 26 0 0 0 76.25 43.25" fill="none" stroke="#D3F27A" stroke-width="8.5" stroke-linecap="round"/><circle cx="63.75" cy="43.25" r="5" fill="#CB6845"/></g></svg><b>Wind</b></div>
+<div class="copy"><h1><span>Ride.</span><span>Send.</span><span>Shop.</span></h1><p class="tag">Clear delivery, from pickup to handover.</p></div>
+<div class="stage"><div class="phone"><img src="../../screens/en/home.png" alt=""></div>
+  <div class="chips">
+    <div class="c1"><div class="chip" style="--c:#2F5E8C;--t:#E6EDF6;--s:92px">
+  <div class="face"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="#2F5E8C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 15.5V12l2-4.5h10L19 12v3.5"/><path d="M3.5 15.5h17v2.5h-17z"/><circle cx="7.5" cy="18.5" r="1.6"/><circle cx="16.5" cy="18.5" r="1.6"/><path d="M7 12h10"/></svg></div><span>Ride</span></div></div>
+    <div class="c2"><div class="chip" style="--c:#34765A;--t:#E2EEE5;--s:92px">
+  <div class="face"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="#34765A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg></div><span>Items & parcels</span></div></div>
+    <div class="c3"><div class="chip" style="--c:#8A3D6A;--t:#F5E6EE;--s:92px">
+  <div class="face"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="#8A3D6A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h16l-1.6 9.2a1.5 1.5 0 0 1-1.5 1.3H7.1a1.5 1.5 0 0 1-1.5-1.3z"/><path d="M8.5 10l3.5-6 3.5 6"/><path d="M10 14v3M14 14v3"/></svg></div><span>Shop delivery</span></div></div>
+  </div></div>
+<div class="cta">Get Wind on Android<i>· One app</i></div>
+</body></html>
