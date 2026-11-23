@@ -467,7 +467,25 @@ function draw(insetsChanged = false) {
   drawDriver();
   if (!moved && (insetsChanged || JSON.stringify(framePoints()) !== framed)) refit(still() ? 0 : 800);
 }
+// Nearby cars (RIDE-14): unnamed, at a rounded spot, only on a plain map (browse or pin), never over a live trip.
+let carMarkers = [];
+function drawCars() {
+  const cars = free() && Array.isArray(state.cars) ? state.cars.filter(validPoint).slice(0, 12) : [];
+  while (carMarkers.length > cars.length) carMarkers.pop().remove();
+  cars.forEach((car, i) => {
+    if (!carMarkers[i]) {
+      const el = document.createElement('div');
+      el.className = 'nearby-car';
+      el.innerHTML = '<svg width="26" height="26" viewBox="0 0 40 40" aria-hidden="true"><rect x="12" y="4" width="16" height="32" rx="7" fill="' + C.forest + '" stroke="#fff" stroke-width="2.5"/><path d="M14.5 13.5c3-2 8-2 11 0l-1.2 5h-8.6z" fill="#BFE3EE"/></svg>';
+      el.style.cssText = 'width:26px;height:26px;opacity:.9;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35));pointer-events:none';
+      carMarkers[i] = new ml.Marker({ element: el, rotationAlignment: 'map' }).setLngLat([car.longitude, car.latitude]).addTo(map);
+    }
+    // A rounded spot has no heading: each car gets a steady slant of its own so a group never reads as one parked line.
+    carMarkers[i].setLngLat([car.longitude, car.latitude]).setRotation((i * 67) % 360);
+  });
+}
 function drawUser() {
+  drawCars();
   const user = validPoint(state.user) ? state.user : null;
   const source = map.getSource('user-accuracy');
   if (!user) { userMarker?.remove(); userMarker = undefined; source?.setData(empty); return; }

@@ -7,8 +7,8 @@ export type RefusalDeps = {
   one: (sql: string, ...args: any[]) => Promise<Row | undefined>;
   enabledServices: string[];
   servesFor: (vehicle: unknown) => string[];
-  canTake: (active: { service: never }[], service: never) => boolean;
-  activeLoad: (driverId: number) => Promise<{ service: string }[]>;
+  canTake: (active: never[], service: never, next?: { shared?: boolean | number | null; option?: string | null }, vehicle?: never) => boolean;
+  activeLoad: (driverId: number) => Promise<{ service: string; shared?: unknown; option?: unknown }[]>;
   guardCashCap: (driverId: number, price: number, rate: number, code?: string, orderId?: number) => Promise<void>;
   // production self-service accounts also need the permanent approval a driver accept demands
   permanentApprovalRequired: boolean;
@@ -17,7 +17,7 @@ export type RefusalDeps = {
 };
 
 /** The order fields the checks read. The admin passes its row; the driver accept passes its model with the same names. */
-export type RefusalOrder = { id: number; service: string; price: number; scheduled_for?: number | null };
+export type RefusalOrder = { id: number; service: string; price: number; scheduled_for?: number | null; shared?: boolean | null; option?: string | null };
 
 /** The first reason this driver may not take this order (same codes everywhere), or null. */
 export async function driverRefusal(deps: RefusalDeps, order: RefusalOrder, driver: Row, rate: number): Promise<string | null> {
@@ -28,7 +28,8 @@ export async function driverRefusal(deps: RefusalDeps, order: RefusalOrder, driv
   if (!deps.servesFor(driver.vehicle).includes(order.service)) return 'wrong_vehicle';
   if (order.scheduled_for != null && order.scheduled_for > Date.now() + deps.releaseBefore) return 'not_released_yet';
   if (await deps.one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', order.id, driver.id)) return 'driver_released_order';
-  if (!deps.canTake((await deps.activeLoad(Number(driver.id))) as never, order.service as never)) return 'vehicle_busy';
+  // RIDE-13: a shared ride fits beside parcels and other shared riders while the driver's vehicle has the seats.
+  if (!deps.canTake((await deps.activeLoad(Number(driver.id))) as never, order.service as never, { shared: order.shared, option: order.option }, (driver.vehicle ?? null) as never)) return 'vehicle_busy';
   try { await deps.guardCashCap(Number(driver.id), Number(order.price), rate, undefined, order.id); } // a shop order adds its door cash
   catch (error) { if ((error as { status?: number }).status === 409) return (error as Error).message; throw error; }
   return null;

@@ -1,15 +1,17 @@
 // Shop delivery tables (SRS §7, server/domain/shop.ts), additive: user_version stays 3, so an older build still opens
 // the database and simply never reads them. Money is integer agorot. Snapshots, checks, seals, faults and the shop
 // ledger are append-only, like cash_entries. PostgreSQL creates the same tables in postgres-shop.sql (migration 33).
-export const sqliteShopSchema = `
-CREATE TABLE IF NOT EXISTS merchants (
+/** The merchants table under a given name: the restaurant widening (sqlite-schema.ts) builds the new one beside the old. */
+export const merchantsTable = (name: string) => `CREATE TABLE IF NOT EXISTS ${name} (
   id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL UNIQUE REFERENCES users(id), name TEXT NOT NULL,
-  category TEXT NOT NULL CHECK (category IN ('grocery','bakery','goods')), city TEXT NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL, phone TEXT,
+  category TEXT NOT NULL CHECK (category IN ('grocery','bakery','goods','restaurant')), city TEXT NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL, phone TEXT,
   status TEXT NOT NULL CHECK (status IN ('pending','active','paused')), paused_new INTEGER NOT NULL DEFAULT 0 CHECK (paused_new IN (0,1)),
   min_order_agorot INTEGER NOT NULL CHECK (min_order_agorot >= 0), delivery_fee_agorot INTEGER NOT NULL CHECK (delivery_fee_agorot >= 0),
   service_fee_agorot INTEGER NOT NULL CHECK (service_fee_agorot >= 0), commission_bps INTEGER NOT NULL CHECK (commission_bps BETWEEN 0 AND 5000),
   prep_minutes INTEGER NOT NULL CHECK (prep_minutes BETWEEN 1 AND 180), licence_no TEXT NOT NULL, licence_expires_at INTEGER NOT NULL,
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);`;
+export const sqliteShopSchema = `
+${merchantsTable('merchants')}
 CREATE TABLE IF NOT EXISTS merchant_hours (
   merchant_id INTEGER NOT NULL REFERENCES merchants(id), weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
   open_min INTEGER NOT NULL CHECK (open_min BETWEEN 0 AND 1439), close_min INTEGER NOT NULL CHECK (close_min BETWEEN 0 AND 1440),

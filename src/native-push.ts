@@ -6,6 +6,7 @@ import { api, apiSessionRevision, storage } from './api';
 import { apiSessionCredential } from './api-client';
 import { router } from 'expo-router';
 import type { User } from './model';
+import { setNativePushRegistered } from './local-alert';
 
 type NavigationAccount = { user: Pick<User, 'id' | 'role' | 'status'> } | null;
 let syncNavigation: (ready: boolean, me: NavigationAccount) => void = () => {};
@@ -140,6 +141,7 @@ async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap
     }
     if (!isCurrentSession()) return false;
     await api('/push/native/register', { expoPushToken, deviceId, platform: Platform.OS, lang });
+    setNativePushRegistered(true); // the server's push now rings; local alerts stay quiet (local-alert.ts)
     return true;
   } catch { return false; /* polling fallback remains authoritative */ }
 }
@@ -157,6 +159,7 @@ export async function nativePushState(): Promise<'on' | 'off' | 'denied' | 'unsu
 export async function unregisterNativePush(): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
+    setNativePushRegistered(false);
     const deviceId = await storage.get('pushDeviceId');
     if (deviceId) await api('/push/native/unregister', { deviceId });
   } catch { /* server token expires with the session regardless */ }

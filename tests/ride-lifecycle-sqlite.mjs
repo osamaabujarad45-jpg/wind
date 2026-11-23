@@ -41,7 +41,11 @@ try {
   assert.equal(current.status, 'at_pickup');
   current = await advance(driver.token, current);
   assert.equal(current.status, 'in_transit', 'SQLite rides start without arrival or boarding');
-  current = await advance(driver.token, current);
+  // Owner, 23 Nov 2026: a ride ends with the rider's trip code, given after payment; a missing or wrong one is refused.
+  assert.match(order.handoverCode, /^\d{4}$/);
+  assert.equal((await advance(driver.token, current, {}, 400)).error, 'wrong_code');
+  assert.equal((await advance(driver.token, current, { code: '0000' === order.handoverCode ? '1111' : '0000' }, 400)).error, 'wrong_code');
+  current = await advance(driver.token, current, { code: order.handoverCode });
   assert.equal(current.status, 'completed');
   assert.equal(current.ride, undefined);
   assert.equal(db.prepare("SELECT count(*) n FROM sqlite_schema WHERE name IN ('ride_lifecycle','ride_boarding_attempts')").get().n, 0, 'no ride lifecycle tables are invented on SQLite');

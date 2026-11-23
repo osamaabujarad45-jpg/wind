@@ -134,7 +134,9 @@ export const defaultSettings = {
   rideBase: 15, ridePerKm: 1.1,
   freightBase: 70, freightPerKm: 2.5, freightLarge: 50, loadingHelp: 30,
   pickupPayPerKm: 1, // DRV-18: pre-pickup shipping pay per km, capped at the booked fare
-  sharedDiscount: 0.4, plusDiscount: 0.15,
+  // RIDE-13: a shared seat costs (1 − sharedDiscount) of the private fare. 0.7 puts a Tulkarm → Ramallah seat near ₪30, what a
+  // service taxi asks there (Nov 2026), and four shared seats pay the driver a little more than one private trip.
+  sharedDiscount: 0.7, plusDiscount: 0.15,
   commission: 0.15, proCommission: 0.05,
   plusPrice: 29, proPrice: 99,
   perMinute: 0.25, nightExtra: 0.2, // smart price (SPEC-driver-offers.md): extra minutes, night share
@@ -292,10 +294,44 @@ export function parcelFare(s: Settings, o: { option: string; plus?: boolean }): 
   return Math.max(1, Math.round((s.parcelPrice + (o.option === 'large' ? s.parcelLarge : 0)) * (o.plus ? 1 - s.plusDiscount : 1)));
 }
 
-/** Parcels a driver may carry at once; rides and freight are exclusive. */
+/** Parcels a driver may carry at once; private rides, freight and shop orders are exclusive. */
 export const PARCEL_LOAD = 200; // ponytail: the owner said 100+; raise when a van route carries more
-export const canTake = (active: { service: Service }[], service: Service) =>
-  service === 'parcel' ? active.every(o => o.service === 'parcel') && active.length < PARCEL_LOAD : active.length === 0;
+/** RIDE-13 (owner decision 23 Nov 2026): passenger seats a vehicle offers shared riders. A car four, a motorcycle one. */
+export const seatsFor = (vehicle: Vehicle | null | undefined) => vehicle === 'car' ? 4 : vehicle === 'motorcycle' ? 1 : 0;
+/** Seats a ride holds (its option, 1–4); other work holds none. */
+export const seatsOf = (o: { service: Service; option?: string | null }) =>
+  o.service === 'ride' ? Math.min(4, Math.max(1, Math.trunc(Number(o.option)) || 1)) : 0;
+/** Work that may share a vehicle with other work: parcels and shared rides. A driver going Tulkarm → Ramallah fills the
+ *  empty seats and the boot along the way, the way service taxis do here. Private rides, loads and shop orders stay alone. */
+export const poolable = (o: { service: Service; shared?: boolean | number | null }) => o.service === 'parcel' || (o.service === 'ride' && !!o.shared);
+export type Load = { service: Service; shared?: boolean | number | null; option?: string | null };
+/** Whether a driver carrying `active` may take one more job of `service`. Without `next` a ride counts as private, so a
+ *  caller that does not say "shared" stays as strict as before. The server always passes the vehicle; a screen that does
+ *  not know it assumes a car and the server still decides. */
+export const canTake = (active: Load[], service: Service, next?: { shared?: boolean | number | null; option?: string | null }, vehicle?: Vehicle | null) => {
+  if (service === 'parcel') return active.every(poolable) && active.filter(o => o.service === 'parcel').length < PARCEL_LOAD;
+  if (service === 'ride' && next?.shared) {
+    const seats = vehicle === undefined ? 4 : seatsFor(vehicle);
+    return active.every(poolable) && active.reduce((n, o) => n + seatsOf(o), 0) + seatsOf({ service, option: next.option }) <= seats;
+  }
+  return active.length === 0;
+};
+/** Seats still free for shared riders in a vehicle carrying `active`, or 0 when its load cannot share. */
+export const freeSeats = (active: Load[], vehicle: Vehicle | null | undefined) =>
+  active.every(poolable) ? Math.max(0, seatsFor(vehicle) - active.reduce((n, o) => n + seatsOf(o), 0)) : 0;
+
+/** Towns a driver going from `from` to `to` passes close to: going through one adds at most a quarter of the straight
+ *  distance plus 5 km. Straight lines between town centres widen the driver's board; they never promise a road. */
+export function onTheWay(from: CityId, to: CityId): CityId[] {
+  const a = city(from), b = city(to), direct = crowKm(a, b);
+  return cities.filter(c => crowKm(a, c) + crowKm(c, b) <= direct * 1.25 + 5).map(c => c.id);
+}
+/** A job fits a driver's trip when both its ends are on the way and it moves toward the destination: its drop-off is no
+ *  farther from the destination than its pickup, so nobody is carried backwards. */
+export function alongTheWay(from: CityId, to: CityId, job: { pickupCity: CityId; dropoffCity: CityId }) {
+  const way = onTheWay(from, to);
+  return way.includes(job.pickupCity) && way.includes(job.dropoffCity) && crowKm(city(job.dropoffCity), city(to)) <= crowKm(city(job.pickupCity), city(to)) + 0.5;
+}
 
 export function quote(s: Settings, o: {
   service: Service; pickupCity: CityId; dropoffCity: CityId; option: string;
@@ -318,13 +354,14 @@ const hebronHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Hebron', h
 /** 22:00–05:59 Palestine time. */
 export const isNight = (at: number) => { const h = Number(hebronHour.format(at)); return h >= 22 || h < 6; };
 export function smartPrice(s: Settings, o: {
-  service: Service; option: string; loadingHelp?: boolean; km: number; minutes: number; delayMinutes: number; at: number; plus?: boolean;
+  service: Service; option: string; loadingHelp?: boolean; km: number; minutes: number; delayMinutes: number; at: number; plus?: boolean; shared?: boolean;
 }): number {
   if (o.service === 'parcel') return parcelFare(s, o);
   const large = o.option === 'large';
   let total = o.service === 'ride' ? s.rideBase + s.ridePerKm * o.km
     : s.freightBase + s.freightPerKm * o.km + (large ? s.freightLarge : 0) + (o.loadingHelp ? s.loadingHelp : 0);
   total += s.perMinute * (Math.max(0, o.minutes - o.km * 1.2) + o.delayMinutes); // 1.2 min/km = 50 km/h, measured intercity
+  if (o.service === 'ride' && o.shared) total *= (1 - s.sharedDiscount) * seatsOf(o); // RIDE-13: a shared ride is priced per seat
   if (isNight(o.at)) total *= 1 + s.nightExtra;
   if (o.plus) total *= 1 - s.plusDiscount;
   return Math.max(1, Math.round(total));
@@ -424,9 +461,10 @@ export function runSheet<T extends Pick<Order, 'id' | 'status' | 'pickupCity' | 
 }
 
 // ---- Shop delivery (SRS §7, DLV/MER). Money is integer agorot end to end (PAY-01). ----
-export type ShopCategory = 'grocery' | 'bakery' | 'goods';
-/** DLV-19: only these categories open; pharmacy, tobacco and age-restricted goods stay closed until an owner policy exists. */
-export const shopCategories: ShopCategory[] = ['grocery', 'bakery', 'goods'];
+export type ShopCategory = 'grocery' | 'bakery' | 'goods' | 'restaurant';
+/** DLV-19: only these categories open; pharmacy, tobacco and age-restricted goods stay closed until an owner policy exists.
+ *  Restaurants open for the pilot (owner, 23 Nov 2026: "someone needs a meal"): a cooked meal is a counted item like any other. */
+export const shopCategories: ShopCategory[] = ['restaurant', 'grocery', 'bakery', 'goods'];
 export type ShopPolicy = 'remove' | 'ask_first' | 'similar';
 export const shopPolicies: ShopPolicy[] = ['remove', 'ask_first', 'similar'];
 export type MerchantState = 'accepted' | 'preparing' | 'awaiting_approval' | 'ready' | 'handed_over';

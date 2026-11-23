@@ -65,11 +65,11 @@ try {
   assert.deepEqual(db.prepare("SELECT action FROM security_events WHERE order_id = ? ORDER BY id").all(order.id).map(r => r.action),
     ['DELIVERY_EXCEPTION', 'EXCEPTION_RESOLVED']);
 
-  // Rides have no handover, so they cannot be put on hold.
+  // Rides carry a person, not goods, so they cannot be put on hold; they end with the rider's trip code (D-7).
   await call(`/orders/${other.id}/cancel`, { token: customer.token, body: {} });
   const ride = await inTransit('ride');
   await call(`/orders/${ride.id}/exception`, { token: driver.token, body: { ...report, requestId: randomUUID() }, expect: 409 });
-  await advance(driver.token, ride);
+  await advance(driver.token, ride, { code: (await call(`/orders/${ride.id}`, { token: customer.token })).handoverCode });
 
   // ---- T3: return to sender with the sender's code ----
   order = await inTransit();

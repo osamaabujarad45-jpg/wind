@@ -62,7 +62,9 @@ try {
   assert.equal(worker.status, 1, worker.stderr);
   assert.match(worker.stderr, /Durable worker requires the complete PostgreSQL migration ledger/);
   await setup.run('INSERT INTO schema_migrations VALUES(42, 0)');
-  assert.deepEqual(await call('/ready'), { ok: true, backend: 'postgres', schema: 42 });
+  assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' }, 'restaurant migration 43 is required');
+  await setup.run('INSERT INTO schema_migrations VALUES(43, 0)');
+  assert.deepEqual(await call('/ready'), { ok: true, backend: 'postgres', schema: 43 });
   await setup.run('DELETE FROM schema_migrations WHERE version=19');
   await setup.run('INSERT INTO schema_migrations VALUES(24, 0)');
   assert.deepEqual(await call('/ready', { expect: 503 }), { error: 'unavailable' });

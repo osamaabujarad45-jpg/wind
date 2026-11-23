@@ -10,8 +10,8 @@ import { useTheme } from '../../theme-context';
 
 const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits' | 'shopTimers'; keys: (keyof Settings)[] }[] = [
   { title: 'pricing', keys: ['parcelPrice', 'parcelLarge', 'pickupPayPerKm', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp', 'perMinute', 'nightExtra'] },
-  // sharedDiscount is not offered: pooling is off, so a shared fare never happens (the server refuses shared bookings).
-  { title: 'discounts', keys: ['plusDiscount', 'commission', 'proCommission'] },
+  // sharedDiscount (RIDE-13): what a shared seat saves against the private fare; listed only while rides, and so shared seats, run.
+  { title: 'discounts', keys: ['sharedDiscount', 'plusDiscount', 'commission', 'proCommission'] },
   { title: 'plans', keys: ['plusPrice', 'proPrice'] },
   { title: 'cashLimits', keys: ['driverCashCap', 'orderCashCeiling'] },
   // ADM-06: shown only while the shop line is on.
@@ -156,7 +156,7 @@ function AdminSettingsForm({ initial, payroll }: { initial: Settings; payroll: S
     {groups.filter(group => group.title !== 'shopTimers' || me?.capabilities?.enabledServices?.includes('shop')).map(group => <Card key={group.title}>
       <Txt variant="h2" style={{ marginBottom: 4 }}>{c[group.title]}</Txt>
       {group.title === 'discounts' && <Txt variant="caption" style={{ marginBottom: 10 }}>{c.percentNote}</Txt>}
-      {group.keys.filter(key => key !== 'pickupPayPerKm' || payrollAvailable).map(key => <Field key={key} keyboardType="decimal-pad" disabled={busy}
+      {group.keys.filter(key => (key !== 'pickupPayPerKm' || payrollAvailable) && (key !== 'sharedDiscount' || !!me?.capabilities?.pooling)).map(key => <Field key={key} keyboardType="decimal-pad" disabled={busy}
         label={`${c[`set_${key}`]}${fractionSettings.includes(key) ? ` (${Math.round(typedNumber(values[key]) * 100) || 0}%)` : unitless(key) ? '' : ' ₪'}`}
         error={bad === key ? fill(c.set_invalid, { field: c[`set_${key}`] }) : undefined}
         value={values[key]} onChangeText={text => { setValues(v => ({ ...v, [key]: text })); touchedRef.current = { ...touchedRef.current, [key]: true }; setTouched(touchedRef.current); setMessage(''); if (bad === key) setBad(''); }} />)}

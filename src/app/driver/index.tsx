@@ -5,7 +5,7 @@ import { Linking, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { api, ApiError, apiSessionRevision, SUPPORT_URL, useApi } from '../../api';
-import { canTake, cities, city, commissionOn, distanceKm, latinDigits, ltr, offerRange, type CityId, type Order, type Point } from '../../model';
+import { canTake, cities, city, commissionOn, distanceKm, freeSeats, latinDigits, ltr, offerRange, poolable, type CityId, type Order, type Point } from '../../model';
 import { MapSheet, SIDE_SHEET, useSideSheet } from '../../map-sheet';
 import { DriverMap } from '../../driver-map';
 import { pickupLocation } from '../../pickup-location';
@@ -15,6 +15,7 @@ import { FreightDetails } from '../../freight-details';
 import { capacityCommand, dispatchAcceptance, secondsUntil } from '../../ride-flow';
 import { BackgroundLocationAction, DriverPresenceCard } from '../../driver-presence-card';
 import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts';
+import { localAlert, useNewIds } from '../../local-alert';
 import { useSession } from '../../session';
 import { DriverSupportCard } from '../../driver-support-card';
 import { OfferClock } from '../../driver-offer-clock';
@@ -22,6 +23,10 @@ import { Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconB
 import { themedStyles, useTheme } from '../../theme-context';
 
 type JobsPage = { version: 1; jobs: Order[]; nextCursor: string | null };
+
+// Read in tap handlers only. The React compiler's purity check reads the accept handler as render code once the refusal
+// reason grew a seats branch (23 Nov), so the clock is named here instead of calling Date.now() inline.
+const wallClock = () => Date.now();
 
 export default function Jobs() {
   const { palette, shadow } = useTheme();
@@ -57,6 +62,12 @@ export default function Jobs() {
   // Older APIs ignore `page=1` and return an array. Never present a repeated first page as a new page.
   const pagingUnavailable = (Array.isArray(data) && (!!cursor || data.length === 50)) || (!!data && !Array.isArray(data) && !page) || badCursor;
   const jobs = Array.isArray(data) ? (cursor ? [] : data) : page?.jobs;
+  // Without phone push (local-alert.ts), a new job on the first page rings while the board is open.
+  useNewIds(focused && !cursor ? jobs?.map(job => job.id) : undefined, fresh => {
+    const job = jobs?.find(j => j.id === fresh[0]);
+    if (job) localAlert(fresh.length > 1 ? fill(c.alertJobsTitle, { n: fresh.length }) : c.alertJobTitle,
+      `${city(job.pickupCity)[language]} ${rtl ? '←' : '→'} ${city(job.dropoffCity)[language]} · ${money(job.price - job.discount)}`, '/driver');
+  });
   const work = useDriverWork();
   const matching = useApi<{ eligibleForMatching: boolean }>(active && work.presenceState === 'online' ? '/driver/presence' : null, 8000);
   const { permission } = work;
@@ -75,14 +86,18 @@ export default function Jobs() {
   const locating = work.tracking === 'starting';
   const carrying = work.orders;
   const assigned = carrying.length > 0;
-  // Parcels stack up; a ride or freight load is exclusive (SPEC-parcel-standard.md).
-  const blocked = (order: Order) => !canTake(carrying, order.service);
+  // Parcels and shared riders share the vehicle while it has room; a private ride, a load or a shop order is exclusive (RIDE-13).
+  const vehicle = me?.user.vehicle ?? null;
+  const blocked = (order: Order) => !canTake(carrying, order.service, order, vehicle);
+  const seatsReason = fill(c.accept_blocked_seats, { n: freeSeats(carrying, vehicle) });
+  const pooledLoad = carrying.every(poolable); // a shared run: a refusal is about seats, not about finishing first
   // With presence on, an offline idle captain takes no work from any surface: accept, offer or detail (H-02, Sol R2-M5).
   const offline = presenceOn && !assigned && work.presenceState !== 'online';
   // Why Accept and the offer buttons wait, in one sentence under them (design §10). Null exactly when they can be pressed.
   const acceptReason = (order: Order) => busy !== null ? c.accept_busy : dispatchAcceptance(order, now) === null ? c.dispatchExpired : !work.known ? c.accept_wait_status
     : offline ? c.accept_go_online // the presence card says offline captains take no jobs
-    : blocked(order) ? (order.service === 'parcel' && carrying.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive) : null;
+    : blocked(order) ? (order.service === 'parcel' && carrying.every(o => o.service === 'parcel') ? c.accept_blocked_parcels
+      : order.service === 'ride' && order.shared && pooledLoad ? seatsReason : c.accept_blocked_exclusive) : null;
   // Two or more offers waiting for the same reason (a current job, offline, a tap in flight): one sentence above the list instead of one per card.
   // An expired offer is not folded: its sentence is about that one offer.
   const firstWait = jobs?.[0] ? acceptReason(jobs[0]) : null;
@@ -102,7 +117,7 @@ export default function Jobs() {
         setActionError(c.locationOff);
         return;
       }
-      const lease = dispatchAcceptance(order, Date.now()); // tracking permission can outlive a short offer
+      const lease = dispatchAcceptance(order, wallClock()); // tracking permission can outlive a short offer
       if (lease === null) { setActionError(c.dispatchExpired); reload(); return; }
       const position = await acceptPosition(order.service);
       if (!current()) return;
@@ -151,7 +166,7 @@ export default function Jobs() {
   }
 
   async function decline(order: Order) {
-    const lease = dispatchAcceptance(order, Date.now());
+    const lease = dispatchAcceptance(order, wallClock());
     if (busy !== null || !lease || !('offerId' in lease)) return;
     setBusy(order.id); setActionError('');
     try { await api(`/offers/${lease.offerId}/decline`, {}); haptic.success(); await reload(); }
@@ -195,13 +210,14 @@ export default function Jobs() {
 
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     {/* A driver's work starts on the map, where they are; going online and the offers sit on the sheet over it. */}
-    {focused && <DriverMap active={work.presenceState === 'online' || assigned || locateOn} bottom={peek} label={c.jobs} onHere={setHere} />}
+    {/* Location already allowed: the board knows where the captain is, so jobs along the way and nearby riders find them (RIDE-13/14). */}
+    {focused && <DriverMap active={work.presenceState === 'online' || assigned || locateOn || !!permission?.granted} bottom={peek} label={c.jobs} onHere={setHere} />}
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.top, side && (rtl ? { left: SIDE_SHEET, right: 0 } : { right: SIDE_SHEET })]}>
       <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', justifyContent: 'space-between', alignItems: 'flex-start' }} pointerEvents="box-none">
         <View style={[styles.title, shadow]}><Txt variant="title" numberOfLines={1}>{c.jobs}{jobs?.length ? ` (${jobs.length})` : ''}</Txt></View>
         <View style={{ gap: 8 }}>
           <IconButton icon="trail-sign-outline" label={c.roads} onPress={() => router.push('/roads')} />
-          {!presenceOn && !assigned && !locateOn && <IconButton icon="locate" label={c.useLocation} onPress={locate} />}
+          {!presenceOn && !assigned && !locateOn && !permission?.granted && <IconButton icon="locate" label={c.useLocation} onPress={locate} />}
         </View>
       </View>
     </SafeAreaView>
@@ -248,6 +264,7 @@ export default function Jobs() {
     <FilterChips items={[{ key: 'any' as const, label: c.headingAny }, ...cities.map(x => ({ key: x.id, label: x[language] }))]}
       value={me?.user.heading?.city ?? 'any'} disabled={headingBusy} onChange={key => { void head(key); }} />
     {me?.user.heading && <Txt variant="caption" style={{ marginTop: -6, marginBottom: 6 }}>{fill(c.headingUntil, { city: city(me.user.heading.city)[language], t: time(me.user.heading.until) })}</Txt>}
+    {here && !assigned && <Txt variant="caption" style={{ marginBottom: 6 }}>{c.nearbyVisible}</Txt>}
 
     <ErrorText>{actionError || ((error || work.error) && err(error || work.error))}</ErrorText>
     {/* the cash rule holds for every job: said once above the list, not on each card (design review 17 Nov) */}
@@ -294,6 +311,10 @@ export default function Jobs() {
             {order.scheduledFor && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>
               <Ionicons name="calendar-outline" size={14} color={palette.olive} />
               <Txt variant="label" style={{ flex: 1 }}>{fill(c.pickupAt, { t: time(order.scheduledFor) })}</Txt>
+            </Row>}
+            {order.service === 'ride' && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>
+              <Ionicons name={order.shared ? 'people-outline' : 'person-outline'} size={iconSize.sm} color={palette.olive} />
+              <Txt variant="label" style={{ flex: 1 }}>{fill(order.shared ? c.jobSharedSeats : c.jobPrivateRide, { n: order.option })}</Txt>
             </Row>}
             <RouteLine from={order.pickupArea || city(order.pickupCity)[language]} to={order.dropoffArea || city(order.dropoffCity)[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} ride={order.service === 'ride'} />
             <FreightDetails order={order} />

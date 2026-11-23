@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import type { Persistence } from './persistence.ts';
 
 export const MIGRATION_LOCK = 5703001;
-export const POSTGRES_SCHEMA_VERSION = 42;
+export const POSTGRES_SCHEMA_VERSION = 43;
 const firstMigration = 3, skippedMigration = 24;
 
 /** Runtime probes inspect the migration ledger without creating or changing it. */
@@ -184,6 +184,10 @@ export async function initializePostgres(database: Persistence, schema: string) 
     if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 42'))) {
       await database.run(readFileSync(new URL('./postgres-support.sql', import.meta.url), 'utf8'));
       await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(42,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 43'))) {
+      await database.run(readFileSync(new URL('./postgres-shop-restaurants.sql', import.meta.url), 'utf8'));
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(43,?)', Date.now());
     }
   });
 }

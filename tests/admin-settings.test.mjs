@@ -34,7 +34,7 @@ try {
   await persistence.run("INSERT INTO settings (key, value) VALUES ('returnPolicyFrom', 123)");
   const legacy = {
     parcelPrice: 20, parcelLarge: 10, rideBase: 15, ridePerKm: 1.1, freightBase: 70, freightPerKm: 2.5,
-    freightLarge: 50, loadingHelp: 30, sharedDiscount: 0.4, plusDiscount: 0.15, commission: 0.15,
+    freightLarge: 50, loadingHelp: 30, sharedDiscount: 0.7, plusDiscount: 0.15, commission: 0.15,
     proCommission: 0.05, plusPrice: 29, proPrice: 99, perMinute: 0.25, nightExtra: 0.2, driverCashCap: 150,
     orderCashCeiling: 500, shopAgreeLimit: 0.1, shopAcceptMinutes: 5, shopConsentMinutes: 5, shopNoCaptainMinutes: 10,
     shopDispatchLeadMinutes: 15,

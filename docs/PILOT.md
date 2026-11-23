@@ -1,55 +1,80 @@
 # Running the Wind pilot
 
-For the owner. Parcels only, one city first, couriers and customers you know.
+For the owner. From 1.1.6 (23 November 2026) the pilot runs three services in one app: **rides** (private car or shared
+seats, in town and between towns), **parcels**, and **orders from shops and restaurants** in Tulkarm. Start with people you know.
+
+Production: <https://20.217.202.98.sslip.io>. Install page for everyone: <https://20.217.202.98.sslip.io/install.html>.
 
 ## Before the first invite
 
-1. Sign in on the admin account and open **Settings**: confirm the ₪20 parcel price and the commission.
-2. Do one real delivery yourself with one courier, a real parcel and real cash.
-3. Keep a simple record of cash handed over, on paper or in WhatsApp. Backups run nightly, so a server failure can lose up to a day.
+1. Sign in on the admin account and open **Settings**: check the ride price (base and per km), the shared seat discount
+   (70% off the private fare per seat by default), the ₪20 parcel price and the commission.
+2. Do one real trip of each kind yourself: a ride with one driver, a parcel, and a shop order from a shop you signed.
+3. Keep a simple record of cash handed over, on paper or in WhatsApp. Backups run every hour and are copied off the server.
 
 ## Inviting people
 
-Send the APK link with this message. Android asks to allow installing from this source once.
+Send the install link with this message. Android downloads the app; iPhone opens it in Safari and adds it to the Home Screen.
 
-> السلام عليكم، هذه نسخة تجريبية من تطبيق ويند لتوصيل الطرود. حمّل التطبيق من الرابط، وسجّل برقم جوالك وبريدك الصحيح (نستخدم البريد لاسترجاع كلمة المرور).
-> الدفع نقدًا للسائق. أعطِ السائق رمز التسليم عند الاستلام فقط.
-> لأي ملاحظة: «حسابي» ← «المساعدة والدعم» ← «أرسل رأيك في التطبيق». رأيك يهمنا جدًا.
+> السلام عليكم، هذا تطبيق ويند: مشاوير داخل البلد وبين المدن (سيارة خاصة أو مقعد مشترك أرخص)، توصيل طرود، وطلبات من المحلات والمطاعم.
+> حمّل التطبيق من هذا الرابط: https://20.217.202.98.sslip.io/install.html
+> سجّل برقم جوالك. الدفع نقداً للسائق، وبعد الدفع أعطه رمز الرحلة أو رمز التسليم الظاهر في التطبيق.
+> لأي ملاحظة: «حسابي» ← «المساعدة والدعم».
 
-iPhone users can use the web app at <https://4.223.118.16.sslip.io> in the browser (from 16 November 2026; anyone who added the old address to the home screen must add the new one). Closed-app alerts there depend on the browser.
+## How each service works
 
-## Couriers
+**Ride.** The customer opens the app and sees nearby cars on the map, taps *Where to?*, chooses **private car** or
+**shared seats** and the number of seats, and requests. Drivers accept the suggested price or offer their own (from half to
+twice the suggestion); the customer picks one offer, follows the car on the map and chats with the driver if the price or
+the meeting point needs a word. At the drop-off the customer pays cash and then gives the driver the **trip code**; the
+driver enters it to finish.
 
-1. The courier registers in the app and chooses to work as a driver.
-2. Open **Users** in admin, check who they are, and approve them. Nobody takes jobs until approved.
-3. Tell them: keep location on, allow background location, and do not force-close the app while on a job.
-4. Routes are not a guarantee of permitted roads or a West Bank boundary. A sandbox route crossed the Green Line. Routing avoids checkpoints reported closed, but does not establish permits or current gate access. The courier must confirm the usable road; drive times are uncalibrated estimates.
+**Shared seats between towns.** A driver going, say, Tulkarm → Ramallah sets *Heading to* Ramallah on the jobs screen. The
+screen then shows riders and parcels **along the way** (Anabta, Nablus, Salfit…), never ones going backwards. The driver can
+take several shared riders and parcels at once while the car has seats (a car 4, a motorcycle 1). A private ride, a load or
+a shop order is taken alone.
+
+**Parcel.** Fixed price; the sender gives the delivery code to the recipient, who gives it to the driver.
+
+**Shop and restaurant orders (Tulkarm).** A shop owner signs up as a customer, opens **Account → My shop** (محلي) and
+applies (category: restaurant, grocery, bakery or everyday goods). You approve it in **Admin → Approvals**, then set its terms
+in **Admin → Shops**. The owner adds items and prices in merchant mode, accepts each order with a preparation time and marks it
+ready; a captain collects it with the shop's pickup code and the customer pays cash at the door.
+
+## Drivers
+
+1. The driver registers in the app and chooses to work as a driver.
+2. Open **Approvals** in admin, check who they are (ID, licence, plate), and approve them. Nobody takes jobs until approved.
+3. Tell them: allow location, keep the jobs screen open when they want work (nearby customers then see a car where they
+   are), and do not force-close the app while on a job.
+4. Routes are not a guarantee of permitted roads. Routing avoids checkpoints reported closed, but the driver confirms the
+   usable road.
 
 ## Every day
 
-- **Dashboard:** orders stuck searching, and the backup warning.
+- **Dashboard:** orders stuck searching, shop orders that need attention, and the backup warning.
 - **Cash:** owed against what was handed over.
 - **Phone two or three users.** Feedback arrives on WhatsApp +972597127547.
 
 ## What to ask them
 
-Did the courier find the place? Was the price fair for the courier? Did the alert arrive with the app closed? What confused you? Would you use it again?
-
-Watch for: the flat ₪20 on long trips, password-reset email landing in spam, and couriers missing jobs because Android killed the app.
+Did the driver find you? Was the price fair, for you and for the driver? Was the shared ride comfortable? Did the shop
+order arrive right and on time? What confused you? Would you use it again?
 
 ## When something goes wrong
 
 | Problem | Do this |
 |---|---|
-| Forgot password | Follow the recovery option actually shown on sign-in. Email recovery requires a configured provider; check spam when a link was requested. Otherwise contact support for an identity-checked admin reset. |
+| Forgot password | Follow the recovery option shown on sign-in, or do an identity-checked admin reset. |
+| The rider cannot give the trip code (phone off) | Admin opens the order and resets the code after phoning both. |
 | Courier blocked while carrying a parcel | Phone them: they are not told. |
-| Customer cannot be blocked | They have an open order. Cancel it or wait for delivery. |
-| Server down | The hourly GitHub Uptime workflow checks readiness; notification receipt and a minutes-level alert are not yet proven. See `docs/operations/restore.md`. |
+| Server down | The hourly Uptime workflow checks readiness; see `docs/operations/restore.md`. |
 
 ## Known limits of this pilot
 
-- Phone numbers and email are not verified at signup, so a mistyped email can lose an account to whoever owns that address. Only invite people you know.
-- TalkBack has never been tried by a person.
-- The Firebase project is named `wind-development` and is used for production alerts.
-- Rides and freight are off. Public parcels and PostgreSQL cutover precede rides. Service configuration alone does not enable dispatch/presence or boarding: those have separate runtime gates and require reviewed activation plus owner authorization. Simulated-GPS Chrome journeys do not establish native or road acceptance. Freight remains later scope.
-- Only the owner's legal review can say whether this may run commercially; none has been done.
+- **Notifications with the app closed are off** until the Firebase project for push is set up (owner sign-in needed). With
+  the app open, offers, arrivals and messages appear within seconds. Ask drivers to keep the jobs screen open while waiting.
+- Phone numbers are not verified by SMS at signup. Only invite people you know.
+- iPhone is a Home Screen web app: location for a driver works only while the app is open.
+- Passenger transport permission and insurance (G-RIDE) and the shop food-handling rules are the owner's legal side; no
+  counsel review has been done.

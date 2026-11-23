@@ -142,12 +142,26 @@ if ! grep '^WIND_BACKUP_MAX_AGE_HOURS=' /etc/wind-api.env | tail -n1 | grep -qE 
   echo 'WIND_BACKUP_MAX_AGE_HOURS=3' >> /etc/wind-api.env
 fi
 
+# The Android APK the install page offers (/install.html), outside the release tree so a deploy keeps it: Caddy serves it
+# straight from disk (publish-apk.sh writes it). Everything else goes to the API, which also serves the web app.
+install -d -m 755 /srv/wind-public /srv/wind-public/download
 # Validated before it replaces the working configuration; a bad one leaves Caddy as it was (Sol ops review 21 Nov).
 CADDY_NEW=$(mktemp /etc/caddy/Caddyfile.new.XXXXXX)
 cat > "$CADDY_NEW" <<EOF
 $HOST${TLS_ALIAS:+, $TLS_ALIAS} {
   encode zstd gzip
-  reverse_proxy 127.0.0.1:4000
+  handle /download/* {
+    root * /srv/wind-public
+    header Cache-Control "no-cache"
+    header X-Content-Type-Options nosniff
+    @apk path *.apk
+    header @apk >Content-Type application/vnd.android.package-archive
+    header @apk Content-Disposition "attachment; filename=wind.apk"
+    file_server
+  }
+  handle {
+    reverse_proxy 127.0.0.1:4000
+  }
 }
 EOF
 chmod 644 "$CADDY_NEW"

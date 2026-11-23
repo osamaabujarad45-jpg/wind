@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { sqliteShopSchema } from './sqlite-shop.ts';
+import { merchantsTable, sqliteShopSchema } from './sqlite-shop.ts';
 type Row = Record<string, any>;
 
 export function initializeSqlite(db: DatabaseSync) {
@@ -397,6 +397,24 @@ CREATE TABLE IF NOT EXISTS native_push_tokens (
   FOREIGN KEY(auth_session_hash, user_id) REFERENCES sessions(token_hash, user_id) ON DELETE CASCADE);
 CREATE INDEX IF NOT EXISTS native_push_tokens_user ON native_push_tokens(user_id, created_at);`);
 db.exec(sqliteShopSchema); // shop delivery, additive (SRS §7)
+// Restaurants (owner, 23 Nov 2026): the merchants category check gains 'restaurant'. SQLite cannot alter a CHECK and other shop
+// tables reference merchants, so the rows move to a new table, the old one is dropped and the new one renamed into its place (the
+// order SQLite's ALTER TABLE page gives for a referenced table), with foreign keys off for those statements only. Ids are kept.
+if (!String((db.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'merchants'").get() as Row | undefined)?.sql ?? '').includes("'restaurant'")) {
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec('DROP TABLE IF EXISTS merchants_next');
+      db.exec(merchantsTable('merchants_next'));
+      db.exec('INSERT INTO merchants_next SELECT * FROM merchants');
+      db.exec('DROP TABLE merchants');
+      db.exec('ALTER TABLE merchants_next RENAME TO merchants');
+      if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database foreign-key check failed');
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  } finally { db.exec('PRAGMA foreign_keys = ON'); }
+}
 if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database foreign-key check failed');
 
 }

@@ -12,7 +12,7 @@ const SETTLED_AFTER_MS = 30_000;
 export type BookingPayload = {
   service: Service; pickupCity: CityId; dropoffCity: CityId; pickupPoint: Point | null; dropoffPoint?: Point | null;
   pickupNote: string; dropoffNote: string; contact: string; detail: string;
-  option: string; loadingHelp: boolean; shared: false; quotedPrice: number; scheduledFor?: number;
+  option: string; loadingHelp: boolean; shared: boolean; quotedPrice: number; scheduledFor?: number; // shared: a ride's seats only (RIDE-13)
   quoteId?: string; // server-locked quote (WP08); when set, the wire body omits quotedPrice
   declaredScope?: FreightScope;
   promoCode?: string; expectedDiscount?: number;
@@ -56,7 +56,7 @@ export function againForm(order: Order) {
     pickupNote: order.pickupNote, dropoffNote: order.dropoffNote, detail: order.detail, contact: order.contact ?? '',
     recipientName: order.recipientName ?? '', recipientPhone: order.recipientPhone ?? '',
     option: optionsFor(order.service).includes(order.option) ? order.option : optionsFor(order.service)[0],
-    loadingHelp: order.loadingHelp,
+    loadingHelp: order.loadingHelp, shared: order.service === 'ride' && !!order.shared,
     ...(order.service === 'parcel' && { priority: order.priority ?? 'standard' }),
   };
 }
@@ -74,7 +74,7 @@ export function readBooking(saved: string | null): PendingBooking | null {
   const booking: PendingBooking = JSON.parse(saved);
   const p = booking?.payload;
   if (!uuid.test(booking?.requestId) || !p || !services.includes(p.service) || !isCity(p.pickupCity) || !isCity(p.dropoffCity)
-    || !optionsFor(p.service).includes(p.option) || p.shared !== false || typeof p.loadingHelp !== 'boolean'
+    || !optionsFor(p.service).includes(p.option) || typeof p.shared !== 'boolean' || (p.shared && p.service !== 'ride') || typeof p.loadingHelp !== 'boolean'
     || !Number.isFinite(p.quotedPrice) || p.quotedPrice < 1
     || ['pickupNote', 'dropoffNote', 'contact', 'detail'].some(key => typeof p[key as 'detail'] !== 'string')
     || (p.scheduledFor !== undefined && !Number.isInteger(p.scheduledFor))

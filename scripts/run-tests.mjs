@@ -90,6 +90,8 @@ const suites = [
   "push.test.mjs",
   "push-server.test.mjs",
   "offers.test.mjs",
+  "pooling.test.mjs",
+  "restaurant-migration.test.mjs",
   "review-fixes.test.mjs",
   "parcels.test.mjs",
   "order-history-serialization.test.mjs",

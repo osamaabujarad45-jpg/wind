@@ -30,7 +30,8 @@ type Deps = RefusalDeps & {
 };
 
 const ASSIGNABLE = ['searching', 'assigned', 'at_pickup'];
-const refusalOrder = (order: Row): RefusalOrder => ({ id: Number(order.id), service: String(order.service), price: Number(order.price), scheduled_for: order.scheduled_for ?? null });
+const refusalOrder = (order: Row): RefusalOrder => ({ id: Number(order.id), service: String(order.service), price: Number(order.price), scheduled_for: order.scheduled_for ?? null,
+  shared: !!Number(order.shared ?? 0), option: order.option == null ? null : String(order.option) });
 
 export function registerAdminAssignRoutes(route: Register, deps: Deps): void {
   const { one, all, run, fail } = deps;
@@ -110,7 +111,9 @@ export function registerAdminAssignRoutes(route: Register, deps: Deps): void {
         if (!changed) fail(409, 'order_changed');
         await run('UPDATE orders SET commission_rate = ? WHERE id = ?', rate, orderId); // both backends bind the rate snapshot
         await deps.ensureAssignment(orderId, driverId, 'legacy');
-        await run('DELETE FROM order_offers WHERE order_id = ? OR driver_id = ?', orderId, driverId);
+        // A driver who can still share their vehicle keeps their other offers; taking exclusive work ends them (RIDE-13).
+        await run(`DELETE FROM order_offers WHERE order_id = ?${order.service === 'parcel' || (order.service === 'ride' && Number(order.shared ?? 0)) ? '' : ' OR driver_id = ?'}`, orderId,
+          ...(order.service === 'parcel' || (order.service === 'ride' && Number(order.shared ?? 0)) ? [] : [driverId]));
         if (!carrying.length) await run('DELETE FROM driver_locations WHERE driver_id = ?', driverId);
         await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?)`,
           user.id, orderId, order.status === 'searching' ? 'ORDER_ASSIGNED_BY_ADMIN' : 'ORDER_REASSIGNED_BY_ADMIN',

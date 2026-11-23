@@ -19,6 +19,7 @@ export type SceneMapProps = {
   focus?: RouteMapProps['focus']; stale?: boolean; follow?: boolean;
   night?: boolean; // design system v2: the Night map; follows the app theme when absent
   user?: UserDot | null; insets?: SceneMapInsets; labels?: { pickup?: string; dropoff?: string } | null; eta?: string | null;
+  cars?: Point[] | null; // RIDE-14: unnamed nearby cars on a plain map (browse or pin)
   label?: string; height?: number; fill?: boolean;
   /** Margin kept around framed stops, in points. */
   padding?: number;
@@ -30,7 +31,7 @@ export type SceneMapProps = {
 export function SceneMap(props: SceneMapProps) {
   const theme = useTheme(), { palette } = theme;
   const styles = useStyles();
-  const { mode, height = 220, fill, center, zoom, pickup, dropoff, driver, road, approach, closed, focus, stale, follow, user, insets, labels, eta, label } = props;
+  const { mode, height = 220, fill, center, zoom, pickup, dropoff, driver, road, approach, closed, focus, stale, follow, user, insets, labels, eta, label, cars } = props;
   const { c, language } = useCopy();
   const still = useReducedMotion();
   const [failed, setFailed] = useState(false);
@@ -53,7 +54,8 @@ export function SceneMap(props: SceneMapProps) {
   const config = { mode, language, still, center, zoom, pickup, dropoff, driver: liveDriver, user: dot, insets, recenter: c.recenter, ...(night && { theme: 'night' as const }),
     padding: props.padding ?? (fill ? 56 : Math.round(Math.min(56, height / 5))) }; // markers clear of the edges without zooming a short map out
   const update = { mode, ...(center && { center, zoom }), ...(mode === 'route' && pickup && dropoff ? { pickup, dropoff } : {}), driver: liveDriver, road: road ?? null, approach: approach ?? null,
-    closed: closed ?? [], focus, stale: !!stale, follow: !!follow, user: dot, ...(insets && { insets }), labels: labels ?? null, eta: eta ?? null, ...(label && { label }) };
+    closed: closed ?? [], focus, stale: !!stale, follow: !!follow, user: dot, ...(insets && { insets }), labels: labels ?? null, eta: eta ?? null, ...(label && { label }),
+    ...(cars && { cars: cars.map(car => ({ latitude: car.latitude, longitude: car.longitude })) }) };
   return <View style={fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
     {/* Never a blank box while the page loads over a slow connection. */}
     {drawn !== run && <View style={[StyleSheet.absoluteFill, styles.cover, { backgroundColor: ground }]} pointerEvents="none"

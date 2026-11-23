@@ -57,7 +57,7 @@ function screen(pending = null) {
     get pending() { return state.pending; },
     submitBlocked: false, scopeIncomplete: false, routeChosen: true, scheduledFor: null, service: 'parcel', priority: 'standard', sameDayOpen: true,
     pickupCity: 'ramallah', dropoffCity: 'nablus', pickupPoint: null, dropoffPoint: null, pickupNote: 'Gate', dropoffNote: 'Door',
-    contact: '0599123456', detail: 'Box', option: 'small', loadingHelp: false, price: 20, declaredScope: null,
+    contact: '0599123456', detail: 'Box', option: 'small', loadingHelp: false, sharedSeats: false, price: 20, declaredScope: null,
     recipientPhone: '', recipientName: '', goodsOk: true, applied: null, smart: null, busy: false, releasable: true,
     promoBlocked: false, checking: false, fill: value => value, money: String,
     AccessibilityInfo: { announceForAccessibility: () => state.ui.push('announce') },
