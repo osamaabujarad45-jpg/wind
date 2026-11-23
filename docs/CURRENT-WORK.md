@@ -1,5 +1,36 @@
 # CURRENT WORK — read me first
 
+**23 November · UI chain and release `bac6a5ec` (start here).** Lead: Claude Opus 5.5.
+
+- **What merged.** Three ui-design-review passes landed, each with a Haiku 5.5 xhigh review, findings fixed, a Docker cloud gate and green CI:
+  - [#112](https://github.com/osamaabujarad45-jpg/wind/pull/112): compare with Uber and Careem. The driver sheet names the next stop, one wait reason sits above the offers, and a finished order has one main button.
+  - [#114](https://github.com/osamaabujarad45-jpg/wind/pull/114): review. Decisions lead the admin home, the merchant count reads right, the shop + is visible, and the tab is renamed Pending.
+  - [#115](https://github.com/osamaabujarad45-jpg/wind/pull/115): a new logo (the Arabic و drawn as a gust holding the clay destination dot), depth with no new dependencies, Arabic and English posters, and every finding of a full review fixed. Highlights: whose turn it is (merchant "Accept within", the customer's "Answer the shop"), one warning per screen, and the earnings and admin hierarchy.
+- **Production.** `bac6a5ec` has run on the Israel VM since about 10:10 UTC. It supersedes the `5217dbc9` release in the Azure entry below and a later release that day (`20261123043019`).
+  - `/opt/windapi` points to `/opt/wind-releases/20261123101027`. The previous release is `20261123043019`.
+  - The checkpoint is `/data/backups/pre-install-20261123101027.db`.
+  - `check-deployment.mjs` passes 10/10, and the live web app shows the new logo.
+  - The SSH rule `ssh-admin` now allows the lead PC's new IP only.
+- **Android.** APK 1.1.5 vc42 is EAS build `a6cdd1c6`, built from `bac6a5ec`. It carries the new launcher icon and splash, and all the client fixes above reach phones only through it.
+  - The file is `C:\w\wind-tools\apk-1123\wind-1.1.5-vc42.apk` (SHA-256 `523935fe…`).
+  - It is installed on the A53 over vc41. The native intro shows the new mark.
+  - The phone had no working internet at the time (no answer from the server or from 8.8.8.8), so the signed-in walk is still open.
+- **Brand tooling.**
+  - `scripts/brand-mark.mjs` holds the one geometry. `node scripts/make_icon.mjs` writes `assets/`; it replaces `make_icon.py`, because Pillow is not installed anywhere we run. `node scripts/make_promo.mjs` writes `docs/brand/`.
+  - Both scripts need Playwright's Chromium, so run them in the sandbox.
+  - `tests/brand-mark.test.mjs` checks that the `logoMark` numbers in `src/ui.tsx` equal `MARK` in `scripts/brand-mark.mjs`.
+  - See [docs/brand/README.md](brand/README.md).
+- **One line of work.** `master` is the only line of work; the branches below are kept only as records.
+  - 107 fully merged or squash-merged branches were deleted. Their names and SHAs are in `C:\w\wind-tools\logs\merged-branches-1123-shas.txt`, so any of them can be recreated.
+  - Kept on purpose: the `backup/*` snapshots; `codex/sol-lead-1121`, `review/ui-ux-audit-2026-11-07-base` and `claude/wind-fastship-integration-258f07` (no PR, unreviewed); `claude/test-db-acquire-knob` (#11) and `claude/ui-ux-audit-2026-11-07b` (#9), both closed unmerged.
+  - Branch every new piece of work from `origin/master`. The OneDrive root checkout's local `master` is a diverged, older lineage (merge-base `83533e39`) with uncommitted owner changes. Do not use it as a base.
+- **Next steps, in order.**
+  1. Once the A53 has data or Wi-Fi, walk vc42 at 200% text and with TalkBack, including the new sign-in tabs, earnings, and the merchant accept card.
+  2. Push notifications: the owner provides Firebase access, so `GOOGLE_SERVICES_JSON` and `WIND_EXPO_PUSH_ENABLED` can be set, then a push-enabled APK is built.
+  3. The old host `4.223.118.16` still serves vc40 and older. It needs the owner's student sign-in, then a backup and a redirect.
+  4. Alert email delivery and a timed replacement-host recovery drill ([azure-recovery-review](operations/azure-recovery-review.md)).
+  5. Put the posters' download link or QR code in once the public link is final (`docs/brand/README.md`).
+
 **23 November · Azure monitoring and recovery.** [PR #111](https://github.com/osamaabujarad45-jpg/wind/pull/111) merged and was deployed as `5217dbc9` to the production VM. The Docker cloud package and the installer each passed a SQLite dry run. The installer kept a pre-install checkpoint and the previous release. Production backup permissions, backup and outage alerts, the monthly budget, and both HTTPS hostnames were verified. See [Azure recovery and deployment review](operations/azure-recovery-review.md) for the rollout evidence. Alert email delivery and a timed replacement-host recovery drill remain open.
 
 The Docker cloud sandbox passed lint, both typechecks, the landscape sheet regression and 33 browser scenarios for the Azure release. The approved local WSL Docker test passed five Chrome checks and a native Arabic parcel handover on the physical Galaxy A53. The customer saw the code for a synthetic in-transit parcel, the driver submitted it with the numeric keyboard open, and a fresh customer session read the order as completed.
