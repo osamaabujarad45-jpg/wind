@@ -39,9 +39,3 @@ export function markSvg(size, { tile = true, monochrome = false, background = nu
     + `<g transform="translate(${pad} ${pad}) scale(${box / 100})">${markShapes({ monochrome })}</g></svg>`;
 }
 
-/** The mark as a group for embedding in a larger SVG, at x,y with the given size (tile included). */
-export function markGroup(x, y, size, { tile = true } = {}) {
-  return `<g transform="translate(${x} ${y})">`
-    + (tile ? `<rect width="${size}" height="${size}" rx="${size * MARK.radius}" fill="${BRAND.forest}"/>` : '')
-    + `<g transform="scale(${size / 100})">${markShapes()}</g></g>`;
-}

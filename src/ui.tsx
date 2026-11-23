@@ -292,9 +292,11 @@ export function Press({ children, onPress, style, containerStyle, disabled, acce
   tilt?: boolean; // a tile that leans back in depth as it is pressed, like a key going down (home service tiles)
 }) {
   const [pressed, setPressed] = useState(false);
+  const still = useReducedMotion(); // reduced motion: the scale press only, no lean in depth
+  const lean = tilt && !still;
   return <Pressable style={containerStyle} onPress={onPress} disabled={!!disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
     aria-disabled={!!disabled} aria-busy={!!accessibilityState?.busy} aria-checked={accessibilityState?.checked} aria-expanded={accessibilityState?.expanded} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
-    <Animated.View style={[tilt ? motion.tiltable : motion.pressable, style, pressed && (tilt ? motion.tilted : motion.pressed), disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
+    <Animated.View style={[lean ? motion.tiltable : motion.pressable, style, pressed && (lean ? motion.tilted : motion.pressed), disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
   </Pressable>;
 }
 
@@ -370,7 +372,7 @@ export function Choices<K extends string>({ items, value, onChange, disabled, la
       const on = item.key === value, off = !!disabled || !!item.disabled;
       return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} accessibilityState={{ checked: on, disabled: off }} disabled={off} aria-checked={on}
         onPress={() => onChange(item.key)} style={wraps ? { flexGrow: 1, flexBasis: '30%' } : { flex: 1 }}>
-        <Animated.View style={tabs ? [choiceMotion.choice, styles.tab, on && [{ backgroundColor: palette.card }, shadow]] : [choiceMotion.choice, on && choiceMotion.choiceOn]}>
+        <Animated.View style={tabs ? [choiceMotion.choice, styles.tab, on && [{ backgroundColor: palette.card, borderWidth: 1, borderColor: palette.field }, shadow]] : [choiceMotion.choice, on && choiceMotion.choiceOn]}>
           <Text maxFontSizeMultiplier={maxScale} style={[styles.choiceText, on && { color: tabs ? palette.ink : palette.onFill }, tabs && !on && { color: palette.secondary }, off && !on && { color: palette.faint }]}>{item.label}</Text>
         </Animated.View>
       </Pressable>;
@@ -502,7 +504,7 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, hint, m
     </Pressable>
     <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, disabled && styles.inputDisabled, !!error && styles.inputError, multiline && { alignItems: 'flex-start' }]}>
       {icon && <Ionicons name={icon} size={iconSize.md} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
-      <TextInput ref={ref} maxFontSizeMultiplier={maxScale} accessibilityLabel={label} accessibilityHint={error ?? hint} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={disabled ? palette.secondary : palette.faint}
+      <TextInput ref={ref} maxFontSizeMultiplier={maxScale} accessibilityLabel={label} accessibilityHint={error || hint} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={disabled ? palette.secondary : palette.faint}
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); onBlur?.(); }}
         onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
@@ -730,8 +732,7 @@ export const tabIcon =(name: IconName) => function TabIcon({ color, size: s, foc
 const motion = css.create({
   pressable: { transform: [{ scale: 1 }], transitionProperty: 'transform', transitionDuration: '120ms', transitionTimingFunction: EASE_OUT },
   pressed: { transform: [{ scale: 0.97 }] },
-  // Same transform list in both states, so the transition interpolates each part. Reduced motion keeps the press feedback
-  // (it is instant in both cases on web, where the OS setting disables CSS transitions).
+  // Same transform list in both states, so the transition interpolates each part. Press uses these only without reduced motion.
   tiltable: { transform: [{ perspective: 600 }, { rotateX: '0deg' }, { scale: 1 }], transitionProperty: 'transform', transitionDuration: '140ms', transitionTimingFunction: EASE_OUT },
   tilted: { transform: [{ perspective: 600 }, { rotateX: '10deg' }, { scale: 0.96 }] },
 });

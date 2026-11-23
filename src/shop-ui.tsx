@@ -19,7 +19,7 @@ export function todayHours(m: Pick<Merchant, 'hours' | 'open'>, c: Record<string
   if (!m.hours.length) return null;
   const today = m.hours.filter(h => h.weekday === new Date().getDay());
   if (today.some(h => h.openMinute === 0 && h.closeMinute >= 1440)) return c.shopOpenAllDay; // "Today 00:00–24:00" read like a typo
-  const ranges = m.hours.filter(h => h.weekday === new Date().getDay()).map(h => ltr(`${hhmm(h.openMinute)}–${hhmm(h.closeMinute)}`)); // ltr: RTL would read the range backwards
+  const ranges = today.map(h => ltr(`${hhmm(h.openMinute)}–${hhmm(h.closeMinute)}`)); // ltr: RTL would read the range backwards
   // An open shop with no range today is in last night's overnight range, so it never says "Closed today".
   return ranges.length ? fill(c.shopHoursToday, { h: ranges.join('، ') }) : m.open ? null : c.shopClosedToday;
 }

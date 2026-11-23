@@ -2,6 +2,7 @@
 // Run from the repo root:  node scripts/make_icon.mjs
 // Chromium is needed once:  node node_modules/playwright/cli.js install chromium --only-shell
 import { mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { BRAND, markSvg } from './brand-mark.mjs';
 
@@ -27,7 +28,7 @@ try {
     const size = Number(svg.match(/width="(\d+)"/)[1]);
     await page.setViewportSize({ width: size, height: size });
     await page.setContent(`<html><body style="margin:0;background:transparent">${svg}</body></html>`);
-    await page.locator('svg').screenshot({ path: new URL(file, OUT).pathname.replace(/^\/([A-Za-z]:)/, '$1'), omitBackground: transparent });
+    await page.locator('svg').screenshot({ path: fileURLToPath(new URL(file, OUT)), omitBackground: transparent });
     console.log(`wrote assets/${file}`);
   }
 } finally {

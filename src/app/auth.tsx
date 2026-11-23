@@ -207,7 +207,7 @@ export default function Auth() {
               <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.backToSignIn}</Txt>
             </Press>
           </> : <>
-          <Choices tabs items={[{ key: 'in', label: c.signIn }, { key: 'up', label: c.signUp }]} value={mode}
+          <Choices tabs label={c.authMode} items={[{ key: 'in', label: c.signIn }, { key: 'up', label: c.signUp }]} value={mode}
             onChange={next => { setMode(next); setError(''); }} />
           <View style={{ height: 10 }} />
           {mode === 'up' && registration === null ? <Loading />
