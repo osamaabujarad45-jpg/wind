@@ -38,7 +38,7 @@ import { firebaseReset } from './domain/firebase-reset.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
-import { registerNearbyRoutes, sawDriver } from './domain/nearby.ts';
+import { forgetDriver, registerNearbyRoutes, sawDriver } from './domain/nearby.ts';
 import { areaName, registerPlaceIndexRoutes, streetName } from './domain/place-index.ts';
 import { registerPlaceLinkRoutes } from './domain/place-link.ts';
 import { registerCashOpsRoutes } from './domain/cash-ops.ts';
@@ -48,7 +48,7 @@ import { registerAdminAssignRoutes } from './domain/admin-assign.ts';
 import { driverRefusal } from './domain/driver-refusal.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { registerCashReceiptRoutes } from './domain/cash-receipts.ts';
-import { cashClientFenced, clientUpdateRequired, registerRuntimeRoutes } from './domain/runtime-readiness.ts';
+import { cashClientFenced, clientUpdateRequired, registerRuntimeRoutes, tripCodeClientTooOld } from './domain/runtime-readiness.ts';
 import { registerDriverReceiptRoutes } from './domain/driver-receipts.ts';
 import { registerCommandReceiptRoutes } from './domain/command-receipts.ts';
 import { registerCustodyRoutes } from './domain/custody.ts';
@@ -64,7 +64,7 @@ import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
   activeStatuses, cities, city, pickupPayCents as pickupPayFor, commissionOn, crowKm, distanceKm, exceptionReasons, finishedStatuses, pickupRefusal, pickupRefusalDetails, defaultSettings, fractionSettings, invalidSetting, isCity, nextStatus, normalizeEmail, normalizePhone,
-  alongTheWay, canTake, CLOSED_MINUTES, nearestCity, onTheWay, poolable, HISTORY_PAGE, isNight, latinDigits, offerRange, overCashCeiling, PARCEL_LOAD, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
+  alongTheWay, canTake, CLOSED_MINUTES, nearestCity, onTheWay, poolable, HISTORY_PAGE, isNight, latinDigits, offerRange, overCashCeiling, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { BOOKING_COMMAND_TTL_MS } from '../src/booking.ts';
@@ -458,7 +458,7 @@ const offersFor = async (orderId: number): Promise<Offer[]> => {
   const rows = await all(`SELECT f.driver_id, f.price, f.created_at, u.name, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id
     WHERE f.order_id = ? ${offerOpen} ORDER BY f.price, f.created_at LIMIT 20`, orderId, Date.now() - OFFER_TTL);
   // A driver already carrying shared riders offers only while the seats still fit (the accept checks the same).
-  const fits = await Promise.all(rows.map(async f => !order || canTake(await activeLoad(Number(f.driver_id)), order.service as Service,
+  const fits = await Promise.all(rows.map(async f => !order || servesFor(f.vehicle).includes(order.service) && canTake(await activeLoad(Number(f.driver_id)), order.service as Service,
     { shared: !!Number(order.shared ?? 0), option: order.option == null ? null : String(order.option) }, (f.vehicle ?? null) as Vehicle | null)));
   return Promise.all(rows.filter((_, i) => fits[i])
     .map(async f => ({ driverId: f.driver_id, name: f.name, vehicle: f.vehicle ?? null, price: f.price, createdAt: f.created_at, ...(await driverStats(f.driver_id)) })));
@@ -1156,6 +1156,7 @@ route('POST', '/api/auth/reset', async ({ body }) => {
 }, true);
 
 route('POST', '/api/auth/logout', async ({ user }) => {
+  forgetDriver(user.id); // off the nearby-cars map at once (nearby.ts)
   (await run('DELETE FROM sessions WHERE user_id = ?', user.id));
   (await run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id)); // every session ended, so every browser stops alerting
   return { ok: true };
@@ -1590,15 +1591,19 @@ async function newJobPush(service: Service, orderId: number, customerId: number,
   const reachable = (await nativePushAvailable(persistence))
     ? '(EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id) OR EXISTS(SELECT 1 FROM native_push_tokens n WHERE n.user_id = u.id AND n.disabled_at IS NULL))'
     : 'EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)';
-  const drivers = (await all(`SELECT u.id FROM users u WHERE u.role = 'driver' AND u.status = 'active' ${production && selfService ? 'AND u.approved_at IS NOT NULL' : ''}
+  // RIDE-13: a parcel or a shared ride also reaches drivers whose load can share (parcels, shared riders); seats are counted below.
+  const job = await one('SELECT shared, option FROM orders WHERE id = ?', orderId);
+  const next = { shared: !!Number(job?.shared ?? 0), option: job?.option == null ? null : String(job.option) };
+  const pooled = poolable({ service, shared: next.shared });
+  const candidates = (await all(`SELECT u.id, u.vehicle FROM users u WHERE u.role = 'driver' AND u.status = 'active' ${production && selfService ? 'AND u.approved_at IS NOT NULL' : ''}
     AND u.vehicle IN (${fits.map(() => '?').join(',')}) AND ${reachable}
     AND u.id <> ? AND NOT EXISTS(SELECT 1 FROM order_releases r WHERE r.order_id = ? AND r.driver_id = u.id)
     AND (u.heading_city IS NULL OR u.heading_until <= ? OR u.heading_city = (SELECT dropoff_city FROM orders WHERE id = ?))
-    AND ${service === 'parcel' // a parcel reaches couriers already carrying parcels, below the load limit
-    ? `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}) AND o.service <> 'parcel')
-       AND (SELECT COUNT(*) FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql})) < ${PARCEL_LOAD}`
+    AND ${pooled // a parcel or shared ride reaches drivers whose whole load can share; the rest need an empty vehicle
+    ? `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}) AND NOT ${poolableSql('o')})`
     : `NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id = u.id AND o.status IN (${activeSql}))`} ORDER BY random() LIMIT 100`, ...fits, exceptDriver, orderId, Date.now(), orderId)); // ponytail: random fairness; nearest-first when driver positions are kept between jobs
-  await queuePush(drivers.map(d => d.id as number), 'job', orderId);
+  const drivers = pooled ? (await Promise.all(candidates.map(async d => canTake(await activeLoad(Number(d.id)), service, next, (d.vehicle ?? null) as Vehicle | null) ? d : null))).filter(d => d !== null) : candidates;
+  await queuePush(drivers.map(d => d!.id as number), 'job', orderId);
   return true;
 }
 /** WP10: a ride starts a deterministic dispatch round when enabled; otherwise the legacy broadcast is unchanged. */
@@ -2902,7 +2907,7 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
   return { ok: true };
 });
 
-async function advanceOrder(user: User, id: number, body: Row, requestId: string) {
+async function advanceOrder(user: User, id: number, body: Row, requestId: string, oldCaptainApp = false) {
   // PostgreSQL: lock the row first, so a support takeover or custody recovery committing meanwhile is seen by the custody check
   // below instead of racing it (SQLite's BEGIN IMMEDIATE already serialises both; Sonnet L6 on PR #101, G-PG).
   const r = (await one(`SELECT * FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id)) ?? fail(404, 'not_found');
@@ -2913,6 +2918,7 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
   // D-7: only the last step of a ride may end without the rider's trip code (see below); anywhere else the flag is refused.
   const noCode = body.noCode === true && r.service === 'ride' && next === 'completed';
   if (body.noCode !== undefined && !noCode) fail(400, 'invalid_input');
+  if (r.service === 'ride' && next === 'completed' && r.handover_code && oldCaptainApp) fail(426, 'client_update_required'); // D-7: it cannot ask for the code
   if ((next !== 'completed' || (r.service !== 'parcel' && r.service !== 'shop')) && (body.collectedCents !== undefined || body.varianceReason !== undefined)) fail(400, 'invalid_input'); // A11: the parcel fee, or a shop order's goods and fees
   await shop.beforeAdvance(r, next, body, user.id);
   (await safetyFree(r.id));
@@ -2930,10 +2936,6 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
     // A ride whose rider left without giving the trip code still ends, on the driver's word: the driver must not stay stuck
     // on it (a private ride takes the whole car). It is recorded and support is told, so the rider can be phoned (D-7).
     const expected = noCode ? null : next === 'completed' ? r.handover_code : r.return_code;
-    if (noCode) {
-      (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RIDE_ENDED_WITHOUT_CODE', ?)`, user.id, r.id, now));
-      await queuePush((await adminIds()), 'attention', r.id, '/admin/orders');
-    }
     if (!noCode && ((await one('SELECT failures FROM proof_attempts WHERE order_id = ?', r.id))?.failures ?? 0) >= 5) fail(409, 'proof_locked');
     if (expected && latinDigits(String(body.code ?? '').trim()) !== expected) {
       (await run(`INSERT INTO proof_attempts (order_id, failures) VALUES (?, 1) ON CONFLICT(order_id) DO UPDATE SET failures = proof_attempts.failures + 1`, r.id));
@@ -2952,6 +2954,8 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
         now, now, door?.collectedCents ?? null, door?.varianceReason ?? null,
         door?.expectedCents ?? null, door ? user.id : null, door ? requestId : null, r.id, r.status)).changes) fail(409, 'order_changed');
       if (next === 'returned') { (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RETURN_COMPLETED', ?)`, user.id, r.id, now)); await markNoFare(user.id, r.id); }
+      // Written once the ride has really ended, so a refused completion leaves no record and pages nobody (Haiku PR #117).
+      if (noCode) (await run(`INSERT INTO security_events (actor_id, order_id, action, created_at) VALUES (?, ?, 'RIDE_ENDED_WITHOUT_CODE', ?)`, user.id, r.id, now));
       else (await rewardReferral(r.id, now));
       await shop.afterFinish(r, next, user.id, body);
       await shippingTripPay(r, next, user.id);
@@ -2959,6 +2963,7 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
     });
   } else (await run('UPDATE orders SET status = ?, updated_at = ?, picked_up_at = COALESCE(picked_up_at, ?) WHERE id = ?', next, now, next === 'in_transit' ? now : null, r.id));
   await rideLifecycle.markVerified(r, next);
+  if (noCode) await queuePush((await adminIds()), 'attention', r.id, '/admin/orders'); // support phones the rider (D-7)
   if (next === 'at_pickup' || next === 'in_transit' || next === 'completed' || next === 'returned') await queuePush([r.customer_id], next, r.id);
   return (await getOrder(r.id, user));
 }
@@ -3083,9 +3088,10 @@ route('POST', '/api/admin/orders/:id/resolve', async ({ user, params, body, req 
   return (await getOrder(id, user));
 });
 
-route('POST', '/api/orders/:id/advance', async ({ user, params, body }) => {
+route('POST', '/api/orders/:id/advance', async ({ user, params, body, req }) => {
   need(user, 'driver'); needActive(user);
-  return (await driverCommand(user, Number(params[0]), body, advanceOrder));
+  const oldCaptainApp = tripCodeClientTooOld(req.headers['x-wind-client']);
+  return (await driverCommand(user, Number(params[0]), body, (u, id, input, requestId) => advanceOrder(u, id, input, requestId, oldCaptainApp)));
 });
 
 // Lost acknowledgements replay the stored outcome instead of applying a driver command twice.

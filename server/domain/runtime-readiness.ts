@@ -52,6 +52,15 @@ export function clientUpdateRequired(sent: string | string[] | undefined, env: N
  *  bundle that sends no build header at all (builds before the forced-upgrade gate), is refused with 426. Outside
  *  production a request without the header is a script or a test, not a cashier. Digits only (Haiku r10 N2). */
 export const cashProtocolBuild = 10105;
+/** D-7 (1.1.6): from client build 10106 a captain's app asks for the rider's trip code. An older captain app sends no code for a
+ *  ride, so ending one would only count wrong codes until the lock: it is told to update instead (426). A request without the
+ *  header is a script or a test (any environment) and keeps the normal code check. */
+export const tripCodeBuild = 10106;
+export function tripCodeClientTooOld(sent: string | string[] | undefined) {
+  if (sent === undefined) return false;
+  const first = (Array.isArray(sent) ? sent[0] : sent).split(',')[0].trim();
+  return !(/^\d{1,9}$/.test(first) && Number(first) >= tripCodeBuild);
+}
 export function cashClientFenced(sent: string | string[] | undefined, production: boolean) {
   // An omitted header is a pre-gate bundle (production) or a script or test (elsewhere). An explicitly empty one is fenced
   // by this cash gate in every environment; the global gate fences nothing unless WIND_MIN_CLIENT_BUILD is set (Sol R17-L5).

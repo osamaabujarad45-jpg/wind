@@ -1,5 +1,18 @@
 # CURRENT WORK — read me first
 
+**23 November, evening · Pilot-ready 1.1.6 (start here).** Lead: Claude Opus 5.5. The owner asked for real users with rides (in town and between towns), shared seats, parcels and meals from shops, decided from the competitor study without questions. [PR #117](https://github.com/osamaabujarad45-jpg/wind/pull/117) builds what was missing; decisions are SRS §16b (D-6..D-12), requirements RIDE-13..15.
+
+- **Shared seats (D-6):** private car or shared seats; a seat costs 30% of the private fare by default (`sharedDiscount` 0.7). A car takes 4 seats, a motorcycle 1. Parcels and shared riders share a vehicle (`canTake`, `src/model.ts`); a private ride, a load or a shop order stays alone. A driver with *Heading to* set sees jobs **along the way**.
+- **Trip code (D-7):** every ride ends with the rider's 4-digit code after payment; *The rider has no code* ends it on the driver's word (security event `RIDE_ENDED_WITHOUT_CODE`, admins alerted).
+- **Nearby cars (D-8):** `GET /api/drivers/nearby`, memory only, 3 min, ~200 m rounding, no identity; on the home map.
+- **Restaurants (D-10):** shop category `restaurant` (SQLite rebuilds `merchants` once at start; PostgreSQL migration 43).
+- **No push yet:** an open screen rings for a new job, offer, acceptance and arrival (`src/local-alert.ts`). Phone push still waits on the owner's Firebase sign-in.
+- **Install page (D-12):** `/install.html` serves the Android APK (`/download/wind.apk`, Caddy from `/srv/wind-public`, `infra/vm-israel/publish-apk.sh`) and the iPhone Safari steps.
+- **Production config for the pilot (D-11):** `WIND_ENABLED_SERVICES=parcel,ride,shop`, `WIND_SHOP_TOWN=tulkarm` and `WIND_MIN_CLIENT_BUILD=10106` (older APKs see the update screen; the trip code needs 1.1.6) in `/etc/wind-api.env`. EAS production env gained `EXPO_PUBLIC_UPDATE_URL=https://20.217.202.98.sslip.io/install.html`.
+- **Known limit:** pooling is built for the production path (SQLite broadcast and offers). The PostgreSQL-only WP10 dispatch rounds and measured eligibility still treat any load as exclusive; port the seat rule before the G-PG cutover.
+- **Sandbox trap (23 Nov):** the cloud sandbox disk filled (30 GB) with 809 leftover test schemas in `fastship_test` on `sandbox-pg-host`, which made PostgreSQL suites fail with "No space left on device". `C:\w\wind-tools\pilot\pg-clean.sh` drops only `<name>_<32 hex>` test schemas and databases when no other session is connected.
+- **Tooling:** `C:\w\wind-tools\pilot\` (workspaces `wind-pilot` and `wind-pilot2`, pipeline, targeted and booking suite runners, release build).
+
 **23 November · UI chain and release `bac6a5ec` (start here).** Lead: Claude Opus 5.5.
 
 - **What merged.** Three ui-design-review passes landed, each with a Haiku 5.5 xhigh review, findings fixed, a Docker cloud gate and green CI:

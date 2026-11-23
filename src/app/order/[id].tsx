@@ -216,16 +216,18 @@ export default function OrderScreen() {
   const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - order.updatedAt <= 7 * 86_400_000;
 
   async function act(key: string, path: string, body: object = {}, after?: () => void) {
-    if (!order || busy || acting.current || key === 'accept' && (!work.known || !canTake(work.orders, order.service))) return;
+    if (!order || busy || acting.current || key === 'accept' && (!work.known || !canTake(work.orders, order.service, order, me?.user.vehicle ?? null))) return;
     acting.current = true;
     setBusy(key);
     setActionError('');
     const session = apiSessionRevision(), focus = focusRevision.current;
+    // D-7: "The rider has no code" ends a ride without the trip code; it must reach the server on both send paths below.
+    const noCode = key === 'advance' && (body as { noCode?: boolean }).noCode === true;
     try {
       if (mine && order.recovery && (key === 'advance' || key === 'problem')) {
         if (key === 'advance') setAdvanceLocked(order.status);
         const result = await recoverDriverAction(me!.user.id, order, key === 'advance' ? 'advance' : 'exception',
-          key === 'advance' ? { ...(needsCode && code ? { code } : {}), ...doorProof, ...shopProof } : { reason: problem.reason as ExceptionReason, ...(problem.reason === pickupRefusal && { detail: problem.detail }), note: problem.note.trim(), ...shopProof },
+          key === 'advance' ? { ...(noCode ? { noCode: true as const } : needsCode && code ? { code } : {}), ...doorProof, ...shopProof } : { reason: problem.reason as ExceptionReason, ...(problem.reason === pickupRefusal && { detail: problem.detail }), note: problem.note.trim(), ...shopProof },
           () => apiSessionRevision() === session && focusRevision.current === focus);
         if (result.state === 'previous') {
           // An earlier saved action was settled first: show where the order stands and let the driver repeat this one.
@@ -255,7 +257,7 @@ export default function OrderScreen() {
       if (key === 'advance') {
         setAdvanceLocked(order.status);
         const attempt = advanceAttempt.current = advanceRequest(advanceAttempt.current, order.id,
-          { expectedStatus: order.status, code: needsCode ? code : '', ...doorProof, ...shopProof, ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) }, newRequestId);
+          { expectedStatus: order.status, code: noCode || !needsCode ? '' : code, ...(noCode && { noCode: true as const }), ...doorProof, ...shopProof, ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) }, newRequestId);
         body = attempt.body;
       }
       if (key === 'problem') { // one request id per order, so a lost acknowledgement replays instead of failing
@@ -623,7 +625,7 @@ export default function OrderScreen() {
     {!live && <ErrorText>{actionError}</ErrorText>}
 
     <View style={{ gap: 8 }}>
-      {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || offlineIdle || !canTake(work.orders, order.service)}
+      {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || offlineIdle || !canTake(work.orders, order.service, order, me?.user.vehicle ?? null)}
         reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : offlineIdle ? c.accept_go_online : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
         onPress={() => act('accept', `/jobs/${order.id}/accept`)} />}
 

@@ -63,6 +63,15 @@ for (const language of ['ar', 'en']) for (const key of ['err_driver_command_othe
   assert.ok(copy[language][key]?.trim(), `${language} ${key}`);
 const order = { id: 5, driverId: 9, status: 'in_transit', assignedAt: 100, recovery: { schemaVersion: 1, version: 7, assignmentEpoch: 2 } };
 const command = newDriverCommand(9, order, 'advance', { code: '1234' }, 1000, 60_000);
+// D-7: "The rider has no code" survives a restart as its own payload, never beside a code and never on an exception.
+const noCodeCommand = newDriverCommand(9, order, 'advance', { noCode: true }, 1000, 60_000);
+assert.equal(driverCommandBody(noCodeCommand).noCode, true);
+assert.equal(readDriverCommand({ ...noCodeCommand, payload: { noCode: true, code: '1234' } }), null);
+assert.equal(readDriverCommand({ ...noCodeCommand, payload: { noCode: false } }), null);
+assert.equal(readDriverCommand({ ...noCodeCommand, action: 'exception', payload: { noCode: true, reason: 'absent', note: '' } }), null);
+const noCodeAttempt = advanceRequest(null, 5, { expectedStatus: 'in_transit', code: '', noCode: true }, () => 'id-1');
+assert.equal(noCodeAttempt.body.noCode, true);
+assert.notEqual(advanceRequest(noCodeAttempt, 5, { expectedStatus: 'in_transit', code: '' }, () => 'id-2').body.requestId, 'id-1', 'a code attempt is a new request');
 let saved = structuredClone(command), sends = 0, valid = true;
 const receipt = state => ({ schemaVersion: 1, orderId: 5, requestId: command.requestId, state });
 const io = { read: async () => saved, write: async c => { saved = c; }, valid: () => valid,

@@ -2,6 +2,9 @@
 // who have their job board open near them, the way Uber and Careem show cars around the pickup before a request.
 // Privacy: positions live in this process's memory for three minutes and are never written down (an idle driver's
 // position is still not stored), the map gets a spot rounded to about 200 m, and no name, plate or id leaves the server.
+// What remains (Haiku review, PR #117): someone polling could follow an unnamed car's rough moves while its board is open.
+// That is the price of the feature every ride app has; the rate limit keeps it to one look every ten seconds, signing out
+// takes the car off at once, and a blocked or busy car is never shown.
 // ponytail: one API process. Several processes would each see only the boards polled through them; share it then.
 import { crowKm, type Point, type Service, type Vehicle } from '../../src/model.ts';
 
@@ -31,7 +34,7 @@ export function sawDriver(driverId: number, point: Point, vehicle: Vehicle | nul
   prune(now);
   seen.set(driverId, { point, vehicle, at: now });
 }
-/** Taken off the map at once: blocked, signed out, or on work that leaves no room. */
+/** Taken off the map at once on sign-out (server/main.ts); blocked and busy cars are left out when the map is asked. */
 export function forgetDriver(driverId: number) { seen.delete(driverId); }
 /** Tests only. */
 export function clearNearby() { seen.clear(); }
@@ -40,7 +43,7 @@ export function registerNearbyRoutes(route: Register, deps: Deps): void {
   route('GET', '/api/drivers/nearby', async ({ user, query }) => {
     deps.need(user, 'customer');
     deps.needActive(user);
-    await deps.limit(deps.limitKey(user.id), 120, 10 * 60_000); // about one look every five seconds
+    await deps.limit(deps.limitKey(user.id), 60, 10 * 60_000); // one look every ten seconds; the home map asks every fifteen
     const [lat, lng] = (query.get('near') ?? '').split(',').map(Number);
     if (!(Number.isFinite(lat) && Math.abs(lat) <= 90 && Number.isFinite(lng) && Math.abs(lng) <= 180)) deps.fail(400, 'invalid_location');
     const service = (query.get('service') ?? 'ride') as Service;

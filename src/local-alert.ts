@@ -7,13 +7,10 @@ import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 // expo-haptics directly, not ui.tsx's haptic: ui → session → native-push → here would be an import cycle.
-
-let pushRegistered = false;
-/** native-push.ts reports a successful registration; from then on the server's push is the alert. */
-export function setNativePushRegistered(value: boolean) { pushRegistered = value; }
+import { nativePushRegistered } from './push-state.ts';
 
 export function localAlert(title: string, body: string, url?: string) {
-  if (Platform.OS === 'web' || pushRegistered) return;
+  if (Platform.OS === 'web' || nativePushRegistered()) return; // the server's push is the alert from then on
   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
   void Notifications.scheduleNotificationAsync({ content: { title, body, sound: 'default', data: url ? { url } : {} }, trigger: null }).catch(() => undefined);
 }

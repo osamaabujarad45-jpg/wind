@@ -6,7 +6,7 @@ import { api, apiSessionRevision, storage } from './api';
 import { apiSessionCredential } from './api-client';
 import { router } from 'expo-router';
 import type { User } from './model';
-import { setNativePushRegistered } from './local-alert';
+import { setNativePushRegistered } from './push-state.ts';
 
 type NavigationAccount = { user: Pick<User, 'id' | 'role' | 'status'> } | null;
 let syncNavigation: (ready: boolean, me: NavigationAccount) => void = () => {};

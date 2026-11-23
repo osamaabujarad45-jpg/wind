@@ -142,6 +142,11 @@ try {
   job1 = await advance(ahmad.token, job1); // at_pickup
   job1 = await advance(ahmad.token, job1); // in_transit
   assert.equal((await advance(ahmad.token, job1, {}, 400)).error, 'wrong_code');
+  // A captain app from before 1.1.6 cannot ask for the code: it is told to update, and no wrong try is counted.
+  const old = await fetch(`http://127.0.0.1:${server.address().port}/api/orders/${job1.id}/advance`, { method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${ahmad.token}`, 'x-wind-client': '10105' },
+    body: JSON.stringify({ expectedStatus: 'in_transit', requestId: randomUUID(), code: '' }) });
+  assert.equal(old.status, 426);
   job1 = await advance(ahmad.token, job1, { code: first.handoverCode });
   assert.equal(job1.status, 'completed');
   assert.ok(job1.commission > 0, 'the shared ride earns its commission like any trip');
