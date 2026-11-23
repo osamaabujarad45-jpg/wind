@@ -5,18 +5,20 @@ import { useCallback, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api, ApiError, errorCode, storage } from '../../api';
-import { apiSessionRevision } from '../../api-client';
+import { apiSessionRevision, serverOffset } from '../../api-client';
 import { pendingOutcome } from '../../booking';
-import { basketIdentity, newShopCheckout, readShopCheckout, shopCheckoutKey, type ShopCheckout } from '../../shop-checkout';
-import { city, goodsCapFor, shopPolicies, type Order, type Point, type ShopPolicy } from '../../model';
+import { basketIdentity, newShopCheckout, readShopCheckout, readShopDelivery, shopCheckoutBody, shopCheckoutKey, shopCheckoutLimits as limits, type ShopCheckout, type ShopDelivery } from '../../shop-checkout';
+import { city, goodsCapFor, isCity, normalizePhone, shopPolicies, type Order, type Point, type ShopPolicy } from '../../model';
 import PinSheet from '../../pin-sheet';
+import { recoveryStorage } from '../../recovery-storage';
 import { useSession } from '../../session';
 import { cartGoods, clearCart, setPolicy, setQuantity, storedCart, useCart } from '../../shop-cart';
 import { QtyControl } from '../../shop-ui';
 import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Row, Screen, Section, Txt, useCopy } from '../../ui';
 import { useTheme } from '../../theme-context';
 
-const limits = [0, 0.1, 0.2] as const;
+const deliveryRecoveryMs = 60 * 60_000;
+type CheckoutRecoveryAction = 'retry' | { reenterFor: string };
 
 export default function ShopCart() {
   const { palette } = useTheme();
@@ -28,24 +30,50 @@ export default function ShopCart() {
   const [point, setPoint] = useState<Point | null>(null);
   const [picking, setPicking] = useState(false);
   const [note, setNote] = useState('');
-  const [contact, setContact] = useState(me?.user.phone ?? '');
+  const defaultContact = me?.user.phone ?? '';
+  const [contact, setContact] = useState(defaultContact);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const key = me?.user.role === 'customer' ? shopCheckoutKey(me.user.id) : null;
   const [pending, setPending] = useState<ShopCheckout | null>(null);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const [reenterRequestId, setReenterRequestId] = useState<string | null>(null);
   const placing = useRef(false);
   const visible = useRef(false);
+  const clearCheckout = useCallback(async (current: () => boolean, keepDraft = false) => {
+    if (!key || !current()) return;
+    await storage.set(key, null, true);
+    if (!keepDraft && current()) await recoveryStorage.write('shop-checkout', null, 1).catch(() => {}); // encrypted and expiring even if removal fails
+  }, [key]);
   const finish = useCallback(async (command: ShopCheckout, orderId: number, current: () => boolean) => {
     if (!key || !current()) return;
-    const contents = await storedCart(); // the persisted basket, not this tab's copy (review M2)
+    const contents = await storedCart(true); // the persisted basket, not this tab's copy (review M2)
     if (!current()) return;
     if (contents && basketIdentity(contents) === command.basket) await clearCart(true);
     if (!current()) return;
-    await storage.set(key, null, true);
+    await clearCheckout(current);
     if (current() && visible.current) router.replace(`/order/${orderId}`);
-  }, [key]);
-  const check = useCallback(async (focused: () => boolean = () => true) => {
+  }, [key, clearCheckout]);
+  const send = useCallback(async (command: ShopCheckout, delivery: ShopDelivery, current: () => boolean, recovering = false) => {
+    if (!key || !current()) return;
+    let order: Order;
+    try { order = await api<Order>('/orders', shopCheckoutBody(command, delivery)); }
+    catch (e) {
+      if (!current()) return;
+      const code = errorCode(e);
+      // A new attempt's definitive refusal can release the form. Once the outcome is uncertain,
+      // a retry can fail while the first POST is still in flight. Only the receipt check releases it.
+      if (!recovering && e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status)
+        && code !== 'idempotency_conflict' && code !== 'booking_command_expired') {
+        await clearCheckout(current);
+        if (current()) setPending(null);
+      }
+      if (current()) setError(c[`err_${code}` as keyof typeof c] ?? c.err_generic);
+      return;
+    }
+    await finish(command, order.id, current);
+  }, [key, c, clearCheckout, finish]);
+  const check = useCallback(async (focused: () => boolean, action?: CheckoutRecoveryAction) => {
     if (!key) return;
     const revision = apiSessionRevision(), current = () => focused() && revision === apiSessionRevision();
     try { await storage.exclusive(async () => {
@@ -56,17 +84,45 @@ export default function ShopCart() {
       if (!current()) return;
       setLoadedKey(key); setPending(command);
       if (!command) return;
+      let answer: ReturnType<typeof pendingOutcome> = { state: 'unknown' };
       try {
-        const answer = pendingOutcome(await api<unknown>(`/orders/commands/${command.requestId}`), command);
-        if (!current()) return;
-        if (answer.state === 'present') await finish(command, answer.orderId, current);
-        if (answer.state === 'absent') {
-          await storage.set(key, null, true);
-          if (current()) { setPending(null); setError(''); }
-        }
+        answer = pendingOutcome(await api<unknown>(`/orders/commands/${command.requestId}`), command);
       } catch { /* Keep the command until an authoritative receipt can be read. */ }
+      if (!current()) return;
+      if (answer.state !== 'absent') setReenterRequestId(null);
+      if (answer.state === 'present') { await finish(command, answer.orderId, current); return; }
+      if (answer.state === 'unknown' && (action !== 'retry' || Date.now() + serverOffset() >= command.commandExpiresAt)) return;
+      // A confirmed-absent command older than the draft lifetime can release the form even if the ciphertext will not open.
+      const draftExpired = answer.state === 'absent' && Date.now() + serverOffset() >= command.commandExpiresAt + deliveryRecoveryMs;
+      const reenter = answer.state === 'absent' && typeof action === 'object' && action.reenterFor === command.requestId;
+      let keepDraft = false;
+      const savedDelivery = draftExpired ? null : await recoveryStorage.read('shop-checkout').catch((error: unknown) => {
+        // The recovery store removes expired or invalid envelopes. Other read failures can be retried.
+        if (error instanceof Error && error.message === 'recovery_record_unavailable') return null;
+        // Re-entry can release a confirmed-absent command while leaving temporarily unreadable data until expiry.
+        if (reenter) { keepDraft = true; return null; }
+        if (current() && answer.state === 'absent') setReenterRequestId(command.requestId);
+        throw error;
+      });
+      const delivery = readShopDelivery(savedDelivery, command.requestId);
+      if (!current()) return;
+      if (answer.state === 'absent') {
+        const contents = delivery ? await storedCart(true) : null;
+        if (!current()) return;
+        const restored = delivery && contents && basketIdentity(contents) === command.basket ? delivery : null;
+        await clearCheckout(current, keepDraft);
+        if (!current()) return;
+        setPending(null);
+        setReenterRequestId(null);
+        setPoint(restored?.dropoffPoint ?? null); setNote(restored?.dropoffNote ?? '');
+        setContact(restored?.contact ?? defaultContact); setLimit(restored?.agreeLimit ?? 0.1);
+        setError(restored ? '' : c.shopRecoveryReenter);
+      } else if (delivery && Date.now() + serverOffset() < command.commandExpiresAt) {
+        setError('');
+        await send(command, delivery, current, true);
+      }
     }, key); } catch { if (current()) setError(c.bookingStorageError); }
-  }, [key, finish, c.bookingStorageError]);
+  }, [key, clearCheckout, finish, send, defaultContact, c.bookingStorageError, c.shopRecoveryReenter]);
   useFocusEffect(useCallback(() => {
     let focused = true;
     visible.current = true;
@@ -75,11 +131,20 @@ export default function ShopCart() {
     const timer = setInterval(run, 15_000);
     return () => { visible.current = false; focused = false; clearInterval(timer); };
   }, [check]));
+  function recoverCheckout(action: CheckoutRecoveryAction) {
+    if (placing.current) return;
+    placing.current = true;
+    setBusy(true);
+    void check(() => visible.current, action).finally(() => { placing.current = false; setBusy(false); });
+  }
+  const canReenterDelivery = loadedKey === key && pending && reenterRequestId === pending.requestId;
   if (!key || loadedKey !== key || pending) return <Screen>
     <Header title={c.shopCart} back />
-    {loadedKey === key && pending && <Card><Section title={c.bookingPending} /><Txt>{c.bookingRecoveryWait}</Txt></Card>}
+    {loadedKey === key && pending && <Card><Section title={c.bookingPending} /><Txt>{canReenterDelivery ? c.shopRecoveryReenter : c.bookingRecoveryWait}</Txt></Card>}
     <ErrorText>{error}</ErrorText>
-    {key && <Button title={c.retry} variant="soft" disabled={busy} onPress={() => { void check(() => visible.current); }} />}
+    {key && <Button title={c.retry} variant="soft" disabled={busy} onPress={() => recoverCheckout('retry')} />}
+    {key && pending && canReenterDelivery &&
+      <Button title={c.shopReenterDelivery} variant="ghost" disabled={busy} onPress={() => recoverCheckout({ reenterFor: pending.requestId })} />}
     {key && <Button title={c.orders} variant="ghost" onPress={() => router.replace('/(customer)/orders')} />}
   </Screen>;
   if (!cart) return <Screen><Header title={c.shopCart} back /><Empty icon="basket-outline" title={c.shopCartEmpty} action={<Button title={c.shopBrowse} onPress={() => router.replace('/shop')} />} /></Screen>;
@@ -88,11 +153,15 @@ export default function ShopCart() {
   const fees = cart.deliveryFeeAgorot + cart.serviceFeeAgorot;
   const cap = goodsCapFor(goods, limit);
   const weighed = cart.lines.some(l => l.byWeight);
-  const reason = short > 0 ? fill(c.shopBelowMinimum, { r: money(short / 100) }) : !point ? c.shopPinNeeded : note.trim().length < 3 ? c.shopNoteNeeded : '';
+  const deliveryContact = normalizePhone(contact);
+  const reason = short > 0 ? fill(c.shopBelowMinimum, { r: money(short / 100) }) : !point ? c.shopPinNeeded
+    : note.trim().length < 3 ? c.shopNoteNeeded : !deliveryContact ? c.err_invalid_phone : '';
   const shopInfo = { merchantId: cart.merchantId, merchantName: cart.merchantName, city: cart.city, minOrderAgorot: cart.minOrderAgorot,
     deliveryFeeAgorot: cart.deliveryFeeAgorot, serviceFeeAgorot: cart.serviceFeeAgorot };
   async function place() {
-    if (!key || !cart || placing.current || reason) return;
+    if (!key || !cart || !point || !deliveryContact || placing.current || reason) return;
+    const dropoffCity = cart.city;
+    if (!isCity(dropoffCity)) return;
     const revision = apiSessionRevision(), current = () => revision === apiSessionRevision();
     placing.current = true;
     setBusy(true); setError('');
@@ -103,26 +172,14 @@ export default function ShopCart() {
         if (!current()) return;
         if (saved) { setPending(saved); return; }
         const command = newShopCheckout(cart);
+        const delivery: ShopDelivery = { requestId: command.requestId, expectedGoodsAgorot: goods, agreeLimit: limit,
+          dropoffCity, dropoffPoint: point, dropoffNote: note.trim(), contact: deliveryContact };
+        await recoveryStorage.write('shop-checkout', delivery, deliveryRecoveryMs);
+        if (!current()) return;
         await storage.set(key, JSON.stringify(command), true);
         if (!current()) return;
         setPending(command);
-        let order: Order;
-        try {
-          order = await api<Order>('/orders', { service: 'shop', merchantId: cart.merchantId,
-            requestId: command.requestId, commandExpiresAt: command.commandExpiresAt, expectedGoodsAgorot: goods, agreeLimit: limit,
-            lines: cart.lines.map(l => ({ itemId: l.itemId, qtyMilli: l.qtyMilli, policy: l.policy })),
-            dropoffCity: cart.city, dropoffPoint: point, dropoffNote: note.trim(), contact });
-        } catch (e) {
-          if (!current()) return;
-          const code = errorCode(e);
-          if (e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && code !== 'idempotency_conflict') {
-            await storage.set(key, null, true);
-            if (current()) setPending(null);
-          }
-          if (current()) setError(c[`err_${code}` as keyof typeof c] ?? c.err_generic);
-          return;
-        }
-        await finish(command, order.id, current);
+        await send(command, delivery, current);
       }, key);
     } catch { if (current()) setError(c.bookingStorageError); }
     finally { placing.current = false; setBusy(false); }

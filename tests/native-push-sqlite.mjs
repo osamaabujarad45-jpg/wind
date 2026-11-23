@@ -78,6 +78,7 @@ try {
   assert.equal(sent[0].ttl, 300, 'a job alert is stale after five minutes');
   assert.equal(sent[0].data.url, '/driver');
   assert.equal(sent[0].data.kind, 'job');
+  assert.equal(sent[0].data.recipient, driver.user.id, 'native tap actions are bound to the device account');
   assert.equal(sent[0].body, 'New delivery job available. Open Wind to take it.', 'says what happened, in the language the device registered');
 assert.ok(!/Rana|Lina|0599|Ramallah|Nablus|₪/.test(sent[0].body + sent[0].title), 'and nothing personal on the lock screen');
   assert.ok(!JSON.stringify(sent[0]).includes('Secret'), 'no order detail leaves the server');

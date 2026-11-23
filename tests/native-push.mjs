@@ -130,8 +130,8 @@ try {
     Number((await conn.run(`INSERT INTO orders(customer_id,driver_id,service,shared,pickup_city,dropoff_city,pickup_note,dropoff_note,contact,detail,option,loading_help,price,status,created_at,updated_at)
       VALUES(?,?, 'parcel',0,'ramallah','nablus','Synthetic start','Synthetic end','0599400099','Synthetic box','small',0,20,?,?,?)`, customerId, driverId, status, Date.now(), Date.now())).lastInsertRowid);
   const destOf = raw => uid => expoDestination(uid, nativeTokenHash(raw));
-  const enqueueDest = async (uid, kind, orderId, destination) => {
-    await conn.atomic({ id: uid }, () => enqueuePush(conn, [uid], kind, orderId));
+  const enqueueDest = async (uid, kind, orderId, destination, path) => {
+    await conn.atomic({ id: uid }, () => enqueuePush(conn, [uid], kind, orderId, path));
     return conn.one('SELECT * FROM outbox WHERE destination=? AND status=?', destination, 'pending');
   };
   const outboxRow = (eventId, destination) => conn.one('SELECT status,last_error,attempts FROM outbox WHERE event_id=?::uuid AND destination=?', eventId, destination);
@@ -158,6 +158,22 @@ try {
   assert.equal(seen[0].message.kind, 'message'); assert.equal(seen[0].message.order, dOrder);
   assert.equal((await outboxRow(deliveredRow.event_id, deliveredRow.destination)).status, 'delivered');
   assert.equal((await conn.one('SELECT count(*) n FROM consumer_inbox WHERE event_id=?::uuid AND destination=?', deliveredRow.event_id, deliveredRow.destination)).n, 1);
+
+  // A captain awaiting approval receives an inbox reply without becoming eligible for job alerts.
+  const pendingDriver = await reg(12, { role: 'driver', vehicle: 'car' });
+  assert.equal(pendingDriver.user.status, 'pending');
+  const pendingToken = await addToken(pendingDriver.user.id, sha(pendingDriver.token), rawToken('pending-support'));
+  const pendingDestination = destOf(pendingToken)(pendingDriver.user.id);
+  const pendingSeen = [];
+  const pendingWorker = new DurableWorker(conn, { expoTransport: async (_token, message) => { pendingSeen.push(JSON.parse(message)); } });
+  const reply = await enqueueDest(pendingDriver.user.id, 'support_reply', 0, pendingDestination, '/support');
+  await drain(pendingWorker);
+  assert.equal((await outboxRow(reply.event_id, reply.destination)).status, 'delivered');
+  assert.deepEqual(pendingSeen.map(({ kind, url }) => ({ kind, url })), [{ kind: 'support_reply', url: '/support' }]);
+  const unrelated = await enqueueDest(pendingDriver.user.id, 'job', 0, pendingDestination, '/driver');
+  await drain(pendingWorker);
+  assert.equal((await outboxRow(unrelated.event_id, unrelated.destination)).status, 'obsolete');
+  assert.equal(pendingSeen.length, 1);
 
   // Preference suppression: muted kind, full-day quiet window, essential bypass, disable-after-enqueue.
   const pUser = await addUser(), pDriver = await addUser('driver', 'car'), pOrder = await addOrder(pUser);

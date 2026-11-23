@@ -72,14 +72,15 @@ const pushBody = (kind: unknown, lang: unknown) => { const words = pushWords[Str
 
 /** One Expo push.
  * Real delivery waits for the owner's FCM/APNs credentials and WIND_EXPO_PUSH_ENABLED=1; until then this throws. */
-export async function sendExpoPush(token: { expo_push_token?: unknown }, message: string, ttl: number, urgent: boolean) {
+export async function sendExpoPush(token: { expo_push_token?: unknown; user_id?: unknown }, message: string, ttl: number, urgent: boolean) {
   if (process.env.WIND_EXPO_PUSH_ENABLED !== '1') throw Object.assign(new Error('expo_not_configured'), { providerStatus: 503 });
   const data = JSON.parse(message) as { kind: unknown; order: unknown; url: unknown; lang: unknown; eventId?: unknown };
   const response = await fetch('https://exp.host/--/api/v2/push/send', { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000),
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(process.env.EXPO_ACCESS_TOKEN ? { Authorization: `Bearer ${process.env.EXPO_ACCESS_TOKEN}` } : {}) },
     // channelId names the high-importance channel src/native-push.ts creates, so Android shows a heads-up; priority wakes a dozing phone.
     body: JSON.stringify([{ to: String(token.expo_push_token), title: 'Wind', body: pushBody(data.kind, data.lang),
-      sound: 'default', ttl, priority: urgent ? 'high' : 'normal', channelId: 'default', data: { kind: data.kind, order: data.order, url: data.url, eventId: data.eventId } }]) });
+      sound: 'default', ttl, priority: urgent ? 'high' : 'normal', channelId: 'default',
+      data: { kind: data.kind, order: data.order, url: data.url, eventId: data.eventId, recipient: token.user_id } }]) });
   const tickets = await response.json().catch(() => null) as { data?: { status?: string; details?: { error?: string } }[] } | null;
   await response.body?.cancel().catch(() => {});
   if (!response.ok) throw Object.assign(new Error('provider_failed'), { providerStatus: response.status });

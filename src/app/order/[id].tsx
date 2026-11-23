@@ -148,7 +148,7 @@ export default function OrderScreen() {
 
   // A customer is asked for notifications here, with an order on its way: every route to a first order (booking, a recovered
   // booking, order again, shop checkout) lands on this screen, and "your driver accepted" is then the reason (product audit, 21 Nov).
-  const customerLive = me?.user.role === 'customer' && !!order && (order.status === 'searching' || activeStatuses.includes(order.status));
+  const customerLive = me?.user.role === 'customer' && !!order?.driverId && activeStatuses.includes(order.status);
   useEffect(() => { if (customerLive) void registerNativePush(language, 'once'); }, [customerLive, language]);
 
   if (!order || !me) return <Screen><Header title={/^\d+$/.test(id) ? orderCode(Number(id)) : c.orders} back /><ErrorText>{error && err(error)}</ErrorText><Loading failed={!!error} onRetry={reload} /></Screen>;
@@ -565,7 +565,9 @@ export default function OrderScreen() {
 
     {isAdmin && order.status === 'returning' && <Card tone="warn">
       <Txt variant="title">{c.confirmReturnTitle}</Txt>
-      {order.supportHasGoods && <Txt variant="caption" style={{ marginTop: 4, color: palette.warn }}>{c.supportHasGoodsAdmin}</Txt>}
+      {(order.supportReturnRequired || order.supportHasGoods) && <Txt variant="caption" style={{ marginTop: 4, color: palette.warn }}>
+        {order.supportHasGoods ? c.supportHasGoodsAdmin : c.supportReturnPendingAdmin}
+      </Txt>}
       <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setDecision({ id, reason })} />
       <View style={{ gap: 8 }}>
@@ -577,7 +579,8 @@ export default function OrderScreen() {
           ['confirm_office_return', 'support', c.confirmOfficeReturnSupport, c.confirmOfficeReturnSupportHint],
           // Support collected the goods mid-return: recorded when they change hands, before any closure (Sol recheck of PR 101).
           ['support_takeover', undefined, c.supportTakeover, c.supportTakeoverHint],
-        ] as const).filter(([action, carrier]) => !order.supportHasGoods || (action !== 'support_takeover' && carrier !== 'captain' && carrier !== 'staff')).map(([action, carrier, title, hint]) => <Button key={`${action}-${carrier ?? ''}`} title={title} variant="outline" icon={action === 'support_takeover' ? 'hand-left-outline' : 'checkmark-done-outline'}
+        ] as const).filter(([action, carrier]) => action === 'support_takeover' ? !order.supportHasGoods
+          : !(order.supportReturnRequired || order.supportHasGoods) || carrier === 'support').map(([action, carrier, title, hint]) => <Button key={`${action}-${carrier ?? ''}`} title={title} variant="outline" icon={action === 'support_takeover' ? 'hand-left-outline' : 'checkmark-done-outline'}
           loading={busy === `${action}-${carrier ?? ''}`} disabled={!!busy || decisionReason.trim().length < 5} reason={busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(hint, () => act(`${action}-${carrier ?? ''}`, `/admin/orders/${order.id}/resolve`,
             { action, ...(carrier && { carrier }), reason: decisionReason.trim() },
@@ -1142,11 +1145,12 @@ function PickupPayReviewCard({ orderId, fareCents, review, onDone }: { orderId: 
 
 // DRV-17: a second admin decides whether the captain is cleared and the trip pay can be posted.
 function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; review: NonNullable<Order['blockReview']>; me: number; now: number; onDone: () => unknown }) {
-  const { c, err } = useCopy();
+  const { c, money, err } = useCopy();
+  const { time } = useFormat();
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState<'' | 'yes' | 'no'>('');
   const [error, setError] = useState('');
-  const pay = `${(review.tripPayCents / 100).toFixed(2)} ₪`;
+  const pay = money(review.tripPayCents / 100);
   async function decide(cleared: boolean) {
     if (busy) return;
     setBusy(cleared ? 'yes' : 'no'); setError('');
@@ -1156,12 +1160,12 @@ function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; rev
   }
   if (review.decidedAt != null) return <Card>
     <Txt variant="title">{c.blockReview}</Txt>
-    <Txt variant="caption">{review.cleared ? fill(c.blockReviewCleared, { pay, paid: `${((review.paidCents ?? 0) / 100).toFixed(2)} ₪` }) : c.blockReviewNotCleared}</Txt>
+    <Txt variant="caption">{review.cleared ? fill(c.blockReviewCleared, { pay, paid: money((review.paidCents ?? 0) / 100) }) : c.blockReviewNotCleared}</Txt>
   </Card>;
   const self = review.blockedBy === me, noteOk = note.trim().length >= 5;
   return <Card tone={review.dueAt < now ? 'warn' : undefined}>
     <Txt variant="title">{c.blockReview}</Txt>
-    <Txt variant="caption">{fill(c.blockReviewDue, { pay, due: new Date(review.dueAt).toLocaleString() })}</Txt>
+    <Txt variant="caption">{fill(c.blockReviewDue, { pay, due: time(review.dueAt) })}</Txt>
     {self ? <Txt variant="caption">{c.blockReviewSecondAdmin}</Txt> : <>
       <Field label={c.adminNote} value={note} onChangeText={setNote} multiline maxLength={500} />
       <Button title={c.blockReviewClear} size="sm" disabled={!noteOk || !!busy} reason={noteOk ? undefined : c.adminNoteNeeded} loading={busy === 'yes'} onPress={() => decide(true)} />

@@ -203,6 +203,9 @@ const kaak = await shopItem('مخبوزات', 'كعك بالسمسم', 'Sesame k
 const bread = await shopItem('مخبوزات', 'خبز طابون', 'Taboon bread', 500);
 await shopItem('مخبوزات', 'مناقيش زعتر', 'Zaatar manakish', 600);
 const cheese = await shopItem('ألبان', 'جبنة نابلسية', 'Nabulsi cheese', 4500, true);
+const exampleCart = { merchantId: bakery.id, merchantName: bakery.name, city: 'tulkarm', minOrderAgorot: 2000,
+  deliveryFeeAgorot: 1000, serviceFeeAgorot: 200, lines: [{ itemId: cheese.id, nameAr: cheese.nameAr, nameEn: cheese.nameEn,
+    unitAgorot: cheese.priceAgorot, byWeight: true, qtyMilli: 500, policy: 'ask_first' }] };
 const labneh = await shopItem('ألبان', 'لبنة', 'Labneh', 1800);
 await shopItem('ألبان', 'لبن رائب', 'Yogurt', 900);
 const shopOrder = (who, lines) => call('/orders', who.token, { service: 'shop', merchantId: bakery.id, lines, dropoffCity: 'tulkarm',
@@ -306,6 +309,7 @@ const screens = [
 
   { id: 'shop-list', group: 'Customer', name: 'Shop delivery · shops in the pilot town', route: '/shop', file: 'src/app/shop/index.tsx', role: 'customer' },
   { id: 'shop-store', group: 'Customer', name: 'Shop · catalogue (weighed items say estimate)', route: `/shop/${bakery.id}`, file: 'src/app/shop/[id].tsx', role: 'customer' },
+  { id: 'shop-cart', group: 'Customer', name: 'Shop · checkout and delivery details', route: '/shop/cart', file: 'src/app/shop/cart.tsx', role: 'customer' },
   { id: 'shop-on-hold', group: 'Customer', name: 'Shop order · on hold after a failed delivery (the card names the hold)', route: `/order/${shopHold.id}`, file: 'src/shop-ui.tsx (ShopCustomerPanel)', role: 'customer' },
   { id: 'shop-consent', group: 'Customer', name: 'Shop order · the shop asks before a substitution (approve, decline, add time)', route: `/order/${shopConsent.id}`, file: 'src/shop-ui.tsx (ShopCustomerPanel)', role: 'customer' },
   { id: 'merchant-inbox', group: 'Merchant', name: 'Merchant mode · inbox with a new order and its accept clock', route: '/merchant', file: 'src/app/merchant/index.tsx', role: 'merchant' },
@@ -392,7 +396,7 @@ for (const language of ['ar', 'en']) {
     const viewport = screen.desktop ? { width: 1280, height: 800 } : phone; // Wind Control on a desktop: the side rail layout (1x: a desktop screen, and the PNG stays small)
     const context = await browser.newContext({ viewport, deviceScaleFactor: screen.desktop ? 1 : 2, locale: language === 'ar' ? 'ar-PS' : 'en-GB',
       reducedMotion: screen.motion || screen.frames || screen.fresh ? 'no-preference' : 'reduce' });
-    await context.addInitScript(({ token, language, onboarded, theme }) => {
+    await context.addInitScript(({ token, language, onboarded, theme, cart }) => {
       if (sessionStorage.getItem('seeded')) return; // only before the first load; the app owns storage after that
       sessionStorage.setItem('seeded', '1');
       localStorage.clear();
@@ -400,7 +404,9 @@ for (const language of ['ar', 'en']) {
       localStorage.setItem('theme', theme);
       if (onboarded) localStorage.setItem('onboarded', '1');
       if (token) localStorage.setItem('token', token);
-    }, { token: screen.role ? tokens[screen.role] : null, language, onboarded: !screen.fresh, theme: screen.theme ?? 'day' });
+      if (cart) localStorage.setItem('wind.shopCart.v1', JSON.stringify(cart));
+    }, { token: screen.role ? tokens[screen.role] : null, language, onboarded: !screen.fresh, theme: screen.theme ?? 'day',
+      cart: screen.id === 'shop-cart' ? exampleCart : null });
     const page = await context.newPage();
     const base = `http://localhost:${WEB_PORT}`;
 
@@ -441,6 +447,30 @@ for (const language of ['ar', 'en']) {
     const file = join(outDir, language, `${screen.id}.png`);
     await page.screenshot({ path: file });
     shots.push({ ...screen, language, file });
+    if (screen.id === 'shop-cart') {
+      const words = copy[language];
+      const note = 'Synthetic shop delivery, green door';
+      await page.getByLabel(words.shopLandmark, { exact: true }).fill(note);
+      await page.getByRole('button', { name: words.shopPinSet, exact: true }).click();
+      await page.getByRole('button', { name: words.confirmPin, exact: true }).click();
+      const sends = [];
+      await page.route(/\/api\/orders(?:\?.*)?$/, async route => {
+        if (route.request().method() !== 'POST') return route.continue();
+        sends.push(route.request().postData());
+        return sends.length === 1 ? route.abort() : route.continue();
+      });
+      await page.getByRole('button', { name: words.shopPlace.split('{r}')[0].trim() }).click();
+      await page.getByText(words.bookingPending, { exact: true }).waitFor();
+      const persisted = await page.evaluate(() => Object.entries(localStorage));
+      assert.ok(persisted.some(([key]) => key.startsWith('wind.recovery.v1.') && key.endsWith('.shop-checkout')));
+      assert.ok(persisted.every(([, value]) => !value.includes(note)), 'the delivery note stays encrypted');
+      await page.reload();
+      await page.getByRole('button', { name: words.retry, exact: true }).click();
+      await page.waitForURL(/\/order\/\d+$/);
+      assert.equal(sends.length, 2, 'the order is sent once per explicit attempt');
+      assert.equal(sends[1], sends[0], 'restored checkout retries the exact command body');
+      console.log(`Shop checkout passed a browser restart in ${language}`);
+    }
     if (screen.theme === 'night') {
       // A Night shot is evidence only if the app drew Night: the Night ground (palettes.night.paper #0C1713) is painted and the Day
       // paper (#F3F2EC) and Day card (#FFFFFF) are nowhere on the page.

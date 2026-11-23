@@ -78,10 +78,11 @@ export class DurableWorker {
     }, { commandId: work.event_id });
   }
   private async validate(work: Work, userId: number) {
-    const user=await this.db.one("SELECT * FROM users WHERE id=? AND status='active'",userId);
-    if (!user) return;
     const event=work.payload, kind=event.kind;
     if (!PUSH_KINDS.includes(kind)) throw new Error('invalid_notification');
+    const user=await this.db.one(`SELECT * FROM users WHERE id=? AND (status='active'
+      OR (status='pending' AND role='driver' AND ?='support_reply' AND ?='/support'))`,userId,kind,event.path ?? null);
+    if (!user) return;
     if (event.path?.startsWith('/admin') && user.role!=='admin') return;
     if (event.path?.startsWith('/driver') && user.role!=='driver') return;
     const ttl=kind==='job' ? 300 : kind==='offer' ? 600 : 3600;

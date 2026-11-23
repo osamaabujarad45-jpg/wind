@@ -478,6 +478,20 @@
     "session": "customer"
   },
   {
+    "id": "shop-cart",
+    "group": "Customer",
+    "name": "Shop · checkout and delivery details",
+    "route": "/shop/cart",
+    "file": "src/app/shop/cart.tsx",
+    "ar": [
+      "ar/shop-cart.png"
+    ],
+    "en": [
+      "en/shop-cart.png"
+    ],
+    "session": "customer"
+  },
+  {
     "id": "shop-on-hold",
     "group": "Customer",
     "name": "Shop order · on hold after a failed delivery (the card names the hold)",

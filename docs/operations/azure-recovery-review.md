@@ -40,6 +40,8 @@ On 22 November 2026, production StorageBlobLogs recorded HTTP 201 writes by the 
 
 ## Release evidence
 
+On 23 November 2026, the initial Azure release `5217dbc9` passed its Docker Cloud dry run and the VM installer dry run against a database copy. The installer saved `/data/backups/pre-install-20261123013138.db` and retained the previous release at `/opt/wind-releases/20261122044920`. The public readiness checks confirmed SQLite schema 3 on both hostnames. An immediate backup completed at 01:38 UTC after the release. The web bundle retained the original API origin for this release.
+
 Record the source revision, CI result, backup freshness and recovery point before production promotion. Use the current Azure VM release path in the deployment runbook. Keep `DB_PATH` in the provisioned systemd unit and remove database overrides from `/etc/wind-api.env` before using the SQLite installer or restore script. Before PostgreSQL becomes authoritative, exercise a failed-readiness recovery after one new authoritative write. Never re-open the previous SQLite copy after that boundary. Keep the existing client origin until supported installs have a verified way to reach the replacement.
 
 [Microsoft Cloud Solution Architect skill](https://github.com/microsoft/skills/tree/main/.github/skills/cloud-solution-architect) · [Azure Well-Architected Framework](https://learn.microsoft.com/azure/well-architected/) · [Azure recovery guidance](https://learn.microsoft.com/azure/well-architected/reliability/disaster-recovery) · [Put Blob permissions](https://learn.microsoft.com/rest/api/storageservices/put-blob)

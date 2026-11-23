@@ -275,6 +275,8 @@ try {
   // G-PG: support holds the goods after a legacy recovery too, so the captain's code no longer closes the order; support's office
   // intake does, as the only carrier it accepts, and pays the trip so far once. Both screens say support has the goods.
   for (const viewer of [admin, driver]) assert.equal((await call(`/orders/${codeAfterRecovery.id}`, { token: viewer.token })).supportHasGoods, true);
+  const legacyChain = await call(`/orders/${codeAfterRecovery.id}/custody`, { token: customer.token });
+  assert.equal(legacyChain.steps.filter(step => step.kind === 'support_took_custody' && step.by === 'support').length, 1);
   assert.equal((await call(`/orders/${codeAfterRecovery.id}/advance`, { token: driver.token,
     body: { requestId: randomUUID(), expectedStatus: 'returning', code: recoveryCode }, expect: 409 })).error, 'cannot_advance');
   assert.equal((await call(`/admin/orders/${codeAfterRecovery.id}/resolve`, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'captain', reason: 'Wrong carrier' }, expect: 409 })).error, 'cannot_resolve');
@@ -340,6 +342,10 @@ try {
   // A courier block also uses one leg, and only a clearing second-admin review posts the pay.
   const blockedParcel = await deliver(false);
   await call(`/admin/users/${driver.user.id}`, { token: admin.token, body: { status: 'blocked', recovery: 'return' } });
+  const blockedVersion = (await ledgerDb.one('SELECT version FROM orders WHERE id = ?', blockedParcel.id)).version;
+  const blockedEligibility = carrier => call(`/admin/eligibility/orders/${blockedParcel.id}/recovery`, { token: admin.token, expect: 409,
+    body: { action: 'confirm_return', carrier, expectedVersion: blockedVersion, reason: 'Wrong carrier', evidenceRef: 'synthetic:office' } });
+  for (const carrier of ['captain', 'staff']) assert.equal((await blockedEligibility(carrier)).error, 'cannot_resolve');
   await call(`/admin/orders/${blockedParcel.id}/resolve`, { token: admin.token, body: { action: 'confirm_return', reason: 'Received from support' } });
   const blockPayNote = `DRV-17 trip pay order ${blockedParcel.id}`;
   assert.equal(await ledgerDb.one('SELECT 1 FROM cash_entries WHERE note = ?', blockPayNote), undefined);
