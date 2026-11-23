@@ -3130,7 +3130,7 @@ const en: Copy = {
   last14: 'Commission & subscriptions, last 14 days',
   pendingDrivers: 'Drivers awaiting approval',
   pendingSubs: 'Plans awaiting activation',
-  approvalsTab: 'Queue', // the tab, in a bar of eight: Approvals split mid-word at 11 pt on a phone (UI review, 23 Nov)
+  approvalsTab: 'Pending', // the tab, in a bar of eight: Approvals split mid-word at 11 pt on a phone; Pending matches pendingDrivers/pendingShops (UI review, 23 Nov)
   approvalsTitle: 'Waiting for your decision',
   approvalsNone: 'Nothing is waiting for approval.',
   approvalsShops: 'Shops awaiting approval',

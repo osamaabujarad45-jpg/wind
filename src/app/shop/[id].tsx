@@ -45,10 +45,11 @@ export default function ShopStore() {
               {item.byWeight ? `${fill(c.shopPerKg, { r: money(item.priceAgorot / 100) })} ${c.shopEstimateShort}` : money(item.priceAgorot / 100)}
             </Txt>
           </View>
-          {/* A first tap adds 1 kg or one piece, the usual buy; the stepper then moves by 250 g or one. White, not forest: a
-              filled + on every row made each item a primary action (UI review, 23 Nov); the cart button stays the one primary. Card, not muted: a disabled + is muted. */}
+          {/* A first tap adds 1 kg or one piece, the usual buy; the stepper then moves by 250 g or one. Card tone, not forest: a
+              filled + on every row made each item a primary action (UI review, 23 Nov); the cart button stays the one primary. Card, not muted: a disabled + is muted.
+              The edge gives it a shape on the card it sits on. */}
           {qty === 0
-            ? <IconButton icon="add" tone="card" disabled={!m.open} label={fill(c.shopAddItem, { item: name })} onPress={() => change(item, 1000)} />
+            ? <IconButton icon="add" tone="card" edge disabled={!m.open} label={fill(c.shopAddItem, { item: name })} onPress={() => change(item, 1000)} />
             : <QtyControl item={item} qtyMilli={qty} name={name} onChange={q => change(item, q)} />}
         </Row>;
       })}
