@@ -11,7 +11,7 @@ After changing UI, run `npm run screens` (or `/screens`) so the screenshots matc
 
 ## Brand
 
-- Logo geometry lives in two places that must stay identical: `logoMark` in `src/ui.tsx` and `scripts/make_icon.py` (run `python scripts/make_icon.py` to regenerate `assets/`).
+- Logo geometry lives in two places that must stay identical: `logoMark` in `src/ui.tsx` and `MARK` in `scripts/brand-mark.mjs` (`tests/brand-mark.test.mjs` checks). Run `node scripts/make_icon.mjs` to regenerate `assets/` and `node scripts/make_promo.mjs` for the posters in `docs/brand/` (both need Playwright's Chromium, so run them in the Docker sandbox).
 - The native splash (`app.json`, imageWidth 120) hands over to the animated intro in `src/intro.tsx` (`TILE = 120`). Change both together.
 - Animations respect reduced motion (`useReducedMotion`): nothing moves, the state still reads.
 

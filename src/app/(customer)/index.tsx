@@ -155,7 +155,7 @@ export default function Home() {
         </View>
         <Row gap={8} style={{ alignItems: 'stretch' }}>
           {services.filter(service => enabledServices.includes(service)).map((service, i) => <Appear key={service} index={i} style={{ flex: 1 }}>
-            <Press accessibilityLabel={c[service]} containerStyle={{ flexGrow: 1 }} onPress={() => service === 'shop' ? router.push('/shop') : book({ service })} style={[styles.tile, shadow, stacked ? styles.tileStacked : { flexDirection: row }]}>
+            <Press tilt accessibilityLabel={c[service]} containerStyle={{ flexGrow: 1 }} onPress={() => service === 'shop' ? router.push('/shop') : book({ service })} style={[styles.tile, shadow, stacked ? styles.tileStacked : { flexDirection: row }]}>
               <ServiceIcon service={service} size={28} />
               {/* flex, not flexShrink: Android measured مشوار narrower than it draws and cut its last letter (A53) */}
               <Txt variant="label" numberOfLines={2} center={stacked} style={stacked ? { alignSelf: 'stretch', fontSize: 12 } : { flex: 1, fontSize: 12 }}>{c[service]}</Txt>

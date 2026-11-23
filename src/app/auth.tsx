@@ -194,7 +194,7 @@ export default function Auth() {
             {resetSent && <Appear>
               <Field label={c.emailCodeLabel} value={code} onChangeText={next => setCode(codeInput(next))} keyboardType="number-pad"
                 autoComplete="one-time-code" maxLength={6} disabled={busy} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
-              <Field label={c.newPassword} inputRef={passwordRef} value={password} onChangeText={setPassword} placeholder={c.passwordMinimum} secureTextEntry
+              <Field label={c.newPassword} inputRef={passwordRef} value={password} onChangeText={setPassword} hint={c.passwordMinimum} secureTextEntry
                 maxLength={100} disabled={busy} autoComplete="new-password" onSubmitEditing={submit} />
             </Appear>}
             <ErrorText>{error}</ErrorText>
@@ -207,7 +207,7 @@ export default function Auth() {
               <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.backToSignIn}</Txt>
             </Press>
           </> : <>
-          <Choices items={[{ key: 'in', label: c.signIn }, { key: 'up', label: c.signUp }]} value={mode}
+          <Choices tabs label={c.authMode} items={[{ key: 'in', label: c.signIn }, { key: 'up', label: c.signUp }]} value={mode}
             onChange={next => { setMode(next); setError(''); }} />
           <View style={{ height: 10 }} />
           {mode === 'up' && registration === null ? <Loading />
@@ -228,7 +228,7 @@ export default function Auth() {
             placeholder={mode === 'up' ? c.phoneHint : undefined} keyboardType={mode === 'up' ? 'phone-pad' : 'default'}
             autoComplete={mode === 'up' ? 'tel' : 'username'} maxLength={254} disabled={busy}
             returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
-          <Field label={c.password} inputRef={passwordRef} value={password} onChangeText={setPassword} placeholder={mode === 'up' ? c.passwordMinimum : undefined} secureTextEntry maxLength={100} disabled={busy}
+          <Field label={c.password} inputRef={passwordRef} value={password} onChangeText={setPassword} hint={mode === 'up' ? c.passwordMinimum : undefined} secureTextEntry maxLength={100} disabled={busy}
             autoComplete={mode === 'in' ? 'password' : 'new-password'} onSubmitEditing={submit} />
           {mode === 'up' && <Appear>
             <Txt variant="label" style={{ marginBottom: 7 }}>{c.iAm}</Txt>

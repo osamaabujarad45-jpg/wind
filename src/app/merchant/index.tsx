@@ -56,7 +56,7 @@ export default function MerchantHome() {
       <Stat label={c.merchantBalance} value={money((statement.data?.balanceAgorot ?? 0) / 100)} index={1} detail={fill(c.merchantPayable, { r: money((statement.data?.payableAgorot ?? 0) / 100) })} />
     </Row>
     <Button title={merchant.pausedNew ? c.merchantResume : c.merchantPause} variant={merchant.pausedNew ? 'primary' : 'outline'} loading={busy} onPress={() => pause(!merchant.pausedNew)} />
-    <Txt variant="caption" style={{ marginTop: 4 }}>{c.merchantPauseHint}</Txt>
+    <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.merchantPauseHint}</Txt>
     <ErrorText>{error}</ErrorText>
     <ListGroup>
       <ListRow icon="pricetags-outline" label={c.merchantCatalogue} onPress={() => router.push('/merchant/catalogue')} />
@@ -119,7 +119,7 @@ function InboxRow({ order }: { order: Order }) {
   const { tones } = useTheme();
   const { c, money } = useCopy();
   const s = order.shop!;
-  const clock = useCountdown(order.status === 'requested' && !s.state ? s.acceptDeadline : null, c.shopAcceptLeft);
+  const clock = useCountdown(order.status === 'requested' && !s.state ? s.acceptDeadline : null, c.merchantAcceptLeft);
   const step = order.status === 'cancelled' ? (s.cancelReason ? c[`shopCancel_${s.cancelReason}`] : c.cancelled)
     : order.status === 'completed' ? c.completed : order.status === 'returning' ? c.merchantReturning : s.state ? c[`merchantState_${s.state}`] : c.merchantStateNew;
   return <Press onPress={() => router.push(`/merchant/order/${order.id}`)} accessibilityLabel={`W-${String(order.id).padStart(5, '0')}, ${step}, ${money(s.goodsAgorot / 100)}`}>
@@ -129,7 +129,7 @@ function InboxRow({ order }: { order: Order }) {
         <Badge label={step} tone={!s.state && order.status === 'requested' ? tones.warn : statusFlow.includes(order.status) ? tones.olive : tones.muted} />
       </Row>
       <Txt variant="caption" style={{ marginTop: 4 }}>{fill(c.merchantLines, { n: s.lines.filter(l => !l.removed).length, r: money(s.goodsAgorot / 100) })}</Txt>
-      {!s.state && order.status === 'requested' && <Txt variant="caption" style={{ marginTop: 2 }}>{clock.left === 0 ? c.shopAcceptExpired : fill(c.shopAcceptTimer, { t: clock.text })}</Txt>}
+      {!s.state && order.status === 'requested' && <Txt variant="caption" style={{ marginTop: 2 }}>{clock.left === 0 ? c.shopAcceptExpired : fill(c.merchantAcceptTimer, { t: clock.text })}</Txt>}
     </Card>
   </Press>;
 }

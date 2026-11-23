@@ -26,7 +26,7 @@ export default function MerchantOrder() {
   const [grams, setGrams] = useState('');
   const [substitute, setSubstitute] = useState<string>('');
   const [packing, setPacking] = useState<{ sealed: boolean; lineIds: number[] }[]>([{ sealed: true, lineIds: [] }]);
-  const clock = useCountdown(order?.status === 'requested' && order.shop && !order.shop.state ? order.shop.acceptDeadline : null, c.shopAcceptLeft);
+  const clock = useCountdown(order?.status === 'requested' && order.shop && !order.shop.state ? order.shop.acceptDeadline : null, c.merchantAcceptLeft);
   if (!order?.shop) return <Screen><Header title={c.merchantMode} back /><Loading failed={!!error} onRetry={reload} /></Screen>;
   const s = order.shop;
   const live = s.lines.filter(l => !l.removed);
@@ -54,15 +54,18 @@ export default function MerchantOrder() {
     </Card>}
     {!s.state && order.status === 'requested' && <Card tone="warn">
       <Txt variant="label">{c.merchantStateNew}</Txt>
-      <Txt>{clock.left === 0 ? c.shopAcceptExpired : fill(c.shopAcceptTimer, { t: clock.text })}</Txt>
+      <Txt>{clock.left === 0 ? c.shopAcceptExpired : fill(c.merchantAcceptTimer, { t: clock.text })}</Txt>
+      {/* Time up: nothing here can act until the order is settled, so the card says it once instead of under every control (UI review 23 Nov) */}
+      {clock.left > 0 && <>
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantPrepMinutes}</Txt>
       <Stepper value={prep} min={5} max={120} label={c.merchantPrepMinutes} onChange={n => setPrep(Math.round(n / 5) * 5 || 5)} />
-      <Button title={c.merchantAccept} icon="checkmark" loading={busy === 'accept'} disabled={clock.left === 0} reason={clock.left === 0 ? c.shopAcceptExpired : undefined} onPress={() => act('accept', `/merchant/orders/${order.id}/accept`, { prepMinutes: prep })} />
+      <Button title={c.merchantAccept} icon="checkmark" loading={busy === 'accept'} onPress={() => act('accept', `/merchant/orders/${order.id}/accept`, { prepMinutes: prep })} />
       {!s.acceptExtended && clock.left > 0 && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/merchant/orders/${order.id}/extend`)} />}
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantRejectWhy}</Txt>
       <Choices label={c.merchantRejectWhy} value={reject ?? ''} onChange={k => setReject(k || null)} items={merchantRejects.map(k => ({ key: k, label: c[`merchantReject_${k}`] }))} />
-      <Button title={c.merchantReject} variant="danger" loading={busy === 'reject'} disabled={!reject || clock.left === 0} reason={clock.left === 0 ? c.shopAcceptExpired : reject ? undefined : c.merchantRejectChoose}
+      <Button title={c.merchantReject} variant="danger" loading={busy === 'reject'} disabled={!reject} reason={reject ? undefined : c.merchantRejectChoose}
         onPress={() => reject && confirm(c.merchantRejectConfirm, () => act('reject', `/merchant/orders/${order.id}/reject`, { reason: reject }), c.merchantReject, c.cancel)} />
+      </>}
     </Card>}
     {s.state === 'accepted' && <Button title={c.merchantStartPreparing} icon="construct-outline" loading={busy === 'prep'} onPress={() => act('prep', `/merchant/orders/${order.id}/preparing`)} />}
     {s.handoverException && s.state === 'preparing' && <Card tone="warn"><Txt>{fill(c.merchantFixHandover, { problem: c[`handover_${s.handoverException}`] })}</Txt></Card>}

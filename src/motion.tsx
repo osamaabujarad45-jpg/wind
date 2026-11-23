@@ -3,14 +3,14 @@
 // web bundle. Native keeps the real library through motion.native.ts.
 import { StyleSheet, View, type ViewProps } from 'react-native';
 
-type Step = { opacity?: number; transform?: Record<string, number>[] };
+type Step = { opacity?: number; transform?: Record<string, number | string>[] };
 type Keyframes = Record<string, Step>;
 
 const css2 = (step: Step) => {
   const parts: string[] = [];
   if (step.opacity !== undefined) parts.push(`opacity:${step.opacity}`);
   if (step.transform) parts.push(`transform:${step.transform.map(t => Object.entries(t).map(([k, v]) =>
-    `${k}(${v}${k.startsWith('translate') ? 'px' : ''})`).join(' ')).join(' ')}`);
+    `${k}(${v}${typeof v === 'number' && (k.startsWith('translate') || k === 'perspective') ? 'px' : ''})`).join(' ')).join(' ')}`);
   return parts.join(';');
 };
 

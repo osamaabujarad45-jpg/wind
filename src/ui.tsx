@@ -71,38 +71,64 @@ export const haptic = {
 
 // ---------- brand ----------
 
-// Wind mark: three lime wind trails pulling a terracotta location pin, on a forest tile.
-// 0..100 box, identical to scripts/make_icon.py (app icon, splash, favicon). Never mirrored for RTL.
+// Never mirrored for RTL: the و reads the same in both languages.
+// The Wind mark: the Arabic و (waw, the first letter of ويند) drawn as a gust, a streak of wind that curls up into a ring
+// holding a clay destination dot. Geometry in a 0..100 box, the same numbers as scripts/brand-mark.mjs (icons, posters);
+// tests/brand-mark.test.mjs keeps them equal. Built from views: a bar, a clipped quarter circle and a ring, all one stroke.
 export const logoMark = {
-  bars: [[26, 48, 38, 7], [14, 48, 51, 8], [32, 48, 64, 7]] as const, // x1, x2, y, thickness
-  pin: [70, 45, 16, 6.5] as const, // head centre x, centre y, head radius, hole radius; the tip points down
-  radius: 0.29,
+  stroke: 8.5,
+  ring: [63.75, 43.25, 12.5] as const, // centre x, centre y, stroke centreline radius
+  turn: [50.25, 43.25, 26] as const, // the quarter circle from the streak up into the ring (6 o'clock to 3 o'clock)
+  streakX: 23.75, // the streak's round left end
+  dot: 5, // radius, at the ring's centre
+  radius: 0.29, // tile corner, of the tile width
 };
 
-export const logoBarStyle = (s: number, [x1, x2, y, t]: readonly [number, number, number, number]): ViewStyle => ({
-  position: 'absolute', left: x1 * s / 100, top: (y - t / 2) * s / 100, width: (x2 - x1) * s / 100,
-  height: t * s / 100, borderRadius: t * s / 200, backgroundColor: palette.lime,
-});
+const markPart = (s: number, left: number, top: number, width: number, height: number): ViewStyle =>
+  ({ position: 'absolute', left: left * s / 100, top: top * s / 100, width: width * s / 100, height: height * s / 100 });
 
-// Teardrop: a square with three fully rounded corners, turned 45° so the sharp one points down.
-export const logoPinStyle = (s: number): ViewStyle => {
-  const [cx, cy, r] = logoMark.pin;
-  return { position: 'absolute', left: (cx - r) * s / 100, top: (cy - r) * s / 100, width: 2 * r * s / 100, height: 2 * r * s / 100,
-    borderRadius: r * s / 100, borderBottomRightRadius: 0, backgroundColor: palette.clay, transform: [{ rotate: '45deg' }] };
+export const logoRingStyle = (s: number): ViewStyle => {
+  const [cx, cy, r] = logoMark.ring, o = r + logoMark.stroke / 2;
+  return { ...markPart(s, cx - o, cy - o, 2 * o, 2 * o), borderRadius: o * s / 100, borderWidth: logoMark.stroke * s / 100, borderColor: palette.lime };
 };
 
-export const logoHoleStyle = (s: number): ViewStyle => {
-  const [cx, cy, , h] = logoMark.pin;
-  return { position: 'absolute', left: (cx - h) * s / 100, top: (cy - h) * s / 100, width: 2 * h * s / 100, height: 2 * h * s / 100,
-    borderRadius: h * s / 100, backgroundColor: palette.forest };
+/** The turn: a full ring clipped to its lower-right quarter. Wrap logoTurnArcStyle in this. */
+export const logoTurnClipStyle = (s: number): ViewStyle => {
+  const [cx, cy, r] = logoMark.turn, o = r + logoMark.stroke / 2;
+  return { ...markPart(s, cx, cy, o, o), overflow: 'hidden' };
 };
+
+export const logoTurnArcStyle = (s: number): ViewStyle => {
+  const [, , r] = logoMark.turn, o = r + logoMark.stroke / 2;
+  return { ...markPart(s, -o, -o, 2 * o, 2 * o), borderRadius: o * s / 100, borderWidth: logoMark.stroke * s / 100, borderColor: palette.lime };
+};
+
+export const logoStreakStyle = (s: number): ViewStyle => {
+  const [cx, cy, r] = logoMark.turn, h = logoMark.stroke / 2, left = logoMark.streakX - h;
+  // Half a unit into the turn, so no hairline shows where the bar meets the clipped arc.
+  return { ...markPart(s, left, cy + r - h, cx - left + 0.5, logoMark.stroke), borderTopLeftRadius: h * s / 100,
+    borderBottomLeftRadius: h * s / 100, backgroundColor: palette.lime };
+};
+
+export const logoDotStyle = (s: number): ViewStyle => {
+  const [cx, cy] = logoMark.ring, d = logoMark.dot;
+  return { ...markPart(s, cx - d, cy - d, 2 * d, 2 * d), borderRadius: d * s / 100, backgroundColor: palette.clay };
+};
+
+/** The gust (streak, turn, ring) without the dot, for the intro, which moves the dot on its own. */
+export function LogoGust({ size: s }: { size: number }) {
+  return <>
+    <View style={logoStreakStyle(s)} />
+    <View style={logoTurnClipStyle(s)}><View style={logoTurnArcStyle(s)} /></View>
+    <View style={logoRingStyle(s)} />
+  </>;
+}
 
 export function Logo({ size: s = 36, decorative }: { size?: number; decorative?: boolean /* the name is written beside it: one stop for screen readers */ }) {
   const { c } = useCopy(); // the name is read in the reader's language: ويند in Arabic
   return <View {...decorative ? { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' as const } : { accessibilityRole: 'image' as const, accessibilityLabel: c.brand }} style={[logoTile, { width: s, height: s, borderRadius: s * logoMark.radius }]}>
-    {logoMark.bars.map((bar, i) => <View key={i} style={logoBarStyle(s, bar)} />)}
-    <View style={logoPinStyle(s)} />
-    <View style={logoHoleStyle(s)} />
+    <LogoGust size={s} />
+    <View style={logoDotStyle(s)} />
   </View>;
 }
 
@@ -258,16 +284,19 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
 // ---------- controls ----------
 
 // Press feedback: 3% scale over 120ms on the UI thread.
-export function Press({ children, onPress, style, containerStyle, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true }: {
+export function Press({ children, onPress, style, containerStyle, disabled, accessibilityLabel, accessibilityRole = 'button', accessibilityState, hitSlop, dim = true, tilt }: {
   children: React.ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; containerStyle?: StyleProp<ViewStyle>; disabled?: boolean;
   accessibilityLabel?: string; accessibilityRole?: 'button' | 'link' | 'radio' | 'checkbox'; accessibilityState?: { checked?: boolean; busy?: boolean; expanded?: boolean };
   hitSlop?: number | { top?: number; bottom?: number; left?: number; right?: number }; // for controls drawn smaller than 44pt
   dim?: boolean; // false when the control draws its own disabled colours: a 50% wash turns white labels on forest into grey
+  tilt?: boolean; // a tile that leans back in depth as it is pressed, like a key going down (home service tiles)
 }) {
   const [pressed, setPressed] = useState(false);
+  const still = useReducedMotion(); // reduced motion: the scale press only, no lean in depth
+  const lean = tilt && !still;
   return <Pressable style={containerStyle} onPress={onPress} disabled={!!disabled} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel} hitSlop={hitSlop}
     aria-disabled={!!disabled} aria-busy={!!accessibilityState?.busy} aria-checked={accessibilityState?.checked} aria-expanded={accessibilityState?.expanded} onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} pressRetentionOffset={16}>
-    <Animated.View style={[motion.pressable, style, pressed && motion.pressed, disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
+    <Animated.View style={[lean ? motion.tiltable : motion.pressable, style, pressed && (lean ? motion.tilted : motion.pressed), disabled && dim && { opacity: 0.5 }]}>{children}</Animated.View>
   </Pressable>;
 }
 
@@ -327,21 +356,24 @@ export function Reason({ children }: { children: string }) {
 
 // A row of mutually exclusive options. `label` names the group for a screen reader (pass a translated word,
 // never an English literal); without it the group stays unnamed, as it was.
-export function Choices<K extends string>({ items, value, onChange, disabled, label }: {
+export function Choices<K extends string>({ items, value, onChange, disabled, label, tabs }: {
   items: { key: K; label: string; disabled?: boolean }[]; value: K; onChange: (key: K) => void; disabled?: boolean; label?: string;
+  /** A mode switch (sign in / new account): a sunken track with the chosen side raised, so it never looks like the form's own
+   *  filled button below it (UI review 23 Nov: two forest "Sign in" buttons on one card). Value choices keep the outlined look. */
+  tabs?: boolean;
 }) {
-  const { palette } = useTheme();
+  const { palette, shadow } = useTheme();
   const styles = useStyles();
   const { row } = useCopy();
   const choiceMotion = useChoiceMotion();
   const wraps = items.length > 3; // five vehicles in one row split words: "Motorc/ycle"
-  return <View style={[styles.choices, { flexDirection: row }, wraps && { flexWrap: 'wrap' }]} accessibilityRole="radiogroup" accessibilityLabel={label}>
+  return <View style={[styles.choices, { flexDirection: row }, wraps && { flexWrap: 'wrap' }, tabs && styles.tabTrack]} accessibilityRole="radiogroup" accessibilityLabel={label}>
     {items.map(item => {
       const on = item.key === value, off = !!disabled || !!item.disabled;
       return <Pressable key={item.key} accessibilityRole="radio" accessibilityLabel={item.label} accessibilityState={{ checked: on, disabled: off }} disabled={off} aria-checked={on}
         onPress={() => onChange(item.key)} style={wraps ? { flexGrow: 1, flexBasis: '30%' } : { flex: 1 }}>
-        <Animated.View style={[choiceMotion.choice, on && choiceMotion.choiceOn]}>
-          <Text maxFontSizeMultiplier={maxScale} style={[styles.choiceText, on && { color: palette.onFill }, off && !on && { color: palette.faint }]}>{item.label}</Text>
+        <Animated.View style={tabs ? [choiceMotion.choice, styles.tab, on && [{ backgroundColor: palette.card, borderWidth: 1, borderColor: palette.field }, shadow]] : [choiceMotion.choice, on && choiceMotion.choiceOn]}>
+          <Text maxFontSizeMultiplier={maxScale} style={[styles.choiceText, on && { color: tabs ? palette.ink : palette.onFill }, tabs && !on && { color: palette.secondary }, off && !on && { color: palette.faint }]}>{item.label}</Text>
         </Animated.View>
       </Pressable>;
     })}
@@ -441,8 +473,9 @@ export function CodeField({ label, value, onChangeText, length = 6, disabled, on
 }
 
 // error: shown under the field it belongs to (SYSTEM.md: error text near fields), with a red edge.
-export function Field({ label, value, onChangeText, onBlur, placeholder, multiline, keyboardType, secureTextEntry, autoComplete, onSubmitEditing, returnKeyType, inputRef, icon, error, disabled, maxLength }: {
+export function Field({ label, value, onChangeText, onBlur, placeholder, hint, multiline, keyboardType, secureTextEntry, autoComplete, onSubmitEditing, returnKeyType, inputRef, icon, error, disabled, maxLength }: {
   label: string; value: string; onChangeText: (text: string) => void; placeholder?: string; multiline?: boolean;
+  hint?: string; // a rule the value must meet, shown under the field while typing (a placeholder vanishes at the first letter)
   keyboardType?: 'default' | 'phone-pad' | 'decimal-pad' | 'number-pad' | 'email-address'; secureTextEntry?: boolean; autoComplete?: 'tel' | 'password' | 'new-password' | 'name' | 'email' | 'username' | 'one-time-code';
   onSubmitEditing?: () => void; onBlur?: () => void; returnKeyType?: 'go' | 'next'; inputRef?: React.RefObject<TextInput | null>; icon?: IconName; error?: string; disabled?: boolean; maxLength?: number;
 }) {
@@ -471,7 +504,7 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, multili
     </Pressable>
     <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, disabled && styles.inputDisabled, !!error && styles.inputError, multiline && { alignItems: 'flex-start' }]}>
       {icon && <Ionicons name={icon} size={iconSize.md} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
-      <TextInput ref={ref} maxFontSizeMultiplier={maxScale} accessibilityLabel={label} accessibilityHint={error} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={disabled ? palette.secondary : palette.faint}
+      <TextInput ref={ref} maxFontSizeMultiplier={maxScale} accessibilityLabel={label} accessibilityHint={error || hint} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={disabled ? palette.secondary : palette.faint}
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); onBlur?.(); }}
         onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
@@ -486,6 +519,8 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, multili
       <Ionicons name="alert-circle" size={14} color={palette.error} />
       <Text maxFontSizeMultiplier={maxScale} accessibilityLiveRegion="polite" style={styles.fieldError}>{error}</Text>
     </Row>}
+    {/* screen readers hear the hint on the input itself */}
+    {!error && !!hint && <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden style={{ marginTop: 5 }}><Txt variant="caption">{hint}</Txt></View>}
   </View>;
 }
 
@@ -537,8 +572,9 @@ export function ListGroup({ children }: { children: React.ReactNode }) {
   </View>;
 }
 
-export function ListRow({ icon, label, value, onPress, tone = 'olive', danger }: {
+export function ListRow({ icon, label, value, onPress, tone = 'olive', danger, action }: {
   icon: IconName; label: string; value?: string; onPress: () => void; tone?: keyof typeof tones; danger?: boolean;
+  action?: boolean; // does something here (sign out) instead of opening a page: no chevron
 }) {
   const { palette, tones } = useTheme();
   const styles = useStyles();
@@ -548,7 +584,7 @@ export function ListRow({ icon, label, value, onPress, tone = 'olive', danger }:
     <View style={[styles.listIcon, { backgroundColor: t.bg }]}><Ionicons name={icon} size={iconSize.md} color={t.fg} /></View>
     <Text key={language} maxFontSizeMultiplier={maxScale} numberOfLines={useLines(1)} style={[styles.listLabel, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
     {!!value && <Text maxFontSizeMultiplier={maxScale} style={styles.listValue}>{value}</Text>}
-    {!danger && <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={16} color={palette.faint} />}
+    {!danger && !action && <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={16} color={palette.faint} />}
   </Press>;
 }
 
@@ -600,9 +636,9 @@ export function Stat({ label, value, tone = 'card', index = 0, detail }: { label
   // Tiles in a row stretch to the same height (one with a detail line made its neighbour look short), and the figure leads.
   return <Appear index={index} style={{ flexGrow: 1, flexBasis: 140, alignSelf: 'stretch' }}>
     <Card tone={tone} style={{ marginBottom: 0, paddingVertical: 12, flex: 1 }}>
-      <Txt variant="caption" numberOfLines={1}>{label}</Txt>
+      <Txt variant="caption" numberOfLines={2}>{label}</Txt>{/* two lines: "Completed order value" was cut to "Completed order va…" */}
       <Txt variant="h1" style={{ marginTop: 2, fontVariant: ['tabular-nums'] }}>{value}</Txt>
-      {!!detail && <Txt variant="caption" numberOfLines={1} style={{ marginTop: 2 }}>{detail}</Txt>}
+      {!!detail && <Txt variant="caption" numberOfLines={2} style={{ marginTop: 2 }}>{detail}</Txt>}{/* two lines: "Trips: 1 · Wind commission −₪ 2.55" was cut */}
     </Card>
   </Appear>;
 }
@@ -696,6 +732,9 @@ export const tabIcon =(name: IconName) => function TabIcon({ color, size: s, foc
 const motion = css.create({
   pressable: { transform: [{ scale: 1 }], transitionProperty: 'transform', transitionDuration: '120ms', transitionTimingFunction: EASE_OUT },
   pressed: { transform: [{ scale: 0.97 }] },
+  // Same transform list in both states, so the transition interpolates each part. Press uses these only without reduced motion.
+  tiltable: { transform: [{ perspective: 600 }, { rotateX: '0deg' }, { scale: 1 }], transitionProperty: 'transform', transitionDuration: '140ms', transitionTimingFunction: EASE_OUT },
+  tilted: { transform: [{ perspective: 600 }, { rotateX: '10deg' }, { scale: 0.96 }] },
 });
 const useChoiceMotion = themedStyles(palette => css.create({
   choice: {
@@ -721,6 +760,8 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   buttonOff: { borderWidth: 1, borderColor: palette.line },
   buttonText: { fontSize: 15, fontWeight: '700' },
   choices: { gap: 8, marginBottom: 6 },
+  tabTrack: { backgroundColor: palette.muted, borderRadius: 14, padding: 4, gap: 4 }, // Choices tabs: the sunken track
+  tab: { borderWidth: 0, backgroundColor: 'transparent', minHeight: 44 },
   choiceText: { color: palette.ink, fontSize: 14, fontWeight: '700', textAlign: 'center' },
   stepper: { alignItems: 'center', gap: 4, backgroundColor: palette.muted, borderRadius: 12, padding: 3, alignSelf: 'flex-start' }, // hugs its keys instead of a full-width bar
   stepperKey: { width: size.control, height: size.control, borderRadius: 12, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },

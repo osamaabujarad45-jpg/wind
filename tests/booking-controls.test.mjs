@@ -102,7 +102,7 @@ assert.match(ui, /accessibilityState=\{\{ busy: !!loading \}\}/, 'a busy button 
 // The wrapper forwards state to native Pressable through RN's supported ARIA aliases.
 const pressSource = between(ui, 'export function Press(', 'export function Button(');
 const compiled = ts.transpileModule(pressSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-const context = { exports: {}, useState: () => [false, () => {}], Pressable: 'Pressable', Animated: { View: 'Animated.View' }, motion: {},
+const context = { exports: {}, useState: () => [false, () => {}], useReducedMotion: () => false, Pressable: 'Pressable', Animated: { View: 'Animated.View' }, motion: {},
   require: id => { assert.equal(id, 'react/jsx-runtime'); return { jsx: (type, props) => ({ type, props }) }; } };
 runInNewContext(compiled, context);
 for (const active of [false, true]) {

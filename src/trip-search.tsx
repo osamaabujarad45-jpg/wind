@@ -5,7 +5,8 @@ import { ActivityIndicator, Keyboard, Platform, ScrollView, StyleSheet, TextInpu
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api, errorCode } from './api';
-import { city, cities, servedCity, type CityId, type Places, type Point } from './model';
+import { city, cities, servedCity, type CityId, type Places, type Point, type Service } from './model';
+import { ServiceIcon } from './parts';
 import { searchPlaces, type MapHit } from './place-search';
 import { parseSharedLocation, type SharedLocationError } from './shared-location';
 import type { CopyKey } from './copy';
@@ -39,7 +40,8 @@ function Row({ icon, title, detail, onPress, onForget }: { icon: IconName; title
   </View>;
 }
 
-export function TripSearch({ field, onField, pickupText, dropoffText, near, places, locating, locationError, notice, onRetry, onPick, onMap, onLocate, onClose, onForget }: {
+export function TripSearch({ service, field, onField, pickupText, dropoffText, near, places, locating, locationError, notice, onRetry, onPick, onMap, onLocate, onClose, onForget }: {
+  service?: Service; // named above the fields: the sheet looked the same for a ride and a parcel (UI review 23 Nov)
   field: TripField; onField: (field: TripField) => void;
   pickupText: string; dropoffText: string; near: Point | null; places: Places;
   locating: boolean; locationError?: string; notice?: string; onRetry?: () => void;
@@ -110,6 +112,10 @@ export function TripSearch({ field, onField, pickupText, dropoffText, near, plac
     <View style={[styles.top, { flexDirection: row }]}>
       <IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} tone="muted" onPress={onClose} />
       <View style={{ flex: 1 }}>
+        {service && <View style={[styles.service, { flexDirection: row }]}>
+          <ServiceIcon service={service} size={24} />
+          <Txt variant="label">{c[service]}</Txt>
+        </View>}
         <View style={[styles.fieldRow, { flexDirection: row }]}>
           <View style={styles.dot} />
           {input('pickup', c.whereFrom, pickupText)}
@@ -159,8 +165,10 @@ const useStyles = themedStyles((palette, theme) => StyleSheet.create({
   screen: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: palette.paper },
   top: { gap: 10, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 12, backgroundColor: palette.card, ...(theme.name === 'night' ? theme.shadow : { boxShadow: '0px 2px 10px rgba(14,31,25,0.08)' }) },
   fieldRow: { alignItems: 'center', gap: 10 },
-  dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 3, borderColor: palette.forest, backgroundColor: palette.card },
-  square: { width: 12, height: 12, borderRadius: 2, backgroundColor: palette.forest },
+  // the route's own ends, as on the route line and the map: an olive pickup ring and a clay drop-off square
+  dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 3, borderColor: palette.olive, backgroundColor: palette.card },
+  square: { width: 12, height: 12, borderRadius: 2, backgroundColor: palette.clay },
+  service: { alignItems: 'center', gap: 8, marginBottom: 8, minHeight: 28 },
   input: { flex: 1, minHeight: 48, borderRadius: 10, paddingHorizontal: 12, backgroundColor: palette.paper, fontSize: 16, fontWeight: '600', color: palette.ink },
   inputOn: { backgroundColor: palette.muted },
   rowWrap: { alignItems: 'center', gap: 4, borderBottomWidth: 1, borderBottomColor: palette.hair },

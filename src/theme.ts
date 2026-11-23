@@ -15,7 +15,7 @@ export const colors = {
     ...brand,
     ground: '#F3F2EC', surface: '#FFFFFF', surfaceSunken: '#EAE8DF', surfaceHover: '#F6F5F0',
     inverse: '#0E1F19', onInverse: '#F3F2EC',
-    ink: '#0E1F19', inkSecondary: '#56635C', inkFaint: '#66716B',
+    ink: '#0E1F19', inkSecondary: '#56635C', inkFaint: '#606B65',
     line: '#E2E1D8', hairline: '#ECEBE4', lineStrong: '#7D867F', cardEdge: 'rgba(14,31,25,0)', focus: '#1D5FA8',
     action: brand.forest, onAction: '#FFFFFF', actionAccent: brand.lime, actionPressed: '#0B2A20',
     actionSoft: '#E2EEE5', onActionSoft: '#24543F', accent: brand.lime, onAccent: brand.forest,
@@ -83,7 +83,7 @@ export const palettes = {
     card: '#FFFFFF',
     ink: '#0E1F19',
     secondary: '#56635C',
-    faint: '#66716B', // 4.5:1 on paper and white: the lightest grey allowed for text (same as Souq's ink-faint)
+    faint: '#606B65', // the lightest grey allowed for text: 4.5:1 on muted, 4.9:1 on paper, 5.5:1 on white (UI polish 23 Nov: was 4.1:1 on muted)
     olive: '#34765A',
     olivePale: '#E2EEE5',
     forest: '#12342A', // lead surfaces: primary button, search pill, selected chip

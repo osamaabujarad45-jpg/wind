@@ -69,11 +69,10 @@ export default function Welcome() {
 // Slide 1: the product itself, a small map with the pickup, the road and the drop-off pin (design review 17 Nov: the cube and
 // bar said nothing). Pure views, no image; the route follows reading direction, like the route rail in the app.
 function ServicesArt() {
-  const { palette } = useTheme();
   const styles = useStyles();
   const { rtl } = useCopy();
   const reduced = useReducedMotion();
-  const start = rtl ? 'right' : 'left', end = rtl ? 'left' : 'right';
+  const start = rtl ? 'right' : 'left';
   const dots = [0, 1, 2, 3, 4, 5, 6];
   return <View style={styles.map} accessible={false}>
     {/* streets: pale bands across the wash */}
@@ -83,9 +82,8 @@ function ServicesArt() {
     {dots.map(i => <Animated.View key={i} entering={reduced ? undefined : FadeInDown.duration(220).delay(120 + i * 70)}
       style={[styles.routeDot, { bottom: 34 + i * 12, [start]: 46 + i * 26 }]} />)}
     <View style={[styles.pickup, { bottom: 24, [start]: 30 }]} />
-    <Animated.View entering={reduced ? undefined : ZoomIn.duration(300).delay(640)} style={{ position: 'absolute', top: 14, [end]: 30 }}>
-      <Ionicons name="location" size={36} color={palette.clay} />
-    </Animated.View>
+    {/* the app's own drop-off mark (clay square on a white ring, as on the live map), not a stock pin */}
+    <Animated.View entering={reduced ? undefined : ZoomIn.duration(300).delay(640)} style={[styles.dropoff, { bottom: 112, [start]: 222 }]} />
     <View style={[styles.parcelChip, { top: 14, [start]: 16 }]}><ServiceIcon service="parcel" size={36} /></View>
   </View>;
 }
@@ -146,6 +144,7 @@ const useStyles = themedStyles((palette, theme) => StyleSheet.create({
   avenue: { position: 'absolute', top: -20, width: 18, height: 190, backgroundColor: palette.card, opacity: 0.85 },
   routeDot: { position: 'absolute', width: 8, height: 8, borderRadius: 4, backgroundColor: palette.olive },
   pickup: { position: 'absolute', width: 18, height: 18, borderRadius: 9, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },
+  dropoff: { position: 'absolute', width: 20, height: 20, borderRadius: 5, backgroundColor: palette.clay, borderWidth: 3, borderColor: palette.card }, // at the end of the dotted road
   parcelChip: { position: 'absolute', padding: 4, borderRadius: 14, backgroundColor: palette.card, ...(theme.name === 'night' ? theme.shadow : { boxShadow: '0px 2px 8px rgba(14,31,25,0.10)' }) },
   panel: { backgroundColor: palette.card, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: palette.line },
   stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: palette.field, alignItems: 'center', justifyContent: 'center' },
