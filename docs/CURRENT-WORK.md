@@ -6,7 +6,7 @@
   - [#112](https://github.com/osamaabujarad45-jpg/wind/pull/112): compare with Uber and Careem. The driver sheet names the next stop, one wait reason sits above the offers, and a finished order has one main button.
   - [#114](https://github.com/osamaabujarad45-jpg/wind/pull/114): review. Decisions lead the admin home, the merchant count reads right, the shop + is visible, and the tab is renamed Pending.
   - [#115](https://github.com/osamaabujarad45-jpg/wind/pull/115): a new logo (the Arabic و drawn as a gust holding the clay destination dot), depth with no new dependencies, Arabic and English posters, and every finding of a full review fixed. Highlights: whose turn it is (merchant "Accept within", the customer's "Answer the shop"), one warning per screen, and the earnings and admin hierarchy.
-- **Production.** `bac6a5ec` has run on the Israel VM since about 10:10 UTC.
+- **Production.** `bac6a5ec` has run on the Israel VM since about 10:10 UTC. It supersedes the `5217dbc9` release in the Azure entry below and a later release that day (`20261123043019`).
   - `/opt/windapi` points to `/opt/wind-releases/20261123101027`. The previous release is `20261123043019`.
   - The checkpoint is `/data/backups/pre-install-20261123101027.db`.
   - `check-deployment.mjs` passes 10/10, and the live web app shows the new logo.
@@ -18,12 +18,12 @@
 - **Brand tooling.**
   - `scripts/brand-mark.mjs` holds the one geometry. `node scripts/make_icon.mjs` writes `assets/`; it replaces `make_icon.py`, because Pillow is not installed anywhere we run. `node scripts/make_promo.mjs` writes `docs/brand/`.
   - Both scripts need Playwright's Chromium, so run them in the sandbox.
-  - `tests/brand-mark.test.mjs` keeps `<Logo />` equal to the SVG.
+  - `tests/brand-mark.test.mjs` checks that the `logoMark` numbers in `src/ui.tsx` equal `MARK` in `scripts/brand-mark.mjs`.
   - See [docs/brand/README.md](brand/README.md).
-- **One branch.** `master` is the only line of work.
+- **One line of work.** `master` is the only line of work; the branches below are kept only as records.
   - 107 fully merged or squash-merged branches were deleted. Their names and SHAs are in `C:\w\wind-tools\logs\merged-branches-1123-shas.txt`, so any of them can be recreated.
   - Kept on purpose: the `backup/*` snapshots; `codex/sol-lead-1121`, `review/ui-ux-audit-2026-11-07-base` and `claude/wind-fastship-integration-258f07` (no PR, unreviewed); `claude/test-db-acquire-knob` (#11) and `claude/ui-ux-audit-2026-11-07b` (#9), both closed unmerged.
-  - Branch every new piece of work from `origin/master`. The OneDrive root checkout's local `master` is an older, unrelated history with uncommitted owner changes. Do not use it as a base.
+  - Branch every new piece of work from `origin/master`. The OneDrive root checkout's local `master` is a diverged, older lineage (merge-base `83533e39`) with uncommitted owner changes. Do not use it as a base.
 - **Next steps, in order.**
   1. Once the A53 has data or Wi-Fi, walk vc42 at 200% text and with TalkBack, including the new sign-in tabs, earnings, and the merchant accept card.
   2. Push notifications: the owner provides Firebase access, so `GOOGLE_SERVICES_JSON` and `WIND_EXPO_PUSH_ENABLED` can be set, then a push-enabled APK is built.
