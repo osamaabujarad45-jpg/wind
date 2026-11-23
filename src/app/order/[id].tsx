@@ -651,7 +651,7 @@ export default function OrderScreen() {
       {isDriver && mine && order.status === 'completed' && <RateCustomer order={order} onRate={n => act('rate', `/orders/${order.id}/rate`, { customerRating: n })} />}
 
       {order.status === 'completed' && (isCustomer || mine || isAdmin) &&
-        <Button title={c.viewReceipt} icon="receipt-outline" variant="outline" onPress={() => router.push(`/receipt/${order.id}`)} />}
+        <Button title={c.viewReceipt} icon="receipt-outline" variant="ghost" onPress={() => router.push(`/receipt/${order.id}`)} />}
 
       {canSendAnother(order, role) && <Button title={c.sendAnother} icon="add-circle-outline" variant="soft"
         onPress={() => router.push({ pathname: '/book', params: { again: String(order.id), keep: 'pickup' } })} />}
@@ -694,7 +694,7 @@ export default function OrderScreen() {
       </Card>}
       {/* Behind one button until asked for: an open, empty complaint box under a good delivery read as a warning (product audit, 21 Nov).
           A started draft keeps it open. */}
-      {canDispute && !order.dispute && !reportOpen && !disputeReason && <Button title={c.disputeTitle} variant="outline" size="sm" icon="flag-outline" onPress={() => setReport({ id, open: true })} />}
+      {canDispute && !order.dispute && !reportOpen && !disputeReason && <Button title={c.disputeTitle} variant="ghost" size="sm" icon="flag-outline" onPress={() => setReport({ id, open: true })} />}
       {canDispute && !order.dispute && (reportOpen || !!disputeReason) && <Card>
         <Txt variant="title">{c.disputeTitle}</Txt>
         <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.disputeHint}</Txt>
@@ -785,6 +785,14 @@ export default function OrderScreen() {
           {isCustomer && order.driverName && <Person title={c.yourDriver} name={order.driverName} phone={order.driverPhone}
           sub={[order.driverVehicle && c[order.driverVehicle], order.driverRating != null && `★ ${order.driverRating}`].filter(Boolean).join(' · ') || undefined}
           plate={order.driverPlate ?? undefined} approved />}
+          {/* A driver's next stop leads the closed sheet, as in ride-hail driver apps: Open in Maps goes there, so the sheet names it (UI compare, 22 Nov). */}
+          {/* Not on hold: the item is kept safe while support decides, so there is no stop to head for yet. */}
+          {mine && order.status !== 'on_hold' && (() => {
+            const toDropoff = order.status === 'in_transit'; // returning goes back to the sender
+            const ride = order.service === 'ride';
+            const label = order.status === 'returning' ? c.returnToSender : toDropoff ? (ride ? c.dropoff_ride : c.dropoff) : (ride ? c.pickup_ride : c.pickup);
+            return <NextStop label={label} place={(toDropoff ? to : from)[language]} note={toDropoff ? order.dropoffNote : order.pickupNote} dropoff={toDropoff} />;
+          })()}
           {mine && !!order.contact && <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />}
         </>}
       </View>}
@@ -1002,6 +1010,23 @@ function Chat({ orderId, canWrite, live }: { orderId: number; canWrite: boolean;
     </>}
     <ErrorText>{failure}</ErrorText>
   </Card>;
+}
+
+/** Where the driver goes next, marked like the route line (olive dot = pickup, clay square = drop-off). */
+function NextStop({ label, place, note, dropoff }: { label: string; place: string; note?: string; dropoff: boolean }) {
+  const { palette } = useTheme();
+  return <View accessible accessibilityLabel={[label, place, note].filter(Boolean).join(', ')} style={{ marginBottom: 10 }}>
+    <Row gap={12} style={{ alignItems: 'flex-start' }}>
+      <View style={{ width: 44, alignItems: 'center', paddingTop: 5 }}>
+        <View style={{ width: 10, height: 10, borderRadius: dropoff ? 2 : 5, backgroundColor: dropoff ? palette.clay : palette.olive }} />{/* RouteLine's dot and square */}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Txt variant="micro">{label}</Txt>
+        <Txt variant="title" numberOfLines={1}>{place}</Txt>
+        {!!note && <Txt variant="caption" numberOfLines={2}>{note}</Txt>}
+      </View>
+    </Row>
+  </View>;
 }
 
 function Person({ title, name, sub, plate, phone, approved }: { title: string; name: string; sub?: string; plate?: string; phone?: string | null; approved?: boolean }) {
