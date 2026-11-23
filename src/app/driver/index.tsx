@@ -83,6 +83,9 @@ export default function Jobs() {
   const acceptReason = (order: Order) => busy !== null ? c.accept_busy : dispatchAcceptance(order, now) === null ? c.dispatchExpired : !work.known ? c.accept_wait_status
     : offline ? c.accept_go_online // the presence card says offline captains take no jobs
     : blocked(order) ? (order.service === 'parcel' && carrying.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive) : null;
+  // Two or more offers waiting for the same reason (a current job, offline, a tap in flight): one sentence above the list instead of one per card.
+  const firstWait = jobs?.[0] ? acceptReason(jobs[0]) : null;
+  const sharedWait = jobs && jobs.length > 1 && firstWait && jobs.every(order => acceptReason(order) === firstWait) ? firstWait : null;
 
   async function accept(order: Order) {
     if (acceptReason(order) !== null) return;
@@ -246,6 +249,8 @@ export default function Jobs() {
     <ErrorText>{actionError || ((error || work.error) && err(error || work.error))}</ErrorText>
     {/* the cash rule holds for every job: said once above the list, not on each card (design review 17 Nov) */}
     {!!jobs?.length && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.noChangeDriver}</Txt>}
+    {/* The same wait on every card (a current job, offline) is said once here, not repeated under each offer (UI compare, 22 Nov). */}
+    {sharedWait && <Reason>{sharedWait}</Reason>}
 
     {!jobs && pagingUnavailable ? <Empty icon="alert-circle-outline" title={c.jobsPagingTitle} body={c.jobsPagingUnavailable} />
       : !jobs ? <Loading failed={!!error} onRetry={reload} /> : jobs.length === 0
@@ -313,13 +318,12 @@ export default function Jobs() {
               </View>;
             })()}
             <View style={{ marginTop: 12, gap: 8 }}>
-              <Button title={order.recommendedPrice != null ? fill(c.acceptAt, { p: money(earn) }) : c.accept} icon="checkmark-circle-outline"
-                onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={!!waiting} />
+              <Button title={order.recommendedPrice != null ? fill(c.acceptAt, { p: money(earn) }) : c.accept} icon="checkmark-circle-outline"                onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={!!waiting} />
               {order.dispatch?.myOffer && <Button title={c.dispatchDecline} variant="ghost" disabled={busy !== null || dispatchAcceptance(order, now) === null}
                 onPress={() => decline(order)} />}
               {!order.dispatch && order.recommendedPrice != null && offering?.id !== order.id && <Button title={c.offerPrice} icon="pricetags-outline" variant="ghost"
                 disabled={busy !== null || blocked(order) || !work.known} onPress={() => setOffering({ id: order.id, text: String(order.myOffer?.price ?? order.recommendedPrice) })} />}
-              {waiting && <Reason>{waiting}</Reason>}
+              {waiting && waiting !== sharedWait && <Reason>{waiting}</Reason>}
             </View>
           </Card>
         </View>;
