@@ -84,8 +84,9 @@ export default function Jobs() {
     : offline ? c.accept_go_online // the presence card says offline captains take no jobs
     : blocked(order) ? (order.service === 'parcel' && carrying.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive) : null;
   // Two or more offers waiting for the same reason (a current job, offline, a tap in flight): one sentence above the list instead of one per card.
+  // An expired offer is not folded: its sentence is about that one offer.
   const firstWait = jobs?.[0] ? acceptReason(jobs[0]) : null;
-  const sharedWait = jobs && jobs.length > 1 && firstWait && jobs.every(order => acceptReason(order) === firstWait) ? firstWait : null;
+  const sharedWait = jobs && jobs.length > 1 && firstWait && firstWait !== c.dispatchExpired && jobs.every(order => acceptReason(order) === firstWait) ? firstWait : null;
 
   async function accept(order: Order) {
     if (acceptReason(order) !== null) return;
@@ -318,7 +319,8 @@ export default function Jobs() {
               </View>;
             })()}
             <View style={{ marginTop: 12, gap: 8 }}>
-              <Button title={order.recommendedPrice != null ? fill(c.acceptAt, { p: money(earn) }) : c.accept} icon="checkmark-circle-outline"                onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={!!waiting} />
+              <Button title={order.recommendedPrice != null ? fill(c.acceptAt, { p: money(earn) }) : c.accept} icon="checkmark-circle-outline"
+                onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={!!waiting} />
               {order.dispatch?.myOffer && <Button title={c.dispatchDecline} variant="ghost" disabled={busy !== null || dispatchAcceptance(order, now) === null}
                 onPress={() => decline(order)} />}
               {!order.dispatch && order.recommendedPrice != null && offering?.id !== order.id && <Button title={c.offerPrice} icon="pricetags-outline" variant="ghost"

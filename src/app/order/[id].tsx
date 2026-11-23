@@ -788,8 +788,7 @@ export default function OrderScreen() {
             const toDropoff = order.status === 'in_transit'; // returning goes back to the sender
             const ride = order.service === 'ride';
             const label = order.status === 'returning' ? c.returnToSender : toDropoff ? (ride ? c.dropoff_ride : c.dropoff) : (ride ? c.pickup_ride : c.pickup);
-            const place = toDropoff ? order.dropoffArea || to[language] : order.pickupArea || from[language]; // the area when known, as on the job card
-            return <NextStop label={label} place={place} note={toDropoff ? order.dropoffNote : order.pickupNote} dropoff={toDropoff} />;
+            return <NextStop label={label} place={(toDropoff ? to : from)[language]} note={toDropoff ? order.dropoffNote : order.pickupNote} dropoff={toDropoff} />;
           })()}
           {mine && !!order.contact && <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />}
         </>}
