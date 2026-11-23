@@ -558,7 +558,8 @@ const ar = {
   merchantPendingBody: 'سنعلمك عند تفعيل المحل.',
   merchantLicencePaused: 'موقوف: انتهت الرخصة',
   merchantPausedNew: 'لا يستقبل طلبات جديدة',
-  merchantNewOrders: 'لديك {n} طلب جديد بانتظار القبول',
+  merchantNewOrder: 'لديك طلب جديد بانتظار القبول',
+  merchantNewOrders: 'طلبات جديدة بانتظار القبول: {n}', // the count after a colon reads right for 2, 3-10 and 11+
   merchantOpenOrders: 'طلبات جارية',
   merchantBalance: 'الرصيد المستحق',
   merchantPayable: 'قابل للدفع {r}',
@@ -2385,7 +2386,8 @@ const en: Copy = {
   merchantPendingBody: 'We will tell you when the shop is active.',
   merchantLicencePaused: 'Paused: licence expired',
   merchantPausedNew: 'Not taking new orders',
-  merchantNewOrders: 'You have {n} new order(s) waiting to be accepted',
+  merchantNewOrder: 'You have a new order waiting to be accepted',
+  merchantNewOrders: 'You have {n} new orders waiting to be accepted',
   merchantOpenOrders: 'Open orders',
   merchantBalance: 'Balance owed',
   merchantPayable: 'Payable {r}',
@@ -3120,7 +3122,7 @@ const en: Copy = {
   last14: 'Commission & subscriptions, last 14 days',
   pendingDrivers: 'Drivers awaiting approval',
   pendingSubs: 'Plans awaiting activation',
-  approvalsTab: 'Approvals',
+  approvalsTab: 'Queue', // the tab, in a bar of eight: Approvals split mid-word at 11 pt on a phone (UI review, 23 Nov)
   approvalsTitle: 'Waiting for your decision',
   approvalsNone: 'Nothing is waiting for approval.',
   approvalsShops: 'Shops awaiting approval',
