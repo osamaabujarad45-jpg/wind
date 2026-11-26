@@ -15,6 +15,7 @@ import { FreightDetails } from '../../freight-details';
 import { capacityCommand, dispatchAcceptance, secondsUntil } from '../../ride-flow';
 import { BackgroundLocationAction, DriverPresenceCard } from '../../driver-presence-card';
 import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts';
+import { useSecondTick } from '../../use-second-tick';
 import { localAlert, useNewIds } from '../../local-alert';
 import { useSession } from '../../session';
 import { DriverSupportCard } from '../../driver-support-card';
@@ -74,12 +75,14 @@ export default function Jobs() {
   const [busy, setBusy] = useState<number | null>(null);
   const [actionError, setActionError] = useState('');
   const focusRevision = useRef(0);
-  const [now, setNow] = useState(Date.now);
   useFocusEffect(useCallback(() => {
-    focusRevision.current++; setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => { focusRevision.current++; clearInterval(timer); };
+    focusRevision.current++;
+    return () => { focusRevision.current++; };
   }, []));
+  // The clock only drives offer countdowns and expiry, so it ticks only while this screen is focused and shows an offer.
+  // Until its first tick it is not current: no countdown is shown or announced and the offer cannot be answered.
+  const clock = useSecondTick(focused && !!jobs?.some(job => job.dispatch?.myOffer));
+  const now = clock.now;
   const [offering, setOffering] = useState<{ id: number; text: string } | null>(null); // the open "offer your price" form
   const rate = me?.plan === 'pro' ? me.settings.proCommission : me?.settings.commission ?? 0;
   const located = work.tracking === 'sharing';
@@ -94,7 +97,8 @@ export default function Jobs() {
   // With presence on, an offline idle captain takes no work from any surface: accept, offer or detail (H-02, Sol R2-M5).
   const offline = presenceOn && !assigned && work.presenceState !== 'online';
   // Why Accept and the offer buttons wait, in one sentence under them (design §10). Null exactly when they can be pressed.
-  const acceptReason = (order: Order) => busy !== null ? c.accept_busy : dispatchAcceptance(order, now) === null ? c.dispatchExpired : !work.known ? c.accept_wait_status
+  const acceptReason = (order: Order) => busy !== null ? c.accept_busy : order.dispatch?.myOffer && !clock.current ? c.accept_wait_status
+    : dispatchAcceptance(order, now) === null ? c.dispatchExpired : !work.known ? c.accept_wait_status
     : offline ? c.accept_go_online // the presence card says offline captains take no jobs
     : blocked(order) ? (order.service === 'parcel' && carrying.every(o => o.service === 'parcel') ? c.accept_blocked_parcels
       : order.service === 'ride' && order.shared && pooledLoad ? seatsReason : c.accept_blocked_exclusive) : null;
@@ -318,7 +322,7 @@ export default function Jobs() {
             </Row>}
             <RouteLine from={order.pickupArea || city(order.pickupCity)[language]} to={order.dropoffArea || city(order.dropoffCity)[language]} fromNote={order.pickupNote} toNote={order.dropoffNote} ride={order.service === 'ride'} />
             <FreightDetails order={order} />
-            {order.dispatch?.myOffer && <OfferClock key={order.dispatch.myOffer.offerId} focused={focused}
+            {order.dispatch?.myOffer && clock.current && <OfferClock key={order.dispatch.myOffer.offerId} focused={focused}
               seconds={secondsUntil(order.dispatch.myOffer.expiresAt, now, order.journey)} />}
             {!!order.detail && <Row gap={6} style={styles.note}>
               <Ionicons name="document-text-outline" size={14} color={palette.secondary} />
@@ -344,7 +348,7 @@ export default function Jobs() {
             <View style={{ marginTop: 12, gap: 8 }}>
               <Button title={order.recommendedPrice != null ? fill(c.acceptAt, { p: money(earn) }) : c.accept} icon="checkmark-circle-outline"
                 onPress={() => accept(order)} loading={busy === order.id && offering?.id !== order.id} disabled={!!waiting} />
-              {order.dispatch?.myOffer && <Button title={c.dispatchDecline} variant="ghost" disabled={busy !== null || dispatchAcceptance(order, now) === null}
+              {order.dispatch?.myOffer && <Button title={c.dispatchDecline} variant="ghost" disabled={busy !== null || !clock.current || dispatchAcceptance(order, now) === null}
                 onPress={() => decline(order)} />}
               {!order.dispatch && order.recommendedPrice != null && offering?.id !== order.id && <Button title={c.offerPrice} icon="pricetags-outline" variant="ghost"
                 disabled={busy !== null || blocked(order) || !work.known} onPress={() => setOffering({ id: order.id, text: String(order.myOffer?.price ?? order.recommendedPrice) })} />}
