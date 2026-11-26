@@ -64,6 +64,40 @@ try {
   await assert.rejects(request('https://test.invalid/api/orders', { requestId: 'same-on-retry' }), /network/);
   globalThis.setTimeout = originalTimer;
 
+  const originalClear = globalThis.clearTimeout;
+  const timers = new Map();
+  globalThis.setTimeout = (fn, delay) => { timers.set(fn, delay); return fn; };
+  globalThis.clearTimeout = handle => { timers.delete(handle); };
+  try {
+    let reads = 0;
+    globalThis.fetch = async () => {
+      if (++reads === 1) throw new Error('offline');
+      return new Response('{}');
+    };
+    const controller = new AbortController();
+    const pending = request('https://test.invalid/api/me', undefined, undefined, controller.signal);
+    const rejected = assert.rejects(pending, /aborted/);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual([...timers.values()], [20_000, 800]);
+    controller.abort();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(timers.size, 0, 'abort cancels both the scheduled retry and request deadline');
+    await rejected;
+    assert.equal(reads, 1, 'an abandoned request is never sent again');
+
+    reads = 0;
+    const retried = request('https://test.invalid/api/ping');
+    await new Promise(resolve => setImmediate(resolve));
+    const [retry] = [...timers].find(([, delay]) => delay === 800);
+    retry();
+    assert.deepEqual(await retried, {});
+    assert.equal(reads, 2, 'an active read still retries a transient network failure once');
+    assert.equal(timers.size, 0);
+  } finally {
+    globalThis.setTimeout = originalTimer;
+    globalThis.clearTimeout = originalClear;
+  }
+
   // Forced upgrade: every request names its build; a 426 refusal flips the app-wide update screen once.
   let notified = 0;
   const unsubscribe = subscribeClientUpdate(() => notified++);
