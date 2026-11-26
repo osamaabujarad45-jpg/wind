@@ -148,7 +148,8 @@ async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap
     if (!isCurrentSession()) return false;
     // Local alerts go quiet only while the server says push delivery is switched on; with it off a registered token would
     // otherwise leave the phone with no alert at all (local-alert.ts). The switch is configuration, not proof of arrival:
-    // docs/operations/deploy.md switches it on for a test phone first and announces push only once a test push lands.
+    // docs/operations/deploy.md turns it on for the host while only a test phone has the Firebase build (step 5) and
+    // announces push only once a test push lands there (step 6).
     setNativePushRegistered(result?.delivering === true ? session : null);
     return result?.delivering === true;
   } catch (error) {

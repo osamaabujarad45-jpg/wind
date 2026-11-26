@@ -71,8 +71,8 @@ const pushWords: Record<string, { ar: string; en: string }> = {
 const pushBody = (kind: unknown, lang: unknown) => { const words = pushWords[String(kind)]; return lang === 'en' ? words?.en ?? 'You have a new update. Open Wind to view it.' : words?.ar ?? 'لديك تحديث جديد. افتح ويند لعرضه.'; };
 
 /** Whether native push delivery is switched on for this server. Phones mute their local alerts only while it is; it is
- * configuration, not proof that a push arrives, so docs/operations/deploy.md switches it on for a test phone first and
- * announces push only once a test push lands. */
+ * configuration, not proof that a push arrives: docs/operations/deploy.md turns it on for the host (step 5) while only a
+ * test phone has the Firebase build, and announces push only once a test push lands there (step 6). */
 export const expoPushDelivering = () => process.env.WIND_EXPO_PUSH_ENABLED === '1';
 
 /** One Expo push.
