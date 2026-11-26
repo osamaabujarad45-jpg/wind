@@ -72,8 +72,8 @@ order arrive right and on time? What confused you? Would you use it again?
 
 ## Known limits of this pilot
 
-- **Notifications with the app closed work on Android from app 1.1.6 (versionCode 44)**, live since 26 November. iPhones and older
-  Android builds alert only while the app is open, so ask those drivers to keep the jobs screen open while waiting.
+- **Android push is switched on from app 1.1.6 (versionCode 44)** since 26 November; delivery with the app fully closed is still
+  being verified. Ask drivers to keep the jobs screen open while waiting, and report any alert that did not arrive.
 - Phone numbers are not verified by SMS at signup. Only invite people you know.
 - iPhone is a Home Screen web app: location for a driver works only while the app is open.
 - Passenger transport permission and insurance (G-RIDE) and the shop food-handling rules are the owner's legal side; no

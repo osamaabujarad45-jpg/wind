@@ -74,7 +74,7 @@ Prepared 26 November 2026. Read this before older handoffs.
 - The push-enabled APK vc44.
 - The production switch.
 - On the A53, background delivery of a push sent from the host, and the tap that opens Support.
-- SDK 57 notification permission and channel check: the app creates the `default` high-importance channel before asking (`src/native-push.ts`), and the server names it (`server/push.ts`). The Fable shared-channel module was not adopted.
+- SDK 57 notification permission and channel check (code check; the SDK 57 notification docs were not re-read this time): the app creates the `default` high-importance channel before asking (`src/native-push.ts`), and the server names it (`server/push.ts`). The Fable shared-channel module was not adopted.
 
 **Sources:** `src/native-push.ts`, `server/domain/native-push.ts`, `server/push.ts`, `server/worker.ts`, `app.config.js`, `eas.json`, and the native push suites.
 

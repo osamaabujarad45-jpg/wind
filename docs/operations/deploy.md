@@ -92,7 +92,7 @@ its data is backed up and those installs are rebuilt.
   - Rebuild the APKs for this address (needs a new EAS token).
   - Then retire `4.223.118.16.sslip.io` (add it to `scripts/retired-api-hosts.json`).
 
-## Production host from 16 November 2026 (student Azure subscription)
+## Production host from 16 November 2026 (student Azure subscription; history, replaced by the Israel host on 21 November)
 
 The 15 November subscription (`7bd97ddb…`, host `windapp-ps.swedencentral.cloudapp.azure.com`) went into the
 Warned, read-only state at 20:35 UTC. Azure stopped its VM and its registry answers `REGISTRY_NOT_READY`.
@@ -279,12 +279,12 @@ The backend stays on the VM. Firebase only sends closed-app alerts and password-
 - Firebase: `wind-development` remains the production project. Email/Password is on, client sign-up is off, the minimum password length is 12, and the server key is limited to Identity Toolkit.
 - EAS: the organization project holds that project's FCM V1 key for `ps.wind.app`. `GOOGLE_SERVICES_JSON` (it names only `ps.wind.app`; phone-test and sandbox builds skip it, `app.config.js`) is set for `production` and `preview`.
 - Server: release `20261126212854` (master `816d3e17`, PR #121's delivery gate) is live. `WIND_EXPO_PUSH_ENABLED=1` was added to `/etc/wind-api.env`, and the API was restarted and reported ready. To turn push off: `sudo cp -p /etc/wind-api.env.pre-push-20261126 /etc/wind-api.env`, `sudo systemctl restart wind-api`, then check `curl -fsS http://127.0.0.1:4000/api/ready`. This host is SQLite with in-process sending, so step 5's PostgreSQL worker note does not apply here.
-- APK: 1.1.6 versionCode 44 is EAS build `fa71b101`, built from `816d3e17`. Its SHA-256 is `a3bff23942e5e974ac7d18cb68aaa4ae02dde9db9f0d7853f163d1c395a628ac`, and it embeds the `wind-development` config. It was published on the VM as root with `sudo bash infra/vm-israel/publish-apk.sh <apk> <sha256> 1.1.6 44` as `/download/wind.apk`.
+- APK: 1.1.6 versionCode 44 is EAS build `fa71b101`, built from `816d3e17`. Its SHA-256 is `a3bff23942e5e974ac7d18cb68aaa4ae02dde9db9f0d7853f163d1c395a628ac`, and it embeds the `wind-development` config. It was published on the VM with `sudo bash infra/vm-israel/publish-apk.sh <apk> <sha256> 1.1.6 44` as `/download/wind.apk`.
 - Acceptance on the A53:
   - The test customer `Push Test (Wind QA)` (user 5) allowed notifications, and its Android token registered.
   - A push sent from the production host through Expo got the receipt `ok`, arrived with Wind in the background, and opened the Support screen.
   - The app's own support-reply path was not exercised, because the stored admin sign-in for the host was rejected.
-- **Step 6 is only partly evidenced.** The proof was a manually sent push with the app in the background, not a job or status event with the app closed. The APK was published under the owner's 26 November instruction to complete the Firebase rollout and the AGENTS.md standing delivery approval, because the Firebase chain is proven and the server's sending path is covered by CI. A two-role trip on the A53 closes step 6: job and status events with the app closed. If those pushes do not arrive, turn push off as above; phones bring their local alerts back within 10 minutes.
+- **Step 6 is only partly evidenced.** The proof was a manually sent push with the app in the background, not a job or status event with the app closed. The APK was published under the owner's explicit instruction of 26 November to complete the Firebase rollout, because background delivery is proven and the server's sending path is covered by CI. A two-role trip on the A53 closes step 6: job and status events with the app closed. If those pushes do not arrive, turn push off as above; phones bring their local alerts back within 10 minutes.
 - Still off:
   - Password reset email: no Firebase reset keys are on the host. Verify email first (design §0 item 6 and §10).
   - iPhone push: APNs is not configured, so iPhones keep local alerts.
