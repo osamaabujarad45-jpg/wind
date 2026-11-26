@@ -4,6 +4,48 @@
 # (OSRM in Docker on 127.0.0.1:5000) once a graph has been built into /srv/osrm. Idempotent.
 # Hardening over the student host: the API runs as the unprivileged user `wind`, not root.
 set -euo pipefail
+
+install_node() (
+  local version=24.22.3
+  local checksum=4f2b175a6d53a5c617a80dba2676238a0688cef28c6da4eba35c7d844e66fcfb
+  local archive="node-v$version-linux-x64.tar.xz" stage previous=''
+  umask 077
+  exec 9>>/opt/.wind-node-runtime.lock
+  flock -x -w 30 9
+  umask 022
+  if [ -x /opt/node/bin/node ] && [ "$(/opt/node/bin/node -v)" = "v$version" ]; then
+    /opt/node/bin/node -v
+    return
+  fi
+  stage=$(mktemp -d /opt/wind-node-stage.XXXXXX)
+  trap 'if [ -n "$previous" ] && { [ -e "$previous/node" ] || [ -L "$previous/node" ]; } && [ ! -e /opt/node ] && [ ! -L /opt/node ]; then
+    mv -T "$previous/node" /opt/node || printf "Restore the previous Node runtime from %s/node\n" "$previous" >&2
+  fi; rm -rf -- "$stage"' EXIT
+  trap 'exit 1' HUP INT TERM
+  curl -fsS --output "$stage/$archive" "https://nodejs.org/dist/v$version/$archive"
+  (cd "$stage" && printf '%s  %s\n' "$checksum" "$archive" | sha256sum -c -)
+  mkdir -m 0755 "$stage/node"
+  tar -xJf "$stage/$archive" -C "$stage/node" --strip-components=1 --no-same-owner --no-same-permissions
+  [ "$("$stage/node/bin/node" -v)" = "v$version" ]
+  # Backup, restore and release installation also use this lock and call /opt/node.
+  if [ -d /data ]; then
+    exec 8</data
+    flock -x -w 120 8
+  fi
+  if [ -e /opt/node ] || [ -L /opt/node ]; then
+    previous=$(mktemp -d /opt/wind-node-previous.XXXXXX)
+    printf 'Previous Node runtime will be retained at %s/node\n' "$previous"
+    mv -T /opt/node "$previous/node"
+  fi
+  mv -T "$stage/node" /opt/node
+  /opt/node/bin/node -v
+)
+
+if [ "$#" -eq 1 ] && [ "$1" = --node-only ]; then
+  install_node
+  exit
+fi
+
 HOST=${1:?public host name, e.g. 20.217.202.98.sslip.io}
 BACKUP_ACCOUNT=${2:-}   # private Azure Blob account for the off-host backup copy (deploy.md)
 TLS_ALIAS_FILE=/etc/caddy/wind-tls-alias
@@ -16,26 +58,12 @@ for name in "$HOST" "$TLS_ALIAS"; do
 done
 # Azure's storage account naming rule, checked before the name is written anywhere (Sol recheck L5).
 [ -z "$BACKUP_ACCOUNT" ] || [[ "$BACKUP_ACCOUNT" =~ ^[a-z0-9]{3,24}$ ]] || { echo "invalid storage account name: $BACKUP_ACCOUNT" >&2; exit 1; }
-NODE_VERSION=24.12.0
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update -q
 apt-get install -y -q curl ca-certificates debian-keyring debian-archive-keyring apt-transport-https gnupg unattended-upgrades xz-utils
 
-# Node 24 (same major as the gate), checked against the published checksum.
-if [ ! -x /opt/node/bin/node ] || [ "$(/opt/node/bin/node -v)" != "v$NODE_VERSION" ]; then
-  # A private root-owned directory, never predictable /tmp names (Haiku PR #98 N-4).
-  DL=$(mktemp -d); trap 'rm -rf "$DL"' EXIT
-  cd "$DL"
-  curl -fsSLO "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz"
-  curl -fsSLO "https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt"
-  grep " node-v$NODE_VERSION-linux-x64.tar.xz\$" SHASUMS256.txt | sha256sum -c -
-  rm -rf /opt/node-new && mkdir -p /opt/node-new
-  tar -xJf "node-v$NODE_VERSION-linux-x64.tar.xz" -C /opt/node-new --strip-components=1
-  rm -rf /opt/node && mv /opt/node-new /opt/node
-  cd /
-fi
-/opt/node/bin/node -v
+install_node
 
 # Caddy from its official repository.
 if ! command -v caddy >/dev/null; then

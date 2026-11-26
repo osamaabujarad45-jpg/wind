@@ -30,7 +30,8 @@ its data is backed up and those installs are rebuilt.
   - SSH: `ssh -i ~/.ssh/wind-vm-prod-1121 windadmin@20.217.202.98`.
 - **Runtime:** `sudo bash infra/vm-israel/provision.sh <host> <backup-account> [tls-alias]` (idempotent; the Caddyfile is validated before it replaces the working one).
   - With no third argument, provisioning keeps the saved TLS alias. Pass an explicit empty third argument to remove the alias from Caddy.
-  - Node 24.12.0 (checksum-verified) in `/opt/node`.
+  - Node 24.22.3 (checksum-verified) in `/opt/node`. On an existing VM, `sudo bash provision.sh --node-only` stages and verifies the pinned runtime, then acquires the database lock for the switch. It prints the previous runtime's location before the switch. The running API adopts the new runtime on its next restart. Verify the backup marker, API readiness and running binary version after rollout.
+  - If a host crash leaves `/opt/node` missing, confirm the recovery path printed by the upgrade and restore it while holding the same locks. Run `sudo flock -x /opt/.wind-node-runtime.lock flock -x /data mv -T -- /opt/wind-node-previous.<suffix>/node /opt/node`. Verify `/opt/node/bin/node -v` and the API readiness endpoint before continuing the release.
   - Caddy terminates TLS.
   - `wind-api.service` runs `/opt/windapi` as the unprivileged user `wind` (not root), on 127.0.0.1:4000. It has
     `ProtectSystem=strict` and write access only to `/data`.
