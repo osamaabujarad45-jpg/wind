@@ -107,7 +107,7 @@ if (Platform.OS !== 'web') {
 let askedInSession: number | null = null;
 // Each request belongs to the session that made it: one queued before a sign-out neither asks nor registers for the next account
 // (Sol full review 21 Nov, item 8). Resolves true once this device is registered for that session and the server delivers push,
-// so the Account row only says alerts reach this device when they can (Haiku PR #121 review).
+// so the Account row only says alerts reach this device when they can (Haiku review of the push delivery gate).
 let running: Promise<unknown> = Promise.resolve();
 export function registerNativePush(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap' = false): Promise<boolean> {
   if (Platform.OS === 'web') return Promise.resolve(false);
