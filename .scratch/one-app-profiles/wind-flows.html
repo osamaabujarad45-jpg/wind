@@ -1,0 +1,447 @@
+<title>Wind One-App Flows</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+/* Layout: a working phone prototype on the left, the scenario guide and design decisions on the right; one column on phones. */
+:root{
+  --forest:#12342A; --lime:#D3F27A; --clay:#CB6845; --clay-ink:#A94A28;
+  --paper:#F3F2EC; --card:#FFFFFF; --ink:#0E1F19; --ink2:#56635C; --line:#E1E0D8; --olive:#34765A; --olive-pale:#E2EEE5; --warn:#8A5A00; --warn-pale:#FBF1DA;
+  --page:#ECEAE2; --page-ink:#0E1F19; --page-ink2:#4E5A54; --page-card:#F8F7F2; --page-line:#D9D7CD;
+  --font:"IBM Plex Sans Arabic", system-ui, sans-serif; --display:"Space Grotesk","IBM Plex Sans Arabic", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--page:#0F1714;--page-ink:#EEF1EA;--page-ink2:#AAB6AF;--page-card:#16211C;--page-line:#26342D;color-scheme:dark}}
+:root[data-theme="dark"]{--page:#0F1714;--page-ink:#EEF1EA;--page-ink2:#AAB6AF;--page-card:#16211C;--page-line:#26342D;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--page);color:var(--page-ink);font-family:var(--font);font-size:15px;line-height:1.5;margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:end;justify-content:space-between;margin-bottom:24px}
+h1{font-family:var(--display);font-size:clamp(28px,4vw,40px);line-height:1.1;margin:0;text-wrap:balance}
+.lede{color:var(--page-ink2);max-width:62ch;margin:8px 0 0}
+.grid{display:grid;grid-template-columns:400px minmax(0,1fr);gap:32px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}}
+.stage{position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);display:flex;flex-direction:column;gap:12px;align-items:center}
+@media (max-width:900px){.stage{position:static}}
+.controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.pill{border:1px solid var(--page-line);background:var(--page-card);color:var(--page-ink);border-radius:999px;padding:6px 14px;font:inherit;font-size:13px;cursor:pointer}
+.pill[aria-pressed="true"]{background:var(--forest);color:#fff;border-color:var(--forest)}
+.pill:focus-visible,.p button:focus-visible{outline:3px solid var(--clay);outline-offset:2px}
+
+/* ---------- phone ---------- */
+.phone{width:min(380px,100%);aspect-ratio:380/780;border-radius:40px;background:#0b0f0d;padding:10px;box-shadow:0 30px 60px -30px rgba(0,0,0,.45)}
+.p{position:relative;width:100%;height:100%;border-radius:31px;overflow:hidden;background:var(--paper);color:var(--ink);font-size:14px;
+   --s-bg:var(--paper);--s-card:var(--card);--s-ink:var(--ink);--s-ink2:var(--ink2);--s-line:var(--line);--s-act:var(--forest);--s-on:#fff;--s-acc:var(--lime);--map1:#E9E6DA;--map2:#F7F5EC;--road:#FFFFFF;--road2:#F2E3B8}
+.p.night{--s-bg:#0E1714;--s-card:#16211C;--s-ink:#EEF1EA;--s-ink2:#AAB6AF;--s-line:#26342D;--s-act:var(--lime);--s-on:#0E1F19;--map1:#121C18;--map2:#18241F;--road:#2A3A33;--road2:#3B4A2A}
+.p.shop{--s-act:var(--clay-ink)}
+.p{background:var(--s-bg);color:var(--s-ink)}
+.p[dir="rtl"]{direction:rtl}
+.p button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+.map{position:absolute;inset:0;background:var(--map1);overflow:hidden}
+.map svg{position:absolute;inset:0;width:100%;height:100%}
+.chip-id{position:absolute;top:14px;inset-inline-start:12px;display:flex;align-items:center;gap:8px;background:var(--s-card);border-radius:18px;padding:6px 12px 6px 6px;box-shadow:0 4px 14px rgba(0,0,0,.12);z-index:5}
+.p[dir="rtl"] .chip-id{padding:6px 6px 6px 12px}
+.av{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-weight:700;color:var(--lime);background:var(--forest);position:relative;flex:none}
+.av.cap{background:#1F2D27;color:var(--lime)}.av.shp{background:var(--clay);color:#fff}
+.av .dot{position:absolute;top:-3px;inset-inline-end:-3px;width:11px;height:11px;border-radius:50%;background:var(--clay);border:2px solid var(--s-card)}
+.chip-id small{display:block;color:var(--s-ink2);font-size:11px;line-height:1.2}
+.chip-id b{font-size:14px;line-height:1.2}
+.roads{position:absolute;top:14px;inset-inline-end:12px;background:var(--s-card);border-radius:14px;padding:8px 12px;font-size:12px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.12);z-index:5;display:flex;gap:6px;align-items:center}
+.roads i{width:8px;height:8px;border-radius:50%;background:var(--warn);display:inline-block}
+.sheet{position:absolute;inset-inline:0;bottom:56px;background:var(--s-bg);border-radius:22px 22px 0 0;padding:10px 14px 12px;box-shadow:0 -8px 24px rgba(0,0,0,.10);z-index:4;max-height:calc(100% - 120px);overflow:auto}
+.grab{width:40px;height:4px;border-radius:4px;background:var(--s-line);margin:0 auto 10px}
+.where{display:flex;align-items:center;gap:10px;background:var(--s-card);border:1px solid var(--s-line);border-radius:16px;padding:12px 14px;width:100%;text-align:start;font-weight:600;font-size:16px}
+.where svg{flex:none}
+.lines{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.line{background:var(--s-card);border:1px solid var(--s-line);border-radius:14px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:4px;font-weight:600;font-size:13px}
+.ico{width:30px;height:30px;border-radius:10px;display:grid;place-items:center}
+.i-ride{background:#E3ECF8;color:#2E5C9A}.i-send{background:var(--olive-pale);color:var(--olive)}.i-shop{background:#F6E4EC;color:#9A3D66}
+.night .i-ride{background:#1E2B3B;color:#9CC2F2}.night .i-send{background:#1D3A2E;color:#CFE9A0}.night .i-shop{background:#3A2230;color:#F0A9C8}
+.card{background:var(--s-card);border:1px solid var(--s-line);border-radius:16px;padding:12px;display:flex;gap:10px;align-items:center;margin-top:10px}
+.card .t{flex:1;min-width:0}.card .t b{display:block;font-size:14px}.card .t span{color:var(--s-ink2);font-size:12px}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--olive-pale);color:var(--olive)}
+.tag.warn{background:var(--warn-pale);color:var(--warn)}.night .tag{background:#1D3A2E;color:#CFE9A0}
+.money{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tabs{position:absolute;inset-inline:0;bottom:0;height:56px;background:var(--s-card);border-top:1px solid var(--s-line);display:grid;grid-template-columns:repeat(3,1fr);z-index:6}
+.tab{display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--s-ink2);gap:2px}
+.tab[aria-current="page"]{color:var(--s-ink);font-weight:700}
+.tab[aria-current="page"] .tb{background:var(--s-acc);color:#12342A}
+.tb{width:44px;height:24px;border-radius:12px;display:grid;place-items:center}
+.btn{display:block;width:100%;background:var(--s-act);color:var(--s-on);border-radius:14px;padding:13px;font-weight:700;text-align:center;margin-top:10px}
+.btn.ghost{background:transparent;color:var(--s-ink);border:1px solid var(--s-line)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.sec{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--s-ink2);text-transform:uppercase;margin:12px 2px 4px}
+.opt{display:flex;align-items:center;gap:10px;padding:10px;border-radius:14px;border:1.5px solid transparent;width:100%;text-align:start}
+.opt[aria-pressed="true"]{border-color:var(--s-act);background:var(--s-card)}
+.opt .t{flex:1;min-width:0}.opt .t b{display:block}.opt .t span{font-size:12px;color:var(--s-ink2)}
+.res{display:flex;gap:10px;align-items:center;padding:11px 4px;border-bottom:1px solid var(--s-line);width:100%;text-align:start}
+.res span{color:var(--s-ink2);font-size:12px;display:block}
+.scrim{position:absolute;inset:0;background:rgba(5,12,9,.45);z-index:20;display:flex;align-items:flex-end}
+.modal{background:var(--s-bg);width:100%;border-radius:22px 22px 0 0;padding:10px 14px 18px}
+.prow{display:flex;gap:10px;align-items:center;padding:10px 4px;width:100%;text-align:start;border-radius:12px}
+.prow .t{flex:1;min-width:0}.prow .t span{display:block;font-size:12px;color:var(--s-ink2)}
+.prow.add{color:var(--olive);font-weight:600}.night .prow.add{color:#CFE9A0}
+.check{color:var(--olive);font-weight:700}
+.dialog{position:absolute;inset:0;z-index:30;background:rgba(5,12,9,.5);display:grid;place-items:center;padding:24px}
+.dialog .box{background:var(--s-card);border-radius:20px;padding:18px;width:100%}
+.dialog h4{margin:0 0 6px;font-size:16px}.dialog p{margin:0;color:var(--s-ink2);font-size:13px}
+.ident{position:absolute;inset:0;z-index:40;display:grid;place-items:center;background:var(--forest);color:var(--lime);text-align:center;animation:fade .3s ease both}
+.ident.cap{background:#0B1310}.ident.shp{background:var(--clay-ink);color:#fff}
+.ident b{display:block;font-family:var(--display);font-size:26px}.ident span{opacity:.8}
+@keyframes fade{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.ident{animation:none}}
+.toggle{display:flex;align-items:center;justify-content:space-between;background:var(--s-card);border:1px solid var(--s-line);border-radius:16px;padding:10px 12px}
+.sw{width:52px;height:30px;border-radius:15px;background:var(--s-line);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:3px;inset-inline-start:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:inset-inline-start .2s}
+.sw[aria-checked="true"]{background:var(--olive)}.sw[aria-checked="true"]::after{inset-inline-start:25px}
+.seg{display:flex;gap:6px;overflow-x:auto;margin-top:10px}
+.seg button{padding:6px 12px;border-radius:999px;border:1px solid var(--s-line);font-size:12px;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--s-act);color:var(--s-on);border-color:var(--s-act)}
+.top-pad{position:absolute;inset:0 0 56px;overflow:auto;padding:70px 14px 14px}
+.hint{font-size:12px;color:var(--s-ink2);margin-top:8px}
+
+/* ---------- guide ---------- */
+.guide{display:flex;flex-direction:column;gap:28px;min-width:0}
+.guide h2{font-family:var(--display);font-size:22px;margin:0 0 10px}
+.guide p{margin:0 0 10px;max-width:68ch}
+.scen{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.sc{background:var(--page-card);border:1px solid var(--page-line);border-radius:14px;padding:12px 14px;text-align:start;font:inherit;color:inherit;cursor:pointer}
+.sc b{display:block;font-size:14px}.sc span{font-size:13px;color:var(--page-ink2)}
+.sc[aria-pressed="true"]{border-color:var(--clay);box-shadow:0 0 0 2px var(--clay) inset}
+.steps{background:var(--page-card);border:1px solid var(--page-line);border-radius:14px;padding:14px 18px;margin-top:10px}
+.steps ol{margin:0;padding-inline-start:20px}.steps li{margin:4px 0}
+.steps li.done{color:var(--page-ink2);text-decoration:line-through}
+.tbl{overflow-x:auto;border:1px solid var(--page-line);border-radius:14px;background:var(--page-card)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:9px 12px;text-align:start;border-bottom:1px solid var(--page-line);vertical-align:top}
+th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--page-ink2)}
+tr:last-child td{border-bottom:0}
+.risk{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--olive-pale);color:var(--olive);white-space:nowrap}
+.risk.m{background:var(--warn-pale);color:var(--warn)}.risk.h{background:#F9E1DA;color:#9B2C1A}
+.rules{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;padding:0;margin:0;list-style:none}
+.rules li{background:var(--page-card);border:1px solid var(--page-line);border-radius:14px;padding:12px 14px;font-size:14px}
+.rules b{display:block;margin-bottom:2px}
+.num{font-variant-numeric:tabular-nums}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Wind: one app, profiles you switch</h1>
+      <p class="lede">A working sketch of the proposed flows. Tap your picture on the map, or the top card in Account, to switch between Personal, Captain and Shop, the way a Facebook profile switches to a Page. Pick a scenario on the right and follow its steps.</p>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="stage">
+      <div class="controls" role="group" aria-label="Prototype language">
+        <button class="pill" id="lang-en" aria-pressed="true">English</button>
+        <button class="pill" id="lang-ar" aria-pressed="false">العربية</button>
+        <button class="pill" id="reset">Start over</button>
+      </div>
+      <div class="phone"><div class="p" id="p" dir="ltr" aria-live="polite"></div></div>
+      <p style="font-size:12px;color:var(--page-ink2);margin:0;text-align:center;max-width:380px">Sample people and prices. Nothing here talks to Wind's server. Captain mode is shown after dark, when the Automatic appearance turns Night for captains; it keeps whatever appearance the captain chose.</p>
+    </div>
+
+    <div class="guide">
+      <section>
+        <h2>Try a scenario</h2>
+        <div class="scen" id="scen" role="group" aria-label="Scenarios"></div>
+        <div class="steps" id="steps"></div>
+      </section>
+
+      <section>
+        <h2>What changes, and why</h2>
+        <div class="tbl"><table>
+          <thead><tr><th>Today</th><th>Proposed</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td>One role per phone number. A captain cannot order a ride.</td><td>One sign-in with Personal, Captain and Shop profiles. The server keeps the active mode in the session.</td><td>People here hold two jobs. A second SIM should not be the price of using both sides.</td></tr>
+            <tr><td>Sign-up asks for account type, vehicle, plate and email.</td><td>Name, phone, password. Driving and shops are applied for inside the app.</td><td>A new customer sees a price before a form about trucks.</td></tr>
+            <tr><td>Four tiles plus "Where to?" and "Later" in one area.</td><td>Ride · Send · Shop above one input whose words follow the choice. Large load is a size under Send; Later moves into review.</td><td>One decision at a time, with defaults for the rest.</td></tr>
+            <tr><td>"My shop" sits in Account's lower list, after the settings.</td><td>The shop is a profile in the switcher, with a badge when orders wait.</td><td>The shop owner is the most time-critical user.</td></tr>
+            <tr><td>Each screen starts its own map.</td><td>One map lives behind every screen and survives mode switches.</td><td>No grey map between Home, booking and tracking on a budget phone.</td></tr>
+            <tr><td>Roads status sits under Account.</td><td>A Roads chip on the home map.</td><td>Checkpoints are the first thing a traveller checks.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section>
+        <h2>Switch rules the server enforces</h2>
+        <ul class="rules">
+          <li><b>Captain with a job in hand</b>Cannot switch. "Finish your current job to switch", with Resume job.</li>
+          <li><b>Captain online, no job</b>One confirm: go offline, then switch. Job alerts and location sharing stop.</li>
+          <li><b>Second phone</b>One captain phone at a time. Signing in elsewhere opens Personal; to drive there, sign the other phone out with your password. A job in hand stays yours and resumes on the new phone.</li>
+          <li><b>Riding and driving</b>You cannot go online while you have a ride as a rider now or in the next 2 hours. Handing in cash and finishing jobs always work.</li>
+          <li><b>Your own order</b>Nobody is offered their own ride, and a shop owner never delivers their own shop's orders.</li>
+          <li><b>Customer on an active ride</b>Cannot go online as a captain until the ride ends.</li>
+          <li><b>Shop</b>Switch any time. With orders open, one Continue shows the count; the shop stays open and new orders show as a dot on your picture.</li>
+          <li><b>Admin</b>Never a profile. Staff use separate, operator-enrolled accounts.</li>
+          <li><b>Notifications</b>Carry their profile. Tapping one from another mode switches, when the rules allow.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Speed targets on the Galaxy A53</h2>
+        <div class="tbl"><table>
+          <thead><tr><th>Moment</th><th>Target</th><th>How</th></tr></thead>
+          <tbody>
+            <tr><td>Home → booking → tracking</td><td class="num">No map reload</td><td>One map host behind the navigators</td></tr>
+            <tr><td>Cold start to usable controls</td><td class="num">p50 ≤ 1.5 s · p95 ≤ 4 s</td><td>Paint last confirmed mode and orders from storage, refresh in place</td></tr>
+            <tr><td>Prices after the input settles</td><td class="num">p95 ≤ 2 s</td><td>Quote and route fetched in parallel</td></tr>
+            <tr><td>New mode after the server confirms</td><td class="num">≤ 0.3 s</td><td>A 300 ms identity card covers the round trip; never shown before confirmation</td></tr>
+          </tbody>
+        </table></div>
+        <p style="margin-top:8px;color:var(--page-ink2);font-size:13px">Budgets, not measurements: 30 runs each on the A53 over shaped 3G (1.2 Mbps down, 300 ms, 1% loss).</p>
+      </section>
+
+      <section>
+        <h2>Build order</h2>
+        <div class="tbl"><table>
+          <thead><tr><th>#</th><th>Slice</th><th>Risk</th></tr></thead>
+          <tbody>
+            <tr><td>F0</td><td>Measure today's journeys on the A53</td><td><span class="risk ">Low</span></td></tr>
+            <tr><td>F1</td><td>Personal home: Ride · Send · Shop above one input, Roads chip, one welcome card</td><td><span class="risk ">Low</span></td></tr>
+            <tr><td>F2</td><td>One map host behind every map screen</td><td><span class="risk m">Medium</span></td></tr>
+            <tr><td>F3</td><td>Profile data and backfill, shadow mode</td><td><span class="risk h">High</span></td></tr>
+            <tr><td>F4</td><td>Mode switch, switch rules, switcher</td><td><span class="risk h">High</span></td></tr>
+            <tr><td>F5</td><td>Become a captain in the app, personal sign-up</td><td><span class="risk h">High</span></td></tr>
+            <tr><td>F6</td><td>Shop as a profile with its own tabs and alerts</td><td><span class="risk h">High</span></td></tr>
+            <tr><td>F7</td><td>One booking path, ride for someone else, share with recipient</td><td><span class="risk h">High</span></td></tr>
+            <tr><td>F8</td><td>Relations: send from my shop, send to this address, recipient invite</td><td><span class="risk m">Medium</span></td></tr>
+            <tr><td>F9</td><td>Along-the-way fix and cash meter</td><td><span class="risk h">High</span></td></tr>
+            <tr><td>F10</td><td>Browse prices before signing up</td><td><span class="risk h">High</span></td></tr>
+            <tr><td>F11</td><td>Several shops per owner</td><td><span class="risk h">High</span></td></tr>
+          </tbody>
+        </table></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+const T = {
+  en:{hello:'Good evening',where:'Where to?',ride:'Ride',send:'Send',shop:'Shop',home:'Home',activity:'Orders',account:'Account',drive:'Jobs',earn:'Earnings',trips:'Trips',orders:'Orders',menu:'Catalogue',shopTab:'Shop',sendWhere:'Where are you sending it?',deliverTo:'Deliver to Home · Tulkarm',shopsNear:'Open near you',personal:'Personal',
+    roads:'Roads · 1 closure',current:'On the way',parcelTo:'Parcel to Ahmad · Nablus',arriving:'Arriving 15:40',
+    recents:'Recent and saved',rideThere:'Ride there',sendThere:'Send something there',priv:'Private car',privS:'3 min away',shared:'Shared seat',sharedS:'Up to 3 other riders',moto:'Motorcycle',motoS:'1 rider',small:'Small parcel',smallS:'Arrives today',big:'Large item or van',bigS:'Choose a time',
+    confirm:'Confirm',cash:'Cash · the captain may not have change',pick:'Choose an option',recip:'Who receives it?',recipName:'Ahmad Khalil · 0599 123 456',pays:'I pay, cash',
+    finding:'Finding a captain',findingS:'Usually under 3 minutes',switchT:'Switch profile',custS:'Personal · 1 order on the way',capOff:'Offline · go online to see jobs',capOn:'Online · looking for jobs',capJob:'On job W-00042',shopS:'Open · 3 new orders',
+    addCap:'Drive with Wind',addShop:'Open your shop on Wind',youAre:'You are now',customer:'Personal',captain:'Captain',
+    online:'Go online',onlineOn:'You are online',offlineS:'Jobs appear when you go online',heading:'Heading to Nablus',jobs:'Jobs near you',all:'All',
+    accept:'Accept',jobInHand:'Simulate a job in hand',goOffQ:'Go offline and switch?',goOffB:'You will stop getting jobs and your location stops sharing.',goOff:'Go offline and switch',stay:'Stay online',
+    refusedT:'Finish your current job to switch',refusedB:'You are carrying W-00042. Finish it, then switch.',ok:'OK',
+    open:'Open',closed:'Closed',nw:'New',prep:'Preparing',ready:'Ready',done:'Done',acceptIn:'Accept within 1:42',
+    applyT:'Drive with Wind',applyS:'Step 1 of 4 · Your vehicle',car:'Car',motoV:'Motorcycle',van:'Van',bike:'Bicycle',next:'Next',pending:'Under review · usually within a day',
+    actEmpty:'Ride, parcel and shop orders, together',profile:'Profile',wallet:'Wallet & offers',settings:'Settings',help:'Help',
+    earnToday:'Today',cashLeft:'Cash before limit',tripsH:'Trips',sendFromShop:'Send a parcel from my shop'},
+  ar:{hello:'مساء الخير',where:'إلى أين؟',ride:'مشوار',send:'إرسال',shop:'متجر',home:'الرئيسية',activity:'طلباتي',account:'الحساب',drive:'الطلبات',earn:'الأرباح',trips:'المشاوير',orders:'الطلبات',menu:'المنتجات',shopTab:'المتجر',sendWhere:'وين بدك تبعته؟',deliverTo:'التوصيل إلى البيت · طولكرم',shopsNear:'مفتوح بالقرب منك',personal:'شخصي',
+    roads:'الطرق · إغلاق واحد',current:'في الطريق',parcelTo:'طرد إلى أحمد · نابلس',arriving:'يصل 15:40',
+    recents:'الأماكن الأخيرة والمحفوظة',rideThere:'مشوار إلى هناك',sendThere:'أرسل شيئاً إلى هناك',priv:'سيارة خاصة',privS:'على بعد 3 دقائق',shared:'مقعد مشترك',sharedS:'حتى 3 ركاب آخرين',moto:'دراجة نارية',motoS:'راكب واحد',small:'طرد صغير',smallS:'يصل اليوم',big:'غرض كبير أو فان',bigS:'اختر الوقت',
+    confirm:'تأكيد',cash:'نقداً · قد لا يحمل الكابتن فكة',pick:'اختر خياراً',recip:'من يستلم؟',recipName:'أحمد خليل · 0599 123 456',pays:'أنا أدفع، نقداً',
+    finding:'نبحث عن كابتن',findingS:'عادة أقل من 3 دقائق',switchT:'تبديل الحساب',custS:'شخصي · طلب واحد في الطريق',capOff:'غير متصل · اتصل لترى الطلبات',capOn:'متصل · نبحث عن طلبات',capJob:'في الطلب W-00042',shopS:'مفتوح · 3 طلبات جديدة',
+    addCap:'اعمل كابتن مع ويند',addShop:'افتح متجرك على ويند',youAre:'أنت الآن',customer:'شخصي',captain:'كابتن',
+    online:'ابدأ العمل',onlineOn:'أنت متصل',offlineS:'تظهر الطلبات عندما تتصل',heading:'متجه إلى نابلس',jobs:'طلبات قريبة',all:'الكل',
+    accept:'قبول',jobInHand:'تجربة: معك طلب',goOffQ:'إيقاف العمل والتبديل؟',goOffB:'ستتوقف الطلبات ويتوقف مشاركة موقعك.',goOff:'أوقف العمل وبدّل',stay:'ابقَ متصلاً',
+    refusedT:'أنهِ الطلب أولاً',refusedB:'معك الطلب W-00042. أنهِه ثم بدّل.',ok:'حسناً',
+    open:'مفتوح',closed:'مغلق',nw:'جديدة',prep:'قيد التحضير',ready:'جاهزة',done:'منتهية',acceptIn:'اقبل خلال 1:42',
+    applyT:'اعمل كابتن مع ويند',applyS:'الخطوة 1 من 4 · مركبتك',car:'سيارة',motoV:'دراجة نارية',van:'فان',bike:'دراجة',next:'التالي',pending:'قيد المراجعة · عادة خلال يوم',
+    actEmpty:'المشاوير والطرود وطلبات المتاجر معاً',profile:'الملف الشخصي',wallet:'المحفظة والعروض',settings:'الإعدادات',help:'المساعدة',
+    earnToday:'اليوم',cashLeft:'النقد المتبقي قبل الحد',tripsH:'المشاوير',sendFromShop:'أرسل طرداً من متجري'}
+};
+const NAME={en:'Laila',ar:'ليلى'}, SHOPN={en:'Sultan Sweets',ar:'حلويات السلطان'};
+const S0=()=>({lang:S&&S.lang||'en',mode:'customer',tab:0,view:'home',choice:null,online:false,job:false,sheet:false,dialog:null,ident:null,shopOpen:true,seg:0,applied:false,shopBadge:true,line:'ride'});
+let S=null; S=S0();
+const p=document.getElementById('p');
+const t=k=>T[S.lang][k]||k;
+const shekel=n=>S.lang==='ar'?`${n} ₪`:`₪ ${n}`;
+const icons={
+  search:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  ride:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 16V11l2-5h10l2 5v5"/><path d="M3 16h18v3H3z"/><circle cx="7.5" cy="13.5" r="1" fill="currentColor"/><circle cx="16.5" cy="13.5" r="1" fill="currentColor"/></svg>',
+  send:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/></svg>',
+  shop:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 9h14l-1.5 11h-11z"/><path d="M9 9V7a3 3 0 0 1 6 0v2"/></svg>',
+  home:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 11 12 4l8 7v9H4z"/></svg>',
+  list:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>',
+  user:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
+  wheel:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M12 3v7M5 16l5-3M19 16l-5-3"/></svg>',
+  coin:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 9h4.5a2 2 0 0 1 0 4H9v-6M9 13h5a2 2 0 0 1 0 4H9"/></svg>',
+  store:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 9 5.5 4h13L20 9M4 9h16v11H4zM9 20v-6h6v6"/></svg>',
+  pin:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
+  plus:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'
+};
+function mapSvg(route){
+  return `<div class="map" aria-hidden="true"><svg viewBox="0 0 360 760" preserveAspectRatio="xMidYMid slice">
+  <rect width="360" height="760" fill="var(--map1)"/>
+  <path d="M0 140 C90 160 140 120 220 150 S330 210 360 190" stroke="var(--map2)" stroke-width="40" fill="none"/>
+  <path d="M-10 300 L380 250" stroke="var(--road)" stroke-width="10"/><path d="M60 -10 L130 780" stroke="var(--road)" stroke-width="9"/>
+  <path d="M250 -10 C230 200 280 380 240 780" stroke="var(--road2)" stroke-width="12" fill="none"/>
+  <path d="M-10 470 C120 430 200 520 380 470" stroke="var(--road)" stroke-width="8" fill="none"/>
+  <path d="M0 610 L360 650" stroke="var(--road)" stroke-width="6"/>
+  ${route?`<path d="M110 420 C150 360 200 320 245 230" stroke="#0C1713" stroke-width="9" fill="none" stroke-linecap="round"/><path d="M110 420 C150 360 200 320 245 230" stroke="${S.mode==='captain'?'#D3F27A':'#12342A'}" stroke-width="5" fill="none" stroke-linecap="round"/><circle cx="245" cy="230" r="9" fill="#CB6845" stroke="#fff" stroke-width="3"/>`:''}
+  <circle cx="110" cy="420" r="9" fill="#8EC1FF" stroke="#fff" stroke-width="3"/>
+  ${S.mode==='customer'?'<g fill="#12342A"><rect x="170" y="296" width="14" height="9" rx="3"/><rect x="60" y="250" width="14" height="9" rx="3"/><rect x="240" y="470" width="14" height="9" rx="3"/></g>':''}
+  <circle cx="232" cy="330" r="7" fill="#8A5A00" opacity=".9"/>
+  </svg></div>`;
+}
+function idChip(){
+  const m=S.mode, other=(m!=='shop'&&S.shopBadge)||(m==='shop'&&false);
+  const av=m==='captain'?`<span class="av cap">${icons.wheel}${other?'<span class="dot"></span>':''}</span>`:m==='shop'?`<span class="av shp">${S.lang==='ar'?'ح':'S'}</span>`:`<span class="av">${S.lang==='ar'?'ل':'L'}${other?'<span class="dot"></span>':''}</span>`;
+  const top=m==='customer'?t('hello'):m==='captain'?t('captain'):t('shopTab');
+  const name=m==='shop'?SHOPN[S.lang]:NAME[S.lang];
+  return `<button class="chip-id" data-a="switch" aria-label="${t('switchT')}: ${name}">${av}<span><small>${top}</small><b>${name}</b></span></button>`;
+}
+function tabs(){
+  const sets={customer:[['home',t('home')],['list',t('activity')],['user',t('account')]],captain:[['wheel',t('drive')],['pin',t('trips')],['coin',t('earn')],['user',t('account')]],shop:[['list',t('orders')],['store',t('menu')],['shop',t('shopTab')],['user',t('account')]]};
+  return `<nav class="tabs" aria-label="Tabs" style="grid-template-columns:repeat(${sets[S.mode].length},1fr)">${sets[S.mode].map((x,i)=>`<button class="tab" data-tab="${i}" ${S.tab===i?'aria-current="page"':''}><span class="tb">${icons[x[0]]}</span>${x[1]}</button>`).join('')}</nav>`;
+}
+function customerHome(){
+  if(S.view==='search') return mapSvg(false)+`<div class="sheet" style="top:60px;bottom:56px;max-height:none;border-radius:22px 22px 0 0"><div class="grab"></div>
+    <div class="where" style="border-color:var(--s-act)">${icons.search}<span>${S.lang==='ar'?'نابلس':'Nablus'}</span></div>
+    <div class="sec">${t('recents')}</div>
+    ${[['Nablus · Old City','نابلس · البلدة القديمة','45 min'],['Ramallah · Al-Manara','رام الله · المنارة','1 h 10'],['Home · Tulkarm','البيت · طولكرم','6 min']].map((r,i)=>`<button class="res" data-a="dest" data-i="${i}">${icons.pin}<div><b>${S.lang==='ar'?r[1]:r[0]}</b><span>${r[2]}</span></div></button>`).join('')}</div>`;
+  if(S.view==='options'||S.view==='send'){
+    const opts=[['ride','priv','privS',45],['ride','shared','sharedS',14],['ride','moto','motoS',30],['send','small','smallS',18],['send','big','bigS',90]];
+    const rows=(k)=>opts.filter(o=>o[0]===k).map(o=>`<button class="opt" data-a="choose" data-o="${o[1]}" aria-pressed="${S.choice===o[1]}"><span class="ico i-${o[0]}">${icons[o[0]]}</span><span class="t"><b>${t(o[1])}</b><span>${t(o[2])}</span></span><span class="money">${shekel(o[3])}</span></button>`).join('');
+    const isSend=S.choice==='small'||S.choice==='big';
+    return mapSvg(true)+`<div class="sheet"><div class="grab"></div>
+      <div class="sec">${S.line==='send'?t('sendThere'):t('rideThere')}</div>${rows(S.line==='send'?'send':'ride')}
+      ${isSend?`<div class="sec">${t('recip')}</div><div class="card" style="margin-top:4px">${icons.user}<div class="t"><b>${t('recipName')}</b><span>${t('pays')}</span></div></div>`:''}
+      <p class="hint">${t('cash')}</p>
+      <button class="btn" data-a="confirm" ${S.choice?'':'disabled'}>${S.choice?t('confirm'):t('pick')}</button></div>`;
+  }
+  if(S.view==='shops') return mapSvg(false)+`<div class="sheet"><div class="grab"></div><div class="where">${icons.pin}<span>${t('deliverTo')}</span></div><div class="sec">${t('shopsNear')}</div>
+    ${[[SHOPN[S.lang],'Min ₪ 20 · fee ₪ 8 · 25 min'],[S.lang==='ar'?'فرن الأمل':'Al Amal Bakery','Min ₪ 10 · fee ₪ 6 · 15 min']].map(x=>`<div class="card"><span class="ico i-shop">${icons.shop}</span><div class="t"><b>${x[0]}</b><span>${x[1]}</span></div>›</div>`).join('')}
+    <p class="hint">Menu → cart → Place order (cash)</p><button class="btn ghost" data-a="home">${t('home')}</button></div>`;
+  if(S.view==='finding') return mapSvg(true)+`<div class="sheet"><div class="grab"></div><div class="card" style="margin-top:0"><span class="ico ${S.choice==='small'||S.choice==='big'?'i-send':'i-ride'}">${S.choice==='small'||S.choice==='big'?icons.send:icons.ride}</span><div class="t"><b>${t('finding')}</b><span>${t('findingS')}</span></div></div><button class="btn ghost" data-a="home">${t('home')}</button></div>`;
+  return mapSvg(false)+idChip()+`<div class="roads">${'<i></i>'}${t('roads')}</div>
+   <div class="sheet"><div class="grab"></div>
+    <div class="lines" style="margin:0 0 10px">${['ride','send','shop'].map(k=>`<button class="line" data-a="line" data-l="${k}" aria-pressed="${S.line===k}" style="${S.line===k?'border-color:var(--s-act);border-width:2px':''}"><span class="ico i-${k}">${icons[k]}</span>${t(k)}</button>`).join('')}</div>
+    <button class="where" data-a="${S.line==='shop'?'shops':'search'}">${icons.search}<span>${S.line==='ride'?t('where'):S.line==='send'?t('sendWhere'):t('deliverTo')}</span></button>
+    <div class="card"><span class="ico i-send">${icons.send}</span><div class="t"><b>${t('parcelTo')}</b><span><span class="tag">${t('current')}</span> ${t('arriving')}</span></div><span class="money">${shekel(18)}</span></div>
+   </div>`;
+}
+function captainHome(){
+  const jobs=[['ride','Tulkarm → Nablus','28 km',40],['send','Anabta → Nablus','24 km',16],['shop','حلويات السلطان → Dhinnaba','3 km',9]];
+  return mapSvg(S.job)+idChip()+`<div class="sheet"><div class="grab"></div>
+    <div class="toggle"><div><b>${S.online?t('onlineOn'):t('online')}</b><div class="hint" style="margin:0">${S.online?t('heading'):t('offlineS')}</div></div><button class="sw" role="switch" aria-checked="${S.online}" aria-label="${t('online')}" data-a="online"></button></div>
+    ${S.online?`<div class="seg">${[t('all'),t('ride'),t('send'),t('shop')].map((x,i)=>`<button aria-pressed="${i===0}">${x}</button>`).join('')}</div>
+    <div class="sec">${t('jobs')}</div>${jobs.map(j=>`<div class="card"><span class="ico i-${j[0]}">${icons[j[0]]}</span><div class="t"><b>${j[1]}</b><span>${t(j[0])} · ${j[2]}</span></div><span class="money">${shekel(j[3])}</span></div>`).join('')}`:''}
+    <button class="btn ghost" data-a="job" style="font-size:12px;padding:9px">${t('jobInHand')}: ${S.job?'✓':'—'}</button>
+  </div>`;
+}
+function shopHome(){
+  const segs=[t('nw'),t('prep'),t('ready'),t('done')];
+  return `<div class="top-pad">${idChip()}
+    <div class="toggle"><div><b>${S.shopOpen?t('open'):t('closed')}</b></div><button class="sw" role="switch" aria-checked="${S.shopOpen}" aria-label="${t('open')}" data-a="shopOpen"></button></div>
+    <div class="seg">${segs.map((x,i)=>`<button data-seg="${i}" aria-pressed="${S.seg===i}">${x}${i===0?' · 3':''}</button>`).join('')}</div>
+    ${S.seg===0?[['W-00051','2 × كنافة, 1 × بقلاوة',42],['W-00052','1 kg معمول',35],['W-00053','3 × هريسة',27]].map(o=>`<div class="card"><span class="ico i-shop">${icons.shop}</span><div class="t"><b>${o[0]}</b><span>${o[1]}</span><div><span class="tag warn">${t('acceptIn')}</span></div></div><span class="money">${shekel(o[2])}</span></div>`).join('')+`<button class="btn">${t('accept')} W-00051</button>`:`<p class="hint">—</p>`}
+    <button class="btn ghost">${icons.send} ${t('sendFromShop')}</button>
+  </div>`;
+}
+function activity(){ return `<div class="top-pad" style="padding-top:20px"><h3 style="margin:0 0 4px">${t('activity')}</h3><p class="hint" style="margin-top:0">${t('actEmpty')}</p>
+  ${[['send',t('parcelTo'),18,t('current')],['ride','Tulkarm → Ramallah',45,'✓'],['shop',SHOPN[S.lang],42,'✓']].map(o=>`<div class="card"><span class="ico i-${o[0]}">${icons[o[0]]}</span><div class="t"><b>${o[1]}</b><span>${t(o[0])} · ${o[3]}</span></div><span class="money">${shekel(o[2])}</span></div>`).join('')}</div>`; }
+function accountPage(){ return `<div class="top-pad" style="padding-top:20px">
+  <button class="card" data-a="switch" style="width:100%;text-align:start;margin-top:0"><span class="av">${S.mode==='shop'?(S.lang==='ar'?'ح':'S'):(S.lang==='ar'?'ل':'L')}</span><div class="t"><b>${S.mode==='shop'?SHOPN[S.lang]:NAME[S.lang]}</b><span>${S.mode==='customer'?t('personal'):S.mode==='captain'?t('captain'):t('shopTab')} · ${t('switchT')} ›</span></div></button>
+  ${[t('wallet'),t('settings'),t('help')].map(x=>`<div class="card"><div class="t"><b>${x}</b></div>›</div>`).join('')}</div>`; }
+function captainEarn(){ return `<div class="top-pad" style="padding-top:20px"><h3 style="margin:0">${t('earn')}</h3>
+  <div class="card"><div class="t"><span>${t('earnToday')}</span><b style="font-size:24px" class="money">${shekel(186)}</b></div></div>
+  <div class="card"><div class="t"><span>${t('cashLeft')}</span><b class="money">${shekel(96)}</b></div></div>
+  <div class="card"><div class="t"><b>${t('tripsH')}</b></div>›</div></div>`; }
+function applyPage(){ return `<div class="top-pad" style="padding-top:20px"><h3 style="margin:0">${t('applyT')}</h3><p class="hint">${t('applyS')}</p>
+  <div class="lines" style="grid-template-columns:repeat(2,1fr)">${[t('car'),t('motoV'),t('van'),t('bike')].map((x,i)=>`<button class="line" style="${i===0?'border-color:var(--s-act);border-width:2px':''}">${x}</button>`).join('')}</div>
+  <button class="btn" data-a="applied">${t('next')} ›</button></div>`; }
+function switcher(){
+  const capSub=S.applied?t('pending'):S.job?t('capJob'):S.online?t('capOn'):t('capOff');
+  const rows=[
+    ['customer',`<span class="av">${S.lang==='ar'?'ل':'L'}</span>`,NAME[S.lang],t('custS')],
+    ['captain',`<span class="av cap">${icons.wheel}</span>`,`${NAME[S.lang]} · ${t('captain')}`,capSub],
+    ['shop',`<span class="av shp">${S.lang==='ar'?'ح':'S'}</span>`,SHOPN[S.lang],t('shopS')]
+  ];
+  return `<div class="scrim" data-a="close"><div class="modal" role="dialog" aria-label="${t('switchT')}" data-stop="1"><div class="grab"></div><h4 style="margin:0 0 6px;font-size:17px">${t('switchT')}</h4>
+    ${rows.map(r=>`<button class="prow" data-a="to" data-m="${r[0]}">${r[1]}<span class="t"><b>${r[2]}</b><span>${r[3]}</span></span>${S.mode===r[0]?'<span class="check">✓</span>':''}${r[0]==='shop'&&S.mode!=='shop'&&S.shopBadge?'<span class="av" style="width:10px;height:10px;border-radius:50%;background:var(--clay)"></span>':''}</button>`).join('')}
+    <hr style="border:0;border-top:1px solid var(--s-line);margin:6px 0">
+    <button class="prow add" data-a="apply">${icons.plus}<span class="t"><b>${t('addCap')}</b><span>${S.lang==='ar'?'مثال: لمن ليس لديه حساب كابتن':'Shown when you have no captain profile'}</span></span></button>
+    <button class="prow add">${icons.plus}<span class="t"><b>${t('addShop')}</b><span>${S.lang==='ar'?'مثال: لمن ليس لديه متجر':'Shown when you have no shop'}</span></span></button>
+  </div></div>`;
+}
+function dialog(){
+  if(S.dialog==='offline') return `<div class="dialog"><div class="box" role="alertdialog"><h4>${t('goOffQ')}</h4><p>${t('goOffB')}</p><button class="btn" data-a="goOff">${t('goOff')}</button><button class="btn ghost" data-a="dclose">${t('stay')}</button></div></div>`;
+  if(S.dialog==='refused') return `<div class="dialog"><div class="box" role="alertdialog"><h4>${t('refusedT')}</h4><p>${t('refusedB')}</p><button class="btn" data-a="dclose">${t('ok')}</button></div></div>`;
+  return '';
+}
+function render(){
+  p.dir=S.lang==='ar'?'rtl':'ltr';
+  p.className='p'+(S.mode==='captain'?' night':'')+(S.mode==='shop'?' shop':'');
+  let body='';
+  if(S.view==='apply') body=applyPage();
+  else if(S.mode==='customer') body=S.tab===0?customerHome():S.tab===1?activity():accountPage();
+  else if(S.mode==='captain') body=S.tab===0?captainHome():S.tab===1?`<div class="top-pad" style="padding-top:20px"><h3 style="margin:0">${t('trips')}</h3><p class="hint">Active run sheet first, then history.</p></div>`:S.tab===2?captainEarn():accountPage();
+  else body=S.tab===0?shopHome():S.tab===3?accountPage():S.tab===2?`<div class="top-pad" style="padding-top:20px"><h3 style="margin:0">${t('shopTab')}</h3>${['Hours','Pause new orders','Licence','Statement and payouts'].map(x=>`<div class="card"><div class="t"><b>${x}</b></div>›</div>`).join('')}</div>`:`<div class="top-pad" style="padding-top:20px"><h3 style="margin:0">${t('menu')}</h3>${['كنافة نابلسية','بقلاوة','معمول'].map(x=>`<div class="card"><div class="t"><b>${x}</b></div><button class="sw" role="switch" aria-checked="true" aria-label="${x}"></button></div>`).join('')}</div>`;
+  p.innerHTML=body+tabs()+(S.sheet?switcher():'')+dialog()+(S.ident?`<div class="ident ${S.ident==='captain'?'cap':S.ident==='shop'?'shp':''}"><div><span>${t('youAre')}</span><b>${S.ident==='shop'?SHOPN[S.lang]:S.ident==='captain'?t('captain')+' · '+NAME[S.lang]:t('customer')+' · '+NAME[S.lang]}</b></div></div>`:'');
+  renderSteps();
+}
+function go(mode){
+  S.sheet=false;
+  if(S.mode==='captain'&&mode!=='captain'){ if(S.job){S.dialog='refused';return render();} if(S.online){S.dialog='offline';S.pending=mode;return render();} }
+  if(mode==='captain'&&S.applied){S.view='apply';return render();}
+  doSwitch(mode);
+}
+function doSwitch(mode){
+  if(mode===S.mode){return render();}
+  S.ident=mode; S.mode=mode; S.tab=0; S.view='home'; if(mode==='shop')S.shopBadge=false; mark('switch:'+mode); render();
+  setTimeout(()=>{S.ident=null;render();},window.matchMedia('(prefers-reduced-motion: reduce)').matches?600:700);
+}
+p.addEventListener('click',e=>{
+  const tabEl=e.target.closest('[data-tab]'); if(tabEl){S.tab=+tabEl.dataset.tab;S.view='home';return render();}
+  const seg=e.target.closest('[data-seg]'); if(seg){S.seg=+seg.dataset.seg;return render();}
+  const el=e.target.closest('[data-a]'); if(!el) return;
+  if(el.dataset.a==='close'&&e.target.closest('[data-stop]')) return;
+  const a=el.dataset.a;
+  switch(a){
+    case 'switch': S.sheet=true; mark('open-switcher'); break;
+    case 'close': S.sheet=false; break;
+    case 'to': return go(el.dataset.m);
+    case 'search': S.view='search'; mark('search'); break;
+    case 'line': S.line=el.dataset.l; S.choice=null; mark('line:'+S.line); break;
+    case 'shops': S.view='shops'; mark('shops'); break;
+    case 'dest': S.view='options'; S.choice=null; mark('dest'); break;
+    case 'choose': S.choice=el.dataset.o; mark('choose:'+S.choice); break;
+    case 'confirm': if(S.choice){S.view='finding'; mark('confirm');} break;
+    case 'home': S.view='home'; break;
+    case 'online': S.online=!S.online; mark(S.online?'online':'offline'); break;
+    case 'job': S.job=!S.job; if(S.job)S.online=true; mark('job'); break;
+    case 'goOff': S.online=false; S.dialog=null; mark('went-offline'); return doSwitch(S.pending||'customer');
+    case 'dclose': S.dialog=null; break;
+    case 'shopOpen': S.shopOpen=!S.shopOpen; break;
+    case 'apply': S.sheet=false; S.view='apply'; mark('apply'); break;
+    case 'applied': S.applied=true; S.view='home'; mark('applied'); break;
+  }
+  render();
+});
+p.addEventListener('contextmenu',e=>{ if(e.target.closest('.tab:last-child')){e.preventDefault();S.sheet=true;render();} });
+
+/* ---------- scenarios ---------- */
+const SC=[
+  {id:'ride',title:'Book a ride',sub:'Ride is preselected; defaults do the rest',steps:[['Tap "Where to?"','search'],['Tap Nablus · Old City','dest'],['Private car (choose it in this sketch)','choose:priv'],['Tap Confirm','confirm']]},
+  {id:'send',title:'Send a parcel',sub:'The input words follow the service',steps:[['Tap Send above the input','line:send'],['Tap "Where are you sending it?"','search'],['Tap Nablus · Old City','dest'],['Choose Small parcel: the recipient row appears','choose:small'],['Tap Confirm','confirm']]},
+  {id:'food',title:'Order from a shop',sub:'Starts from your delivery address',steps:[['Tap Shop above the input','line:shop'],['Tap "Deliver to"','shops'],['See open shops with fee and minimum']]},
+  {id:'cap',title:'Switch to Captain and go online',sub:'The app changes identity and theme',steps:[['Tap your picture on the map','open-switcher'],['Choose Laila · Captain','switch:captain'],['Turn on Go online','online']]},
+  {id:'back',title:'Captain online orders a ride for family',sub:'The server asks to go offline first',steps:[['Be online in Captain mode (scenario above)','online'],['Tap your picture and choose Laila','open-switcher'],['Confirm "Go offline and switch"','went-offline']]},
+  {id:'job',title:'Captain with a job tries to switch',sub:'Refused with the order number',steps:[['In Captain mode, tap "Simulate a job in hand"','job'],['Tap your picture and choose Laila','open-switcher'],['Read the refusal']]},
+  {id:'shop',title:'Shop owner sees new orders',sub:'The dot on your picture leads here',steps:[['From Customer, tap your picture','open-switcher'],['Choose Sultan Sweets','switch:shop'],['See New · 3 with the accept clock']]},
+  {id:'apply',title:'A customer applies to drive',sub:'No second account, no sign-up form',steps:[['Tap your picture','open-switcher'],['Tap Drive with Wind','apply'],['Pick a vehicle and tap Next','applied'],['Open the switcher: Captain shows "Under review"','open-switcher']]}
+];
+let cur=SC[0], hits=new Set();
+function mark(ev){hits.add(ev);}
+const scen=document.getElementById('scen'), steps=document.getElementById('steps');
+function renderScen(){ scen.innerHTML=SC.map(s=>`<button class="sc" data-s="${s.id}" aria-pressed="${s===cur}"><b>${s.title}</b><span>${s.sub}</span></button>`).join(''); }
+function renderSteps(){ steps.innerHTML=`<b>${cur.title}</b><ol>${cur.steps.map(s=>`<li class="${s[1]&&hits.has(s[1])?'done':''}">${s[0]}</li>`).join('')}</ol>`; }
+scen.addEventListener('click',e=>{const b=e.target.closest('[data-s]');if(!b)return;cur=SC.find(s=>s.id===b.dataset.s);hits=new Set();
+  const keep={online:S.online,mode:S.mode,lang:S.lang}; S=S0(); S.lang=keep.lang;
+  if(cur.id==='back'||cur.id==='job'){S.mode='captain';if(cur.id==='back'){S.online=true;hits.add('online');}}
+  renderScen();render();});
+function setLang(l){S.lang=l;document.getElementById('lang-en').setAttribute('aria-pressed',l==='en');document.getElementById('lang-ar').setAttribute('aria-pressed',l==='ar');render();}
+document.getElementById('lang-en').onclick=()=>setLang('en');
+document.getElementById('lang-ar').onclick=()=>setLang('ar');
+document.getElementById('reset').onclick=()=>{const l=S.lang;S=S0();S.lang=l;hits=new Set();render();};
+renderScen(); render();
+})();
+</script>
