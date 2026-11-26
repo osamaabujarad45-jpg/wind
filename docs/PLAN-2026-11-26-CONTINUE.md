@@ -73,6 +73,8 @@ Resume automatically under the standing policy when T3 access works:
 
 ## 4. Activate real push only when Firebase access is available
 
+**Status, 26 Nov 21:55 UTC: Android push is live.** See `docs/operations/deploy.md` (Firebase, "State on 26 November") and the CURRENT-WORK entry. Remaining from the steps below: a two-role trip so job and status pushes arrive from real events (terminated-app launch, logout, account switch, wrong-role taps, duplicates); iPhone push (APNs); and the Firebase password reset after email verification.
+
 **Purpose:** driver matching currently relies on the open app's alerts. Closed-app delivery remains a provider/access gate.
 
 **Sources:** `src/native-push.ts`, `server/domain/native-push.ts`, `server/worker.ts`, `app.config.js`, `eas.json`, and the native push suites.

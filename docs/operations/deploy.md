@@ -273,7 +273,20 @@ The backend stays on the VM. Firebase only sends closed-app alerts and password-
 
 **Known limit:** a user who mistyped their email at signup can lose the account to whoever owns that address. Accepted for a pilot among people the owner knows; verify email before a wider launch.
 
-**State on 26 November 2026.** `wind-development` stays Wind's production Firebase project (checked: Email/Password on, client sign-up off, 12-character minimum, the Identity Toolkit-only server key). The organization EAS project `@osamaabujarad236s-organization/wind` now holds the FCM V1 key of `firebase-adminsdk-fbsvc@wind-development` for `ps.wind.app`. `GOOGLE_SERVICES_JSON` is **not** set yet: it is added only after the delivery-gate fix (PR #121) is in the build, because an older build mutes its local alerts as soon as it registers. The Israel host's `/etc/wind-api.env` has no Firebase or push settings, so reset email and native push are off there. Fresh keys for it are kept outside the repository in the operator's private store. Native push is Android only: APNs is not configured, so the server tells iPhones `delivering: false` and they keep their local alerts.
+**State on 26 November 2026, 21:55 UTC: Android push is on in production.**
+- Firebase: `wind-development` remains the production project. Email/Password is on, client sign-up is off, the minimum password length is 12, and the server key is limited to Identity Toolkit.
+- EAS: the organization project holds that project's FCM V1 key for `ps.wind.app`. `GOOGLE_SERVICES_JSON` (store package only) is set for `production` and `preview`.
+- Server: release `20261126212854` (master `816d3e17`, PR #121's delivery gate) is live. `WIND_EXPO_PUSH_ENABLED=1` was added to `/etc/wind-api.env`, and the API was restarted and reported ready. The previous file is `/etc/wind-api.env.pre-push-20261126`; to turn push off, restore it and restart.
+- APK: 1.1.6 versionCode 44 is EAS build `fa71b101`, built from `816d3e17`. Its SHA-256 is `a3bff23942e5e974ac7d18cb68aaa4ae02dde9db9f0d7853f163d1c395a628ac`, and it embeds the `wind-development` config. It was published with `publish-apk.sh` as `/download/wind.apk`.
+- Acceptance on the A53:
+  - The test customer `Push Test (Wind QA)` (user 5) allowed notifications, and its Android token registered.
+  - A push sent from the production host through Expo got the receipt `ok`, arrived with Wind in the background, and opened the Support screen.
+  - The app's own support-reply path was not exercised, because the stored admin sign-in for the host was rejected.
+- Still off:
+  - Password reset email: no Firebase reset keys are on the host. Verify email first (design §8).
+  - iPhone push: APNs is not configured, so iPhones keep local alerts.
+- The fresh keys are kept outside the repository in the operator's private store.
+- Native push is Android only. The server tells iPhones `delivering: false`, so they keep their local alerts.
 
 ### Turning on native push (Android), from scratch
 
