@@ -1064,7 +1064,7 @@ async function sendCode(r: Row, purpose: CodePurpose) {
   catch (error) { (await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ? AND sent_at = ?', r.id, purpose, now)); throw error; }
 }
 // A code works once, for 15 minutes, for the address it was sent to; five wrong tries void it.
-async function useCode(r: Row, purpose: CodePurpose, input: unknown) {
+async function useCode(r: Row, purpose: CodePurpose, input: unknown, consume = true) {
   const row = (await one('SELECT * FROM email_codes WHERE user_id = ? AND purpose = ? AND expires_at > ?', r.id, purpose, Date.now())) ?? fail(400, 'code_expired');
   const code = typeof input === 'string' ? input.trim() : '';
   if (!/^\d{6}$/.test(code) || !timingSafeEqual(Buffer.from(codeHash(r, purpose, code), 'hex'), Buffer.from(row.code_hash, 'hex'))) {
@@ -1073,10 +1073,12 @@ async function useCode(r: Row, purpose: CodePurpose, input: unknown) {
     else (await run('UPDATE email_codes SET tries = tries + 1 WHERE user_id = ? AND purpose = ?', r.id, purpose));
     fail(400, spent ? 'code_expired' : 'wrong_email_code'); // wrong_code is the handover code's
   }
+  if (!consume) return row.code_hash as string;
   // A reset runs outside the request transaction while hashing. Two requests
   // may read the same code; only the request that atomically consumes it wins.
   if (!(await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ? AND code_hash = ? AND expires_at > ? AND tries < ?',
     r.id, purpose, row.code_hash, Date.now(), CODE_TRIES)).changes) fail(400, 'code_expired');
+  return row.code_hash as string;
 }
 
 route('POST', '/api/me/email/code', async ({ user }) => {
@@ -1141,10 +1143,17 @@ route('POST', '/api/auth/reset', async ({ body }) => {
   const password = await hashPassword(newPassword(body.password)); // before the lookup: the same checks whether or not it exists
   // One answer for every miss (no account, no code, wrong or spent code), so failures say nothing about the account.
   const r = (await accountFor(body.identifier)) ?? fail(400, 'wrong_email_code');
-  try { (await useCode(r, 'reset', body.code)); }
+  let codeHash: string;
+  try { codeHash = await useCode(r, 'reset', body.code, false); }
   catch (error) { throw error instanceof HttpError && error.status === 400 ? new HttpError(400, 'wrong_email_code') : error; }
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
+    const current = await one(`SELECT * FROM users WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, r.id);
+    if (!current || current.password !== r.password || current.email !== r.email || !current.email_verified_at
+      || current.status === 'blocked' || current.role === 'admin') fail(400, 'wrong_email_code');
+    // Claim the code with the password and session writes. A failed write must leave a retryable code.
+    if (!(await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ? AND code_hash = ? AND expires_at > ? AND tries < ?',
+      r.id, 'reset', codeHash, Date.now(), CODE_TRIES)).changes) fail(400, 'wrong_email_code');
     (await run('UPDATE users SET password = ? WHERE id = ?', password, r.id));
     (await run('DELETE FROM sessions WHERE user_id = ?', r.id)); // a reset ends the session on every device
     (await run('DELETE FROM push_subscriptions WHERE user_id = ?', r.id));
@@ -2315,8 +2324,7 @@ async function withMeasuredScopes<T extends {id:number}>(orders:T[]) {
 }
 async function recoveryMetadata(id: number) {
   const row = await one('SELECT * FROM orders WHERE id=?', id) ?? fail(404, 'not_found');
-  const version = persistence.backend === 'postgres' ? Number(row.version ?? 0)
-    : Number((await one('SELECT COUNT(*) AS n FROM order_actions WHERE order_id=?', id))?.n ?? 0) + 1;
+  const version = Number(row.version);
   return { schemaVersion: 1 as const, version, assignmentEpoch: row.assignment_epoch ?? null };
 }
 route('GET', '/api/orders/:id', async ({ user, params, query }) => {

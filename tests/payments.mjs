@@ -183,15 +183,23 @@ try {
   const remit = (requestId) => pay.remitCod(admin, codOrder.id, { payoutRef: 'PO-32', ...(requestId && { requestId }) });
   const remitCommand = '0f0f0f0f-0000-4000-8000-000000000001';
   const partialRemit = await remit(remitCommand);
+  assert.ok(await f.db.one("SELECT id FROM merchant_cod_events WHERE cod_id=?::uuid AND action='remitted' AND request_id=?", cod.id, remitCommand),
+    'older API builds can still recognize a retry by its unchanged request identity');
   assert.equal(partialRemit.status, 'partial', 'a partial collection remits as partial');
   assert.equal(Number(partialRemit.remitted_minor), 500, 'everything collected moved once');
   await assert.rejects(remit(randomUUID()), e => e.status === 409 && e.message === 'cod_unavailable', 'nothing is left to remit');
   const replayedRemit = await remit(remitCommand);
   assert.equal(Number(replayedRemit.remitted_minor), 500, 'a replayed remit command returns the same row without moving again');
+  await assert.rejects(pay.remitCod(admin, codOrder.id, { requestId: remitCommand, payoutRef: 'Changed reference' }),
+    e => e.status === 409 && e.message === 'idempotency_conflict', 'a retry cannot change its payout reference');
+  for (const payoutRef of ['x'.repeat(201), '\ud800']) {
+    await assert.rejects(pay.remitCod(admin, codOrder.id, { payoutRef }), e => e.status === 400 && e.message === 'invalid_input');
+  }
   await collect(400, randomUUID()); // the remaining 400 are collected in the field
-  const final = await remit(randomUUID());
+  const final = await pay.remitCod(admin, codOrder.id, { payoutRef: 'PO-final', requestId: randomUUID() });
   assert.equal(final.status, 'remitted');
   assert.equal(Number(final.remitted_minor), goodsMinor, 'collected and remitted totals reconcile with the goods');
+  assert.equal((await remit(remitCommand)).payout_ref, 'PO-32', 'an old retry keeps its own reference after a later remittance');
   await assert.rejects(pay.resolveCod(admin, codOrder.id, { decision: 'returned', reason: 'Already remitted in full' }), e => e.status === 409 && e.message === 'cod_unavailable');
   // The exception authority closes an unremittable COD with a recorded reason.
   const disputeOrder = await f.book();

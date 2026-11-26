@@ -35,7 +35,9 @@ try {
   console.log(`Attaching to local Android test tab: ${target}`);
   // adb can accept the forward before Chrome has created its debugging socket.
   // Wait for an actual version reply so a cold Chrome start does not fail with socket hang up.
-  const cdp = 'http://127.0.0.1:9228';
+  const cdpPort = Number(process.env.WIND_ANDROID_CDP_PORT ?? 9228);
+  assert.ok(Number.isSafeInteger(cdpPort) && cdpPort >= 1024 && cdpPort <= 65535, 'Use an unprivileged Android debugging port');
+  const cdp = `http://127.0.0.1:${cdpPort}`;
   const cdpDeadline = Date.now() + 15_000;
   let cdpReady = false;
   while (Date.now() < cdpDeadline) {

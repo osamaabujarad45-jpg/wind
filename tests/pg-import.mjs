@@ -119,6 +119,17 @@ try {
   assert.equal(report.ok,true,JSON.stringify(report.errors));
   assert.ok(report.rounding.some(r=>r.column==='price'));
   assert.equal(report.reconciliation.mismatches.length,0);
+  await database.scope(async () => {
+    await database.exec('BEGIN');
+    try {
+      await database.run('UPDATE orders SET updated_at=updated_at WHERE id=?', order);
+      assert.equal((await reconcile(snapshot,database)).mismatches.length,0,'trigger-derived order revisions do not mask content parity');
+      await database.run("UPDATE users SET name='Changed imported name' WHERE id=?", user);
+      const changed=await reconcile(snapshot,database);
+      assert.equal(changed.mismatches.length,1);
+      assert.equal(changed.mismatches[0].table,'users','other content still fails reconciliation');
+    } finally { await database.exec('ROLLBACK'); }
+  });
   const finance = { id: admin, role: 'admin', status: 'active' };
   const fail = (_status, message) => { throw new Error(message); };
   const ledger = new Ledger(database, fail);

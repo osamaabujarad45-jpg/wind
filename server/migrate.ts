@@ -29,6 +29,10 @@ const importValue = (table: Table, row: Row, column: string) =>
 // Sorted at every depth: JSONB reorders nested keys too, so preferences holding quiet hours would never reconcile.
 const stable = (value: Row) => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
   ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
+// Each engine advances its own recovery revision. Compare all order content except that derived counter;
+// identities and other tables (including financial versions) still compare every imported field.
+const content = (table: Table, row: Row) => stable(table.name === 'orders'
+  ? Object.fromEntries(Object.entries(row).filter(([column]) => column !== 'version')) : row);
 const keyOf = (table: Table, row: Row) => hash(table.keyColumns.length
   ? stable(Object.fromEntries(table.keyColumns.map(column => [column,row[column]]))) : stable(row));
 export const minor = (amount: number | null) => {
@@ -118,7 +122,7 @@ export async function reconcile(snapshot: Snapshot, database: Persistence) {
     const rows = await database.all(`SELECT ${columns.map(c => quote(c.name)).join(',')} FROM ${quote(table.name)}`);
     const group=(values:Row[])=>{
       const grouped=new Map<string,string[]>();
-      for(const row of values){const key=keyOf(table,row);const entries=grouped.get(key)??[];entries.push(stable(row));grouped.set(key,entries);}
+      for(const row of values){const key=keyOf(table,row);const entries=grouped.get(key)??[];entries.push(content(table,row));grouped.set(key,entries);}
       for(const entries of grouped.values())entries.sort();
       return grouped;
     };
@@ -127,8 +131,8 @@ export async function reconcile(snapshot: Snapshot, database: Persistence) {
     for (const key of target.keys()) if (!source.has(key)) mismatches.push({ table: table.name, key, reason: 'unexpected key' });
     tables.push({ table: table.name, keyColumns:table.keyColumns, sourceRows: snapshot.rows[table.name].length, targetRows: rows.length,
       sourceKeys: hash(snapshot.rows[table.name].map(row=>keyOf(table,row)).sort().join('\n')), targetKeys: hash(rows.map(row=>keyOf(table,row)).sort().join('\n')),
-      sourceRowsHash: hash(snapshot.rows[table.name].map(stable).sort().join('\n')),
-      targetRowsHash: hash(rows.map(stable).sort().join('\n')) });
+      sourceRowsHash: hash(snapshot.rows[table.name].map(row=>content(table,row)).sort().join('\n')),
+      targetRowsHash: hash(rows.map(row=>content(table,row)).sort().join('\n')) });
   }
   // Compared by content: JSONB reorders keys and comes back parsed, and only the hash ever reaches the report.
   const pushRows = (rows: Row[]) => new Map(rows.map(row => [hash(String(row.token_hash)), stable({ ...row, prefs_json: stable(typeof row.prefs_json === 'string' ? JSON.parse(row.prefs_json) : row.prefs_json) })]));

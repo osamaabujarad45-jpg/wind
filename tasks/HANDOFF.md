@@ -1,6 +1,10 @@
 # Start here: finish Wind safely
 
-Read `AGENTS.md`, `tasks/plan.md`, then the first eligible task in `tasks/todo.md`. This is an implementation handoff prepared on 29 October 2026 against `85b5a3a`; it is not authorization to deploy, commit, push, charge money or send messages.
+For current work, read `AGENTS.md`, `docs/CURRENT-WORK.md`, then `docs/PLAN-2026-11-26-CONTINUE.md`. That plan reconciles the older task designs and identifies the active branch and acceptance gaps.
+
+## Historical handoff — 29 October 2026
+
+The material below was prepared against `85b5a3a`. Use it as historical requirements/evidence, reconciling each task with the current continuation plan before implementation. It is not authorization to deploy, commit, push, charge money or send messages.
 
 ## Paste this prompt into the implementing agent
 

@@ -18,9 +18,13 @@ try {
   const booked = await call('/orders', { token: customer.token, body: { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
     pickupNote: 'Fixture origin', dropoffNote: 'Fixture destination', contact: '0599788102', detail: 'Box', quotedPrice: 20 } });
   const assigned = await call(`/jobs/${booked.id}/accept`, { token: driver.token, body: {} });
-  const snapshot = await call(`/orders/${booked.id}?recoveryProtocol=1`, { token: driver.token });
+  let snapshot = await call(`/orders/${booked.id}?recoveryProtocol=1`, { token: driver.token });
   assert.equal(snapshot.recovery.schemaVersion, 1);
   assert.equal('recovery' in await call(`/orders/${booked.id}`, { token: driver.token }), false, 'installed response unchanged');
+  const previousVersion = snapshot.recovery.version;
+  db.prepare('UPDATE orders SET pickup_note=?,updated_at=? WHERE id=?').run('Changed pickup instructions', Date.now(), booked.id);
+  snapshot = await call(`/orders/${booked.id}?recoveryProtocol=1`, { token: driver.token });
+  assert.ok(snapshot.recovery.version > previousVersion, 'same-status order edits invalidate an older recovery snapshot');
   const requestId = randomUUID(), path = `/orders/${booked.id}/actions/${requestId}`;
   assert.equal((await call(path, { token: driver.token })).state, 'unknown');
   await call(path, { token: customer.token, expect: 403 }); await call(path, { expect: 401 });
