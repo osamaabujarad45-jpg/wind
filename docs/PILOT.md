@@ -72,8 +72,8 @@ order arrive right and on time? What confused you? Would you use it again?
 
 ## Known limits of this pilot
 
-- **Notifications with the app closed are off** until the Firebase project for push is set up (owner sign-in needed). With
-  the app open, offers, arrivals and messages appear within seconds. Ask drivers to keep the jobs screen open while waiting.
+- **Notifications with the app closed work on Android from app 1.1.6 (versionCode 44)**, live since 26 November. iPhones and older
+  Android builds alert only while the app is open, so ask those drivers to keep the jobs screen open while waiting.
 - Phone numbers are not verified by SMS at signup. Only invite people you know.
 - iPhone is a Home Screen web app: location for a driver works only while the app is open.
 - Passenger transport permission and insurance (G-RIDE) and the shop food-handling rules are the owner's legal side; no

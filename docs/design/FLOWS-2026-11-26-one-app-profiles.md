@@ -375,7 +375,7 @@ These still need the owner's input or access. None blocks F0–F6; F7's trip-cod
 
 ## 11. Place in the continuation plan
 
-1. Integrate and deploy the reviewed branch (continuation plan §1). It is blocked only on T3 pull-request access and does not depend on this design.
+1. Integrate and deploy the reviewed branch (continuation plan §1). Done on 26 November: PR #120 and PR #121 are merged and released (`docs/operations/deploy.md`, "Firebase and native push").
 2. F0 runs alongside continuation plan §2 (native acceptance), with the same phone and builds.
 3. F1 and F2 next: small, visible, and every later screen benefits.
 4. F3 → F4 → F5 are the profile feature, in that order. F3 lands alone.

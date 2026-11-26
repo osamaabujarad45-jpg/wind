@@ -34,13 +34,7 @@ Prepared 26 November 2026. Read this before older handoffs.
 - Read-only production preflight at **14:53 UTC on 26 November** found `/opt/wind-releases/20261123185342` active, API/Caddy active, no ingress hold, passwordless sudo available, backup marker **14:00 UTC**, and readiness `{ "ok": true, "schema": 3 }`. No application install/restart or production data change occurred.
 - **Blocker (resolved 26 Nov):** the owner added the second account as a collaborator, PR #120 merged at `f709cd8b`, and it was deployed as release `20261126200823`. Original note: T3's separate PR service returned `Validation Failed; must be a collaborator`. It identifies the correct repository; CLI owner access and the normal push work. The owner reported reconnecting T3, but the retry returned the same error. No PR was created or merged, and this candidate has **not been deployed**. That T3 connection needs effective repository write access; do not add another collaborator or bypass integration/branch protection as a workaround.
 
-Resume automatically under the standing policy when T3 access works:
-
-1. Create the PR through T3 against `master`, using the prepared owner-local `.artifacts/delivery-policy-20261126/PR.md`; link it immediately if creation did not already link it. Check the actual pushed head, current base, conflicts, checks and reviews. If the base moved, integrate it normally on this feature branch and review/retest affected changes.
-2. Wait for required CI with `watch_pull_request`, ending the turn after registering the watch. Merge only the reviewed head after required checks/reviews pass; preserve branch protection. The earlier green checks cover `e5fd7322`, not a later unverified head.
-3. Fetch integrated master. Reuse the prepared package only if all application/configuration inputs are unchanged from `e5fd7322`; inspect any non-documentation difference and rebuild/retest affected inputs before reuse. Do not relabel an unverified archive as a newer revision.
-4. Follow `docs/operations/deploy.md` for the existing host. Reconfirm strict SSH identity, the operator-only SSH rule, no ingress hold, fresh backups, service-unit guards and the exact package checksum. Use the reviewed integrated installer; its live-data dry run and stopped-database checkpoint must pass before switching.
-5. Run the public deployment check from Docker, verify live packaged source hashes/release path, and record the previous release, checkpoint and rollback path. Preserve provider/database-platform gates. Native APK distribution still needs the physical acceptance below.
+**Done on 26 November (superseded steps removed):** PR #120 merged at `f709cd8b` and was deployed as release `20261126200823`; PR #121 followed as release `20261126212854`. The Android APK 1.1.6 versionCode 44 was published before its full physical acceptance; the open checks are in §4 and in the runbook's State block (`docs/operations/deploy.md`, "Firebase and native push").
 
 ## 2. Complete native acceptance of PR #119 and this server candidate
 
@@ -80,6 +74,7 @@ Resume automatically under the standing policy when T3 access works:
 - The push-enabled APK vc44.
 - The production switch.
 - On the A53, background delivery of a push sent from the host, and the tap that opens Support.
+- SDK 57 notification permission and channel check: the app creates the `default` high-importance channel before asking (`src/native-push.ts`), and the server names it (`server/push.ts`). The Fable shared-channel module was not adopted.
 
 **Sources:** `src/native-push.ts`, `server/domain/native-push.ts`, `server/push.ts`, `server/worker.ts`, `app.config.js`, `eas.json`, and the native push suites.
 
@@ -88,6 +83,7 @@ Still open, on the physical A53 with a two-role trip:
 2. The other states: foreground, permission denial and its recovery, token rotation, logout, account switch, wrong-role taps, duplicate delivery.
 3. iPhone push (APNs) when an iOS build is planned.
 4. Firebase password reset after email verification (design §0 item 6 and §10).
+5. Watch the pilot after the rollout: compare push receipts and support reports for missed alerts, with the runbook's rollback ready.
 
 If acceptance fails, turn the production switch off with the runbook's rollback. Phones bring their local alerts back within 10 minutes.
 
