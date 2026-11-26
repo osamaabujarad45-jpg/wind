@@ -68,6 +68,10 @@ try {
   const silent = await call('/push/native/register', { token: driver.token, body: { expoPushToken: driverToken, deviceId: driverDevice, platform: 'android', lang: 'en' } });
   assert.equal(silent.delivering, false, 'a server with push off tells the phone to keep its local alerts');
   process.env.WIND_EXPO_PUSH_ENABLED = '1';
+  const iphoneDevice = randomUUID();
+  const iphone = await call('/push/native/register', { token: customer.token, body: { expoPushToken: expoToken('iphone'), deviceId: iphoneDevice, platform: 'ios' } });
+  assert.equal(iphone.delivering, false, 'APNs is not configured, so an iPhone keeps its local alerts');
+  await call('/push/native/unregister', { token: customer.token, body: { deviceId: iphoneDevice } });
   await call('/push/native/register', { token: driver.token, body: { expoPushToken: driverToken, deviceId: driverDevice, platform: 'android', lang: 'en' } });
   assert.equal(tokensOf(driver.user.id).length, 1, 'registering twice keeps one row');
 

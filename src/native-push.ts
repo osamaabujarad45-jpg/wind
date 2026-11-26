@@ -3,7 +3,7 @@ import * as Crypto from 'expo-crypto';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { api, apiSessionRevision, storage } from './api';
-import { apiSessionCredential } from './api-client';
+import { apiSessionCredential, errorCode } from './api-client';
 import { router } from 'expo-router';
 import type { User } from './model';
 import { setNativePushRegistered } from './push-state.ts';
@@ -132,7 +132,9 @@ async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap
       // A customer's once-per-device ask is spent once answered (Haiku polish r2 N5); captains' asks keep no device flag.
       if (ask === 'once') await storage.set('pushAsked', '1').catch(() => undefined);
     }
-    if (status !== 'granted' || !isCurrentSession()) return false;
+    if (!isCurrentSession()) return false;
+    // Notifications switched off in the system settings: the server's push cannot show either, so local alerts come back.
+    if (status !== 'granted') { setNativePushRegistered(null); return false; }
     const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
     const expoPushToken = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
     let deviceId = await storage.get('pushDeviceId');
@@ -146,10 +148,15 @@ async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap
     if (!isCurrentSession()) return false;
     // Local alerts go quiet only while the server says push delivery is switched on; with it off a registered token would
     // otherwise leave the phone with no alert at all (local-alert.ts). The switch is configuration, not proof of arrival:
-    // docs/operations/deploy.md turns it on only after a test push reaches a release build.
+    // docs/operations/deploy.md switches it on for a test phone first and announces push only once a test push lands.
     setNativePushRegistered(result?.delivering === true ? session : null);
     return result?.delivering === true;
-  } catch { return false; /* polling fallback remains authoritative */ }
+  } catch (error) {
+    // A failed registration (server without the route, push unavailable, token or permission error) cannot promise a push, so
+    // local alerts come back; a plain network blip keeps the last confirmed answer.
+    if (isCurrentSession() && !['network', 'aborted', 'session_changed'].includes(errorCode(error))) setNativePushRegistered(null);
+    return false; /* polling fallback remains authoritative */
+  }
 }
 
 /** This device's notification permission for the Account row: on, off (the OS can still ask), or blocked (only the system

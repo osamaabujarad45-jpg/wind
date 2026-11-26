@@ -71,7 +71,8 @@ const pushWords: Record<string, { ar: string; en: string }> = {
 const pushBody = (kind: unknown, lang: unknown) => { const words = pushWords[String(kind)]; return lang === 'en' ? words?.en ?? 'You have a new update. Open Wind to view it.' : words?.ar ?? 'لديك تحديث جديد. افتح ويند لعرضه.'; };
 
 /** Whether native push delivery is switched on for this server. Phones mute their local alerts only while it is; it is
- * configuration, not proof that a push arrives, so docs/operations/deploy.md switches it on only after a test push lands. */
+ * configuration, not proof that a push arrives, so docs/operations/deploy.md switches it on for a test phone first and
+ * announces push only once a test push lands. */
 export const expoPushDelivering = () => process.env.WIND_EXPO_PUSH_ENABLED === '1';
 
 /** One Expo push.
