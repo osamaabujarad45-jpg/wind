@@ -1,10 +1,24 @@
 # Fastship implementation handoff — Opus 5.5
 
+## Implementation checkpoint — 3 November 2026
+
+The subsequent [feature and quality review](../reports/app-quality-review-2026-11-03.md) maps all 28 functional and 15 nonfunctional knowledge requirements to current source, tests, gates and remaining acceptance. It also fixes offline-summary visibility/cache/expiry/session fencing, admin recovery serialization and native map descriptions. Final product code passes 105 integration suites, both typechecks, warning-free lint, Android/iOS JS exports and 26 rebuilt browser journeys on K5; bounded load passes all 14 gates. This is software evidence, not full Uber feature parity or a production-quality certification. Provider delivery, gated service activation, operating readiness and physical acceptance remain explicit in the report.
+
+The Android loading-center race, stale-marker rebuild opacity, web heading completion, configured map deadlines, late-SDK timeout fencing, RTL controls and reduced-motion gaps have been repaired in source. Native pre-ready centers and manual-gesture recovery are also covered. The remaining software pass repairs foreground route refetch/background baseline movement, adds versioned map delivery and cache validators, bounds pin positioning, and fixes late GPS cancellation errors. See [the first implementation record](../reports/handoff-implementation-2026-11-03.md) and [the completion record](../reports/handoff-completion-2026-11-03.md) for exact changes and K5 evidence.
+
+Physical acceptance is still open: the attached A53 is held by another device session, and there is no available physical iOS device. Numeric native pin tolerance, physical accessibility acceptance and physical WebView cache acceptance remain open. HTTP/Chromium cold/warm shell caching is verified, and the complete persistence/legacy gate has passed. The source-status table and work order below describe the original baseline; use this checkpoint and the completion report to avoid repeating completed fixes.
+
 ## Start here
 
 This is the only project document needed to begin the next implementation pass. It is written from Fastship source and tests. Work in small, verified batches; inspect the current source before changing a claim below.
 
 The workspace is intentionally dirty. Preserve all existing changes. Do not reset, clean, bulk-stage, or overwrite files outside the selected batch. The research pack and this handoff are preserved by local commit `0ead4d1` and tag `fastship-study-2026-11-02`; no push or deployment has occurred.
+
+## Separate Wind competitor integration research — 17 November
+
+For the owner's requested reuse study, read the [Claude integration handoff](../../../wind-competitors/CLAUDE-INTEGRATION.md) first, then its [evidence verification report](../../../wind-competitors/REA-VERIFY-2026-11-17.md), [route/source knowledge map](../../../wind-competitors/HANDOFF-2026-11-17-APP-KNOWLEDGE.md), [current-build acceptance matrix](../../../wind-competitors/ACCEPTANCE-2026-11-17.md), and [prompt execution record](../../../wind-competitors/evidence/PROMPT-EXECUTION-2026-11-17.md). The corpus is at `C:\Users\osama\OneDrive\Documents\wind-competitors`; `screenshots\routes`, `screenshots\atlas`, `screenshots\research`, and `screenshots\audit-20261117` contain first-party Wind demo captures with logs/evidence (the audit folder is explicitly old-build evidence). Treat each capture as historical and inspect its attribution; filenames alone do not prove a successful action or current-build approval.
+
+This is reference research, not a feature-completion claim or a request to transplant the demos. Re-read current Fastship source and tests, preserve the activation/security/payment gates above, and report unknowns instead of claiming zero defects or “100%” certainty. Use Opus 5.5 as lead; the research handoff describes bounded GPT 6.1 Sol (Agent Router) implementation/review work and read-only Cursor Grok 4.7 critique when those routes are available and appropriate. The latest read-only k5 check found an unverified Uber APK candidate at `D:\b\n9\uber-k5.apk`, Careem staging and Java processes still active; verify current state before acting. The Uber artifact is not certified and has not been installed or accepted on the phone. The earlier `integration-20261117-dryrun` zip is stale and contains no screenshot images. The refreshed **audit-in-progress source/evidence archive** is at [Wind-IntegrationsSource-claude-opus-handoff-final-20261117-1445.zip](C:/Users/osama/AppData/Local/Temp/opencode/integration-packages/claude-opus-handoff-final-20261117-1445/Wind-IntegrationsSource-claude-opus-handoff-final-20261117-1445.zip); verify the SHA-256 in the prompt file. This research archive contains no APK and does not imply phone or release acceptance.
 
 ## Session study
 

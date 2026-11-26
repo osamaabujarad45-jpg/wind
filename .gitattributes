@@ -1,1 +1,2 @@
 public/vendor/** -text
+vendor/decode-uri-component/index.cjs -text

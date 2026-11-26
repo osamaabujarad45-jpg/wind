@@ -629,5 +629,19 @@
       "en/admin-settings.png"
     ],
     "session": "admin"
+  },
+  {
+    "id": "admin-account",
+    "group": "Admin",
+    "name": "Account",
+    "route": "/admin/account",
+    "file": "src/app/admin/account.tsx",
+    "ar": [
+      "ar/admin-account.png"
+    ],
+    "en": [
+      "en/admin-account.png"
+    ],
+    "session": "admin"
   }
 ]

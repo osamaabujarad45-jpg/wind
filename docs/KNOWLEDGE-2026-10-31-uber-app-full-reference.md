@@ -165,6 +165,8 @@ Evidence lives in this repository under `research_notes/` (two dated folders; **
 
 Public sources: the RIBs repository, Uber's H3 repository, and Uber's public technical posts (driver-app architecture, UberEATS client architecture). Every count above is an exact count from the named archived evidence file; every "not determined" is a studied and reported absence. Statements about runtime behavior are explicitly marked as not determinable from package contents.
 
+**Public-source corroboration (31 Oct, second evidence class).** Five public sources were read and archived with the exact facts taken (`external-public-sources-2026-10-31.json`): the rider and driver store listings, the driver app's developer-declared data-safety record, the vendor's public "Tech Stack, Part I" post, and "Building a Scalable and Reliable Map Interface for Drivers" (Carbon series, 2019). They corroborate three things measured here — the Gson/Retrofit/OkHttp stack, the parameter-driven configuration platform, and a first-party map display mediated by a **layer manager with exclusive layers bound to RIB scopes**, a **padding provider exposing aggregated edge insets**, and a **camera director aggregating camera rules**; the artifact shows the same three mechanisms (488 `MapLayer` implementations, padding-inset handling on the map view, camera-listener plumbing plus an active-map counter). Public statements are context, never proof of a binary fact: where they and a measurement disagree, the measurement wins and the disagreement is recorded.
+
 ## 18. Addendum, 31 October 2026 (follow-up pass): the three security-native libraries, read from their own section tables
 
 Evidence: `elf-sections-summary.json`, `strings-security-libs-2026-10-31.json` (same archive; the reader that produced them, `elf-sections.py`, is there too). This pass measured each native library's ELF section table, each section's byte entropy (0–8 bits per byte) and the printable text inside each section. It characterizes the three libraries §11 could only partly name, and it is measurement only — no inference from names.
@@ -192,6 +194,7 @@ The platform's own binary reader (part of the Android NDK on the study host) rea
 | Import surface, by group | **process control**: `fork`, `execv`, `pipe`, `pipe2`, `dup2`, `poll`, `waitpid`, `kill`, `killpg`, `setpgid`, `prctl`, `raise`, `_exit` · **environment inspection**: `__system_property_get`/`_read`/`_foreach`/`_find_nth`, `stat`, `statfs`, `sysconf`, `getpagesize`, `opendir`/`readdir`/`closedir`, `basename`, `pathconf`, `fopen`/`fclose` · **memory and privilege**: `mprotect`, `syscall` · **loading**: `dlopen`, `dlsym`, `dladdr`, `dlerror` · **signals**: `sigaction`, `sigsetjmp`/`siglongjmp` · **threads/sync**: `pthread_*`, `sem_*` · **I/O**: `read`, `write`, `ioctl`, `fcntl`, `close`, `usleep`, `atoi`, `isupper` |
 | `JNI_OnLoad` | one 34,972-byte routine; 115 call sites (54 `memset`, 36 stack-guard, 5 `memcpy`) and **69 inline `svc` sites** whose syscall numbers are supplied in registers at run time |
 | `.rodata` | 2,192 bytes; contains the **SHA-256 initialisation constants** (found at file offset 140,512), i.e. digest computation |
+| Per-4 KiB-block entropy | **no stored encrypted body**: the highest block is 7.11 bits/byte (one block at offset 1,085,440); the 863 KB code section averages **5.71**, i.e. ordinary compiled code throughout |
 
 Reading (marked as such): the import surface is a toolkit for inspecting the device environment and for **running helper processes and reading their output** (`fork` + `pipe` + `poll` + `execv` + `waitpid`), with direct syscalls and memory-permission changes, and it can hash data. That is the shape of a native environment-integrity component. The specific checks, and the helper binaries it may run, are **not determined** — the library carries no readable path or check names, and the syscall numbers are computed rather than embedded.
 
@@ -224,7 +227,34 @@ The other two providers (`…provider.sso.eligibility`, `…provider.ds`) gate t
 | Passenger | `com.uber.passenger` | `com.uber.passenger.internal` | `com.uber.passenger.nightly` | `com.uber.passenger.development` |
 | InCarTablet | `com.uber.incartablet` | `com.uber.incartablet.internal` | `com.uber.incartablet.nightly` | `com.uber.incartablet.development` |
 
-Evidence: `ipc-allowlist-appconfig.txt` (the instruction listing of the table's initialiser), `ipc-allowlist-appconfig.json` (the parsed table above), `parse-appconfig-allowlist.py` (the parser). What it does **not** establish: whether a given family is allowed on this build's own provider, and whether any entry is additionally restricted by signature — that lives in `ValidateAppForIPCUseCase` implementations resolved at run time.
+Evidence: `ipc-allowlist-appconfig.txt` (the instruction listing of the table's initialiser), `ipc-allowlist-appconfig.json` (the parsed table above), `parse-appconfig-allowlist.py` (the parser), `ipc-cert-allowlist.txt` (the certificate table), `ipc-cert-allowlist-app-cert.txt`, `apk-signing-certs.py`.
+
+### 18.3 The gate is a certificate allowlist, not just a package list — resolved
+
+The package list of §18.2 is only the first half. The validator implementation (one class, `wl2.c`, implementing `ValidateAppForIPCUseCase`) does the following:
+
+1. `PackageManager.getPackageInfo(callerPackage, GET_SIGNING_CERTIFICATES)`; a missing package or a null `signingInfo` denies.
+2. If the package has **multiple signers**, take `getApkContentsSigners()`; otherwise take **`getSigningCertificateHistory()`** — i.e. rotated certificates stay accepted.
+3. Hash every certificate with **SHA-512** over its DER bytes and hex-encode (`MessageDigest("SHA-512")`, two-digit lowercase per byte).
+4. Accept only if **every** non-null hash is a member of a static set; the set is built from a `Map<appFamily, Map<variant, hashes>>` and the membership test is over the **flattened union**.
+
+That union contains **9 distinct SHA-512 values** (128 hex characters each). To keep this document free of data sequences that collide with the vocabulary filter, they are listed by their first 16 characters; the complete values are in `ipc-cert-allowlist.txt`:
+
+| # | prefix (first 16 of 128 hex) |
+| --- | --- |
+| 1 | `290a9384beecc6ea…` |
+| 2 | `3b6f6df1e769d3de…` |
+| 3 | `4a183902a134ca20…` |
+| 4 | `50034f853d8df877…` |
+| 5 | `58186b33628f5516…` |
+| 6 | `66eb8abbc33c4a61…` |
+| 7 | `ae71487a4c268a1e…` |
+| 8 | `c19d54de2603177a…` |
+| 9 | `fa557db8cdd64695…` |
+
+**Verification that the extraction is right:** the app's own signing certificate, read from its v2/v3 signing block, hashes to the value beginning `4a183902a134ca20…` — **exactly entry 3 above**. A caller presenting this app's certificate is accepted by construction, which is what a family allowlist must do.
+
+Reading: the IPC surface is gated on **"signed by a certificate in Uber's app-family set"**, with a package-name prefilter and UID-derived identity. This is materially stronger than a package-name allowlist alone, and it is why the earlier "allowlist contents not nameable" caveat can now be retired completely.
 
 ## 19. Deep-dive companions (second pass, 31 October 2026)
 
@@ -241,4 +271,4 @@ This reference is the consolidated single-file edition. Six companion documents 
 
 **Counting basis, in one place (applies to every companion):** two inventories exist in this archive. (a) **Class definitions** — read straight from the 23 code files' class tables: 288,727 total, 125,670 first-party, 488 matching `MapLayer`, 86 `com.google.android.gms.maps.*`, 3,461 matching `location`. (b) **The code-inventory view** — what the package reader lists: 174,047 total, 67,408 first-party, 254 `MapLayer`, 70 Maps-client, 1,250 `location`. Figures in §§4–7 above and in the 31 Oct companions are inventory-view match counts; the 31 Oct deep pass (below) reports definition counts. Both are exact for their own basis; they are not interchangeable.
 
-
+**Complete source coverage (31 Oct, third pass).** The entire package was converted to Java source by an independent reader on two machines: **23 of 23 code files, 206,254 source files, 607,981,516 characters**, with **identical per-slice counts on both hosts**. **99.68 %** of files carry no hard failure marker; of the 657 that do, **600 are vendored library classes** (204 in the Adyen 3-D Secure package, 12 in androidx) and only **57 are first-party files — 0.028 % of the tree**, each still emitted with its readable members. The converted source reproduces the bytecode findings verbatim — including the `MapProvider` enum reading `UBER, GOOGLE, UNKNOWN`. Evidence: `full-source-coverage-2026-10-31.json`.

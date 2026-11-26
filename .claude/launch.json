@@ -4,14 +4,51 @@
     {
       "name": "web",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["expo", "start", "--web", "--port", "8081"],
+      "runtimeArgs": [
+        "expo",
+        "start",
+        "--web",
+        "--port",
+        "8081"
+      ],
       "port": 8081
     },
     {
       "name": "api",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "server"],
+      "runtimeArgs": [
+        "run",
+        "server"
+      ],
       "port": 4000
+    },
+    {
+      "name": "brand-preview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8790",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "C:\\Users\\osama\\AppData\\Local\\Temp\\claude\\65638f5025b29892\\3f2b8a7d-443a-405f-8736-c8c0cce6276a\\scratchpad"
+      ],
+      "port": 8790
+    },
+    {
+      "name": "polish-preview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8791",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "C:\\w\\wind-ui-polish"
+      ],
+      "port": 8791
     }
   ]
 }

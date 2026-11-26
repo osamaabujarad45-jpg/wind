@@ -24,7 +24,7 @@ const dir = mkdtempSync(join(tmpdir(), 'wind-email-'));
 Object.assign(process.env, { DB_PATH: join(dir, 'test.db'), WIND_IDENTITY_MODE: 'self-service', WIND_ENABLED_SERVICES: 'parcel',
   WIND_EMAIL_FROM: 'no-reply@wind.example', CLOUDFLARE_ACCOUNT_ID: 'acct123', CLOUDFLARE_EMAIL_TOKEN: 'cf-email-token',
   CLOUDFLARE_API_BASE: `http://127.0.0.1:${cloudflare.address().port}/client/v4` });
-const { server, shutdown, promote } = await import('../server/main.ts');
+const { server, shutdown, promote, persistence } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const call = apiCaller(() => `http://127.0.0.1:${server.address().port}/api`);
 const password = 'Correct-Horse-12';
@@ -109,11 +109,72 @@ try {
   assert.equal((await call('/auth/reset', { body: { identifier: '0599709999', code: reset.code, password: 'short' }, expect: 400 })).error, 'weak_password', 'checked before any lookup');
   for (let i = 0; i < 5; i++) await call('/auth/login', { body: { identifier: '0599700001', password: 'not-it-at-all' }, expect: 401 });
   await call('/auth/login', { body: { identifier: '0599700001', password }, expect: 429 }); // a forgetful owner hit the limit
-  assert.deepEqual(await call('/auth/reset', { body: { identifier: '0599700001', code: reset.code, password: 'New-Password-123' } }), { ok: true });
+  // Force both real HTTP requests to read the same valid code before either
+  // claims it. Exactly one may change the password, on either database adapter.
+  const originalOne = persistence.one;
+  let reads = 0, release;
+  const bothRead = new Promise(resolve => { release = resolve; });
+  persistence.one = async function(sql, ...params) {
+    const row = await originalOne.call(this, sql, ...params);
+    if (sql.startsWith('SELECT * FROM email_codes WHERE') && params[1] === 'reset') {
+      if (++reads === 2) release();
+      await bothRead;
+    }
+    return row;
+  };
+  let resets;
+  try {
+    resets = await Promise.all([1, 2].map(() => fetch(`http://127.0.0.1:${server.address().port}/api/auth/reset`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: '0599700001', code: reset.code, password: 'New-Password-123' }),
+    })));
+  } finally { persistence.one = originalOne; }
+  assert.equal(reads, 2);
+  assert.deepEqual(resets.map(response => response.status).sort(), [200, 400], 'one email reset code has one winner');
   await call('/me', { token: customer.token, expect: 401 }); // every old session ended
   await call('/auth/login', { body: { identifier: '0599700001', password }, expect: 401 });
   const signedIn = await call('/auth/login', { body: { identifier: 'user1@mail.example', password: 'New-Password-123' } });
   assert.equal((await call('/auth/reset', { body: { identifier: '0599700001', code: reset.code, password: 'Another-Pass-123' }, expect: 400 })).error, 'wrong_email_code', 'spent');
+
+  // A reset is all-or-nothing. If the database cannot write the new password, the owner has changed nothing:
+  // the code must still be usable for a retry (it is single-use only once the password is really replaced),
+  // the old password still works, and no session is signed out. Uses its own account so the single-winner race
+  // above keeps its own code.
+  {
+    const fifth = await register(5);
+    await call('/me/email/verify', { token: fifth.token, body: { code: (await mailTo('user5@mail.example')).code } });
+    const second = await call('/auth/login', { body: { identifier: '0599700005', password } });
+    assert.deepEqual(await call('/auth/reset/code', { body: { identifier: 'user5@mail.example' } }), { ok: true });
+    const fifthReset = await mailTo('user5@mail.example', 2);
+    assert.match(fifthReset.text, /password reset code/);
+    const id = fifth.user.id;
+    const storedBefore = (await persistence.one('SELECT password FROM users WHERE id = ?', id)).password;
+    const sessionsOf = async () => Number((await persistence.one('SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?', id)).n);
+    assert.equal(await sessionsOf(), 2, 'two signed-in devices before the reset');
+    const realRun = persistence.run;
+    persistence.run = async function(sql, ...params) {
+      if (/^\s*UPDATE\s+users\s+SET\s+password\b/i.test(sql)) throw new Error('synthetic database failure while writing the password');
+      return realRun.call(this, sql, ...params);
+    };
+    let failed;
+    try {
+      failed = await fetch(`http://127.0.0.1:${server.address().port}/api/auth/reset`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: '0599700005', code: fifthReset.code, password: 'Fresh-Password-123' }) });
+    } finally { persistence.run = realRun; }
+    assert.ok([500, 503].includes(failed.status), `a failed password write is a server-side failure, got ${failed.status}`);
+    const code = await persistence.one("SELECT tries FROM email_codes WHERE user_id = ? AND purpose = 'reset'", id);
+    assert.ok(code, 'the reset code was consumed even though the password was never changed');
+    assert.equal(Number(code.tries), 0, 'a database failure is not a wrong try');
+    assert.equal((await persistence.one('SELECT password FROM users WHERE id = ?', id)).password, storedBefore, 'the password is unchanged');
+    assert.equal(await sessionsOf(), 2, 'no session was ended by a reset that did not happen');
+    await call('/me', { token: fifth.token });
+    await call('/me', { token: second.token });
+    // The very same code now completes the reset, once.
+    assert.deepEqual(await call('/auth/reset', { body: { identifier: '0599700005', code: fifthReset.code, password: 'Fresh-Password-123' } }), { ok: true });
+    await call('/me', { token: fifth.token, expect: 401 });
+    await call('/auth/login', { body: { identifier: '0599700005', password: 'Fresh-Password-123' } });
+    assert.equal((await call('/auth/reset', { body: { identifier: '0599700005', code: fifthReset.code, password: 'Another-Pass-123' }, expect: 400 })).error, 'wrong_email_code', 'a completed reset spends its code');
+  }
 
   // Support identity check: code to the verified email, read back by the caller; admins only; verified emails only.
   await call('/auth/register', { body: { name: 'Admin', email: 'admin@mail.example', phone: '0599700009', password, consent: true } });

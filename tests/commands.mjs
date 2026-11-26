@@ -53,6 +53,36 @@ try {
   await assert.rejects(replayUnderApprovalPolicy,error=>error.status===403 && error.message==='pending_approval');
   await db.run('UPDATE users SET approved_at=? WHERE id=?',Date.now(),driver.user.id);
   assert.deepEqual(await replayUnderApprovalPolicy(),assigned,'approved driver replays before changed version/status');
+  // A command result stored before the boarding-PIN privacy upgrade may still hold the passenger's PIN in a
+  // driver's saved response. Replay must never hand that PIN back to the driver (it would let the driver
+  // satisfy the boarding challenge alone), while the customer's own saved result keeps showing it.
+  {
+    const PIN='7391', fail=(status,message)=>{throw Object.assign(new Error(message),{status});};
+    const replayAs=(actor,path,body)=>db.atomic({id:actor.id},()=>versionedCommand(db,{id:actor.id},{...body},path,'POST',
+      ()=>{throw new Error('a saved command must not execute again');},fail,()=>false,async()=>{},{}));
+    const saveClean=(actor,path,body)=>db.atomic({id:actor.id},()=>versionedCommand(db,{id:actor.id},{...body},path,'POST',
+      async()=>({id:booked.id,status:'assigned',ride:{boardingRequired:true},journey:{boarding:{required:true,shouldShow:false}}}),fail,()=>false,async()=>{},{}));
+    const withPin=response=>({...response,ride:{...response.ride,boardingCode:PIN},journey:{...response.journey,boarding:{...response.journey.boarding,shouldShow:true,pin:PIN}}});
+    const legacy=async(actor,commandId,response)=>db.run('UPDATE command_results SET response=? WHERE actor_id=? AND command_id=?',JSON.stringify(response),actor.id,commandId);
+    const pinned=await version(booked.id);
+    const driverCommand={commandId:randomUUID(),expectedVersion:pinned};
+    const driverPath=`/api/orders/${booked.id}/advance`;
+    const saved=await saveClean(driver.user,driverPath,driverCommand);
+    await legacy(driver.user,driverCommand.commandId,withPin(saved));
+    const driverReplay=await replayAs(driver.user,driverPath,driverCommand);
+    assert.equal(JSON.stringify(driverReplay).includes(PIN),false,'a pre-upgrade stored driver response must not replay the boarding PIN');
+    assert.equal(driverReplay.ride?.boardingCode,undefined,'driver replay drops the legacy ride.boardingCode');
+    assert.equal(driverReplay.journey?.boarding?.pin,undefined,'driver replay drops the legacy journey.boarding.pin');
+    assert.equal(driverReplay.status,'assigned','scrubbing the PIN keeps the rest of the saved result');
+    assert.equal(driverReplay.journey?.boarding?.shouldShow===true,false,'driver replay never claims the PIN should be shown to the driver');
+    const customerCommand={commandId:randomUUID(),expectedVersion:pinned};
+    const customerPath=`/api/orders/${booked.id}/destination/quote`;
+    const customerSaved=await saveClean(customer.user,customerPath,customerCommand);
+    await legacy(customer.user,customerCommand.commandId,withPin(customerSaved));
+    const customerReplay=await replayAs(customer.user,customerPath,customerCommand);
+    assert.equal(customerReplay.ride.boardingCode,PIN,'the passenger still sees their own boarding PIN on replay');
+    assert.equal(customerReplay.journey.boarding.pin,PIN,'the passenger still sees journey.boarding.pin on replay');
+  }
   const remittance=await call('/admin/cash/remittance',{token:admin.token,body:{commandId:randomUUID(),payload:{driverId:driver.user.id,amountCents:100,currency:'ILS'}}});
   const cashState=await call('/driver/cash?protocol=1',{token:driver.token});
   const cashVersion=cashState.protocol.entries.find(e=>e.id===remittance.id).version;

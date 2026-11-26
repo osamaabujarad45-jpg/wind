@@ -197,5 +197,60 @@
   "not_committed_on_purpose": [
     "unrelated dirty implementation work in the working tree (169 entries)",
     "docs/CURRENT-WORK.md, docs/SYSTEM.md, docs/implementation/**, docs/KNOWLEDGE-2026-10-31-*, docs/KNOWLEDGE-2026-11-01-* \u2014 modified at 17:17 by another process; not attributed to this session"
+  ],
+  "addenda": [
+    {
+      "date": "2026-11-03",
+      "note": "Pass-3 edits (docs/rea-work/LEDGER.md, section \"Contract-study pass 3\"). Hashes are of the CRLF working copy and are not committed; the pass-2 entries in files[] still identify the committed artifacts. git_blob (git hash-object of the working file) is line-ending independent: use it when exact identity matters.",
+      "files": [
+        {
+          "path": "docs/KNOWLEDGE-2026-11-02-uber-rider-api-backend-contract-study.md",
+          "group": "session-2026-11-03",
+          "note": "pass 3: extra routes, error mapping, push registry, Ramen extras, 3 Fastship rows",
+          "preservation": "disk-only",
+          "supersedes_sha256": "e3950dd96d1d96bea201dc861f47b07522884cdf7c1dc2ac7f404eb56fb00e1a",
+          "sha256": "52949b15946ab0655ad0d1401de0291793121395a09d559ea72537fbdee29cd6",
+          "bytes": 47352,
+          "git_blob": "9234964185d966ef169515d1b3fb1316e07ed3d0"
+        },
+        {
+          "path": "docs/rea-work/LEDGER.md",
+          "group": "session-2026-11-03",
+          "note": "pass-3 section appended (gates, citations, pinning)",
+          "preservation": "disk-only",
+          "supersedes_sha256": "733c527bc8f5da55366f643875c023934b8790f4f02e97b5119224aef7a31ebd",
+          "sha256": "e9f00bb01b6558a5b4bb1632ebb1cc4a4b6b7375307dcf74aff3482bfa88425d",
+          "bytes": 22835,
+          "git_blob": "984b1cecf60dcda1d5e2a9ad70a2024cdc261f73"
+        },
+        {
+          "path": "docs/KNOWLEDGE-2026-11-01-uber-app-backend-services-and-routes.md",
+          "group": "session-2026-11-03",
+          "note": "three corrections (autocomplete, map-feed, section 10 pointer) on top of the other-process edits listed in not_committed_on_purpose",
+          "preservation": "disk-only",
+          "sha256": "1a560995dc76b5f0f7fe9fa7a6049f47ecf52cdcda863f90fa4e82505632db1c",
+          "bytes": 14020,
+          "git_blob": "d34a4c350e5c08f01193fef76c6057cc6a8202dd"
+        },
+        {
+          "path": "research_notes/REA Uber app reverse engineering/evidence-k5-today/retrofit-route-index.tsv",
+          "group": "session-2026-11-03",
+          "note": "new evidence: 1,052 Retrofit annotations as verb, path, interface file",
+          "preservation": "disk-only",
+          "sha256": "94324746cd6b4bb7619a536a1d8648afd4cbd58db74370dd2d04b91ecad96733",
+          "bytes": 136076,
+          "git_blob": "64f32eb17711bf6e685e5ef7cc1644dc5db580b1"
+        },
+        {
+          "path": "research_notes/REA Uber app reverse engineering/evidence-k5-today/grpc-route-index.txt",
+          "group": "session-2026-11-03",
+          "note": "new evidence: 50 @GrpcApi paths",
+          "preservation": "disk-only",
+          "sha256": "717fd4f866f186bae705a814bb6a10803245b8f501f055ec7c486f6ada841f93",
+          "bytes": 3233,
+          "git_blob": "d2683f665d8d61577c66ab2004c2b325a32ceb19"
+        }
+      ]
+    }
   ]
 }

@@ -2,6 +2,65 @@
 
 Prepared 29 October 2026 against clean baseline `85b5a3a`. Task tracker: [todo.md](todo.md). Agent start prompt: [HANDOFF.md](HANDOFF.md). This is a planning deliverable, not implementation or production authorization.
 
+## 8 November follow-up — booking recovery and authority (R01/R17)
+
+**Ready for implementation when K5 has compute; no booking fix is implemented by this planning pass.** This extends T19/T20 using the [current audit](../reports/project-review-2026-11-08.md), including the red recovery regression. Historical passing T19/T20 checks do not close these newly identified races. Track the work in the dated [booking follow-up checklist](todo.md#8-november-booking-follow-up).
+
+### Required guarantees
+
+1. For a customer/request key, the immutable payload hash can resolve to one durable success or one durable terminal rejection, never both. Before resolution it may remain **unknown**. Changed-payload reuse conflicts without changing the original result.
+2. All booking creation/closure paths share customer-level serialization before decisive receipt replay, quote consumption and cap checks. Replay follows current authority/hash checks and precedes mutable business rejection. Key-only locking cannot enforce a customer-wide cap.
+3. A terminal closure prevents every delayed same-key writer from creating later, including writers still waiting on routing. A null receipt, timeout, quote expiry or ordinary HTTP error alone never permits deleting the saved command.
+4. Booking and logout/role/status revocation have a defined ordering: revocation completed before final authorization prevents creation; a booking that wins holds its authority protection through commit. Another unlocked session SELECT is insufficient.
+5. Success commits the order, receipt and existing transactional effects together. Terminal rejection leaves no partial order/promo/scope effects and remains durably readable after HTTP error translation. Unknown commit outcomes stay recoverable.
+
+### Implementation sequence
+
+- Inventory `createOrder` callers, receipt/replay consumers and every relevant session/role/status revoker before editing shared orchestration. Cover first-party `requestId`, missing-key legacy calls, the optional `commandId` wrapper and partner contracts without conflating their identities.
+- Choose the smallest compatible terminal-outcome storage/contract change. Both `server/db/postgres-schema.sql` and `server/db/sqlite-schema.ts` currently require `order_commands.order_id`; `server/domain/booking-receipts.ts` returns only `{orderId|null}`. Follow existing migration registration, retain installed-data compatibility and validate receipt ownership/hash semantics. Decide how old clients behave before exposing new terminal results.
+- Move routing preparation outside the **actual** PostgreSQL HTTP `atomic` envelope, bind it to the effective itinerary/revisions, and revalidate authoritative inputs inside a short committing transaction. Preserve accepted quote fare, provider failure behavior, actor/correlation context, durable-schema guards, command replay and transactional dispatch/outbox behavior.
+- Use one reviewed lock order for creation, terminal closure and revocation. After waits, revalidate session expiry, customer role and active status under protection held until commit; read the saved outcome/hash before mutable cap/quote/promo/schedule decisions. Recheck time-sensitive values using the final decision clock.
+- For an unresolved command, commit success or a selected terminal business rejection. A rejection racing an existing success must replay that success. Do not persist terminal closure for unauthenticated requests, infrastructure failures or unknown commit outcomes.
+- Wire the client to retain the exact account-scoped payload/key until success or an authoritative same-command terminal rejection. Reconcile after reply loss/restart; preserve useful errors and storage-failure handling. Editing creates a new command only after the old command is safely resolved.
+
+### Decisions to settle during implementation
+
+- **Storage/compatibility:** evolve receipts or add a narrowly scoped terminal store; specify the wire result and canonical hash without changing existing quote-bound normalization. No new endpoint is assumed by this plan.
+- **Transaction ownership:** `server/db/persistence.ts:169–182` maps handler boundaries to savepoints inside `atomic`. `server/main.ts:3212–3216` captures `HttpError` inside the envelope so it can commit, whereas escaping errors roll it back. Trace where the handler has already rolled back: terminal storage must survive the intended business rejection, while partial work must not. Prefer preventing post-insert validation failures; retain rollback protection for remaining failures.
+- **Authority:** prove the chosen row/advisory locks conflict with every relevant revoker in both orderings, without lock-order inversion. Recently touched sessions must be covered; the conditional hourly timestamp update is not a reliable fence.
+- **Replay availability:** `server/main.ts:1519–1523` checks conflicting price, quote-ID shape and **quote schema availability**; `quotesAvailable` checks tables/migration, not service enablement. Keep structural input validation, but decide capability-check ordering so already-saved outcomes are not hidden by later capability changes.
+
+### Deterministic acceptance matrix
+
+Use explicit barriers, independent PostgreSQL connections/processes and controlled clocks, rather than sleep-based race guesses. Tests must call the real handlers/client recovery seam and inspect durable effects.
+
+| Case | Required result |
+|---|---|
+| Same key, simultaneous quoted requests | Both recover the same order; one order/receipt and one set of side effects. |
+| Legacy fourth→fifth order, same-key retry and competing different key | Retry replays the fifth order; another key cannot exceed the cap. |
+| Lost success reply, then quote expiry/consumption or service change | Original order is recoverable; pending identity survives until recovery. |
+| Genuine terminal rejection with a parked writer | Same-hash closure is durable; release becomes safe; resumed writer creates nothing. |
+| Changed payload against success and rejection; another customer uses the key | Conflict cannot overwrite an outcome; identities remain customer-scoped. |
+| Logout, role/status revocation and expiry during provider/lock waits | Revocation-first prevents creation; booking-first commits before conflicting revocation finishes. No incidental old-session lock is needed. |
+| Failure after order/promo/scope writes, HTTP rejection, commit/reply loss | No partial effects; intended terminal decisions survive; unknown outcomes retain the command and reconcile. |
+| Receipt/recovery across restart, account switch and storage failure | No cross-account disclosure, frozen identity retained, no silent deletion on failed storage. |
+| SQLite legacy, missing requestId, command wrapper and partner compatibility | Existing contracts remain explicit; SQLite serialization and applicable closure/hash guarantees pass. |
+
+Update `tests/booking-retry-race.test.mjs` to assert the repaired server behavior instead of the demonstrated defect. Its `invalid_input` clear control must also require authoritative closure; replacing it with a meaningful release assertion preserves test strength. Add the missing quote-bound authority interleaving to `tests/booking-auth.test.mjs`. Register any new suite in the relevant runner; the PostgreSQL race portion must actually execute with an isolated `WIND_TEST_DATABASE_URL`.
+
+### Verification and handback
+
+When K5 is free, verify SSH access, matching dirty-tree identity and isolated test prerequisites first; the prior audit's SSH failure is not a new connection attempt. Run sequentially on K5:
+
+1. Focused booking regressions: `npm run test -- --filter=booking` with the isolated PostgreSQL fixture available.
+2. Affected persistence slices: `npm run test:persistence -- --filter=quotes`, then command/schema/rollback slices selected from the actual diff.
+3. `npm run lint`, `npm run typecheck`, `git diff --check`, `npm test`, `npm run test:persistence`, `npm run test:contracts` as separate commands. Existing red tests must become green through the repair, not weakened expectations.
+4. Independent review of the integrated diff and evidence; then the T19.2 recovery/restart/account-switch journey on physical **SM-A5360 / R5CTB0FJP9Z**, using the loopback QA backend and `adb reverse`. No emulator.
+
+Record host, revision/dirty-diff identity, exact commands, exits and artifacts once per candidate. Repeat only after relevant changes or failures. These gates establish the listed guarantees for tested conditions; they cannot establish zero risk or 100% correctness for all future behavior.
+
+Sol challenged this plan; the leader checked the cited receipt/schema/transaction constraints and corrected the quote-schema wording. See [cleanup and planning provenance](../reports/review-2026-11-08/cleanup.md). No runtime evidence was added by either planning review.
+
 ## Objective and scope
 
 Finish known app defects, integrate reliable maps, complete required provider/backend work, improve mobile usability and prepare an evidenced release. Preserve existing parcel, customer, driver, recipient and administrator behavior. “All issues” means all presently discovered issues plus newly reproduced regressions encountered during execution; it is not a claim that a read-only audit found every possible bug.

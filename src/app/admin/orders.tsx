@@ -19,11 +19,13 @@ export default function AdminOrders() {
   return <Screen onRefresh={reload}>
     <Header title={c.allOrders} />
     {/* FilterChips is its own Rail; a ScrollView around it kept the Rail from scrolling, so Arabic opened on the list's far end with 'all' hidden */}
-    <FilterChips items={filters.map(key => ({ key, label: key === 'all' ? c.all : key === 'safety' ? c.safety : c[key] }))} value={status} onChange={filter => router.setParams({ filter })} />
+    <FilterChips items={filters.map(key => ({ key, label: key === 'all' ? c.all : key === 'safety' ? c.safety : c[key] }))} value={status} onChange={filter => router.setParams({ filter })} label={c.allOrders} />
     {status === 'safety' ? <Incidents /> : status === 'disputes' ? <Disputes /> : <>
       <ErrorText>{error && err(error)}</ErrorText>
       {!data ? <Loading failed={!!error} onRetry={reload} /> : data.length === 0
-        ? <Empty icon="receipt-outline" title={c.nothingHere} />
+        ? <Empty icon="receipt-outline" title={c.noOrdersFilter}
+          action={status !== 'all' ? <Button title={c.clearFilters} variant="soft" icon="close-circle-outline"
+            onPress={() => router.setParams({ filter: 'all' })} /> : undefined} />
         : <>{data.map((order, i) => <OrderRow key={order.id} order={order} index={i} />)}<MoreOrders more={more} /></>}
     </>}
   </Screen>;
@@ -52,16 +54,17 @@ function Incidents() {
   return <>
     <ErrorText>{(error && err(error)) || failure}</ErrorText>
     {!data ? <Loading failed={!!error} onRetry={reload} /> : rows.length === 0 ? <Empty icon="shield-checkmark-outline" title={c.noIncidents} /> : rows.map(d => <Card key={d.id} tone={d.status === 'open' ? 'clay' : undefined}>
-      <Txt variant="title">{`${c[`safety_${d.kind}`]} · ${time(d.createdAt)}`}</Txt>
-      <Txt variant="caption" style={{ marginBottom: 6 }}>{`${c.reporter}: ${c[d.reporterRole]} · ${d.reporterName}`}</Txt>
+      <Txt variant="title">{c[`safety_${d.kind}`]}</Txt>
+      <Txt variant="caption" style={{ marginBottom: 6 }}>{time(d.createdAt)}</Txt>
+      <Txt variant="caption" style={{ marginBottom: 6 }}>{`${c.reporter}: ${c[d.reporterRole]}, ${d.reporterName}`}</Txt>
       {!!d.note && <Txt variant="body" style={{ marginBottom: 8 }}>{d.note}</Txt>}
       {d.status === 'resolved'
         ? <Txt variant="body" style={{ marginBottom: 8 }}>{`${c.safetyResolved}: ${d.resolution ?? ''}`}</Txt>
         : <>
           <View style={{ gap: 6, marginBottom: 10 }}>
-            <Button title={`${c.call} ${c.customer} · ${d.customerName}`} trailing={ltr(d.customerPhone)} icon="call-outline" variant="soft" size="sm" onPress={call(d.customerPhone)} />
-            {d.orderContact && d.orderContact !== d.customerPhone && <Button title={`${c.call} · ${c.contact}`} trailing={ltr(d.orderContact)} icon="call-outline" variant="soft" size="sm" onPress={call(d.orderContact)} />}
-            {d.driverPhone && <Button title={`${c.call} ${c.driver} · ${d.driverName}`} trailing={ltr(d.driverPhone)} icon="call-outline" variant="soft" size="sm" onPress={call(d.driverPhone)} />}
+            <Button title={`${c.call} ${c.customer}, ${d.customerName}`} trailing={ltr(d.customerPhone)} icon="call-outline" variant="soft" size="sm" onPress={call(d.customerPhone)} />
+            {d.orderContact && d.orderContact !== d.customerPhone && <Button title={`${c.call}, ${c.contact}`} trailing={ltr(d.orderContact)} icon="call-outline" variant="soft" size="sm" onPress={call(d.orderContact)} />}
+            {d.driverPhone && <Button title={`${c.call} ${c.driver}, ${d.driverName}`} trailing={ltr(d.driverPhone)} icon="call-outline" variant="soft" size="sm" onPress={call(d.driverPhone)} />}
             {d.latitude != null && <Button title={c.openLocation} icon="location-outline" variant="ghost" size="sm"
               onPress={() => { Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${d.latitude},${d.longitude}`).catch(() => undefined); }} />}
             <Button title={ltr(orderCode(d.orderId))} variant="ghost" size="sm" icon="receipt-outline" onPress={() => router.push(`/order/${d.orderId}`)} />
@@ -70,7 +73,8 @@ function Incidents() {
             onChangeText={text => setDrafts(v => ({ ...v, [d.id]: text }))} />
           <Txt variant="caption" style={{ marginBottom: 8 }}>{c.resolutionVisible}</Txt>
           <Button title={c.resolveDispute} variant="outline" icon="checkmark-done-outline" loading={busy === d.id}
-            disabled={busy !== null || (drafts[d.id] ?? '').trim().length < 5} reason={busy !== null ? c.wait_busy : c.reason_min5} onPress={() => resolve(d.id)} />
+            disabled={busy !== null || (drafts[d.id] ?? '').trim().length < 5} reason={busy !== null ? c.wait_busy : c.reason_min5}
+            onPress={() => confirm(`${c.resolveDispute}: ${orderCode(d.orderId)}?`, () => resolve(d.id), c.resolveDispute, c.cancel)} />
         </>}
     </Card>)}
   </>;
@@ -104,7 +108,7 @@ function Disputes() {
   return <>
     <ErrorText>{(error && err(error)) || failure}</ErrorText>
     {!data ? <Loading failed={!!error} onRetry={reload} /> : rows.length === 0 ? <Empty icon="flag-outline" title={c.noDisputes} /> : rows.map(d => <Card key={d.id}>
-      <Button title={`${ltr(orderCode(d.orderId))} · ${d.customerName}`} variant="ghost" size="sm" icon="receipt-outline"
+      <Button title={`${ltr(orderCode(d.orderId))}, ${d.customerName}`} variant="ghost" size="sm" icon="receipt-outline"
         onPress={() => router.push(`/order/${d.orderId}`)} />
       <Txt variant="body" style={{ marginBottom: 10 }}>{d.reason}</Txt>
       {d.status === 'resolved'

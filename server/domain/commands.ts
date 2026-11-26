@@ -41,14 +41,26 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
       if (target) await authorizeOrder(Number(target[1]));
       fail(saved.http_status, response.error);
     }
+    // Only the order's own customer may see a boarding PIN. A result stored before the PIN privacy upgrade can
+    // still hold it in a driver's (or admin's) response, so replay applies the current visibility rule.
+    let ownPassenger = actor.role === 'customer';
     if (target) {
       const order = await db.one('SELECT customer_id,driver_id FROM orders WHERE id=?',Number(target[1])) ?? fail(404,'not_found');
+      if (order.customer_id !== user.id) ownPassenger = false;
       const releasedReceipt = /^\/api\/orders\/\d+\/release$/.test(path) && response?.ok === true
         && await db.one('SELECT 1 FROM order_releases WHERE order_id=? AND driver_id=?',Number(target[1]),user.id);
       if (!releasedReceipt && actor.role !== 'admin' && order.customer_id !== user.id && order.driver_id !== user.id) {
         // A negotiated offer contains only the actor's own price; its marketplace access still applies.
         if (/^\/api\/jobs\/\d+\/offer$/.test(path)) await authorizeOrder(Number(target[1]));
         else fail(404,'not_found');
+      }
+    }
+    if (!ownPassenger && response && typeof response === 'object') {
+      const r = response as any;
+      if (r.ride && typeof r.ride === 'object' && 'boardingCode' in r.ride) { const { boardingCode: _code, ...ride } = r.ride; r.ride = ride; }
+      const boarding = r.journey?.boarding;
+      if (boarding && typeof boarding === 'object' && ('pin' in boarding || boarding.shouldShow === true)) {
+        const { pin: _pin, ...rest } = boarding; r.journey = { ...r.journey, boarding: { ...rest, shouldShow: false } };
       }
     }
     return response;

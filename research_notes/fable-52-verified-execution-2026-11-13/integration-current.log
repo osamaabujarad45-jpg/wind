@@ -1,0 +1,803 @@
+(node:3808) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/active-gps-session.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS active GPS foreground acquisition, lost ACK, assignments and callback fencing
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\active-gps-client.test.mjs (163.6058ms)
+PASS native active GPS persistence, assignments and logout
+(node:9208) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/background-location.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\active-gps-native.test.mjs (193.3264ms)
+(node:6420) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:6420) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+admin settings: refuses 0 and over-ceiling values by name, valid values save
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\admin-settings.test.mjs (1424.0455ms)
+(node:14380) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14380) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Admin statistics: local-day boundaries, DST, empty days, totals and access passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\admin-stats-daily.test.mjs (1937.0371ms)
+(node:24076) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/api-client.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+API session race and timeout checks passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\api-client.test.mjs (237.2617ms)
+(node:33788) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/api.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+API focus: billable routes load only on path changes; ordinary endpoints refresh on foreground
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\api-focus.test.mjs (163.1867ms)
+(node:26768) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:26768) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+{"category":"http_request_failed","code":"ERR_SQLITE_ERROR","sqliteCode":1811,"correlationId":"04359508-9449-48c7-874d-7763ceaf63e6","httpStatus":500}
+{"category":"http_request_failed","code":"ERR_SQLITE_ERROR","sqliteCode":5,"correlationId":"0bc8414a-de8a-4c38-97b1-d6ac88533a8c","httpStatus":503}
+{"category":"http_request_failed","correlationId":"bfff7e95-161f-49d4-9347-b7bdc9f2806b","httpStatus":503}
+API checks passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\api.test.mjs (8457.2575ms)
+Audit gate: exact source/advisory acceptance, raw counts, changed bytes, new advisories, unknown propagation, criticals and native errors passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\audit-gate.test.mjs (162.3745ms)
+Bicep CLI version 0.48.1 (cec7951cf6)
+
+
+WARNING: A new Bicep release is available: v0.49.2. Upgrade now by running "az bicep upgrade".
+WARNING: A new Bicep release is available: v0.49.2. Upgrade now by running "az bicep upgrade".
+
+WARNING: A new Bicep release is available: v0.49.2. Upgrade now by running "az bicep upgrade".
+WARNING: A new Bicep release is available: v0.49.2. Upgrade now by running "az bicep upgrade".
+WARNING: A new Bicep release is available: v0.49.2. Upgrade now by running "az bicep upgrade".
+WARNING: A new Bicep release is available: v0.49.2. Upgrade now by running "az bicep upgrade".
+Azure IaC: Bicep compile, lint, and 3 parameter-file builds passed; artifacts are in ignored .expo/implementation/. No Azure login, what-if, or deployment was run.
+(node:12248) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+WARNING: A new Bicep release is available: v0.49.2. Upgrade now by running "az bicep upgrade".
+Azure IaC static policy assertions passed.
+(node:32944) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:32944) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/runtime.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\azure-infra.test.mjs (22648.2405ms)
+(node:27812) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/location-delivery.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS background location authority, freshness, stationary updates, expiry, retry and late callbacks
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\background-location.test.mjs (242.1776ms)
+(node:37460) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/background-permission.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Background permission: explicit foreground prerequisite, denial and provider status passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\background-permission.test.mjs (208.8785ms)
+(node:43020) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/background-location.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS restored native task restarts its foreground service; authority, logout and start failure remain safe
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\background-registration.test.mjs (288.1966ms)
+(node:12240) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/booking.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:12240) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Pending booking recovery checks passed: account isolation, replay identity and authoritative receipt
+Booking authority checks passed: logout, block, role change and deletion during routing, with and without command IDs
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\booking-auth.test.mjs (3613.2782ms)
+(node:49460) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/wire-contracts.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+AssertionError [ERR_ASSERTION]: quote_consumed 409 means "this attempt did not create an order", never "this command does not exist": a first POST it retries may already have committed (Part A proves 409 quote_consumed), and clearing it orphans that order
+
+true !== false
+
+    at file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/tests/booking-retry-race.test.mjs:97:12 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: true,
+  expected: false,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\booking-retry-race.test.mjs (604.721ms)
+(node:11700) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:11700) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+{"category":"http_request_failed","correlationId":"55f63829-0c72-40f8-a6d8-87dc624114e9","httpStatus":503}
+cash: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\cash.test.mjs (5832.423ms)
+(node:35276) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:35276) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Destination changes: consent, assignment rate, atomic cash, retries and stale orders passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\change-destination.test.mjs (4567.0354ms)
+(node:6936) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:6936) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+chat: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\chat.test.mjs (5184.3048ms)
+node:internal/child_process:1120
+    result.error = new ErrnoException(result.error, 'spawnSync ' + options.file);
+                   ^
+
+<ref *1> Error: spawnSync C:\Program Files\nodejs\node.exe ETIMEDOUT
+    at Object.spawnSync (node:internal/child_process:1120:20)
+    at spawnSync (node:child_process:911:24)
+    at execFileSync (node:child_process:954:15)
+    at file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/tests/clean-typecheck.test.mjs:18:3
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  errno: -4039,
+  code: 'ETIMEDOUT',
+  syscall: 'spawnSync C:\\Program Files\\nodejs\\node.exe',
+  path: 'C:\\Program Files\\nodejs\\node.exe',
+  spawnargs: [
+    'C:\\Users\\osama\\OneDrive\\Documents\\ChatGPT\\Fastship\\node_modules\\typescript\\bin\\tsc',
+    '--noEmit',
+    '--project',
+    'C:\\Users\\osama\\OneDrive\\Documents\\ChatGPT\\Fastship\\.expo\\clean-typecheck-epTm1w\\tsconfig.json'
+  ],
+  error: [Circular *1],
+  status: null,
+  signal: 'SIGTERM',
+  output: [ null, null, null ],
+  pid: 9908,
+  stdout: null,
+  stderr: null
+}
+
+Node.js v24.12.0
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\clean-typecheck.test.mjs (60451.3211ms)
+(node:51856) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/domain/client-address.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+client address: the nearest trusted hop keys the limit, not the caller header
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\client-address.test.mjs (201.32ms)
+(node:35536) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/client-diagnostics.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Diagnostic queue TTL/size bounds, restart hydration, safe acknowledgements and sensitive-field rejection passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\client-diagnostics.test.mjs (157.0266ms)
+(node:31276) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+WP01 money: 7 parcel fares, 8 smart fares, 4 commissions and 4 night boundaries passed; parcel/exclusive constraints preserved
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\contracts-money.test.mjs (150.3169ms)
+(node:2376) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:2376) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+{"category":"http_request_failed","correlationId":"0889a2ed-1793-40f9-8b84-46bd0e77c22e","httpStatus":503}
+WP01 contracts: 90 installed + 88 additive endpoint boundaries, 21 transitions, 174 exchanges; schema/auth/return/cash/rating/partner checks passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\contracts.test.mjs (7218.8083ms)
+(node:7948) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:7948) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+courier-block: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\courier-block.test.mjs (2509.5499ms)
+(node:51140) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:51140) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+credit: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\credit.test.mjs (3048.5211ms)
+(node:15788) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Cross-process claims: 100 contenders/one winner; exclusive and mixed-mode races safe; parcel batching preserved across two HTTP servers
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\cross-process-claims.test.mjs (9458.3546ms)
+(node:3276) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/customer-location.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Customer pickup location: Tulkarm selection, freshness, accuracy, bounds, timeout and cancellation passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\customer-location.test.mjs (185.9928ms)
+(node:53308) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53308) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Customer rating checks passed: drivers rate once, see the record from 3 ratings, customers never see it.
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\customer-rating.test.mjs (2778.1578ms)
+(node:27756) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\node_modules\pg-pool\index.js:45
+    Error.captureStackTrace(err)
+          ^
+
+Error: connect ECONNREFUSED 127.0.0.1:55473
+    at C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Persistence.exec (file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts:187:24)
+    at async file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts:265:11
+    at async file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts:85:20
+    at async file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/tests/database-logging.test.mjs:21:3 {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 55473
+}
+
+Node.js v24.12.0
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\database-logging.test.mjs (154.713ms)
+(node:1568) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\node_modules\pg-pool\index.js:45
+    Error.captureStackTrace(err)
+          ^
+
+Error: connect ECONNREFUSED 127.0.0.1:55473
+    at C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Persistence.query (file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts:141:22)
+    at async Persistence.run (file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts:159:22)
+    at async file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/tests/db-api.test.mjs:10:1 {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 55473
+}
+
+Node.js v24.12.0
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\db-api.test.mjs (154.7525ms)
+(node:4420) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:4420) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\node_modules\pg-pool\index.js:45
+    Error.captureStackTrace(err)
+          ^
+
+Error: connect ECONNREFUSED 127.0.0.1:55473
+    at C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Persistence.query (file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts:141:22)
+    at async Persistence.run (file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts:159:22)
+    at async file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/tests/db-persistence.test.mjs:10:1 {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 55473
+}
+
+Node.js v24.12.0
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\db-persistence.test.mjs (145.0101ms)
+Dependency compatibility checks passed: native project IDs
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\dependencies.test.mjs (120.9863ms)
+Γ£ö Expo deepmerge and its browser bundle keep attacker keys out of result prototypes (11.2602ms)
+Γ£ö patched deepmerge preserves arrays, symbols, clones and custom merge compatibility (1.2349ms)
+Γ£ö Expo build tools resolve patched Zod 4 and reject oversized bounded arrays before walking items (3.6233ms)
+Γ£ö node-forge stays on the 1.4.0 base and guards nested DigestAlgorithm children (47.7863ms)
+Γ£ö patched Forge still verifies a valid Node RSA/SHA-256 signature and rejects a changed message (37.9512ms)
+Deployment probe: healthy fixture and eight stale, unsafe or unavailable deployment failures passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\deployment-probe.test.mjs (2082.9576ms)
+(node:36284) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Deployment checks passed: production gates, verified operator bootstrap/deletion, closed signup/legacy sessions, durable throttle restart, crash rollback/integrity and graceful acknowledged drain
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\deployment.test.mjs (14084.0301ms)
+(node:26088) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/domain/dispatch.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+WP10 dispatch-ranking: formula, 60s idle cap, stable tiebreak, rating excluded passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\dispatch-ranking.test.mjs (204.3349ms)
+(node:22620) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/driver-command.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Driver command process replacement, exact replay, proof-once receipts, assignment fences and session invalidation passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\driver-command.test.mjs (178.0672ms)
+(node:37488) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:37488) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Driver destination checks passed: jobs and alerts follow the heading for 3 hours; clearing and expiry restore all jobs.
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\driver-destination.test.mjs (2603.1701ms)
+(node:35392) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/copy.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Driver presence card copy and rule checks passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\driver-presence-card.test.mjs (184.643ms)
+WP07 presence runtime: cold-launch cleanup, account binding, secure envelope and logout passed
+(node:24292) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/driver-presence-runtime.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\driver-presence-runtime.test.mjs (172.8033ms)
+(node:51564) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/driver-presence.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+WP07 presence controller: explicit consent, durable command replay, restart, cadence, stale fixes and revoke races passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\driver-presence.test.mjs (141.3096ms)
+(node:8524) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:8524) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Driver receipt privacy, legacy compatibility, exact replay, expiry and reassignment API fences passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\driver-recovery-api.test.mjs (2059.7963ms)
+(node:32612) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:32612) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Driver scope checks passed: no-vehicle drivers get no jobs; customer id stays with the order parties.
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\driver-scope.test.mjs (2363.0401ms)
+(node:43140) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:43140) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Driver signup alert checks passed: admins (only) hear about drivers waiting for approval.
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\driver-signup-alert.test.mjs (2181.2497ms)
+(node:31588) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:31588) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+{"category":"email_provider_failed","httpStatus":403}
+{"category":"email_provider_failed","httpStatus":403}
+Email checks passed: sign-up code, verify, cooldown, wrong tries, provider failure, reset without account discovery, support identity check, address change
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\email.test.mjs (6179.0831ms)
+(node:29928) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/domain/entra.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:29928) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+{"category":"http_request_failed","correlationId":"315720cc-7a49-4411-b285-b7b205a11c54","httpStatus":503}
+Entra exchange: account linking, contact proof, and email-based registration passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\entra-exchange.test.mjs (4404.7827ms)
+(node:44656) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/entra-result.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS Entra cancellation and state mismatch handling
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\entra-result.test.mjs (555.2459ms)
+(node:14288) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/domain/entra.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+entra.test.mjs passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\entra.test.mjs (173.1457ms)
+(node:24016) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:24016) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+exceptions: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\exceptions.test.mjs (5154.7379ms)
+(node:39824) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Pickup sheet: fresh fix, visible camera agreement, gesture/close cancellation, failure/retry and saved-pin preservation passed
+Native pin cameras: Android bridge updates without echo, Apple/Google late centers and old-event guards passed
+Google web lifecycle: tile deadline/retry, detached DOM cleanup, latest center/geometry and denied map-mode storage passed
+Web markers: stale rebuild opacity and frame-rate independent heading completion passed
+Map controls: named/reachable 44px buttons, English/Arabic placement, reduced motion and configured deadlines passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\google-map-lifecycle.test.mjs (1454.7691ms)
+(node:14548) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/google-maps-loader.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+google-maps-loader: ok (concurrency, timeout/retry, network failure, callback and reuse)
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\google-maps-loader.test.mjs (139.585ms)
+(node:1380) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/domain/google-routing.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+google routing tests passed: validation, fixed origin, typed redacted errors, budgets and no-retry degradation
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\google-routing.test.mjs (503.6013ms)
+(node:39884) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+job alert migration: ok
+(node:39884) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\job-alert-migration.test.mjs (2639.2868ms)
+(node:20648) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:20648) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Driver job pages: six pages, scheduled boundary, filters, legacy shape and invalid cursors passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\jobs-pagination.test.mjs (7764.9107ms)
+(node:35488) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/domain/journey.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Journey ETA validity, monotonic deadlines, safe money and per-verb failure projections passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\journey-contracts.test.mjs (178.9476ms)
+(node:11868) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/location-permission-timeout.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS bounded web location permission, timeout and failure
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\location-permission-timeout.test.mjs (122.7505ms)
+(node:24096) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/location-web-clock.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS web location monotonic pacing and clock rollback
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\location-web-clock.test.mjs (108.9383ms)
+(node:37972) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:37972) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Map cache: cold bytes, 24h freshness, warm 304, legacy compatibility, content changes and Brotli passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\map-cache.test.mjs (1041.8204ms)
+(node:13236) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/runtime-config.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Effective map provider fallback/exhaustion, public scope, route provenance and attempt isolation passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\map-policy.test.mjs (168.0529ms)
+Map fragment security: real parser/SVG/CSS reject color injection and preserve valid palette colors
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\map-security.test.mjs (93.042ms)
+(node:40232) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:40232) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+map: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\map.test.mjs (10314.7082ms)
+(node:9712) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Model checks passed
+Run sheet checks passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\model.test.mjs (180.5672ms)
+(node:21420) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:21420) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Driver offers checks passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\offers.test.mjs (4314.5649ms)
+(node:43436) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:43436) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/domain/opencode.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+OpenCode: Node startup, SQLite SQL, admin-only access, input validation and child-spawn failure passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\opencode.test.mjs (3312.1584ms)
+(node:24632) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:24632) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/tests/support/api.mjs:18
+    } catch (cause) { throw new Error(`Test request failed: ${path}`, { cause }); }
+                            ^
+
+Error: Test request failed: /orders
+    at call (file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/tests/support/api.mjs:18:29)
+    at async file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/tests/parcels.test.mjs:100:16 {
+  [cause]: TypeError: fetch failed
+      at node:internal/deps/undici/undici:15845:13
+      at async call (file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/tests/support/api.mjs:13:13)
+      at async file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/tests/parcels.test.mjs:100:16 {
+    [cause]: Error: read ECONNRESET
+        at TCP.onStreamRead (node:internal/stream_base_commons:216:20) {
+      errno: -4077,
+      code: 'ECONNRESET',
+      syscall: 'read'
+    }
+  }
+}
+
+Node.js v24.12.0
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\parcels.test.mjs (9952.1296ms)
+phone-acs.test.mjs passed
+(node:49732) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/domain/phone-provider.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\phone-acs.test.mjs (118.4468ms)
+Phone build boundaries passed: isolated role IDs, loopback-only Debug policy, embedded bundle and intact Release guards; Google opt-in fails early without a restricted platform key and never leaks key strings into public config
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\phone-test-build.test.mjs (221.7809ms)
+(node:44688) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:44688) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Phone sandbox restoration passed: password/reset, role/block/contact edits, deletion/re-registration, stable IDs, history and session revocation
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\phone-test-state.test.mjs (3213.2985ms)
+(node:43336) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/phone-test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Phone test guards passed: isolated API, synthetic credentials, distinct role apps and production/EAS rejection
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\phone-test.test.mjs (163.7898ms)
+(node:9420) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/phone/flow.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Phone UI rules passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\phone-ui.test.mjs (230.964ms)
+(node:35328) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:35328) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+pickup: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\pickup.test.mjs (3896.1898ms)
+(node:17620) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Place search: corpus, Arabic/English matching, empty/offline/outside feedback and pin safety passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\place-search.test.mjs (158.2592ms)
+(node:20444) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:20444) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+places: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\places.test.mjs (2375.0319ms)
+(node:44444) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/booking.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Booking recovery and location freshness checks passed
+RTL row check passed
+Status perspective and safety default checks passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\presentation.test.mjs (226.8452ms)
+(node:46108) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:46108) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+promo: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\promo.test.mjs (3237.5191ms)
+(node:34464) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/protected-recovery.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Protected recovery encryption, process replacement, session isolation, TTL, logout races, size bounds and minimal offline fields passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\protected-recovery.test.mjs (167.4817ms)
+(node:52844) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:52844) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+push server: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\push-server.test.mjs (6450.0783ms)
+(node:26804) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/push.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+push crypto: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\push.test.mjs (140.1149ms)
+Quality review: complete-list cache replacement, readonly offline AR/EN, expiry, actor isolation and admin recovery serialization passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\quality-recovery.test.mjs (921.9574ms)
+(node:43708) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:43708) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Recipient checks passed: optional normalized recipient, parties only, hidden on cards and tracking, cleared on deletion.
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\recipient.test.mjs (2538.1673ms)
+(node:1312) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1312) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+referral: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\referral.test.mjs (5669.3186ms)
+(node:34916) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:34916) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+Self-service checks passed: schema-1 upgrade, immediate email/phone login, truthfully unverified identities, pending-driver safety, admin edit/approve/block/delete, session revocation and order integrity
+Future verification gate passed: closed unproven signup, unverified login blocked, real phone proof or permanent approval allowed, legacy admin preserved
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\registration.test.mjs (9259.1978ms)
+(node:13408) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:13408) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+review fixes: discount restored on release; party phones expire with the contact window
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\review-fixes.test.mjs (2319.5589ms)
+(node:40816) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/runtime-config.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Road focus: stable Google URLs, foreground movement baselines, pending responses and background mounts passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\road-focus.test.mjs (858.0323ms)
+(node:53188) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53188) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+roads: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\roads.test.mjs (3163.6938ms)
+(node:52320) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:52320) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+route quality tests passed: slow checkpoint changes route choice and ETA
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\route-quality.test.mjs (2000.4302ms)
+(node:11824) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:11824) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+route: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\route.test.mjs (4365.3605ms)
+(node:50644) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/domain/routing-policy.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+routing policy tests passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\routing-policy.test.mjs (92.9249ms)
+(node:45548) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/runtime-config.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Runtime configuration bounds, expiry, authority separation and capability migration gaps passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\runtime-config.test.mjs (166.4566ms)
+Packaged API boots with locked pg dependencies outside the developer checkout
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\runtime-dependencies.test.mjs (4236.6985ms)
+(node:31496) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:31496) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+safety: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\safety.test.mjs (2928.4765ms)
+(node:47492) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:47492) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+schedule: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\schedule.test.mjs (2292.2673ms)
+(node:10980) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:10980) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Wind API: production database has no users yet. If this is not a first boot, check that the persistent volume is mounted at DB_PATH.
+session-idle.test.mjs passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\session-idle.test.mjs (1591.3515ms)
+(node:12796) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/model.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:12796) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+share: ok
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\share.test.mjs (2763.1155ms)
+(node:21900) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:21900) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+PASS SQLite disabled-service visibility and location revocation/assignment races
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\sqlite-review.test.mjs (2485.6893ms)
+(node:10908) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\node_modules\pg-pool\index.js:45
+    Error.captureStackTrace(err)
+          ^
+
+Error: connect ECONNREFUSED 127.0.0.1:55473
+    at C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Persistence.exec (file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts:187:24)
+    at async file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts:265:11
+    at async file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/persistence.ts:85:20
+    at async initializePostgres (file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/db/postgres-schema.ts:14:3)
+    at async freshPostgres (file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/tests/pg-support.mjs:14:5)
+    at async file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/tests/subscription-migration.test.mjs:56:24 {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 55473
+}
+
+Node.js v24.12.0
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\subscription-migration.test.mjs (1652.6002ms)
+(node:17748) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17748) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+unblock: refuses while a parcel is in custody, accepts with recovery, pending still approves
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\unblock-custody.test.mjs (1923.9852ms)
+Patched URL decoder: CommonJS compatibility, Arabic/query arrays and bounded malformed input passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\url-decoder.test.mjs (580.9415ms)
+(node:10060) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:10060) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/server/main.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+Vehicle migration checks passed: v2 constraint upgrade preserves user, session, order and GPS references.
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\vehicle-migration.test.mjs (1960.0283ms)
+(node:1516) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/osama/OneDrive/Documents/ChatGPT/Fastship/src/wire-contracts.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Wire enum, amount, lease, proof, schema-version and actual fetch-boundary validation passed
+Γ£ö C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\wire-contracts.test.mjs (280.7828ms)
+Γä╣ tests 103
+Γä╣ suites 0
+Γä╣ pass 96
+Γä╣ fail 7
+Γä╣ cancelled 0
+Γä╣ skipped 0
+Γä╣ todo 0
+Γä╣ duration_ms 60842.9563
+
+Γ£û failing tests:
+
+test at tests\booking-retry-race.test.mjs:1:1
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\booking-retry-race.test.mjs (604.721ms)
+  'test failed'
+
+test at tests\clean-typecheck.test.mjs:1:1
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\clean-typecheck.test.mjs (60451.3211ms)
+  'test failed'
+
+test at tests\database-logging.test.mjs:1:1
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\database-logging.test.mjs (154.713ms)
+  'test failed'
+
+test at tests\db-api.test.mjs:1:1
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\db-api.test.mjs (154.7525ms)
+  'test failed'
+
+test at tests\db-persistence.test.mjs:1:1
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\db-persistence.test.mjs (145.0101ms)
+  'test failed'
+
+test at tests\parcels.test.mjs:1:1
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\parcels.test.mjs (9952.1296ms)
+  'test failed'
+
+test at tests\subscription-migration.test.mjs:1:1
+Γ£û C:\Users\osama\OneDrive\Documents\ChatGPT\Fastship\tests\subscription-migration.test.mjs (1652.6002ms)
+  'test failed'

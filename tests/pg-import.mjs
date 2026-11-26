@@ -71,6 +71,16 @@ try {
   assert.equal(report.ok,true,JSON.stringify(report.errors));
   assert.ok(report.rounding.some(r=>r.column==='price'));
   assert.equal(report.reconciliation.mismatches.length,0);
+  // Only the trigger-derived orders.version is left out of row comparison; any other imported column still reconciles exactly.
+  const rollback=new Error('reconcile probe rollback');
+  await assert.rejects(database.atomic({purpose:'test'},async()=>{
+    await database.run('UPDATE orders SET version=version+5 WHERE id=?',order);
+    assert.equal((await reconcile(snapshot,database)).mismatches.length,0,'a derived orders.version drift is not legacy content');
+    await database.run("UPDATE users SET name=name||'-drift' WHERE id=?",driver);
+    assert.deepEqual((await reconcile(snapshot,database)).mismatches.map(m=>[m.table,m.reason]),[['users','row/multiplicity differs']],
+      'every other legacy column still reconciles exactly');
+    throw rollback;
+  }),error=>error===rollback);
   assert.ok(report.reconciliation.tables.every(t=>t.sourceRows>0),'every legacy table has nonempty import evidence');
   const redemptions=report.reconciliation.tables.find(t=>t.table==='promo_redemptions');
   assert.deepEqual(redemptions.keyColumns,['order_id'],'PK-less table uses its non-null unique natural key');
@@ -155,6 +165,13 @@ try {
       const response=await fetch(`${api.base}${path}`,{headers:{Authorization:`Bearer ${token}`}});
       assert.equal(response.status,path==='/subscriptions'?404:200,`${path}: ${await response.clone().text()}`);
       responses.push(compareResponse(await response.json()));
+    }
+    if (path === '/me') {
+      assert.equal(responses[0].capabilities.declaredScope, undefined, 'legacy SQLite does not advertise the PG scope extension');
+      for (const response of responses.slice(1)) {
+        assert.equal(response.capabilities.declaredScope, true, 'imported PG schema advertises its verified additive scope support');
+        delete response.capabilities.declaredScope;
+      }
     }
     assert.deepEqual(responses[1],responses[0],`${path}: imported role serialization`);
     assert.deepEqual(responses[2],responses[0],`${path}: restored role serialization`);

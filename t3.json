@@ -1,0 +1,10 @@
+{
+  "$schema": "https://t3.codes/schema/t3.json",
+  "scripts": [
+    {
+      "name": "Test in Docker Sandbox",
+      "command": "powershell.exe -NoProfile -Command \"& ([IO.Path]::Combine([Environment]::GetFolderPath('UserProfile'), '.docker-sandbox', 'test-cloud.ps1')) -ProjectRoot (Get-Location).Path\"",
+      "icon": "test"
+    }
+  ]
+}

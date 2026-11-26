@@ -125,8 +125,12 @@ try {
   await pay.createCod(customer, order.id, {beneficiary:'merchant',goodsMinor:1000,remittanceDueAt:Date.now()+10000});
   assert.equal((await pay.collectCod(driver,order.id,{amountMinor:400})).status,'partial');
   await assert.rejects(pay.collectCod(driver,order.id,{amountMinor:601}), e => e.status === 400);
-  assert.equal((await pay.collectCod(driver,order.id,{amountMinor:600})).status,'collected');
-  assert.equal((await pay.remitCod(admin,order.id,{payoutRef:'synthetic'})).status,'remitted');
+  const finalCollect = randomUUID(), finalRemit = randomUUID();
+  assert.equal((await pay.collectCod(driver,order.id,{amountMinor:600,requestId:finalCollect})).status,'collected');
+  assert.equal((await pay.collectCod(driver,order.id,{amountMinor:600,requestId:finalCollect})).status,'collected', 'a lost final collection response replays once');
+  await assert.rejects(pay.collectCod(driver,order.id,{amountMinor:500,requestId:finalCollect}), e => e.status === 409 && e.message === 'idempotency_conflict');
+  assert.equal((await pay.remitCod(admin,order.id,{payoutRef:'synthetic',requestId:finalRemit})).status,'remitted');
+  assert.equal((await pay.remitCod(admin,order.id,{payoutRef:'synthetic',requestId:finalRemit})).status,'remitted', 'a lost final remittance response replays once');
   assert.deepEqual(await f.db.one('SELECT price_minor,commission_minor FROM orders WHERE id=?', order.id), original);
   assert.deepEqual(await f.db.one('SELECT count(*) AS n FROM ledger_journals'), ledger);
   await assert.rejects(f.db.run('DELETE FROM payment_events WHERE id=?::uuid', dup.event.id));
@@ -190,10 +194,47 @@ try {
   await pay.createCod(admin, disputeOrder.id, { beneficiary: 'Synthetic merchant', goodsMinor: 500, remittanceDueAt: Date.now() + 86_400_000 });
   await pay.collectCod(driver, disputeOrder.id, { amountMinor: 200 }); // collected, then disputed by the merchant
   await assert.rejects(pay.resolveCod(admin, disputeOrder.id, { decision: 'returned', reason: 'nope' }), e => e.status === 400);
+  await assert.rejects(pay.resolveCod(admin, disputeOrder.id, { decision: 'returned', reason: 'Goods returned but cash still outstanding' }), e => e.status === 409 && e.message === 'cod_outstanding');
+  assert.equal(Number((await pay.remitCod(admin, disputeOrder.id, { payoutRef: 'PO-dispute' })).remitted_minor), 200);
   const closed = await pay.resolveCod(admin, disputeOrder.id, { decision: 'returned', reason: 'Merchant took the goods back at the office' });
   assert.equal(closed.status, 'returned');
+  const resolutionAudit = await f.db.one("SELECT detail FROM security_events WHERE order_id=? AND action='COD_RETURNED'", disputeOrder.id);
+  assert.equal(JSON.parse(resolutionAudit.detail).reason, 'Merchant took the goods back at the office', 'the required finance reason survives the decision');
   await assert.rejects(pay.collectCod(driver, disputeOrder.id, { amountMinor: 100 }), e => e.status === 409 && e.message === 'cod_unavailable');
+
+  // A remittance requestId names one payout. Reusing it for a different payout reference is a conflict, and a
+  // genuine replay returns the original payout reference even after later remittances changed the row.
+  const partialCod = async (goodsMinor, collectedMinor) => {
+    const o = await f.book();
+    await f.db.run("UPDATE orders SET driver_id=?,status='completed',completed_at=?,commission=1 WHERE id=?", f.d1.user.id, Date.now(), o.id);
+    await pay.createCod(admin, o.id, { beneficiary: 'Synthetic merchant', goodsMinor, remittanceDueAt: Date.now() + 86_400_000 });
+    await pay.collectCod(driver, o.id, { amountMinor: collectedMinor });
+    return o;
+  };
+  const conflictOrder = await partialCod(900, 300), conflictRequest = randomUUID();
+  const firstPayout = await pay.remitCod(admin, conflictOrder.id, { payoutRef: 'PO-ORIGINAL', requestId: conflictRequest });
+  assert.equal(firstPayout.payout_ref, 'PO-ORIGINAL');
+  const eventsBefore = await f.db.one("SELECT count(*) AS n FROM merchant_cod_events WHERE cod_id=?::uuid AND action='remitted'", firstPayout.id);
+  await assert.rejects(pay.remitCod(admin, conflictOrder.id, { payoutRef: 'PO-CHANGED', requestId: conflictRequest }),
+    e => e.status === 409 && e.message === 'idempotency_conflict', 'a reused remit requestId with a different payoutRef must conflict, not return the row');
+  const afterConflict = await f.db.one('SELECT payout_ref,remitted_minor FROM merchant_cod WHERE id=?::uuid', firstPayout.id);
+  assert.equal(afterConflict.payout_ref, 'PO-ORIGINAL', 'the conflicting retry never rewrites the payout reference');
+  assert.deepEqual(await f.db.one("SELECT count(*) AS n FROM merchant_cod_events WHERE cod_id=?::uuid AND action='remitted'", firstPayout.id), eventsBefore);
+  for (const payoutRef of ['\ud800', 'x'.repeat(201)]) {
+    await assert.rejects(pay.remitCod(admin, conflictOrder.id, { payoutRef, requestId: randomUUID() }),
+      e => e.status === 400 && e.message === 'invalid_input', 'malformed or oversized payout references fail validation, never a database 500');
+  }
+  assert.equal((await f.db.one('SELECT payout_ref FROM merchant_cod WHERE id=?::uuid', firstPayout.id)).payout_ref, 'PO-ORIGINAL');
+
+  const replayOrder = await partialCod(900, 300), replayRequest = randomUUID();
+  assert.equal((await pay.remitCod(admin, replayOrder.id, { payoutRef: 'PO-FIRST', requestId: replayRequest })).payout_ref, 'PO-FIRST');
+  await pay.collectCod(driver, replayOrder.id, { amountMinor: 200 }); // more cash is collected after the first payout
+  const later = await pay.remitCod(admin, replayOrder.id, { payoutRef: 'PO-LATER', requestId: randomUUID() });
+  assert.equal(later.payout_ref, 'PO-LATER'); assert.equal(Number(later.remitted_minor), 500);
+  const replayed = await pay.remitCod(admin, replayOrder.id, { payoutRef: 'PO-FIRST', requestId: replayRequest });
+  assert.equal(replayed.payout_ref, 'PO-FIRST', 'a replayed remit returns its original payout reference, not the latest remittance');
+  assert.equal((await f.db.one('SELECT payout_ref FROM merchant_cod WHERE id=?::uuid', later.id)).payout_ref, 'PO-LATER', 'replay leaves the later remittance in place');
+  assert.equal(Number((await f.db.one('SELECT remitted_minor FROM merchant_cod WHERE id=?::uuid', later.id)).remitted_minor), 500, 'replay moves no money');
 
   console.log('WP14 payments: migration, replay, signatures, inbox ordering, timeout reconciliation, refunds and COD passed');
 } finally { await f.close(); }
-

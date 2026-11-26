@@ -35,6 +35,10 @@ try {
     option: 'small', shared: false, pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599310002', detail: 'Box', quotedPrice: 20 } });
 
   db.prepare("UPDATE orders SET service = 'freight' WHERE id = ?").run(order.id);
+  db.prepare('INSERT INTO order_offers(order_id,driver_id,price,created_at) VALUES(?,?,?,?)').run(order.id, truck.user.id, 20, Date.now());
+  assert.equal((await call(`/orders/${order.id}/offers/${truck.user.id}/accept`, { token: customer.token, body: {}, expect: 409 })).error,
+    'service_unavailable', 'a pre-existing offer cannot reactivate a disabled service');
+  assert.equal(db.prepare('SELECT status FROM orders WHERE id=?').get(order.id).status, 'searching');
   assert.deepEqual(await call('/jobs', { token: truck.token }), []);
   await call(`/orders/${order.id}`, { token: truck.token, expect: 404 });
   db.prepare("UPDATE orders SET driver_id = ?, status = 'assigned' WHERE id = ?").run(truck.user.id, order.id);
@@ -57,7 +61,21 @@ try {
     () => call('/location', { token: login.token, body: { latitude: 31.91, longitude: 35.21 } }));
   assert.equal(afterRelease.accepted, false, 'a fix queued before the last assignment ended is discarded');
   assert.equal(db.prepare('SELECT COUNT(*) n FROM driver_locations WHERE driver_id = ?').get(car.user.id).n, 0);
-  console.log('PASS SQLite disabled-service visibility and location revocation/assignment races');
+
+  const createdVersion = Number(db.prepare('SELECT version FROM orders WHERE id=?').get(order.id).version);
+  db.prepare('UPDATE orders SET pickup_note = pickup_note WHERE id=?').run(order.id);
+  assert.equal(Number(db.prepare('SELECT version FROM orders WHERE id=?').get(order.id).version), createdVersion + 1, 'a bare order update advances recovery');
+  db.prepare('UPDATE orders SET version = 40 WHERE id=?').run(order.id);
+  assert.equal(Number(db.prepare('SELECT version FROM orders WHERE id=?').get(order.id).version), 40, 'an explicit version write is not double-incremented');
+  db.prepare('UPDATE orders SET pickup_note = pickup_note WHERE id=?').run(order.id);
+  assert.equal(Number(db.prepare('SELECT version FROM orders WHERE id=?').get(order.id).version), 41);
+  db.exec('DROP TRIGGER IF EXISTS orders_recovery_revision; ALTER TABLE orders DROP COLUMN version;');
+  const { initializeSqlite } = await import('../server/db/sqlite-schema.ts');
+  initializeSqlite(db); // populated pre-version databases migrate in place and preserve the order
+  assert.equal(Number(db.prepare('SELECT version FROM orders WHERE id=?').get(order.id).version), 1);
+  db.prepare('UPDATE orders SET pickup_note = pickup_note WHERE id=?').run(order.id);
+  assert.equal(Number(db.prepare('SELECT version FROM orders WHERE id=?').get(order.id).version), 2);
+  console.log('PASS SQLite disabled-service visibility, location races and recovery-version migration');
 } finally {
   persistence.run = originalRun;
   await shutdown();

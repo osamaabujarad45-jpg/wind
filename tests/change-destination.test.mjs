@@ -75,14 +75,24 @@ try {
   assert.equal(pending.price, 20);
   assert.equal(pending.destinationChange.price, 34);
   assert.equal((await post(order.id, 'propose', customer.token, { id: requoted.id })).destinationChange.id, requoted.id);
+  // The opt-in recovery version is what a driver's queued command is checked against. An accepted destination
+  // rewrites the agreed drop-off, price and commission, so a command composed before it must see a new version
+  // (SQLite derives it from the action log, which this mutation never wrote to); a refused decision changes nothing.
+  const versionOf = async (token, id = order.id) => (await call(`/orders/${id}?recoveryProtocol=1`, { token })).recovery.version;
+  const beforeDecision = await versionOf(driver.token);
   await post(order.id, 'decision', other.token, { id: requoted.id, decision: 'accept' }, 404);
+  assert.equal(await versionOf(driver.token), beforeDecision, 'a refused destination decision must not advance the recovery version');
   const accepted = await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'accept' });
   assert.equal(accepted.dropoffCity, 'hebron');
   assert.deepEqual(accepted.dropoffPoint, request.point);
   assert.equal(accepted.price, 34);
   assert.equal(accepted.commission, 5.1);
+  const afterAccept = await versionOf(driver.token);
+  assert.ok(afterAccept > beforeDecision, `an accepted destination change must advance the recovery version (was ${beforeDecision}, now ${afterAccept})`);
+  assert.equal(await versionOf(customer.token), afterAccept, 'the customer reads the same version as the driver');
   assert.equal((await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'accept' })).price, 34);
   await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'decline' }, 409);
+  assert.equal(await versionOf(driver.token), afterAccept, 'a refused decision after acceptance must not advance the recovery version');
   for (const status of ['assigned', 'at_pickup', 'in_transit']) {
     const customerOrder = await call(`/orders/${order.id}`, { token: customer.token });
     order = await call(`/orders/${order.id}/advance`, { token: driver.token, body: { expectedStatus: status, requestId: randomUUID(),
@@ -133,6 +143,13 @@ try {
   assert.equal(cheaper.commission, 6);
   await post(discounted.id, 'propose', customer.token, { id: cheaper.id });
   discounted = await post(discounted.id, 'decision', driver.token, { id: cheaper.id, decision: 'accept' });
+  const fare = (await call(`/orders/${discounted.id}?journeyProtocol=1`, { token: customer.token })).journey.lastFareChange;
+  assert.equal(fare.changeId, cheaper.id);
+  assert.deepEqual(fare.after, { grossMinor: 2000, discountMinor: 1900, dueMinor: 100 });
+  assert.equal((await call(`/orders/${discounted.id}?journeyProtocol=1`, { token: driver.token })).journey.lastFareChange.changeId, cheaper.id);
+  assert.equal('journey' in await call(share.path), false, 'public share never exposes fare history');
+  await post(discounted.id, 'decision', driver.token, { id: cheaper.id, decision: 'accept' });
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM security_events WHERE order_id=? AND action='DESTINATION_ACCEPTED'").get(discounted.id).n, 1);
   assert.equal((await call(share.path)).dropoffCity, 'hebron');
   assert.equal((await call(`${share.path}/eta`)).minutes, null); // no fresh fix, so no minutes: never the old route
   for (const status of ['assigned', 'at_pickup', 'in_transit']) {
@@ -147,7 +164,7 @@ try {
 
   // Erasing the customer removes proposal addresses and the original snapshots too.
   await call(`/orders/${next.id}/cancel`, { token: customer.token, body: {} });
-  await call('/me/delete', { token: customer.token, body: {} });
+  await call('/me/delete', { token: customer.token, body: { password: 'secret1' } });
   for (const row of db.prepare('SELECT original, dropoff_note, dropoff_lat, dropoff_lng FROM destination_changes WHERE customer_id = ?').all(customer.user.id)) {
     assert.deepEqual([row.original, row.dropoff_note, row.dropoff_lat, row.dropoff_lng], ['[]', '', null, null]);
   }

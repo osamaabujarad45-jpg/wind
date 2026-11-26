@@ -132,6 +132,8 @@ That is the standard spherical-Mercator resolution formula with three things fix
 
 ## 6. Interaction surface
 
+**The layer model is plugin-style by design, and this is corroborated publicly.** The vendor described the same architecture in 2019 for its driver app: a persistent background map mediated by a **Layer Manager** (each feature registers its own layer; an *exclusive* layer hides the rest; every layer is bound to a RIB interactor so it dies with its feature), a **Padding Provider** (chrome registers as a padding source and the aggregated edge insets are published as an observable), and a **Camera Director** (features register camera rules listing coordinates that must stay visible; one feature at a time may hold exclusive camera control). The artifact shows all three: 488 `MapLayer` implementations, padding-inset fields plus a padding debug view on the map view, and camera listeners with an active-map counter. Public statement and measurement agree, so the layer model is treated as settled rather than inferred from names.
+
 | Capability | Evidence |
 | --- | --- |
 | Tap, double-tap, scale, rotate, **shove** (two-finger pitch) | `MapGestureDetector{Scale,Rotate,Shove,Gesture}Listener`; timeouts `TAP_TIMEOUT`, `DOUBLE_TAP_TIMEOUT`; per-gesture running flags |

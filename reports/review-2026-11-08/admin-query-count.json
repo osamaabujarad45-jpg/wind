@@ -1,0 +1,80 @@
+[
+  {
+    "path": "/admin/stats",
+    "statements": 13,
+    "driverAggregateReads": 0,
+    "returnedRows": null,
+    "pendingDrivers": 201,
+    "groups": [
+      {
+        "sql": "SELECT u.*, s.created_at AS session_created_at, s.last_seen_at AS session_last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?",
+        "count": 2
+      },
+      {
+        "sql": "SELECT COUNT(*) completed, COALESCE(SUM(price), 0) gmv, COALESCE(SUM(commission), 0) commission, COALESCE(SUM(discount), 0) discounts FROM orders WHERE status IN ('completed','returned')",
+        "count": 1
+      },
+      {
+        "sql": "SELECT COUNT(*) count, COALESCE(SUM(price), 0) revenue FROM subscriptions WHERE activated_at IS NOT NULL",
+        "count": 1
+      },
+      {
+        "sql": "SELECT CASE WHEN completed_at < ? THEN 0 WHEN completed_at < ? THEN 1 WHEN completed_at < ? THEN 2 WHEN completed_at < ? THEN 3 WHEN completed_at < ? THEN 4 WHEN completed_at < ? THEN 5 WHEN completed_at < ? THEN 6 WHEN completed_at < ? THEN 7 WHEN completed_at < ? THEN 8 WHEN completed_at < ? THEN 9 WHEN completed_at < ? THEN 10 WHEN completed_at < ? THEN 11 WHEN completed_at < ? THEN 12 ELSE 13 END bucket, COALESCE(SUM(commission), 0) amount FROM orders WHERE status IN ('completed','returned') AND completed_at >= ? AND completed_at < ? GROUP BY bucket",
+        "count": 1
+      },
+      {
+        "sql": "SELECT CASE WHEN activated_at < ? THEN 0 WHEN activated_at < ? THEN 1 WHEN activated_at < ? THEN 2 WHEN activated_at < ? THEN 3 WHEN activated_at < ? THEN 4 WHEN activated_at < ? THEN 5 WHEN activated_at < ? THEN 6 WHEN activated_at < ? THEN 7 WHEN activated_at < ? THEN 8 WHEN activated_at < ? THEN 9 WHEN activated_at < ? THEN 10 WHEN activated_at < ? THEN 11 WHEN activated_at < ? THEN 12 ELSE 13 END bucket, COALESCE(SUM(price), 0) amount FROM subscriptions WHERE activated_at >= ? AND activated_at < ? GROUP BY bucket",
+        "count": 1
+      },
+      {
+        "sql": "SELECT COUNT(*) n FROM subscriptions WHERE status = 'active' AND ends_at > ?",
+        "count": 1
+      },
+      {
+        "sql": "SELECT status, COUNT(*) n FROM orders GROUP BY status",
+        "count": 1
+      },
+      {
+        "sql": "SELECT service, COUNT(*) n FROM orders WHERE status IN ('completed','returned') GROUP BY service",
+        "count": 1
+      },
+      {
+        "sql": "SELECT role, COUNT(*) n FROM users GROUP BY role",
+        "count": 1
+      },
+      {
+        "sql": "SELECT COUNT(*) n FROM users WHERE role = 'driver' AND status = 'pending'",
+        "count": 1
+      },
+      {
+        "sql": "SELECT COUNT(*) n FROM subscriptions WHERE status = 'pending'",
+        "count": 1
+      },
+      {
+        "sql": "SELECT COUNT(*) n FROM safety_incidents WHERE status = 'open'",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "path": "/admin/users?role=driver",
+    "statements": 203,
+    "driverAggregateReads": 200,
+    "returnedRows": 200,
+    "pendingDrivers": null,
+    "groups": [
+      {
+        "sql": "SELECT u.*, s.created_at AS session_created_at, s.last_seen_at AS session_last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?",
+        "count": 2
+      },
+      {
+        "sql": "SELECT * FROM users WHERE (? IS NULL OR role = ?) AND (name LIKE ? OR phone LIKE ? OR email LIKE ?) AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%' ORDER BY status = 'pending' DESC, id DESC LIMIT 200",
+        "count": 1
+      },
+      {
+        "sql": "SELECT AVG(rating) rating, AVG(price_rating) price_rating, COUNT(*) FILTER (WHERE status IN ('completed','returned')) trips FROM orders WHERE driver_id = ?",
+        "count": 200
+      }
+    ]
+  }
+]

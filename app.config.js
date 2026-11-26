@@ -22,7 +22,11 @@ if (testRole) {
   }
   let testUrl;
   try { testUrl = new URL(apiUrl); } catch { /* rejected below */ }
-  if (testUrl?.origin !== 'http://127.0.0.1:4191' || testUrl.pathname !== '/' || testUrl.search || testUrl.hash
+  const testPort = process.env.WIND_PHONE_TEST_PORT ?? '4191';
+  if (!/^\d{1,5}$/.test(testPort) || Number(testPort) < 1024 || Number(testPort) > 65535) {
+    throw new Error('WIND_PHONE_TEST_PORT must be a valid unprivileged TCP port.');
+  }
+  if (testUrl?.origin !== `http://127.0.0.1:${testPort}` || testUrl.pathname !== '/' || testUrl.search || testUrl.hash
     || testUrl.username || testUrl.password || !/^05[69]\d{7}$/.test(process.env.WIND_TEST_IDENTIFIER ?? '')
     || (process.env.WIND_TEST_PASSWORD ?? '').length < 24) {
     throw new Error('Phone tests require the isolated loopback API and provisioned synthetic credentials.');

@@ -275,14 +275,3 @@ export async function createQuoteRecord(db: Persistence, input: QuoteInput, feas
   );
   return row;
 }
-
-export async function fetchQuote(db: Persistence, quoteId: string): Promise<Row | undefined> {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(quoteId)) return undefined;
-  return db.one('SELECT * FROM quotes WHERE id=?::uuid', quoteId);
-}
-
-export async function consumeQuote(db: Persistence, quoteId: string, orderId: number): Promise<void> {
-  const now = Date.now();
-  const result = await db.run('UPDATE quotes SET consumed_at=?, consumed_order_id=? WHERE id=?::uuid AND consumed_at IS NULL', now, orderId, quoteId);
-  if (!result.changes) throw new Error('quote already consumed');
-}

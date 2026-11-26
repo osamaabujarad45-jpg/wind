@@ -44,11 +44,16 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
-      - run: npm audit --audit-level=high
+      - run: npm run check:audit
+      # Never bake an empty API origin into a release bundle: fail the gate instead.
+      - name: Require the release API URL repository variable
+        run: test -n "$EXPO_PUBLIC_API_URL"
+        env:
+          EXPO_PUBLIC_API_URL: ${{ vars.WIND_API_URL }}
       - name: Export release bundles for Android, iOS and web
         run: npx expo export --platform all --output-dir .expo/ci-release
         env:
-          EXPO_PUBLIC_API_URL: https://windapi236.swedencentral.cloudapp.azure.com
+          EXPO_PUBLIC_API_URL: ${{ vars.WIND_API_URL }}
           WIND_RELEASE: '1'
           WIND_LOCAL_TEST: '0'
           NODE_ENV: production

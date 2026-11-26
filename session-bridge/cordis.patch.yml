@@ -1,0 +1,7 @@
+- insert:
+    - id: fastship-session-bridge
+      name: '@local/fastship-session-bridge/v2'
+      config: {}
+    - id: fastship-helper-steer-once
+      name: '@local/fastship-session-bridge/steer-once'
+      config: {}

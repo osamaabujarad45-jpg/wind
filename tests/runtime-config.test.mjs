@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import { configureRuntime, effectiveRuntime, resetRuntime, runtimeValues } from '../src/runtime-config.ts';
+import { capabilityState, clientConfiguration } from '../server/domain/runtime-readiness.ts';
+const now = Date.now(), config = clientConfiguration({}, now);
+assert.equal(configureRuntime(config, now).values.orderRefreshMs, 4000);
+assert.throws(() => runtimeValues({ enabledServices: ['ride'] }), /invalid_runtime_configuration/);
+for (const value of [0, 999, 30001, '4000', NaN]) assert.throws(() => runtimeValues({ orderRefreshMs: value }));
+assert.throws(() => configureRuntime({ ...config, schemaVersion: 2 }, now));
+assert.throws(() => configureRuntime({ ...config, expiresAt: now }, now));
+assert.throws(() => configureRuntime({ ...config, issuedAt: now + 6000 }, now));
+assert.throws(() => configureRuntime({ ...config, mapProviders: { ...config.mapProviders, initialMapProvider: 'invented' } }, now));
+assert.equal(effectiveRuntime(config.expiresAt).revision, 'defaults');
+configureRuntime(config, now); resetRuntime(); assert.equal(effectiveRuntime(now).revision, 'defaults');
+const full = Array.from({ length: 26 }, (_, i) => i + 3).filter(v => v !== 24);
+assert.equal(capabilityState(full).freightCrew.schemaCompatible, true);
+assert.equal(capabilityState(full.filter(v => v !== 28)).freightCrew.state, 'unavailable');
+assert.equal(capabilityState(full.filter(v => v !== 15)).freightCrew.state, 'unavailable');
+assert.equal(capabilityState(full).dispatch.state, 'disabled');
+assert.equal(capabilityState(full).boarding.state, 'disabled');
+assert.equal(capabilityState(full, {}, false).durableCommands.state, 'unavailable');
+assert.equal(capabilityState(full).payments.operationalEvidence, 'not_checked');
+assert.equal(clientConfiguration({}, now).revision, clientConfiguration({}, now + 1000).revision);
+// A Google-first map choice must still name a baseline renderer to fall back to. Without one, a Google outage leaves no map.
+// missingProviderDefault is set to 'baseline' so the only reason for refusal is the missing fallback.
+const googleFirst = fallbackMapProviders => ({ ...config, mapProviders: { initialMapProvider: 'google', fallbackMapProviders, missingProviderDefault: 'baseline' } });
+assert.throws(() => configureRuntime(googleFirst([]), now), /invalid_runtime_configuration/, 'google-first with no fallback is refused');
+assert.throws(() => configureRuntime(googleFirst(['google']), now), /invalid_runtime_configuration/, 'google-first with a Google-only fallback is refused');
+assert.equal(configureRuntime(googleFirst(['baseline']), now).mapProviders.initialMapProvider, 'google', 'google-first with a baseline fallback stays valid');
+resetRuntime();
+const serverGoogleFirst = fallbackMapProviders => JSON.stringify({ mapProviders: { initialMapProvider: 'google', fallbackMapProviders, missingProviderDefault: 'baseline' } });
+assert.throws(() => clientConfiguration({ WIND_CLIENT_CONFIGURATION: serverGoogleFirst([]) }, now), /invalid_runtime_configuration/, 'the server never publishes a google-first configuration without baseline');
+assert.equal(clientConfiguration({ WIND_CLIENT_CONFIGURATION: serverGoogleFirst(['baseline']) }, now).mapProviders.initialMapProvider, 'google');
+console.log('Runtime configuration bounds, expiry, authority separation, capability migration and google-first baseline fallback passed');

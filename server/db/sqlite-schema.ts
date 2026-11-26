@@ -130,13 +130,17 @@ CREATE TRIGGER IF NOT EXISTS cash_entries_no_edit BEFORE UPDATE ON cash_entries
   BEGIN SELECT RAISE(ABORT, 'cash ledger is append-only'); END;
 `);
 // Additive columns only, without a user_version bump, so the previous build can still open this database.
-for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER'], ['route_km', 'REAL'], ['customer_rating', 'INTEGER'], ['recipient_name', 'TEXT'], ['recipient_phone', 'TEXT'], ['assigned_at', 'INTEGER'], ['picked_up_at', 'INTEGER'], ['commission_rate', 'REAL']]) {
+for (const [column, type] of [['pickup_contact', 'TEXT'], ['return_code', 'TEXT'], ['exception_reason', 'TEXT'], ['share_token_hash', 'TEXT'], ['share_created_at', 'INTEGER'], ['scheduled_for', 'INTEGER'], ['discount', 'REAL'], ['job_alerted_at', 'INTEGER'], ['dropoff_lat', 'REAL'], ['dropoff_lng', 'REAL'], ['recommended_price', 'REAL'], ['price_rating', 'INTEGER'], ['route_km', 'REAL'], ['customer_rating', 'INTEGER'], ['recipient_name', 'TEXT'], ['recipient_phone', 'TEXT'], ['assigned_at', 'INTEGER'], ['picked_up_at', 'INTEGER'], ['commission_rate', 'REAL'], ['version', 'INTEGER NOT NULL DEFAULT 1']]) {
   if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === column)) {
     db.exec(`ALTER TABLE orders ADD COLUMN ${column} ${type}`);
     // Scheduled orders already visible to drivers before release alerts existed must not all alert at once on upgrade.
     if (column === 'job_alerted_at') db.prepare('UPDATE orders SET job_alerted_at = ? WHERE scheduled_for IS NOT NULL AND scheduled_for <= ?').run(Date.now(), Date.now() + 30 * 60_000);
   }
 }
+// Every committed order mutation advances the snapshot version; command receipts alone never do.
+db.exec(`CREATE TRIGGER IF NOT EXISTS orders_recovery_revision AFTER UPDATE ON orders
+  WHEN NEW.version = OLD.version
+  BEGIN UPDATE orders SET version = OLD.version + 1 WHERE id = NEW.id; END;`);
 // Covering indexes: driver and customer stats run on every driver request, so they read the index, never the rows.
 // A table older than the rating column (it only ever lived in development) keeps the plain indexes.
 if ((db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === 'rating'))
@@ -198,6 +202,18 @@ CREATE TABLE IF NOT EXISTS quotes (
   feasibility TEXT NOT NULL CHECK (feasibility IN ('feasible','infeasible','uncertain')), reasons TEXT NOT NULL, disclosures TEXT NOT NULL, lines TEXT NOT NULL,
   itinerary_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, consumed_at INTEGER, consumed_order_id INTEGER REFERENCES orders(id));
 `);
+  // Optional local operator history must not change the installed delivery schema.
+  if (process.env.WIND_OPENCODE_ENABLED === '1' && process.env.NODE_ENV !== 'production') db.exec(`CREATE TABLE IF NOT EXISTS opencode_jobs (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued','running','completed','failed')),
+    provider_job_id TEXT,
+    result TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );`);
 db.exec('PRAGMA user_version = 2; COMMIT');
 } catch (error) { db.exec('ROLLBACK'); throw error; }
 

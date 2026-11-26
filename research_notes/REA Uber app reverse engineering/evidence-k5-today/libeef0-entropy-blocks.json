@@ -1,0 +1,64 @@
+{
+ "lib": "libeef0.so",
+ "bytes": 1104560,
+ "block_size": 4096,
+ "blocks_examined": 269,
+ "highest": [
+  {
+   "offset": 1085440,
+   "entropy": 7.111
+  },
+  {
+   "offset": 970752,
+   "entropy": 6.731
+  },
+  {
+   "offset": 1007616,
+   "entropy": 6.673
+  },
+  {
+   "offset": 610304,
+   "entropy": 6.645
+  },
+  {
+   "offset": 585728,
+   "entropy": 6.635
+  },
+  {
+   "offset": 888832,
+   "entropy": 6.634
+  },
+  {
+   "offset": 618496,
+   "entropy": 6.626
+  },
+  {
+   "offset": 598016,
+   "entropy": 6.616
+  },
+  {
+   "offset": 602112,
+   "entropy": 6.613
+  },
+  {
+   "offset": 733184,
+   "entropy": 6.613
+  }
+ ],
+ "lowest": [
+  {
+   "offset": 1036288,
+   "entropy": -0.0
+  },
+  {
+   "offset": 1040384,
+   "entropy": -0.0
+  },
+  {
+   "offset": 1044480,
+   "entropy": -0.0
+  }
+ ],
+ "text_section_entropy": 5.713,
+ "reading": "no large high-entropy region: the highest 4 KiB block is 7.11 bits/byte at offset 1085440, the rest of the image stays in compiled-code range, so the library does not carry a stored encrypted code body"
+}

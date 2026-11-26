@@ -1,0 +1,153 @@
+
+> wind@1.0.0 test:persistence
+> node scripts/check-persistence.mjs
+
+PG journey offer, PIN privacy/rotation/revision, verification, waiting and rolling migration passed
+sqlite: overlapping ownership, rollback, commit/error effects, detached scope passed
+postgres: overlapping ownership, rollback, commit/error effects, detached scope passed
+postgres: actual deadlock/stable-command retry, replay opt-in, migration lock, connection loss/recovery, PostGIS4326 passed
+postgres: bounded pool acquisition, statement timeout, lock timeout and recovery passed
+WP02 real database boundary checks passed; synthetic schema retained: wp02_boundary_01f08771600048e086beaccb2a914630
+{"category":"http_request_failed","correlationId":"12279574-11ac-4eb6-8412-74601c7c1697","httpStatus":503}
+{"category":"http_request_failed","correlationId":"58f34dad-c1bb-40e5-8c1b-51448bd45d60","httpStatus":503}
+{"category":"http_request_failed","correlationId":"880e64f5-e3e0-42ed-90e1-f89865168648","httpStatus":503}
+{"category":"http_request_failed","correlationId":"eb7acc37-4e8b-468b-9c50-591abb8d0f96","httpStatus":503}
+{"category":"http_request_failed","correlationId":"20e8ccda-d71f-43ec-a7ec-49c8d7de539d","httpStatus":503}
+WP02 real PG HTTP slice passed: health, readiness, register, login, me, failed-login throttles, logout; schema wp02_api_8123651ca5c34305a3655456264d1923
+{"category":"http_request_failed","sqlstate":"P0001","correlationId":"e0763245-d3de-4faf-b462-81e15f6289b1","httpStatus":500}
+PG HTTP dialect: casefold email, nullable role, scalar/aggregate MIN, camelCase referral alias, numeric cash/aggregates, revision/epoch/minor units passed
+sqlite: request aggregate reuse, write/begin/rollback invalidation, owner isolation passed
+postgres: request aggregate reuse, write/begin/rollback invalidation, owner isolation passed
+{"category":"http_request_failed","correlationId":"645cfb4a-6541-4d8d-9bad-868648bf6183","httpStatus":503}
+WP03 PostgreSQL frozen contracts: 90 installed + 88 additive endpoint boundaries, 21 transitions, 174 exchanges; schema/auth/return/cash/rating/partner checks passed
+{"suite":"pg-import","schema":"wp03_import_96c1e77a44cf46ce909a9047c7687b2f","restoredDatabase":"wp03_restore_f6938af14d6d4054994d638429dd7490","tables":30,"rows":150,"roundingExceptions":2,"openCustody":2,"snapshot":"C:\\Users\\osama\\AppData\\Local\\Temp\\wind-wp03-import-6KWbfy\\snapshot.sqlite","report":"C:\\Users\\osama\\AppData\\Local\\Temp\\wind-wp03-import-6KWbfy\\report.json","restore":"pg_dump/custom + pg_restore + exact reconciliation + HTTP parity","ok":true}
+PostgreSQL migration rehearsal CLI waits through a concurrent 800 ms advisory lock
+Cross-process claims: 100 contenders/one winner; exclusive/mixed-mode guards; multi-parcel batching and last-of-200 capacity race across two PostgreSQL HTTP servers passed
+cash: ok
+Driver offers checks passed
+PostgreSQL driver job pages: real HTTP, six pages, scheduled boundary, release filter and the concurrent searching cap passed
+Customer rating checks passed: drivers rate once, see the record from 3 ratings, customers never see it.
+{"category":"email_provider_failed","httpStatus":403}
+{"category":"email_provider_failed","httpStatus":403}
+Email checks passed: sign-up code, verify, cooldown, wrong tries, provider failure, reset without account discovery, support identity check, address change
+Database error logging retains SQLSTATE and excludes message, detail, phone, PIN, password hash and bearer token
+Cross-process claims: 100 contenders/one winner; exclusive and mixed-mode races safe; parcel batching preserved across two HTTP servers
+Packaged API boots with locked pg dependencies outside the developer checkout
+WP04 commands: real two-process conflict, replay/version/proof-once, ACL/cursor/privacy, atomic failure, aborted upload passed
+WP04 SQLite: explicit unavailable durable protocol, unchanged installed requestId replay and no fabricated outbox passed
+{"category":"http_request_failed","sqlstate":"P0001","correlationId":"3ea45d67-dffb-4f88-bd7a-18d114d34e68","httpStatus":500}
+{"category":"http_request_failed","sqlstate":"P0001","correlationId":"73c1bbd4-0ce8-41a2-8003-c44021df9d91","httpStatus":500}
+WP04 events: after-legacy-COMMIT release/admin/cron failure atomicity, cash replay, actor isolation/rollback, actual WebPush success/503 review/410 invalidation, logout/account-switch revocation, poisoned row passed
+WP04 outbox: killed mutator after commit, publish-before-ack kill, two worker processes, expiry, dedupe/reorder, poison/review, backlog/restart, stale authority, graceful drain passed
+WP05 coverage: empty legal seeds, guards, invalid polygons, exact boundary, directed route, full corridor, permit and revision gates passed
+WP05 capacity: two-process final-weight race, all planned stops, shared vehicle crossmode, fixed-axis packing/volume/equipment/windows/seats, suspension and audited custody return passed
+WP05 eligibility: separate approval/documents, latest invalid/expired evidence, no scan ingestion, missing measurements, vehicle edit fences and legacy ten-minute offers, SQLite fail-closed passed
+WP05 legacy: unknown load inspection gate, custody/proof/cash preserved, in-place measured overload, shared vehicle accounting, expiry and audited same-order return passed
+PASS unfinished overdue load blocks insertion and retains custody
+PASS missing approach travel cannot satisfy a pickup window
+PASS permit negative blocks other subject approval (true)
+PASS permit negative blocks other subject approval (false)
+PASS SQL fabricated zero load cannot authorize measured assignment
+PASS active physical certificate rejects direct mutation and deletion
+PASS security migration gates measured and phone capabilities
+PASS opt-in immutable scope reads, privacy, required and stale consent
+PASS negotiated offers require current measured consent without refreshing on mismatch
+PASS approach duration, append-only refresh, freshness and revision binding
+PASS active-run approach starts at last dropoff and spans prior work plus all service
+PASS wrong physical vehicle evidence and expired/superseded vehicle permit cannot approve
+PASS direct SQL rejects weight
+PASS direct SQL rejects volume
+PASS direct SQL rejects fixed width
+PASS direct SQL rejects longitudinal slices
+PASS direct SQL rejects equipment
+PASS direct SQL rejects seats
+PASS direct SQL rejects piece limit
+PASS direct SQL rejects numeric overflow
+PASS direct SQL rejects canonical item totals
+PASS direct SQL aggregate shared resources and cross-mode cannot bypass guards
+PASS direct SQL canonical control succeeds while concurrent shared final-capacity claim has one winner
+WP05 review regressions: 23 scenarios passed
+{"category":"http_request_failed","correlationId":"c015e2b6-0671-4d64-9e71-4bcd70d77c6f","httpStatus":500}
+PG live map: paused COMMIT keeps waiter held; rollback discards GPS/wake; committed GPS wakes with the new pin
+WP06 identity: exact aliases/context, collision review/no merge, installed login/password, two-API command/proof replay, wrong purpose/5-lock/expiry, reviewed change and session revocation passed
+WP06 limits:45s cooldown, rolling phone/device3per15m and10/day, generic public existence/cooldown/budget states, IP review without NATblock, two-API final provider budget race passed
+WP06 recovery: generic public challenge, device binding, two-API one-use reset/replay, all-session revocation, retained password login, unknown/wrong/locked public guesses invoke0KDFs and valid proof1KDF, key rotation rejects old proof/replay without new challenge/send/budget passed
+WP06 authority: logout during OAuth/no-send budget release, role/phone changes during SMS, unknown outcome/no resend, late out-of-order proof, phone/code/secret journal/log/client exclusion passed
+WP06 crash: killed API after prepared/before SMS, restart explicitunknown, one retained budget reservation, replay never resends or claims accepted passed
+Review security: atomic global public admission and bounded over-cap writes passed
+Review security: send lease margin and late callback fence passed
+WP08 upgrade: real migration 7->8 scrubs old fast hashes, retains receipts, gates capabilities, and remains idempotent
+WP07 migration: v8 upgrade, idempotence, empty defaults, owner binding and revocation cascades passed
+WP07 presence: consent, two-API idempotence, device fencing, heartbeat lease/sequence, freshness, rate/outlier recovery, offline and logout revocation passed
+WP07 presence: rejected legacy-custody request commits inspection flag and audit without changing custody
+WP07 presence client/API: real lost-ack replay, separate location storage, heartbeat, offline and logout fencing passed
+Active GPS CAS, replay, assignment set, device, legacy exclusion and logout passed
+Γ£ô quote creation with versions and minor units
+Γ£ô booking with valid quote
+Γ£ô replay returns committed order
+Γ£ô expired quote rejected
+Γ£ô fresh quote after expiry succeeds
+Γ£ô itinerary change rejected
+Γ£ô quote-bound cannot supply total
+Γ£ô tariff change: quote immutable, legacy price_changed
+Γ£ô legacy quotedPrice still works
+Γ£ô promo last-budget race handled
+Γ£ô night flag present
+delay before 0 after 15 slow ["Test Checkpoint"] closed []
+Γ£ô checkpoint delay not double counted
+all quotes tests passed
+Γ£ô provider unavailable => uncertain, booking allowed
+inserted restriction count 1
+Γ£ô road restriction blocks
+Γ£ô road restriction blocks and unblocks correctly
+Γ£ô same-city and rural pin handled
+Γ£ô stale/conflicting => uncertain
+all quotes-routing tests passed
+WP09 native-push: validation, session binding, refresh/reassign/unregister, logout/password/delete/admin/phone cascades, native-only job, rollback, delivery hints, prefs/quiet/disabled, invalid/DeviceNotRegistered, transient/review, not-configured, expired-offer/epoch, crash recovery, poison passed
+WP09 realtime-auth: participant/admin matrix, 5-minute expiry, tamper, revoked session/driver/share during held credential, gap snapshot-resync with sequence/epoch/serverTime, fake-hub gate, long-poll fallback passed
+WP10 dispatch-migration: version 13, tables, partial unique indexes, nonce-hash-only and import allowlist passed
+WP10 dispatch: creation fail-closed, retry, ranked sequential offers, decline->next, atomic accept, exhaustion and no-supply passed
+WP10 dispatch: release re-dispatch excluding the releaser and cancel revocation passed
+WP10 dispatch-races: 100-driver single winner, command replay, vehicle-edit fence passed
+WP10 dispatch-races: parcel custody blocks ride, shared vehicle single winner passed
+WP10 dispatch-races: expiry/cancel vs accept single winner, worker restart, deadline exhaustion passed
+WP11 ride-lifecycle: migration 14, GPS arrival, grace clock, boarding attempts and duplicate advance/completion passed
+WP11 ride-lifecycle: far/stale/missing fix rejection and audited operator override passed
+WP11 ride-lifecycle: five-miss boarding lock and audited recovery passed
+WP11 ride-lifecycle: release/reassignment custody and stale-epoch start rejection passed
+WP11 ride-lifecycle: legacy PG advance/release flow unchanged without the test gate passed
+WP11 ride-lifecycle-races: start vs release single winner passed
+WP11 ride-lifecycle-races: complete vs safety-hold single winner passed
+WP11 ride-lifecycle-races: duplicate return confirmation and custody cancellation passed
+WP12 resource-scope: migration 15, validation, merchant replay, quote/booking scope passed
+WP12 resource-scope: planned-load reservation, precedence, append-only custody passed
+WP12 resource-scope: mismatch pause, no-fee invariant, approve/support/inspect resolutions passed
+WP12 resource-scope: freight equipment/crew mismatch and negotiated acceptance passed
+WP12 resource-scope: browsing-driver scope is active, vehicle-bound, release-aware and redacted
+WP12 private-objects: authorization matrix, checksum/scan states, expiring reads, custody invariant passed
+WP12 private-objects: unconfigured backend returns objects_unavailable everywhere
+WP13 ledger: migration, balance constraints, replay, import reconciliation, receipts and cap passed
+WP14 payments: migration, replay, signatures, inbox ordering, timeout reconciliation, refunds and COD passed
+WP15 ops: migration, scoping, audit, roles, approvals and finance checks passed
+PASS PostgreSQL legacy chat; chat: ok
+PASS PostgreSQL legacy pickup; pickup: ok
+PASS PostgreSQL legacy safety; safety: ok
+PASS PostgreSQL legacy places; places: ok
+PASS PostgreSQL legacy recipient; Recipient checks passed: optional normalized recipient, parties only, hidden on cards and tracking, cleared on deletion.
+PASS PostgreSQL legacy driver-scope; Driver scope checks passed: no-vehicle drivers get no jobs; customer id stays with the order parties.
+PASS PostgreSQL legacy driver-destination; Driver destination checks passed: jobs and alerts follow the heading for 3 hours; clearing and expiry restore all jobs.
+PASS PostgreSQL legacy promo; promo: ok
+PASS PostgreSQL legacy courier-block; courier-block: ok
+PASS PostgreSQL legacy exceptions; exceptions: ok
+PASS PostgreSQL legacy share; share: ok
+PASS PostgreSQL legacy schedule; schedule: ok
+PASS PostgreSQL legacy roads; roads: ok
+PASS PostgreSQL legacy route; route: ok
+PASS PostgreSQL legacy booking-auth; Booking authority checks passed: logout, block, role change and deletion during routing, with and without command IDs
+PASS PostgreSQL legacy driver-signup-alert; Driver signup alert checks passed: admins (only) hear about drivers waiting for approval.
+PASS PostgreSQL legacy push-server; push server: ok
+PASS PostgreSQL legacy credit; credit: ok
+PASS PostgreSQL legacy referral; referral: ok
+PASS PostgreSQL legacy parcels; parcels: ok
+PASS PostgreSQL legacy map; map: ok
+PASS PostgreSQL legacy change-destination; Destination changes: consent, assignment rate, atomic cash, retries and stale orders passed

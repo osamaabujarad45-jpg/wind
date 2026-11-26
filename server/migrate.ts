@@ -14,12 +14,22 @@ const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 // WP08 operational tables are PostgreSQL-only: quotes are 120s-ephemeral and road
 // restrictions/policy move only via the operator policy exchange, never snapshot import.
 export const NON_LEGACY_TABLES = new Set(['quotes', 'road_restrictions', 'road_restriction_policy', 'destination_changes', 'dispatch_rounds', 'dispatch_offers', 'assignment_history', 'ride_lifecycle', 'ride_boarding_attempts', 'order_declared_scope', 'custody_records', 'order_scope_checks', 'private_objects', 'private_object_reads', 'ledger_accounts', 'ledger_journals', 'ledger_entries', 'cash_receipts', 'cash_receipt_events','payment_intents','payment_attempts','payment_events','refunds','merchant_cod','merchant_cod_events','support_cases','support_case_events','staff_actions','financial_approvals']);
+// Optional operator CLI history is outside the delivery-data migration contract.
+// It stays in the source snapshot; the PostgreSQL API keeps this feature gated.
+NON_LEGACY_TABLES.add('opencode_jobs');
 // SQLite-only columns carried by the live schema but absent from the Postgres
 // snapshot. They stay in the source; the import does not invent a target column.
 // T33: PostgreSQL orders carry the commission-rate snapshot, so the import populates it instead of skipping it.
 const SQLITE_ONLY_COLUMNS = new Set<string>([]);
 const importColumns = (table: Table) => table.columns.filter(c => !SQLITE_ONLY_COLUMNS.has(c.name));
 const stable = (value: Row) => JSON.stringify(Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])));
+// orders.version is a recovery revision advanced by trigger on both engines, not legacy content. Only that column is left
+// out of row-content comparison; row identity (keyOf) and every other table still compare every imported column.
+const DERIVED_COLUMNS: Record<string, readonly string[]> = { orders: ['version'] };
+const content = (table: Table, row: Row) => {
+  const derived = DERIVED_COLUMNS[table.name];
+  return stable(derived ? Object.fromEntries(Object.entries(row).filter(([column]) => !derived.includes(column))) : row);
+};
 const keyOf = (table: Table, row: Row) => hash(table.keyColumns.length
   ? stable(Object.fromEntries(table.keyColumns.map(column => [column,row[column]]))) : stable(row));
 export const minor = (amount: number | null) => {
@@ -109,7 +119,7 @@ export async function reconcile(snapshot: Snapshot, database: Persistence) {
     const rows = await database.all(`SELECT ${columns.map(c => quote(c.name)).join(',')} FROM ${quote(table.name)}`);
     const group=(values:Row[])=>{
       const grouped=new Map<string,string[]>();
-      for(const row of values){const key=keyOf(table,row);const entries=grouped.get(key)??[];entries.push(stable(row));grouped.set(key,entries);}
+      for(const row of values){const key=keyOf(table,row);const entries=grouped.get(key)??[];entries.push(content(table,row));grouped.set(key,entries);}
       for(const entries of grouped.values())entries.sort();
       return grouped;
     };
@@ -118,8 +128,8 @@ export async function reconcile(snapshot: Snapshot, database: Persistence) {
     for (const key of target.keys()) if (!source.has(key)) mismatches.push({ table: table.name, key, reason: 'unexpected key' });
     tables.push({ table: table.name, keyColumns:table.keyColumns, sourceRows: snapshot.rows[table.name].length, targetRows: rows.length,
       sourceKeys: hash(snapshot.rows[table.name].map(row=>keyOf(table,row)).sort().join('\n')), targetKeys: hash(rows.map(row=>keyOf(table,row)).sort().join('\n')),
-      sourceRowsHash: hash(snapshot.rows[table.name].map(stable).sort().join('\n')),
-      targetRowsHash: hash(rows.map(stable).sort().join('\n')) });
+      sourceRowsHash: hash(snapshot.rows[table.name].map(row=>content(table,row)).sort().join('\n')),
+      targetRowsHash: hash(rows.map(row=>content(table,row)).sort().join('\n')) });
   }
   const sum = (rows: Row[], column: string, money = false) => rows.reduce((total, row) => total + BigInt(money ? minor(row[column]) ?? 0 : row[column] ?? 0), 0n).toString();
   const orders = snapshot.rows.orders;
