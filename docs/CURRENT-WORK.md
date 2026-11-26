@@ -5,7 +5,7 @@
 - PR #121, which keeps local alerts until the server really sends push, was deployed as release `20261126212854`, from master `816d3e17`. Claude Opus 5.5 led; GPT 6.2 Sol ran the deployment.
 - Production now has `WIND_EXPO_PUSH_ENABLED=1`.
 - APK 1.1.6 versionCode 44 (EAS `fa71b101`) carries Firebase and is published on the install page.
-- On the physical A53 with Wind fully closed, a real order's four status pushes and a captain's new-job push arrived (runbook step 6 passed). The QA test accounts are blocked (since the trip); the `Wind QA operator` admin is the working admin login.
+- On the physical A53 with Wind fully closed, a real order's four status pushes and a captain's new-job push arrived (runbook step 6 passed). The QA test accounts were blocked right after the trip; the `Wind QA operator` admin is the working admin login.
 
 Details, rollback and limits are in [the runbook](operations/deploy.md) (Firebase, "State on 26 November"). Next:
 1. Verify email, then turn on Firebase password reset (delegated to GPT 6.2 Sol on 27 November).

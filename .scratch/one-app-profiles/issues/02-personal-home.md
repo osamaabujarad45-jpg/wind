@@ -1,7 +1,8 @@
 # F1 · Personal home and Orders
 
 Status: ready-for-agent
-Blocked by: 01 (overridden 27 Nov: built in parallel; F0 before-numbers are taken on APK 1.1.6 vc44 before F1 reaches the phone)
+Blocked by: 01
+Override: the owner asked to proceed without waiting, so this is built alongside ticket 01; ticket 01's before-numbers are taken on the current release before this reaches the phone.
 Risk: Low
 Design: [docs/design/FLOWS-2026-11-26-one-app-profiles.md](../../../docs/design/FLOWS-2026-11-26-one-app-profiles.md) §9
 

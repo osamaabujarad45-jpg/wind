@@ -136,7 +136,7 @@ If acceptance fails, turn the production switch off with the runbook's rollback.
 
 - Design authority: [one-app flows and profiles](design/FLOWS-2026-11-26-one-app-profiles.md), merged from independent Claude Opus 5.5 and GPT 6.2 Sol studies. Clickable sketch (private to the owner): <https://claude.ai/artifact/M7zMDXwXBp7g7uk51wKs8C>.
 - Tickets F0–F11: `.scratch/one-app-profiles/issues/`, in build order, with `Blocked by:` lines.
-- Order (design §11): F0 baseline runs with §2 on the same phone and builds. Then F1 home and F2 map host. Then F3 → F4 → F5 for profiles, with F3 landing alone. Run this plan's §3 language review after F1, F4 and F5 change the screens. Then F6–F9, §4 push and F10. §5 cutover stays separate.
+- Order (design §11): F0 baseline runs with §2 on the same phone and builds. Then F1 home and F2 map host. Then F3 → F4 → F5 for profiles, with F3 landing alone. Run this plan's §3 language review after F1, F4 and F5 change the screens. Then F6–F9, §4 push and F10. §5 cutover stays separate. (Order overridden by the owner: F1 is built alongside F0; see CURRENT-WORK.)
 - F3–F11 change auth, session, persistence, orders or money and need two independent reviewers; F0–F2 need one.
 
 **Acceptance:** each slice's A53 acceptance in design §9, with before/after measurements under design §7.
