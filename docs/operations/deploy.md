@@ -284,10 +284,9 @@ The backend stays on the VM. Firebase only sends closed-app alerts and password-
   - The test customer `Push Test (Wind QA)` (user 5) allowed notifications, and its Android token registered.
   - A push sent from the production host through Expo got the receipt `ok`, arrived with Wind in the background, and opened the Support screen.
   - The app's own support-reply path was not exercised, because the stored admin sign-in for the host was rejected.
-- **Step 6 is only partly evidenced.** The proof was a manually sent push with the app in the background, not a job or status event with the app closed. The APK was published under the owner's explicit instruction of 26 November to complete the Firebase rollout, because background delivery is proven and the server's sending path is covered by CI. A two-role trip on the A53 closes step 6: job and status events with the app closed. If those pushes do not arrive, turn push off as above; phones bring their local alerts back within 10 minutes.
+- **Step 6 is only partly evidenced.** The proof was a manually sent push with the app in the background, not a job or status event with the app closed. The APK was published under the owner's explicit instruction of 26 November to complete the Firebase rollout, because one manually sent push arrived with the app in the background and the server's sending path is covered by CI. A two-role trip on the A53 closes step 6: job and status events with the app closed. If those pushes do not arrive, turn push off as above; phones bring their local alerts back within 10 minutes.
 - Still off:
   - Password reset email: no Firebase reset keys are on the host. Verify email first (design §0 item 6 and §10).
-  - iPhone push: APNs is not configured, so iPhones keep local alerts.
 - The new service-account and API keys for `wind-development` are kept outside the repository in the operator's private store.
 - Native push is Android only. The server tells iPhones `delivering: false`, so they keep their local alerts.
 

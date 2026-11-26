@@ -1,6 +1,6 @@
 # CURRENT WORK — read me first
 
-**26 November, late · Push live on Android.**
+**26 November, late · Push switched on for Android (closed-app delivery still being verified).**
 - PR #120, the other session's recovery, tracking and runtime-security work, was deployed as release `20261126200823`.
 - PR #121, which keeps local alerts until the server really sends push, was deployed as release `20261126212854`, from master `816d3e17`. Claude Opus 5.5 led; GPT 6.2 Sol ran the deployment.
 - Production now has `WIND_EXPO_PUSH_ENABLED=1`.
