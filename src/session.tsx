@@ -227,6 +227,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     // T37: a relaunch into an existing session re-authorizes this device's push destination against the
     // current session (registering is idempotent; failures keep the polling fallback).
     void registerNativePush(language, askAtSignIn ? 'always' : false);
+    // A server that turns push delivery on or off reaches a running phone within 10 minutes or at its next foreground.
+    let pushCheckedAt = Date.now();
     // Updater form: a reply landing after sign-out must not bring the session back.
     const quiet = () => {
       const revision = apiSessionRevision();
@@ -240,8 +242,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       }).catch(() => {});
     };
     quiet();
-    const timer = setInterval(quiet, 60_000);
-    const sub = AppState.addEventListener('change', state => { if (state === 'active') quiet(); });
+    const timer = setInterval(() => {
+      quiet();
+      if (Date.now() - pushCheckedAt >= 10 * 60_000) { pushCheckedAt = Date.now(); void registerNativePush(language, false); }
+    }, 60_000);
+    const sub = AppState.addEventListener('change', state => {
+      if (state !== 'active') return;
+      quiet();
+      pushCheckedAt = Date.now();
+      void registerNativePush(language, false);
+    });
     return () => { stopDiagnostics(); clearInterval(timer); sub.remove(); };
   }, [signedIn, language, askAtSignIn]);
 

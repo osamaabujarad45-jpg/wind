@@ -24,7 +24,7 @@ const modules = {
   './api-client': `export const apiSessionCredential = () => null;`,
   './api': `const fake = globalThis.__nativePushSessionTest;
     export const apiSessionRevision = () => fake.revision;
-    export const api = async path => { fake.calls.push([fake.revision, path]); return { delivering: fake.delivering }; };
+    export const api = async path => { fake.calls.push([fake.revision, path]); if (fake.hold) await fake.hold.promise; return { delivering: fake.delivering }; };
     export const storage = {
       get: async key => {
         if (key !== 'pushAsked') return null;
@@ -58,16 +58,29 @@ try {
   assert.equal(fake.prompts, 0, 'sign-out during the read prevents the old system dialog');
   assert.deepEqual(fake.writes, [], 'the old session cannot spend the device-wide prompt');
   const { nativePushRegistered } = await import(new URL('../src/push-state.ts', import.meta.url).href);
-  assert.equal(await registerNativePush('en', 'once'), true, 'the new session can still request permission');
-  assert.equal(nativePushRegistered(), false, 'a server with push off leaves local alerts on');
+  assert.equal(await registerNativePush('en', 'once'), false, 'registered, but a server with push off does not count as alerts reaching the phone');
+  assert.equal(fake.prompts, 1, 'the new session could still request permission');
+  assert.equal(nativePushRegistered(fake.revision), false, 'a server with push off leaves local alerts on');
   assert.equal(await registerNativePush('en', 'once'), false, 'the automatic prompt is used once');
-  assert.equal(fake.prompts, 1);
   assert.deepEqual(fake.calls, [[2, '/push/native/register']]);
   // Once permission is granted, a server that delivers push takes over from the local alerts.
   fake.delivering = true;
   fake.granted = true;
   assert.equal(await registerNativePush('en'), true);
-  assert.equal(nativePushRegistered(), true, 'a server that sends push mutes the local alerts');
+  assert.equal(nativePushRegistered(fake.revision), true, 'a server that sends push mutes the local alerts');
+  // A sign-out, a server-ended session or another account starts a new API session: the mute does not carry over.
+  fake.revision++;
+  assert.equal(nativePushRegistered(fake.revision), false, 'a new session starts with local alerts on');
+  // A registration reply that lands after the session changed never mutes anything.
+  fake.hold = Promise.withResolvers();
+  const late = registerNativePush('en');
+  while (fake.calls.length < 3) await new Promise(resolve => setTimeout(resolve, 0));
+  const before = fake.revision;
+  fake.revision++;
+  fake.hold.resolve();
+  assert.equal(await late, false, 'the late reply is dropped');
+  assert.equal(nativePushRegistered(before), false, 'the old session was not muted by the late reply');
+  assert.equal(nativePushRegistered(fake.revision), false, 'nor was the new one');
 } finally {
   hooks.deregister();
   delete globalThis.__nativePushSessionTest;

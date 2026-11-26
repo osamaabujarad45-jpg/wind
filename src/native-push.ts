@@ -106,7 +106,8 @@ if (Platform.OS !== 'web') {
 // Keyed by API session, so one account's ask does not use up the next account's (Sol ops review 21 Nov).
 let askedInSession: number | null = null;
 // Each request belongs to the session that made it: one queued before a sign-out neither asks nor registers for the next account
-// (Sol full review 21 Nov, item 8). Resolves true once this device is registered for that session.
+// (Sol full review 21 Nov, item 8). Resolves true once this device is registered for that session and the server delivers push,
+// so the Account row only says alerts reach this device when they can (Haiku PR #121 review).
 let running: Promise<unknown> = Promise.resolve();
 export function registerNativePush(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap' = false): Promise<boolean> {
   if (Platform.OS === 'web') return Promise.resolve(false);
@@ -141,10 +142,13 @@ async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap
     }
     if (!isCurrentSession()) return false;
     const result = await api<{ delivering?: boolean } | undefined>('/push/native/register', { expoPushToken, deviceId, platform: Platform.OS, lang });
-    // Local alerts go quiet only when the server says it really sends push; a registered token on a server with push off
-    // would otherwise leave the phone with no alert at all (local-alert.ts).
-    setNativePushRegistered(result?.delivering === true);
-    return true;
+    // A reply that lands after sign-out or an account change must not mute the next session.
+    if (!isCurrentSession()) return false;
+    // Local alerts go quiet only while the server says push delivery is switched on; with it off a registered token would
+    // otherwise leave the phone with no alert at all (local-alert.ts). The switch is configuration, not proof of arrival:
+    // docs/operations/deploy.md turns it on only after a test push reaches a release build.
+    setNativePushRegistered(result?.delivering === true ? session : null);
+    return result?.delivering === true;
   } catch { return false; /* polling fallback remains authoritative */ }
 }
 
@@ -161,7 +165,7 @@ export async function nativePushState(): Promise<'on' | 'off' | 'denied' | 'unsu
 export async function unregisterNativePush(): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
-    setNativePushRegistered(false);
+    setNativePushRegistered(null);
     const deviceId = await storage.get('pushDeviceId');
     if (deviceId) await api('/push/native/unregister', { deviceId });
   } catch { /* server token expires with the session regardless */ }
