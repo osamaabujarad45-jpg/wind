@@ -8,9 +8,11 @@ import ts from 'typescript';
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const source = ts.transpileModule(read('src/use-second-tick.ts'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 
+// Hooks are slots in call order. Effects run after the render returns (as React runs them after commit),
+// and an unmount runs the last cleanup.
 function harness() {
   const slots = [], timers = new Map();
-  let cursor = 0, nextId = 1, clock = 1_000, cleanup = null;
+  let cursor = 0, nextId = 1, clock = 1_000, cleanup = null, pending = null;
   const react = {
     useState(initial) {
       const index = cursor++;
@@ -19,7 +21,7 @@ function harness() {
     },
     useEffect(run, deps) {
       const index = cursor++, previous = slots[index];
-      if (!previous || deps.some((dep, i) => !Object.is(dep, previous[i]))) { cleanup?.(); slots[index] = deps; cleanup = run() ?? null; }
+      if (!previous || deps.some((dep, i) => !Object.is(dep, previous[i]))) { slots[index] = deps; pending = run; }
     },
   };
   const add = (kind, fn, ms) => { const id = nextId++; timers.set(id, { kind, fn, ms }); return id; };
@@ -33,28 +35,43 @@ function harness() {
   runInNewContext(source, sandbox);
   const { useSecondTick } = sandbox.module.exports;
   return {
-    render: active => { cursor = 0; return useSecondTick(active); },
+    render(active) {
+      cursor = 0; const value = useSecondTick(active);
+      if (pending) { cleanup?.(); cleanup = pending() ?? null; pending = null; }
+      return value;
+    },
+    unmount() { cleanup?.(); cleanup = null; },
     timers, advance(ms) { clock += ms; },
-    fire(kind) { for (const timer of [...timers.values()]) if (timer.kind === kind) timer.fn(); },
+    fire(kind) { for (const [id, timer] of [...timers]) if (timer.kind === kind) { if (kind === 'timeout') timers.delete(id); timer.fn(); } },
   };
 }
 
 const h = harness();
-assert.equal(h.render(false), 1_000, 'starts at the current time');
+assert.deepEqual({ ...h.render(false) }, { now: 1_000, current: false }, 'starts at the current time, not current while idle');
 assert.equal(h.timers.size, 0, 'no timer runs while nothing counts down');
-h.advance(5_000);
-assert.equal(h.render(false), 1_000, 'an idle screen does not re-read the clock');
+h.advance(40 * 60_000);
+assert.equal(h.render(false).now, 1_000, 'an idle screen does not re-read the clock');
+const first = h.render(true);
+assert.equal(first.current, false, 'the first render after an offer appears is not current: the idle value is never trusted');
+assert.deepEqual([...h.timers.values()].map(t => [t.kind, t.ms]).sort(), [['interval', 1000], ['timeout', 0]], 'one immediate refresh and a 1 s tick');
 h.render(true);
-assert.deepEqual([...h.timers.values()].map(t => [t.kind, t.ms]).sort(), [['interval', 1000], ['timeout', 0]], 'an offer starts one immediate refresh and a 1 s tick');
+assert.equal(h.timers.size, 2, 'a repeat render adds no timers');
 h.fire('timeout');
-assert.equal(h.render(true), 6_000, 'the stale idle value is replaced as soon as the tick turns on');
+assert.deepEqual({ ...h.render(true) }, { now: 2_401_000, current: true }, 'the first tick brings the real time');
 h.advance(1_000); h.fire('interval');
-assert.equal(h.render(true), 7_000, 'ticks every second while active');
-h.render(false);
-assert.equal(h.timers.size, 0, 'losing focus or the last offer stops every timer');
+assert.equal(h.render(true).now, 2_402_000, 'ticks every second while active');
+assert.equal(h.render(false).current, false, 'losing focus or the last offer makes it not current');
+assert.equal(h.timers.size, 0, 'and stops every timer');
+h.advance(60_000);
+assert.equal(h.render(true).current, false, 'reactivating does not trust the value from before');
+h.unmount();
+assert.equal(h.timers.size, 0, 'unmounting stops every timer');
 
-// The screen wires it to focus and visible offers, and keeps no timer of its own.
+// The screen wires it to focus and visible offers, gates the countdown and both answers on `current`, and runs no clock of its own.
 const screen = read('src/app/driver/index.tsx');
-assert.ok(/const now = useSecondTick\(focused && !!jobs\?\.some\(job => job\.dispatch\)\);/.test(screen), 'driver clock gated on focus and offers');
-assert.ok(!/setInterval|setNow/.test(screen), 'the driver screen runs no clock of its own');
-console.log('second tick: idle screens run no timer; offers tick each second and refresh immediately');
+assert.match(screen, /useSecondTick\(\s*focused\b[^)]*\.dispatch\?\.myOffer/, 'clock gated on focus and an offer with a countdown');
+assert.match(screen, /myOffer && !clock\.current \? c\.accept_wait_status/, 'accept waits for a current clock');
+assert.match(screen, /myOffer && clock\.current && <OfferClock/, 'no countdown is shown or announced from a stale clock');
+assert.match(screen, /c\.dispatchDecline[^\n]*!clock\.current/, 'decline waits for a current clock');
+assert.doesNotMatch(screen, /setInterval\(/, 'the driver screen runs no clock of its own');
+console.log('second tick: idle screens run no timer; offers tick each second and never use a stale clock');
