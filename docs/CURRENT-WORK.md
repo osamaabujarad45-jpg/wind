@@ -5,11 +5,11 @@
 - PR #121, which keeps local alerts until the server really sends push, was deployed as release `20261126212854`, from master `816d3e17`. Claude Opus 5.5 led; GPT 6.2 Sol ran the deployment.
 - Production now has `WIND_EXPO_PUSH_ENABLED=1`.
 - APK 1.1.6 versionCode 44 (EAS `fa71b101`) carries Firebase and is published on the install page.
-- On the physical A53 with Wind fully closed, a real order's four status pushes and a captain's new-job push arrived (runbook step 6 passed). The QA test accounts were blocked after the trip; the `Wind QA operator` admin is the working admin login.
+- On the physical A53 with Wind fully closed, a real order's four status pushes and a captain's new-job push arrived (runbook step 6 passed). The QA test accounts are blocked (since the trip); the `Wind QA operator` admin is the working admin login.
 
 Details, rollback and limits are in [the runbook](operations/deploy.md) (Firebase, "State on 26 November"). Next:
 1. Verify email, then turn on Firebase password reset (delegated to GPT 6.2 Sol on 27 November).
-2. Design slices F0 (baseline measurements on the A53) and F1. F1 is client-only, so GPT 6.2 Sol is building it in parallel with F0 (delegated 27 November).
+2. Slices F0 (baseline measurements on the A53) and F1. On 27 November the owner told the lead to proceed without waiting, so F1 (client-only) is being built by GPT 6.2 Sol while F0 runs. This overrides the F0-then-F1 order in plan §8 and ticket 02's Blocked-by line. F0's "before" numbers are taken on the current release (APK 1.1.6 vc44) before F1 reaches the phone, so F1 still gets before/after evidence.
 3. The remaining push states in continuation plan §4. The design slices are §8 of [the continuation plan](PLAN-2026-11-26-CONTINUE.md).
 
 **26 November · Product flows.** The owner asked for one simple app across rides, sending and shop orders, with Facebook-style profile switching. The design, combining two independent studies, is [one-app flows and profiles](design/FLOWS-2026-11-26-one-app-profiles.md): one sign-in with Personal, Captain and Shop profiles; server-enforced switch rules; Ride · Send · Shop above one input; one map host for speed. Slices F0–F11 are tickets in `.scratch/one-app-profiles/issues/` and are placed in [the continuation plan](PLAN-2026-11-26-CONTINUE.md) §8. Design only; no application code changed.

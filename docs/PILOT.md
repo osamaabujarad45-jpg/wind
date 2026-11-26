@@ -72,7 +72,7 @@ order arrive right and on time? What confused you? Would you use it again?
 
 ## Known limits of this pilot
 
-- **Notifications with the app closed work on Android from app 1.1.6 (versionCode 44)**, since 26 November (checked on the test A53
+- **Notifications with the app closed work on Android from app 1.1.6 (versionCode 44)**, since 26 November (checked on the owner's test Android phone
   with real jobs and status changes). iPhones and older Android builds alert only while the app is open: ask those drivers to update
   from the install page or keep the jobs screen open, and report any alert that did not arrive.
 - Phone numbers are not verified by SMS at signup. Only invite people you know.

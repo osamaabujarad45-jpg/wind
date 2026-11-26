@@ -285,12 +285,12 @@ The backend stays on the VM. Firebase only sends closed-app alerts and password-
   - A push sent from the production host through Expo got the receipt `ok`, arrived with Wind in the background, and opened the Support screen.
   - **Step 6 passed at 22:27–22:30 UTC.**
     - Customer side: Wind had no running process (`pidof` empty). A real order (order id 4, Tulkarm small parcel) went through accept, arrival, pickup and delivery with the real handover code. All four status pushes arrived ("قبل سائق طلبك…", "وصل السائق…", "طلبك في الطريق…", "تم التوصيل…"), the first while the app was not running.
-    - Captain side: the A53 was then signed in as the QA captain and Wind fully closed. A posted job (id 5) produced "طلب توصيل جديد متاح. افتح ويند لقبوله." within about 12 seconds. The QA captain accepted it, and the customer cancelled about 13 seconds after posting.
+    - Captain side: the A53 was then signed in as the QA captain and Wind fully closed. A posted job (id 5) produced "طلب توصيل جديد متاح. افتح ويند لقبوله." within about 12 seconds. The QA captain accepted it, and the customer then cancelled it.
     - Sign-out removed the customer's token, and the next sign-in registered the captain's.
   - Still open: the app's own support-reply push, which was not exercised.
-- QA accounts, all made with the operator CLI on the host: `server/main.ts enroll <phone> <customer|driver|admin> "<name>" --phone-verified [vehicle]`, with the password piped on stdin and run as the service with `sudo systemd-run --pipe --wait --collect -p User=wind -p EnvironmentFile=/etc/wind-api.env -p Environment=DB_PATH=/data/wind.db -p WorkingDirectory=/opt/windapi /opt/node/bin/node server/main.ts enroll …`. A driver still needs admin approval.
+- QA accounts, all made with the operator CLI on the host: `server/main.ts enroll <phone> <customer|driver|admin> "<name>" --phone-verified [vehicle, drivers only, default car]`, with the password piped on stdin and run as the service with `sudo systemd-run --pipe --wait --collect -p User=wind -p EnvironmentFile=/etc/wind-api.env -p 'Environment=NODE_ENV=production DB_PATH=/data/wind.db' -p WorkingDirectory=/opt/windapi /opt/node/bin/node server/main.ts enroll …`. A driver still needs admin approval.
   - `Wind QA operator` (admin, user 6) stays active as the working admin login. The older stored admin credential was rejected on 26 November.
-  - `Wind QA captain` (user 7) and `Push Test (Wind QA)` (user 5) were blocked after the trip; blocking removed their push tokens.
+  - `Wind QA captain` (user 7) and `Push Test (Wind QA)` (user 5) are blocked (since the trip); blocking removed their push tokens.
   - Order 4 left the usual ₪3 commission on the QA captain's cash ledger.
   - The credentials are in the operator's private store.
 - The APK was published under the owner's explicit instruction of 26 November, shortly before step 6 passed.
