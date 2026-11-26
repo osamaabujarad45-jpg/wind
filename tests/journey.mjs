@@ -20,6 +20,12 @@ try {
   await acceptOffer(f,order.id,who.driver,offer);
   const get=token=>f.call(`/orders/${order.id}?journeyProtocol=1&recoveryProtocol=1`,{token});
   const customer=await get(f.customer.token), challenge=customer.journey.boarding;
+  for (const journey of ['', '&journeyProtocol=1']) {
+    const snapshot=await f.call(`/orders/${order.id}?protocol=1&recoveryProtocol=1${journey}`,{token:who.driver.token});
+    assert.equal(snapshot.recovery.version,snapshot.protocol.version,'cursor and recovery use one PostgreSQL snapshot');
+    assert.equal(snapshot.recovery.assignmentEpoch,snapshot.protocol.assignmentEpoch);
+    assert.equal(snapshot.pickupNote,customer.pickupNote);
+  }
   assert.equal(challenge.shouldShow,true); assert.match(challenge.pin,/^\d{4}$/);
   assert.ok(challenge.pinIssuedAt); assert.ok(challenge.pinRevision>0);
   assert.equal((await get(who.driver.token)).journey.boarding.pin,undefined);

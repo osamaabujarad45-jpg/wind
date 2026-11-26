@@ -509,9 +509,12 @@ try {
   await button(driverPage, c.advance_at_pickup_ride).click();
   await atStatus(rideId, 'in_transit');
   assert.equal(await field(driverPage, c.codeFromCustomer).count(), 0, 'Passenger trip must not request a parcel code');
+  const ride = await call(`/orders/${rideId}`, { token: customerToken });
+  assert.match(ride.handoverCode, /^\d{4}$/, 'the rider receives a trip code to share after payment');
+  await field(driverPage, c.codeFromRider).fill(ride.handoverCode);
   await button(driverPage, c.advance_in_transit_ride).click();
   await atStatus(rideId, 'completed');
-  pass('enabled ride service: boarding, trip completion, no parcel handover code');
+  pass('enabled ride service: boarding and trip completion with the rider trip code');
 
   stage = 'subscription';
   await customerPage.goto(base + '/account');

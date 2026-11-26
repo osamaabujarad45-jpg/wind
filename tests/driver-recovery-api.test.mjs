@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { apiCaller } from './support/api.mjs';
 process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), 'wind-driver-recovery-')), 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel';
-const { server, shutdown, promote, db } = await import('../server/main.ts');
+const { server, shutdown, promote, db, persistence } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const call = apiCaller(() => `http://127.0.0.1:${server.address().port}/api`);
 try {
@@ -18,19 +18,63 @@ try {
   const booked = await call('/orders', { token: customer.token, body: { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
     pickupNote: 'Fixture origin', dropoffNote: 'Fixture destination', contact: '0599788102', detail: 'Box', quotedPrice: 20 } });
   const assigned = await call(`/jobs/${booked.id}/accept`, { token: driver.token, body: {} });
-  const snapshot = await call(`/orders/${booked.id}?recoveryProtocol=1`, { token: driver.token });
+  let snapshot = await call(`/orders/${booked.id}?recoveryProtocol=1`, { token: driver.token });
   assert.equal(snapshot.recovery.schemaVersion, 1);
   assert.equal('recovery' in await call(`/orders/${booked.id}`, { token: driver.token }), false, 'installed response unchanged');
+  const originalOne = persistence.one;
+  let captured;
+  persistence.one = async function(sql, ...params) {
+    const row = await originalOne.call(this, sql, ...params);
+    if (!captured && sql.includes('FROM orders o JOIN users') && params[0] === booked.id) {
+      captured = row;
+      db.prepare('UPDATE orders SET pickup_note=? WHERE id=?').run('Instructions edited during snapshot serialization', booked.id);
+    }
+    return row;
+  };
+  try { snapshot = await call(`/orders/${booked.id}?recoveryProtocol=1`, { token: driver.token }); }
+  finally { persistence.one = originalOne; }
+  assert.ok(captured, 'the race must occur after the base order read');
+  assert.equal(snapshot.pickupNote, captured.pickup_note);
+  assert.equal(snapshot.recovery.version, captured.version, 'instructions and recovery revision come from the same row');
+  const staleTime = Date.now();
+  assert.equal((await call(`/orders/${booked.id}/advance`, { token: driver.token, expect: 409, body: {
+    recoveryProtocol: 1, requestId: randomUUID(), expectedStatus: snapshot.status, expectedAssignedAt: snapshot.assignedAt,
+    expectedVersion: snapshot.recovery.version, attemptCreatedAt: staleTime, attemptExpiresAt: staleTime + 60_000,
+  } })).error, 'order_changed', 'unseen instructions require a fresh snapshot before advancing');
+  const previousVersion = snapshot.recovery.version;
+  db.prepare('UPDATE orders SET pickup_note=?,updated_at=? WHERE id=?').run('Changed pickup instructions', Date.now(), booked.id);
+  snapshot = await call(`/orders/${booked.id}?recoveryProtocol=1`, { token: driver.token });
+  assert.ok(snapshot.recovery.version > previousVersion, 'same-status order edits invalidate an older recovery snapshot');
   const requestId = randomUUID(), path = `/orders/${booked.id}/actions/${requestId}`;
   assert.equal((await call(path, { token: driver.token })).state, 'unknown');
   await call(path, { token: customer.token, expect: 403 }); await call(path, { expect: 401 });
   const now = Date.now(), body = { recoveryProtocol: 1, requestId, expectedStatus: assigned.status, expectedAssignedAt: assigned.assignedAt,
     expectedVersion: snapshot.recovery.version, attemptCreatedAt: now, attemptExpiresAt: now + 60_000 };
-  const advanced = await call(`/orders/${booked.id}/advance`, { token: driver.token, body });
+  const originalExec = persistence.exec;
+  let editedAfterCommit = false;
+  persistence.exec = async function(command) {
+    const result = await originalExec.call(this, command);
+    if (command === 'COMMIT' && !editedAfterCommit) {
+      editedAfterCommit = true;
+      db.prepare('UPDATE orders SET pickup_note=? WHERE id=?').run('Instructions edited after command commit', booked.id);
+    }
+    return result;
+  };
+  let advanced;
+  try { advanced = await call(`/orders/${booked.id}/advance`, { token: driver.token, body }); }
+  finally { persistence.exec = originalExec; }
+  assert.ok(editedAfterCommit, 'the second edit must occur after the command commit');
   assert.equal(advanced.status, 'at_pickup');
   assert.ok(advanced.recovery.version > snapshot.recovery.version, 'mutation reply retains current opt-in recovery metadata');
+  assert.equal(advanced.pickupNote, snapshot.pickupNote);
+  assert.ok(advanced.recovery.version < db.prepare('SELECT version FROM orders WHERE id=?').get(booked.id).version,
+    'the mutation reply retains its snapshot revision when instructions change after commit');
   assert.equal((await call(path, { token: driver.token })).state, 'applied');
-  assert.equal((await call(`/orders/${booked.id}/advance`, { token: driver.token, body })).status, 'at_pickup', 'same receipt replays before stale status');
+  const replayed = await call(`/orders/${booked.id}/advance`, { token: driver.token, body });
+  assert.equal(replayed.status, 'at_pickup', 'same receipt replays before stale status');
+  assert.equal(replayed.pickupNote, 'Instructions edited after command commit');
+  assert.equal(replayed.recovery.version, db.prepare('SELECT version FROM orders WHERE id=?').get(booked.id).version,
+    'replay returns a coherent current snapshot');
   const expired = { ...body, requestId: randomUUID(), expectedStatus: advanced.status, attemptCreatedAt: now - 60_000, attemptExpiresAt: now - 1 };
   assert.equal((await call(`/orders/${booked.id}/advance`, { token: driver.token, body: expired, expect: 409 })).error, 'command_expired');
   const staleAssignment = { ...body, requestId: randomUUID(), expectedStatus: advanced.status, expectedAssignedAt: 0 };

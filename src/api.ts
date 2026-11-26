@@ -130,19 +130,20 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
   const [fix, setFix] = useState<{ path: string; value: T | null; driverChanged: boolean }>();
   useFocusEffect(useCallback(() => {
     if (!path) return;
-    let stopped = false, since = 0, failures = 0, foreground = true;
+    let stopped = false, since = 0, failures = 0;
+    let foreground = AppState.currentState == null || AppState.currentState === 'active';
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let pending: AbortController | undefined;
     setFix(undefined); // a new watch never shows a fix from an earlier one
-    const subscription = AppState.addEventListener('change', state => { foreground = state === 'active'; });
-    // Leaving the screen gives up the held request: the socket and the server's watcher slot are freed at once.
-    const controller = new AbortController();
-    void (async () => {
-      while (!stopped) {
-        if (!foreground) { await new Promise(resolve => setTimeout(resolve, 2_000)); continue; } // no radio use in the background
-        let pause = 2_000; // nothing new (hold expired, or no driver): ask again shortly, never in a tight loop
-        try {
-          const answer = await api<{ driverLocation: T | null; driverChanged?: boolean; driverKey?: string | null }>(
-            `${path}${path.includes('?') ? '&' : '?'}since=${since}`, undefined, undefined, controller.signal);
-          if (stopped) return;
+    const poll = async () => {
+      if (stopped || !foreground || pending) return;
+      const request = new AbortController();
+      pending = request;
+      let pause = 2_000; // nothing new (hold expired, or no driver): ask again shortly, never in a tight loop
+      try {
+        const answer = await api<{ driverLocation: T | null; driverChanged?: boolean; driverKey?: string | null }>(
+          `${path}${path.includes('?') ? '&' : '?'}since=${since}`, undefined, undefined, request.signal);
+        if (!request.signal.aborted) {
           // Keep asking about the snapshot's driver until the snapshot changes.
           // The screen must hide its old driver and reload before displaying a new fix.
           if (answer.driverChanged) {
@@ -155,17 +156,34 @@ export function useLiveFix<T extends { updatedAt: number }>(path: string | null)
             failures = 0;
             setFix({ path, value: driverLocation, driverChanged: false });
           }
-        } catch (error) {
-          if (stopped) return;
+        }
+      } catch (error) {
+        if (!request.signal.aborted) {
           const code = errorCode(error);
           failures++;
-          if (terminal(code)) return; // a revoked session or a revoked link: the screen shows it, the stream ends
+          if (terminal(code)) { stopped = true; return; } // a revoked session or link ends the stream
           pause = Math.min(5_000 * failures, 30_000);
         }
-        if (pause) await new Promise(resolve => setTimeout(resolve, pause));
-      }
-    })();
-    return () => { stopped = true; controller.abort(); subscription.remove(); };
+      } finally { pending = undefined; }
+      if (!stopped && foreground) timer = setTimeout(() => { void poll(); }, request.signal.aborted ? 0 : pause);
+    };
+    const pausePolling = () => {
+      clearTimeout(timer);
+      pending?.abort(); // release the server's held socket and watcher slot
+    };
+    const subscription = AppState.addEventListener('change', state => {
+      const active = state === 'active';
+      if (active === foreground) return;
+      foreground = active;
+      if (active) void poll();
+      else pausePolling();
+    });
+    void poll();
+    return () => {
+      stopped = true;
+      pausePolling();
+      subscription.remove();
+    };
   }, [path]));
   return fix?.path === path ? { value: fix.value, driverChanged: fix.driverChanged } : { value: undefined, driverChanged: false };
 }

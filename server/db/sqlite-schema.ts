@@ -177,6 +177,13 @@ for (const [column, type] of [['heading', 'REAL'], ['accuracy', 'REAL'], ['good_
   if (!(db.prepare('PRAGMA table_info(driver_locations)').all() as Row[]).some(r => r.name === column))
     db.exec(`ALTER TABLE driver_locations ADD COLUMN ${column} ${type}`);
 }
+// Recovery revisions follow every row edit, including admin changes that write no driver action receipt.
+if (!(db.prepare('PRAGMA table_info(orders)').all() as Row[]).some(r => r.name === 'version'))
+  db.exec('ALTER TABLE orders ADD COLUMN version INTEGER NOT NULL DEFAULT 1');
+db.exec(`CREATE TRIGGER IF NOT EXISTS orders_recovery_revision AFTER UPDATE ON orders
+  WHEN NEW.version <= OLD.version BEGIN
+    UPDATE orders SET version = OLD.version + 1 WHERE id = NEW.id;
+  END`);
 for (const column of ['lat', 'lng']) { // checkpoint position for routing (SPEC-checkpoint-routing.md)
   if (!(db.prepare('PRAGMA table_info(checkpoints)').all() as Row[]).some(r => r.name === column))
     db.exec(`ALTER TABLE checkpoints ADD COLUMN ${column} REAL`);

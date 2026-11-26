@@ -110,6 +110,19 @@ try {
   assert.deepEqual(await call('/auth/reset/code', { body: { identifier: 'USER1@mail.example' } }), { ok: true });
   const reset = await mailTo('user1@mail.example', 2);
   assert.match(reset.text, /password reset code/);
+  const beforeReset = await persistence.one('SELECT password FROM users WHERE id=?', customer.user.id);
+  const originalRun = persistence.run;
+  persistence.run = async function(sql, ...args) {
+    if (sql === 'DELETE FROM sessions WHERE user_id = ?' && args[0] === customer.user.id) throw new Error('synthetic reset failure');
+    return originalRun.call(this, sql, ...args);
+  };
+  try {
+    await call('/auth/reset', { body: { identifier: '0599700001', code: reset.code, password: 'New-Password-123' }, expect: 500 });
+  } finally { persistence.run = originalRun; }
+  assert.deepEqual(await persistence.one('SELECT password FROM users WHERE id=?', customer.user.id), beforeReset);
+  assert.ok(await persistence.one("SELECT 1 FROM email_codes WHERE user_id=? AND purpose='reset'", customer.user.id),
+    'a failed reset preserves the code for a retry');
+  await call('/me', { token: customer.token });
   assert.equal((await call('/auth/reset', { body: { identifier: '0599700001', code: reset.code, password: 'short' }, expect: 400 })).error, 'weak_password');
   assert.equal((await call('/auth/reset', { body: { identifier: '0599700001', code: other(reset.code), password: 'New-Password-123' }, expect: 400 })).error, 'wrong_email_code');
   assert.equal((await call('/auth/reset', { body: { identifier: '0599700002', code: reset.code, password: 'New-Password-123' }, expect: 400 })).error, 'wrong_email_code');

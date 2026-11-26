@@ -10,12 +10,14 @@ const modules = {
     export const useState=value=>[typeof value==='function'?value():value,next=>{s.sets.push(next);}];
     export const useEffect=fn=>fn(); export const useCallback=fn=>fn;`,
   'react-native': `const s=globalThis.__apiFocusTest;export const Platform={OS:'web'};
-    export const AppState={addEventListener:(_event,fn)=>{s.listener=fn;return {remove:()=>{s.listener=null;}};}};`,
+    export const AppState={get currentState(){return s.appState??'active';},
+      addEventListener:(_event,fn)=>{s.listener=fn;return {remove:()=>{s.listener=null;}};}};`,
   'expo-constants': `export default {expoConfig:{}};`,
   'expo-secure-store': `export const getItemAsync=async()=>null; export const deleteItemAsync=async()=>{};
     export const setItemAsync=async()=>{};export const AFTER_FIRST_UNLOCK=0;`,
   'expo-router': `export const useFocusEffect=fn=>{globalThis.__apiFocusTest.focus=fn;};`,
-  './api-client': `const s=globalThis.__apiFocusTest;export const request=async url=>{s.calls.push(url);if(s.gate)await s.gate;return new URL(url).pathname==='/api/orders'?[]:{};};
+  './api-client': `const s=globalThis.__apiFocusTest;export const request=async (url,body,method,signal)=>{s.calls.push(url);
+    if(s.liveRequest)return s.liveRequest(url,signal);if(s.gate)await s.gate;return new URL(url).pathname==='/api/orders'?[]:{};};
     export const errorCode=error=>error.message;export class ApiError extends Error{};
     export const apiSessionRevision=()=>0;export const configureApi=()=>{};export const invalidateApiSessionActions=()=>{};`,
   './web-storage': `export const webGet=()=>null;export const webSet=()=>{};`,
@@ -36,7 +38,7 @@ const hooks = registerHooks({
 });
 const flush = () => new Promise(resolve => setImmediate(resolve));
 try {
-  const { api, useApi } = await import('../src/api.ts');
+  const { api, useApi, useLiveFix } = await import('../src/api.ts');
   const render = (path, options) => { state.cursor = 0; state.hook = useApi(path, undefined, options); return state.focus(); };
   let cleanup = render('/route/google?from=one&to=two', { refetchOnFocus: false });
   await flush();
@@ -202,4 +204,59 @@ try {
   assert.equal(answers(retried), 1, 'the newer request is the one shown');
   cleanup();
   console.log('API focus: billable routes load only on path changes; ordinary endpoints refresh on foreground');
+
+  const originalSetTimeout = globalThis.setTimeout, originalClearTimeout = globalThis.clearTimeout;
+  const timers = new Map(), live = [];
+  const livePath = '/orders/1/live?driver=2';
+  globalThis.setTimeout = (callback, delay) => { timers.set(callback, delay); return callback; };
+  globalThis.clearTimeout = handle => { timers.delete(handle); };
+  const fireTimer = async delay => {
+    assert.deepEqual([...timers.values()], [delay]);
+    const [callback] = timers.keys();
+    timers.delete(callback);
+    callback();
+    await flush();
+  };
+  state.liveRequest = (url, signal) => new Promise((resolve, reject) => live.push({ url, signal, resolve, reject }));
+  state.appState = 'background';
+  useLiveFix(livePath);
+  const stopLive = state.focus();
+  try {
+    assert.equal(live.length, 0, 'a view mounted in the background sends no request');
+    assert.equal(timers.size, 0, 'a hidden tracking view schedules no wakeups');
+    state.listener('active');
+    assert.equal(live.length, 1, 'foreground resumes immediately');
+    live[0].resolve({ driverLocation: { updatedAt: 100 } });
+    await flush();
+    await fireTimer(0);
+    assert.equal(new URL(live[1].url).searchParams.get('since'), '100');
+    state.listener('background');
+    assert.ok(live[1].signal.aborted, 'backgrounding releases the held request');
+    state.listener('active');
+    assert.equal(live.length, 2, 'a quick return waits for the aborted request to settle');
+    const setsBeforeAbort = state.sets.length;
+    live[1].resolve({ driverLocation: { updatedAt: 200 } });
+    await flush();
+    assert.equal(state.sets.length, setsBeforeAbort, 'a late abandoned response is ignored');
+    await fireTimer(0);
+    assert.equal(new URL(live[2].url).searchParams.get('since'), '100', 'resume uses the last accepted cursor');
+    live[2].reject(new Error('network'));
+    await flush();
+    assert.deepEqual([...timers.values()], [5_000]);
+    state.listener('background');
+    assert.equal(timers.size, 0, 'backgrounding cancels a scheduled retry');
+    state.listener('active');
+    assert.equal(live.length, 4, 'foreground bypasses the abandoned retry');
+    live[3].reject(new Error('forbidden'));
+    await flush();
+    state.listener('background'); state.listener('active');
+    assert.equal(live.length, 4, 'a terminal refusal still ends the stream');
+    assert.equal(timers.size, 0);
+  } finally {
+    stopLive();
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+  assert.equal(state.listener, null, 'leaving unsubscribes from foreground changes');
+  console.log('Live tracking lifecycle: one held request, no background timer, and resume from the last accepted fix');
 } finally { hooks.deregister(); delete globalThis.__apiFocusTest; }

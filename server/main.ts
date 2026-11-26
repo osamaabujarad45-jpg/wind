@@ -464,7 +464,7 @@ const offersFor = async (orderId: number): Promise<Offer[]> => {
     .map(async f => ({ driverId: f.driver_id, name: f.name, vehicle: f.vehicle ?? null, price: f.price, createdAt: f.created_at, ...(await driverStats(f.driver_id)) })));
 };
 
-async function getOrder(id: number, viewer: User, liveProtocol = false): Promise<Order> {
+async function getOrder(id: number, viewer: User, liveProtocol = false, recoveryProtocol = false): Promise<Order> {
   const r = (await one(`${orderSelect} WHERE o.id = ?`, id)) ?? fail(404, 'not_found');
   const released = viewer.role === 'driver' && r.status === 'searching' &&
     !!(await one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', r.id, viewer.id));
@@ -474,6 +474,8 @@ async function getOrder(id: number, viewer: User, liveProtocol = false): Promise
   if (!canSee || released) fail(404, 'not_found');
   const order = await toOrder(r, viewer);
   if (liveProtocol) order.assignmentEpoch = Number(r.assignment_epoch);
+  // Bind the revision to these instructions, even if the row changes during serialization.
+  if (recoveryProtocol) order.recovery = recoveryMetadata(r);
   // The rating Uber shows beside the car, computed for one order only: on a list this would be a stats query per row.
   if (order.driverId && (viewer.role === 'admin' || viewer.id === r.customer_id || viewer.id === r.driver_id))
     order.driverRating = (await driverStats(order.driverId)).rating;
@@ -1064,7 +1066,7 @@ async function sendCode(r: Row, purpose: CodePurpose) {
   catch (error) { (await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ? AND sent_at = ?', r.id, purpose, now)); throw error; }
 }
 // A code works once, for 15 minutes, for the address it was sent to; five wrong tries void it.
-async function useCode(r: Row, purpose: CodePurpose, input: unknown) {
+async function useCode(r: Row, purpose: CodePurpose, input: unknown, consume = true) {
   const row = (await one('SELECT * FROM email_codes WHERE user_id = ? AND purpose = ? AND expires_at > ?', r.id, purpose, Date.now())) ?? fail(400, 'code_expired');
   const code = typeof input === 'string' ? input.trim() : '';
   if (!/^\d{6}$/.test(code) || !timingSafeEqual(Buffer.from(codeHash(r, purpose, code), 'hex'), Buffer.from(row.code_hash, 'hex'))) {
@@ -1073,10 +1075,12 @@ async function useCode(r: Row, purpose: CodePurpose, input: unknown) {
     else (await run('UPDATE email_codes SET tries = tries + 1 WHERE user_id = ? AND purpose = ?', r.id, purpose));
     fail(400, spent ? 'code_expired' : 'wrong_email_code'); // wrong_code is the handover code's
   }
+  if (!consume) return row.code_hash as string;
   // A reset runs outside the request transaction while hashing. Two requests
   // may read the same code; only the request that atomically consumes it wins.
   if (!(await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ? AND code_hash = ? AND expires_at > ? AND tries < ?',
     r.id, purpose, row.code_hash, Date.now(), CODE_TRIES)).changes) fail(400, 'code_expired');
+  return row.code_hash as string;
 }
 
 route('POST', '/api/me/email/code', async ({ user }) => {
@@ -1141,10 +1145,17 @@ route('POST', '/api/auth/reset', async ({ body }) => {
   const password = await hashPassword(newPassword(body.password)); // before the lookup: the same checks whether or not it exists
   // One answer for every miss (no account, no code, wrong or spent code), so failures say nothing about the account.
   const r = (await accountFor(body.identifier)) ?? fail(400, 'wrong_email_code');
-  try { (await useCode(r, 'reset', body.code)); }
+  let codeHash: string;
+  try { codeHash = await useCode(r, 'reset', body.code, false); }
   catch (error) { throw error instanceof HttpError && error.status === 400 ? new HttpError(400, 'wrong_email_code') : error; }
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
+    const current = await one(`SELECT * FROM users WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, r.id);
+    if (!current || current.password !== r.password || current.email !== r.email || !current.email_verified_at
+      || current.status === 'blocked' || current.role === 'admin') fail(400, 'wrong_email_code');
+    // Claim the code with the password and session writes. A failed write must leave a retryable code.
+    if (!(await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ? AND code_hash = ? AND expires_at > ? AND tries < ?',
+      r.id, 'reset', codeHash, Date.now(), CODE_TRIES)).changes) fail(400, 'wrong_email_code');
     (await run('UPDATE users SET password = ? WHERE id = ?', password, r.id));
     (await run('DELETE FROM sessions WHERE user_id = ?', r.id)); // a reset ends the session on every device
     (await run('DELETE FROM push_subscriptions WHERE user_id = ?', r.id));
@@ -2313,18 +2324,15 @@ async function withMeasuredScopes<T extends {id:number}>(orders:T[]) {
   const scopes=await measuredScopes(persistence,orders.map(order=>order.id));
   return orders.map(order=>({...order,measuredScope:scopes[order.id]??null}));
 }
-async function recoveryMetadata(id: number) {
-  const row = await one('SELECT * FROM orders WHERE id=?', id) ?? fail(404, 'not_found');
-  const version = persistence.backend === 'postgres' ? Number(row.version ?? 0)
-    : Number((await one('SELECT COUNT(*) AS n FROM order_actions WHERE order_id=?', id))?.n ?? 0) + 1;
+function recoveryMetadata(row: Row) {
+  const version = Number(row.version);
   return { schemaVersion: 1 as const, version, assignmentEpoch: row.assignment_epoch ?? null };
 }
 route('GET', '/api/orders/:id', async ({ user, params, query }) => {
-  const order=query.get('protocol') === '1' ? await orderProtocol(user,Number(params[0]),query) : await getOrder(Number(params[0]),user,query.get('liveProtocol') === '1');
+  const order=query.get('protocol') === '1' ? await orderProtocol(user,Number(params[0]),query) : await getOrder(Number(params[0]),user,query.get('liveProtocol') === '1',query.get('recoveryProtocol') === '1');
   if ('journey' in order) return order;
   const result = query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([order]))[0] : order;
-  if (query.get('recoveryProtocol') !== '1') return result;
-  return { ...result, recovery: await recoveryMetadata(order.id) };
+  return result;
 });
 // Live driver fix (long-poll): answers the moment a fix newer than `since` lands, else after LIVE_HOLD with what it has.
 route('GET', '/api/orders/:id/live', async ({ user, params, query, req }) => {
@@ -3123,7 +3131,7 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
             || input.attemptExpiresAt <= input.attemptCreatedAt || input.attemptExpiresAt - input.attemptCreatedAt > 60 * 60_000
             || input.attemptCreatedAt > Date.now() + 5_000) fail(400, 'invalid_recovery_command');
           const current = await one(`SELECT * FROM orders WHERE id=?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id) ?? fail(404, 'not_found');
-          const metadata = await recoveryMetadata(id);
+          const metadata = recoveryMetadata(current);
           if (Date.now() >= input.attemptExpiresAt) fail(409, 'command_expired');
           if (input.expectedAssignedAt !== (current.assigned_at ?? null)
             // SQLite gained assignment_epoch in this release; installed captain apps there never send it, so it binds only when sent.
@@ -3137,10 +3145,11 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
       (await run('INSERT INTO order_actions (user_id, request_id, payload_hash, order_id, http_status, error) VALUES (?, ?, ?, ?, ?, ?)',
         user.id, requestId, hash, id, failure?.status ?? 200, failure?.message ?? null));
     }
+    if (input.recoveryProtocol === 1 && result) result = await getOrder(id, user, false, true);
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   if (failure) { await flushPush(); throw failure; } // a refused command is still committed, so its queued pushes go out too
-  return input.recoveryProtocol === 1 && result ? { ...result, recovery: await recoveryMetadata(id) } : result;
+  return result;
 }
 
 async function activeGpsAuthority(user: User, req: IncomingMessage) {
@@ -4287,11 +4296,11 @@ async function orderProtocol(user: User, id: number, query: URLSearchParams) {
     // Fare history is negotiated, and a driver sees only their own assignment's changes (as journey.lastFareChange).
     const fareVisible = (event: Row) => query.get('journeyProtocol') === '1' && (user.role === 'admin' || user.id === order.customer_id
       || Number(event.payload?.assignmentEpoch) === Number(order.assignment_epoch));
-    const snapshot = { ...await getOrder(id, user), protocol: { version: order.version, assignmentEpoch: order.assignment_epoch,
+    const snapshot = { ...await getOrder(id, user, false, query.get('recoveryProtocol') === '1'), protocol: { version: order.version, assignmentEpoch: order.assignment_epoch,
       events: events.filter(event => event.type !== 'fare.changed' || fareVisible(event)).map(publicEvent), nextCursor: events.at(-1)?.sequence ?? after, snapshotRequired: true, serverTime: Date.now() } };
     if (query.get('journeyProtocol') !== '1') return snapshot;
     const measured = query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([snapshot]))[0] : snapshot;
-    return journeyOrder(persistence, rideLifecycle, { ...measured, ...(query.get('recoveryProtocol') === '1' ? { recovery: await recoveryMetadata(id) } : {}) }, user);
+    return journeyOrder(persistence, rideLifecycle, measured, user);
   }, { commandId: randomUUID() });
 }
 
@@ -4444,9 +4453,8 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       const decorate = async (value: unknown) => {
         if (!value || typeof value !== 'object' || !('service' in value) || !('id' in value)) return value;
         if ('protocol' in value && 'journey' in value) return value; // already projected in the cursor's snapshot
-        const authorized = await getOrder(Number((value as Order).id), viewer);
-        const recovery = 'recovery' in value ? { recovery: await recoveryMetadata(authorized.id) } : {};
-        return journeyOrder(persistence, rideLifecycle, { ...value as Order, ...authorized, ...recovery }, viewer);
+        const authorized = await getOrder(Number((value as Order).id), viewer, false, 'recovery' in value);
+        return journeyOrder(persistence, rideLifecycle, { ...value as Order, ...authorized }, viewer);
       };
       // A card accepted or released between the page read and this snapshot drops out of the list instead of
       // failing the whole page; a single order still answers 404. ponytail: one re-read per card (pages are small),

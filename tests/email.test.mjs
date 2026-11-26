@@ -24,7 +24,7 @@ const dir = mkdtempSync(join(tmpdir(), 'wind-email-'));
 Object.assign(process.env, { DB_PATH: join(dir, 'test.db'), WIND_IDENTITY_MODE: 'self-service', WIND_ENABLED_SERVICES: 'parcel',
   WIND_EMAIL_FROM: 'no-reply@wind.example', CLOUDFLARE_ACCOUNT_ID: 'acct123', CLOUDFLARE_EMAIL_TOKEN: 'cf-email-token',
   CLOUDFLARE_API_BASE: `http://127.0.0.1:${cloudflare.address().port}/client/v4` });
-const { server, shutdown, promote, persistence } = await import('../server/main.ts');
+const { server, shutdown, promote, persistence, db } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const call = apiCaller(() => `http://127.0.0.1:${server.address().port}/api`);
 const password = 'Correct-Horse-12';
@@ -114,6 +114,19 @@ try {
   assert.deepEqual(await call('/auth/reset/code', { body: { identifier: 'USER1@mail.example' } }), { ok: true });
   const reset = await mailTo('user1@mail.example', 2);
   assert.match(reset.text, /password reset code/);
+  const beforeReset = db.prepare('SELECT password FROM users WHERE id=?').get(customer.user.id);
+  const originalRun = persistence.run;
+  persistence.run = async function(sql, ...args) {
+    if (sql === 'DELETE FROM sessions WHERE user_id = ?' && args[0] === customer.user.id) throw new Error('synthetic reset failure');
+    return originalRun.call(this, sql, ...args);
+  };
+  try {
+    await call('/auth/reset', { body: { identifier: '0599700001', code: reset.code, password: 'New-Password-123' }, expect: 500 });
+  } finally { persistence.run = originalRun; }
+  assert.deepEqual(db.prepare('SELECT password FROM users WHERE id=?').get(customer.user.id), beforeReset);
+  assert.ok(db.prepare("SELECT 1 FROM email_codes WHERE user_id=? AND purpose='reset'").get(customer.user.id),
+    'a failed reset preserves the code for a retry');
+  await call('/me', { token: customer.token });
   assert.match(reset.subject, /رمز إعادة كلمة المرور/);
   assert.match(reset.text, /رمز إعادة تعيين كلمة مرور ويند:/);
   assert.match(reset.html, /لا تشاركه مع أحد/);
