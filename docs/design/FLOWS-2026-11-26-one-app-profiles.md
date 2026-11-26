@@ -368,7 +368,7 @@ These still need the owner's input or access. None blocks F0–F6; F7's trip-cod
 - **ONE-01 wording.** The owner's request for profile switching changes SRS ONE-01's "one profile per person" to "one Personal profile plus approved work profiles". Role still comes from the server session. F0 makes the SRS edit for the owner to confirm.
 - **Sending messages for the customer.** The trip code for someone else (S8) and the recipient's delivery code (S4) are passed on by the booker or sender until an SMS provider is contracted (G-SMS).
 - **Captain documents.** Uploads need private storage (G-STORAGE). Until then the pilot records numbers and expiry dates, and the office checks the papers.
-- **Real push.** Switched on for Android on 26 November; closed-app acceptance is open (continuation plan §4). iPhones still need APNs.
+- **Real push.** Live for Android since 26 November, accepted on the A53 with the app closed (continuation plan §4). iPhones still need APNs.
 - **New areas.** Any new ride town pair, and later Israel or the airport, needs the owner to confirm partners, permits and insurance first.
 
 ---

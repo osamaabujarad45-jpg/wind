@@ -243,7 +243,7 @@ The Railway image also exports and serves this single-page web build at the API'
 
 Registration does not prove phone or email ownership yet; public SMS signup is
 unavailable. Web Push is implemented; native Android push is on since
-26 November 2026 (closed-app delivery still being verified; iPhones use local
+26 November 2026 (checked with the app closed; iPhones still use local
 alerts). Browser GPS runs in the foreground. Native background location is
 implemented, but the latest workspace changes still need a rebuilt-device test
 with the screen locked. Payment is cash, and the API is a single instance.

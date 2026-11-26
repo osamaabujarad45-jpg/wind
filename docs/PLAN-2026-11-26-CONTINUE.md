@@ -78,12 +78,13 @@ Prepared 26 November 2026. Read this before older handoffs.
 
 **Sources:** `src/native-push.ts`, `server/domain/native-push.ts`, `server/push.ts`, `server/worker.ts`, `app.config.js`, `eas.json`, and the native push suites.
 
-Still open, on the physical A53 with a two-role trip:
-1. Job and status events from real orders with the app terminated (this closes runbook step 6).
-2. The other states: foreground, permission denial and its recovery, token rotation, logout, account switch, wrong-role taps, duplicate delivery.
-3. iPhone push (APNs) when an iOS build is planned.
-4. Firebase password reset after email verification (design §0 item 6 and §10).
-5. Watch the pilot after the rollout: compare push receipts and support reports for missed alerts, with the runbook's rollback ready.
+Done on 26 November 22:27–22:30 UTC: job and status events from real orders reached the A53 with the app terminated (runbook step 6), and logout plus account switch moved the token correctly (runbook State block).
+
+Still open:
+1. The remaining states on the A53: foreground, permission denial and its recovery, token rotation, wrong-role taps, duplicate delivery.
+2. iPhone push (APNs) when an iOS build is planned.
+3. Firebase password reset after email verification (design §0 item 6 and §10).
+4. Watch the pilot after the rollout: compare push receipts and support reports for missed alerts, with the runbook's rollback ready.
 
 If acceptance fails, turn the production switch off with the runbook's rollback. Phones bring their local alerts back within 10 minutes.
 
