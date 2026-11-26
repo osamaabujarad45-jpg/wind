@@ -81,7 +81,7 @@ Prepared 26 November 2026. Read this before older handoffs.
 Done on 26 November 22:27–22:30 UTC: job and status events from real orders reached the A53 with the app terminated (runbook step 6), and logout plus account switch moved the token correctly (runbook State block).
 
 Still open:
-1. The remaining states on the A53: foreground, permission denial and its recovery, token rotation, wrong-role taps, duplicate delivery.
+1. The remaining states on the A53: foreground, permission denial and its recovery, token rotation, wrong-role taps, duplicate delivery, and the in-app support-reply push.
 2. iPhone push (APNs) when an iOS build is planned.
 3. Firebase password reset after email verification (design §0 item 6 and §10).
 4. Watch the pilot after the rollout: compare push receipts and support reports for missed alerts, with the runbook's rollback ready.
