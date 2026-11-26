@@ -1,18 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 
 /**
  * Wall-clock milliseconds, refreshed every second while `active` and not at all otherwise.
- * `current` is false until the first tick after turning on (one macrotask), so a value left over from an idle
- * stretch is never shown as a countdown or used to enable an action.
+ * The first refresh runs in a layout effect, so React re-renders with the real time before the frame is painted.
+ * `current` is false only on that unpainted render, and after turning off: a value left over from an idle stretch
+ * is never shown as a countdown or used to enable an action.
  */
 export function useSecondTick(active: boolean) {
   const [clock, setClock] = useState(() => ({ now: Date.now(), live: false }));
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!active) return;
     const tick = () => setClock({ now: Date.now(), live: true });
-    const initial = setTimeout(tick, 0);
+    tick();
     const timer = setInterval(tick, 1000);
-    return () => { clearTimeout(initial); clearInterval(timer); setClock(previous => ({ ...previous, live: false })); };
+    // Marking the clock stale here, not on the next activation, is what keeps a later re-activation from trusting it.
+    return () => { clearInterval(timer); setClock(previous => ({ ...previous, live: false })); };
   }, [active]);
   return { now: clock.now, current: active && clock.live };
 }
