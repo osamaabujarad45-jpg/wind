@@ -32,7 +32,7 @@ Prepared 26 November 2026. Read this before older handoffs.
 - Prepared and downloaded owner-local `.artifacts/delivery-policy-20261126/wind-reviewed-e5fd7322.tar.gz`, SHA-256 **`ee2d20112f60082bab167221c08bbf7ee9f425ec67402fa7c07e70fd6b3e2076`**. Its Docker build used one Metro worker and passed the packaged production dry run: readiness `{ "ok": true, "schema": 3 }`, web HTTP 200. Logs, reviewed source hashes and reviewer records are alongside it; private/generated evidence is excluded from Git.
 - Normal Git push now uses the existing owner's protected credential through a repository-only Git Credential Manager helper reset; the globally active CLI account was restored. Two independent environment reviewers approved the corrected deployment-access repair. The existing SSH rule now allows only the current operator `/32`; all other semantic properties were checked unchanged. The host's Ed25519 public key was obtained through authenticated Azure VM access and strict SSH verification passed.
 - Read-only production preflight at **14:53 UTC on 26 November** found `/opt/wind-releases/20261123185342` active, API/Caddy active, no ingress hold, passwordless sudo available, backup marker **14:00 UTC**, and readiness `{ "ok": true, "schema": 3 }`. No application install/restart or production data change occurred.
-- **Blocker:** T3's separate PR service returns `Validation Failed; must be a collaborator`. It identifies the correct repository; CLI owner access and the normal push work. The owner reported reconnecting T3, but the retry returned the same error. No PR was created or merged, and this candidate has **not been deployed**. That T3 connection needs effective repository write access; do not add another collaborator or bypass integration/branch protection as a workaround.
+- **Blocker (resolved 26 Nov):** the owner added the second account as a collaborator, PR #120 merged at `f709cd8b`, and it was deployed as release `20261126200823`. Original note: T3's separate PR service returned `Validation Failed; must be a collaborator`. It identifies the correct repository; CLI owner access and the normal push work. The owner reported reconnecting T3, but the retry returned the same error. No PR was created or merged, and this candidate has **not been deployed**. That T3 connection needs effective repository write access; do not add another collaborator or bypass integration/branch protection as a workaround.
 
 Resume automatically under the standing policy when T3 access works:
 
@@ -71,21 +71,27 @@ Resume automatically under the standing policy when T3 access works:
 
 **Acceptance:** each role has explicit reviewed/fixed/unverified findings; Arabic street-data limitations are distinguished from translation defects. No claim that a failed model session completed the audit.
 
-## 4. Activate real push only when Firebase access is available
+## 4. Native push: live on Android, acceptance to finish
 
-**Status, 26 Nov 21:55 UTC: Android push is live.** See `docs/operations/deploy.md` (Firebase, "State on 26 November") and the CURRENT-WORK entry. Remaining from the steps below: a two-role trip so job and status pushes arrive from real events (terminated-app launch, logout, account switch, wrong-role taps, duplicates); iPhone push (APNs); and the Firebase password reset after email verification.
+**Status, 26 Nov 21:55 UTC: Android push is live.** See `docs/operations/deploy.md` ("Firebase and native push", State block) and the CURRENT-WORK entry. Done:
+- Firebase access.
+- The platform-restricted config and FCM V1 key in EAS.
+- The delivery gate (PR #121).
+- The push-enabled APK vc44.
+- The production switch.
+- On the A53, background delivery of a push sent from the host, and the tap that opens Support.
 
-**Purpose:** driver matching currently relies on the open app's alerts. Closed-app delivery remains a provider/access gate.
+**Sources:** `src/native-push.ts`, `server/domain/native-push.ts`, `server/push.ts`, `server/worker.ts`, `app.config.js`, `eas.json`, and the native push suites.
 
-**Sources:** `src/native-push.ts`, `server/domain/native-push.ts`, `server/worker.ts`, `app.config.js`, `eas.json`, and the native push suites.
+Still open, on the physical A53 with a two-role trip:
+1. Job and status events from real orders with the app terminated (this closes runbook step 6).
+2. The other states: foreground, permission denial and its recovery, token rotation, logout, account switch, wrong-role taps, duplicate delivery.
+3. iPhone push (APNs) when an iOS build is planned.
+4. Firebase password reset after email verification (design §0 item 6 and §10).
 
-1. Inspect existing access without printing credentials. If missing, request Firebase secrets through the supported secret-input tool, not chat.
-2. Recheck the SDK 57 notification documentation and permissions/channel requirements. The Fable verification tree contains a proposed shared-channel module; compare it to current code and requirements before using it.
-3. Prepare the platform-restricted Firebase configuration and a push-enabled candidate. Keep provider enable switches off until configuration and acceptance are ready.
-4. On the physical A53, test foreground, background, terminated launch, permission denial, token rotation, logout, account switch, wrong-role taps and duplicate delivery. Prove the notification opens only an authorized route once.
-5. After the independent reviews and acceptance gates pass, deliver the reviewed configuration/build through the established rollout under the standing delivery policy, then monitor a small pilot with rollback evidence.
+If acceptance fails, turn the production switch off with the runbook's rollback. Phones bring their local alerts back within 10 minutes.
 
-**Acceptance:** real provider/device evidence for each state, with safe session routing and an explicit rollout decision. Mocked outbox success alone does not close this task.
+**Acceptance:** real provider and device evidence for each state above, with safe session routing.
 
 ## 5. Keep PostgreSQL cutover separate from the live SQLite pilot
 
@@ -119,7 +125,7 @@ Resume automatically under the standing policy when T3 access works:
 ## 7. Operations follow-up after a release under the standing delivery policy
 
 - Prepare a release package and disposable SQLite rehearsal for the additive revision migration. Preserve the previous release and a pre-install database checkpoint.
-- Recheck current deployment state rather than copying dates/host state from `docs/CURRENT-WORK.md`. The original checkpoint left production untouched; the later access repair and read-only preflight are recorded above. No application deployment or production data change has occurred.
+- Recheck current deployment state rather than copying dates/host state from `docs/CURRENT-WORK.md`. The original checkpoint left production untouched; the later access repair and read-only preflight are recorded above. At the 14:53 UTC preflight no application deployment or production data change had occurred; production has since run releases `20261126200823` (PR #120) and `20261126212854` (PR #121).
 - Verify alert email delivery and run the timed replacement-host recovery drill from `docs/operations/azure-recovery-review.md`.
 - Retire/redirect the old host only with the required student-project access and approval of that outward action.
 - Verify the pilot's actual provider behavior with controlled field journeys. Routing fixtures and rendered tiles do not prove permitted roads or background GPS.
