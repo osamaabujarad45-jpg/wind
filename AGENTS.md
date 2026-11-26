@@ -12,6 +12,12 @@ The owner authorizes automatic commits, normal pushes, pull requests, merges and
 6. **Stay within the approval.** Credentials/account access, new spending commitments or resources, a new production target, destructive data operations, a database-platform cutover and unrequested provider/feature activation still need the missing owner input or explicit authorization. Existing safety, compatibility, regional and feature gates remain binding. Continue independent work while a genuine input is missing; report the exact blocker instead of asking the owner to fix code, tests or tooling.
 7. **Report the result.** Record reviewer verdicts and scope, commit SHA/branch, checks and device/build identity, PR link when applicable, actual deployed revision or the reason deployment was not applicable/blocked, and the next concrete task from current project knowledge.
 
+## Subagent models — owner rule, 27 November 2026
+
+- **GPT 6.2 Sol** (Codex provider, `gpt-6.2-sol`, highest supported effort) does all subagent work in this repo: implementation, research, tests, deployments and code/PR reviews, including the independent reviewers required above. For changes that need two reviewers, run two separate Sol review tasks that do not coordinate, each with a fresh brief.
+- **Claude Haiku 5.5** (`haiku`, `xhigh`) does design work: product flows, UX/UI design, design documents and their reviews.
+- Start subagents through T3 Code (`delegate_task`) so the owner can follow them. This replaces older rules that named other review models, including the global "Haiku review for every PR" rule. Provider failover (below) still applies if Sol is unavailable; report the switch.
+
 ## Expo has changed — do not trust your training data
 
 Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
