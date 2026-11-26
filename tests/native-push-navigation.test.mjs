@@ -22,7 +22,8 @@ const modules = {
   './api': `export const apiSessionRevision = () => 1;
     export const api = async () => { throw new Error('not used'); };
     export const storage = { get: async key => key === 'token' ? globalThis.__nativePushNavigationTest.storedToken : null, set: async () => {} };`,
-  './api-client': `export const apiSessionCredential = () => globalThis.__nativePushNavigationTest.token;`,
+  './api-client': `export const apiSessionCredential = () => globalThis.__nativePushNavigationTest.token;
+    export const errorCode = error => error?.message ?? 'server_error';`,
 };
 const hooks = registerHooks({
   resolve(specifier, context, next) {

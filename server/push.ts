@@ -70,10 +70,15 @@ const pushWords: Record<string, { ar: string; en: string }> = {
 };
 const pushBody = (kind: unknown, lang: unknown) => { const words = pushWords[String(kind)]; return lang === 'en' ? words?.en ?? 'You have a new update. Open Wind to view it.' : words?.ar ?? 'لديك تحديث جديد. افتح ويند لعرضه.'; };
 
+/** Whether native push delivery is switched on for this server. Phones mute their local alerts only while it is; it is
+ * configuration, not proof that a push arrives: docs/operations/deploy.md turns it on for the host (step 5) while only a
+ * test phone has the Firebase build, and announces push only once a test push lands there (step 6). */
+export const expoPushDelivering = () => process.env.WIND_EXPO_PUSH_ENABLED === '1';
+
 /** One Expo push.
  * Real delivery waits for the owner's FCM/APNs credentials and WIND_EXPO_PUSH_ENABLED=1; until then this throws. */
 export async function sendExpoPush(token: { expo_push_token?: unknown; user_id?: unknown }, message: string, ttl: number, urgent: boolean) {
-  if (process.env.WIND_EXPO_PUSH_ENABLED !== '1') throw Object.assign(new Error('expo_not_configured'), { providerStatus: 503 });
+  if (!expoPushDelivering()) throw Object.assign(new Error('expo_not_configured'), { providerStatus: 503 });
   const data = JSON.parse(message) as { kind: unknown; order: unknown; url: unknown; lang: unknown; eventId?: unknown };
   const response = await fetch('https://exp.host/--/api/v2/push/send', { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000),
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(process.env.EXPO_ACCESS_TOKEN ? { Authorization: `Bearer ${process.env.EXPO_ACCESS_TOKEN}` } : {}) },

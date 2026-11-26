@@ -3,7 +3,7 @@ import * as Crypto from 'expo-crypto';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { api, apiSessionRevision, storage } from './api';
-import { apiSessionCredential } from './api-client';
+import { apiSessionCredential, errorCode } from './api-client';
 import { router } from 'expo-router';
 import type { User } from './model';
 import { setNativePushRegistered } from './push-state.ts';
@@ -106,7 +106,8 @@ if (Platform.OS !== 'web') {
 // Keyed by API session, so one account's ask does not use up the next account's (Sol ops review 21 Nov).
 let askedInSession: number | null = null;
 // Each request belongs to the session that made it: one queued before a sign-out neither asks nor registers for the next account
-// (Sol full review 21 Nov, item 8). Resolves true once this device is registered for that session.
+// (Sol full review 21 Nov, item 8). Resolves true once this device is registered for that session and the server delivers push,
+// so the Account row only says alerts reach this device when they can (Haiku review of the push delivery gate).
 let running: Promise<unknown> = Promise.resolve();
 export function registerNativePush(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap' = false): Promise<boolean> {
   if (Platform.OS === 'web') return Promise.resolve(false);
@@ -131,7 +132,9 @@ async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap
       // A customer's once-per-device ask is spent once answered (Haiku polish r2 N5); captains' asks keep no device flag.
       if (ask === 'once') await storage.set('pushAsked', '1').catch(() => undefined);
     }
-    if (status !== 'granted' || !isCurrentSession()) return false;
+    if (!isCurrentSession()) return false;
+    // Notifications switched off in the system settings: the server's push cannot show either, so local alerts come back.
+    if (status !== 'granted') { setNativePushRegistered(null); return false; }
     const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
     const expoPushToken = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
     let deviceId = await storage.get('pushDeviceId');
@@ -140,10 +143,21 @@ async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap
       await storage.set('pushDeviceId', deviceId);
     }
     if (!isCurrentSession()) return false;
-    await api('/push/native/register', { expoPushToken, deviceId, platform: Platform.OS, lang });
-    setNativePushRegistered(true); // the server's push now rings; local alerts stay quiet (local-alert.ts)
-    return true;
-  } catch { return false; /* polling fallback remains authoritative */ }
+    const result = await api<{ delivering?: boolean } | undefined>('/push/native/register', { expoPushToken, deviceId, platform: Platform.OS, lang });
+    // A reply that lands after sign-out or an account change must not mute the next session.
+    if (!isCurrentSession()) return false;
+    // Local alerts go quiet only while the server says push delivery is switched on; with it off a registered token would
+    // otherwise leave the phone with no alert at all (local-alert.ts). The switch is configuration, not proof of arrival:
+    // docs/operations/deploy.md turns it on for the host while only a test phone has the Firebase build (step 5) and
+    // announces push only once a test push lands there (step 6).
+    setNativePushRegistered(result?.delivering === true ? session : null);
+    return result?.delivering === true;
+  } catch (error) {
+    // A failed registration (server without the route, push unavailable, token or permission error) cannot promise a push, so
+    // local alerts come back; a plain network blip keeps the last confirmed answer.
+    if (isCurrentSession() && !['network', 'aborted', 'session_changed'].includes(errorCode(error))) setNativePushRegistered(null);
+    return false; /* polling fallback remains authoritative */
+  }
 }
 
 /** This device's notification permission for the Account row: on, off (the OS can still ask), or blocked (only the system
@@ -159,7 +173,7 @@ export async function nativePushState(): Promise<'on' | 'off' | 'denied' | 'unsu
 export async function unregisterNativePush(): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
-    setNativePushRegistered(false);
+    setNativePushRegistered(null);
     const deviceId = await storage.get('pushDeviceId');
     if (deviceId) await api('/push/native/unregister', { deviceId });
   } catch { /* server token expires with the session regardless */ }
