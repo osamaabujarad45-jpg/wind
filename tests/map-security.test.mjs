@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
@@ -6,6 +7,10 @@ import { runInNewContext } from 'node:vm';
 // browser/device or network is needed to prove untrusted markup never reaches
 // innerHTML. This does not claim a browser exploit or CSP execution test.
 const page = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
+const script = page.match(/<script type="module">([\s\S]*?)<\/script>/)[1].replace(/\r\n?/g, '\n');
+const scriptHash = createHash('sha256').update(script).digest('base64');
+assert.equal(page.match(/\bscript-src ([^;]+);/)?.[1], `'self' 'sha256-${scriptHash}'`,
+  'the map permits same-origin scripts and only its exact inline module');
 const start = page.indexOf('<script type="module">') + '<script type="module">'.length;
 const parser = page.slice(start, page.indexOf('// The live camera:', start));
 const stop = page.slice(page.indexOf('function stopMarker('), page.indexOf('function noEntry('));
