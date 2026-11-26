@@ -16,6 +16,8 @@ The validation script compiles/lints the template and builds all three parameter
 
 ## Production host from 21 November 2026 (Israel Central)
 
+Native push for this host: see "Firebase and native push" below (Android push on since 26 November).
+
 Production moved to a new Pay-As-You-Go Azure subscription (`bb245244-…`) at the owner's decision. The subscription has
 **no spending limit**: watch its cost in the portal. The student host below stays up for installs built for its address until
 its data is backed up and those installs are rebuilt.
@@ -90,7 +92,7 @@ its data is backed up and those installs are rebuilt.
   - Rebuild the APKs for this address (needs a new EAS token).
   - Then retire `4.223.118.16.sslip.io` (add it to `scripts/retired-api-hosts.json`).
 
-## Production host from 16 November 2026 (student Azure subscription)
+## Production host from 16 November 2026 (student Azure subscription; history, replaced by the Israel host on 21 November)
 
 The 15 November subscription (`7bd97ddb…`, host `windapp-ps.swedencentral.cloudapp.azure.com`) went into the
 Warned, read-only state at 20:35 UTC. Azure stopped its VM and its registry answers `REGISTRY_NOT_READY`.
@@ -267,13 +269,35 @@ After the move to Azure the stack is kept with `wind-api` stopped, so nothing wr
 
 Production ran on Azure VM `wind-vm` in an earlier subscription (rg `wind-prod`, Sweden Central, `windapi236.swedencentral.cloudapp.azure.com`), image registry `windprodacr`, backups in Blob `windprodstore/wind-backups`. The last image there was `wind-api:20261110-help-ref` (`sha256:56d4df47…6cdd`, revision `bd51d592`). An extra, unused Container App also named `wind-api` cost about USD 3 a day. Delete all of it only with the owner's approval, after AWS has run well for two weeks.
 
-### Firebase (done 7 November 2026, project `wind-development`)
+### Firebase and native push (project `wind-development`, set up 7 November 2026)
 
-The backend stays on the VM. Firebase only sends closed-app alerts and password-reset email. The production app `ps.wind.app` is registered. `GOOGLE_SERVICES_JSON` and the FCM V1 key were in the **old** EAS project `@osamaabujarad236/wind`; the organization project used from 16 November has neither yet (see the 16 November section). Email/password is on, client sign-up is **off** (or anyone could pre-create a Firebase user for someone's email), minimum 12 characters. Server settings: `WIND_FIREBASE_API_KEY` (restricted to Identity Toolkit), `WIND_FIREBASE_SERVICE_ACCOUNT` (base64 JSON), `WIND_EXPO_PUSH_ENABLED=1`. The repository is `osamaabujarad45-jpg/wind`.
+The backend stays on the VM. Firebase only sends closed-app alerts and password-reset email. The production app `ps.wind.app` is registered. On 7 November `GOOGLE_SERVICES_JSON` and the FCM V1 key were in the **old** EAS project `@osamaabujarad236/wind`; the organization project has both since 26 November (State block below). Email/password is on, client sign-up is **off** (or anyone could pre-create a Firebase user for someone's email), minimum 12 characters. Server settings used on the earlier Azure/AWS hosts: `WIND_FIREBASE_API_KEY` (restricted to Identity Toolkit), `WIND_FIREBASE_SERVICE_ACCOUNT` (base64 JSON), `WIND_EXPO_PUSH_ENABLED=1`. The repository is `osamaabujarad45-jpg/wind`.
 
 **Known limit:** a user who mistyped their email at signup can lose the account to whoever owns that address. Accepted for a pilot among people the owner knows; verify email before a wider launch.
 
-**State on 26 November 2026.** `wind-development` stays Wind's production Firebase project (checked: Email/Password on, client sign-up off, 12-character minimum, the Identity Toolkit-only server key). The organization EAS project `@osamaabujarad236s-organization/wind` now holds the FCM V1 key of `firebase-adminsdk-fbsvc@wind-development` for `ps.wind.app`. `GOOGLE_SERVICES_JSON` is **not** set yet: it is added only after the delivery-gate fix (PR #121) is in the build, because an older build mutes its local alerts as soon as it registers. The Israel host's `/etc/wind-api.env` has no Firebase or push settings, so reset email and native push are off there. Fresh keys for it are kept outside the repository in the operator's private store. Native push is Android only: APNs is not configured, so the server tells iPhones `delivering: false` and they keep their local alerts.
+**State on 26 November 2026, 21:55 UTC: Android push is on in production.**
+- Firebase: `wind-development` remains the production project. Email/Password is on, client sign-up is off, the minimum password length is 12, and the server key is limited to Identity Toolkit.
+- EAS: the organization project holds that project's FCM V1 key for `ps.wind.app`. `GOOGLE_SERVICES_JSON` (it names only `ps.wind.app`; phone-test and sandbox builds skip it, `app.config.js`) is set for `production` and `preview`.
+- Server: release `20261126212854` (master `816d3e17`, PR #121's delivery gate) is live. `WIND_EXPO_PUSH_ENABLED=1` was added to `/etc/wind-api.env`, and the API was restarted and reported ready. To turn push off: `sudo cp -p /etc/wind-api.env.pre-push-20261126 /etc/wind-api.env`, `sudo systemctl restart wind-api`, then check `curl -fsS http://127.0.0.1:4000/api/ready`. This host is SQLite with in-process sending, so step 5's PostgreSQL worker note does not apply here.
+- APK: 1.1.6 versionCode 44 is EAS build `fa71b101`, built from `816d3e17`. Its SHA-256 is `a3bff23942e5e974ac7d18cb68aaa4ae02dde9db9f0d7853f163d1c395a628ac`, and it embeds the `wind-development` config. It was published on the VM with `sudo bash infra/vm-israel/publish-apk.sh <apk> <sha256> 1.1.6 44` as `/download/wind.apk`.
+- Acceptance on the A53:
+  - The test customer `Push Test (Wind QA)` (user 5) allowed notifications, and its Android token registered.
+  - A push sent from the production host through Expo got the receipt `ok`, arrived with Wind in the background, and opened the Support screen.
+  - **Step 6 passed at 22:27–22:30 UTC.**
+    - Customer side: Wind had no running process (`pidof` empty). A real order (order id 4, Tulkarm small parcel) went through accept, arrival, pickup and delivery with the real handover code. All four status pushes arrived ("قبل سائق طلبك…", "وصل السائق…", "طلبك في الطريق…", "تم التوصيل…"), the first while the app was not running.
+    - Captain side: the A53 was then signed in as the QA captain and Wind fully closed. A posted job (id 5) produced "طلب توصيل جديد متاح. افتح ويند لقبوله." within the 12-second check window. The QA captain accepted it, and the customer then cancelled it.
+    - Sign-out removed the customer's token, and the next sign-in registered the captain's.
+  - Still open: the app's own support-reply push, which was not exercised.
+- QA accounts, all made with the operator CLI on the host: `server/main.ts enroll <phone> <customer|driver|admin> "<name>" --phone-verified [vehicle, drivers only, default car]`, with the password piped on stdin and run as the service with `sudo systemd-run --pipe --wait --collect -p User=wind -p EnvironmentFile=/etc/wind-api.env -p 'Environment=NODE_ENV=production DB_PATH=/data/wind.db' -p WorkingDirectory=/opt/windapi /opt/node/bin/node server/main.ts enroll …`. A driver still needs admin approval.
+  - `Wind QA operator` (admin, user 6) stays active as the working admin login. The older stored admin credential was rejected on 26 November.
+  - `Wind QA captain` (user 7) and `Push Test (Wind QA)` (user 5) were blocked right after the trip on 26 November; blocking removed their push tokens.
+  - Order 4 left the usual ₪3 commission on the QA captain's cash ledger.
+  - The credentials are in the operator's private store.
+- The APK was published under the owner's explicit instruction of 26 November, shortly before step 6 passed.
+- Still off:
+  - Password reset email: no Firebase reset keys are on the host. Verify email first (design §0 item 6 and §10).
+- The new service-account and API keys for `wind-development` are kept outside the repository in the operator's private store.
+- Native push is Android only. The server tells iPhones `delivering: false`, so they keep their local alerts.
 
 ### Turning on native push (Android), from scratch
 
@@ -283,7 +307,7 @@ Web Push needs only `WIND_PUSH_SUBJECT`. A closed Android app needs Firebase:
 2. Make it available to EAS builds: `npx eas-cli@latest env:create --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --environment production --environment preview --visibility sensitive`. `app.config.js` reads it. Do this only for builds that contain the delivery gate (PR #121); an older build mutes its local alerts as soon as it registers.
 3. In Firebase, generate a service account key and upload it with `npx eas-cli@latest credentials` under Android > Google Service Account > FCM V1. Do not commit this key.
 4. Deploy the server with the delivery gate first, then build the APK and install it on the test phone with a test account.
-5. Add `WIND_EXPO_PUSH_ENABLED=1` to the host's env file (`/etc/wind-api.env` on the Israel host) and restart. On PostgreSQL the separate worker sends the push, so set it on the API and the worker together. The switch is host-wide: keep the Firebase build on the test phone only, and do not distribute it to pilot users until step 6 passes. Phones on the new build pick the change up at their next launch, foreground or within 10 minutes; builds without Firebase never register and are unaffected.
+5. Add `WIND_EXPO_PUSH_ENABLED=1` to the host's env file (`/etc/wind-api.env` on the Israel host) and restart. On PostgreSQL the separate worker sends the push, so set it on the API and the worker together. The switch is host-wide: keep the Firebase build on the test phone only, and do not distribute it to pilot users until step 6 passes (the 26 November exception is recorded in the State block above). Phones on the new build pick the change up at their next launch, foreground or within 10 minutes; builds without Firebase never register and are unaffected.
 6. Prove a push lands before announcing it: with the app closed, trigger a job or status event for the test account and confirm the notification arrives and opens the right screen. The `delivering` flag only says the switch is on; a broken FCM key would leave updated phones muted and silent. If it does not arrive, remove the setting and restart: phones turn their local alerts back on within 10 minutes or at their next foreground.
 
 ## Owner-run review after gates

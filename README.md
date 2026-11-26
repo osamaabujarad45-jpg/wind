@@ -242,8 +242,9 @@ The Railway image also exports and serves this single-page web build at the API'
 ## Known limits
 
 Registration does not prove phone or email ownership yet; public SMS signup is
-unavailable. Web Push is implemented; native push still needs EAS/FCM setup and
-integration. Browser GPS runs in the foreground. Native background location is
+unavailable. Web Push is implemented; native Android push is on since
+26 November 2026 (checked with the app closed; iPhones still use local
+alerts). Browser GPS runs in the foreground. Native background location is
 implemented, but the latest workspace changes still need a rebuilt-device test
 with the screen locked. Payment is cash, and the API is a single instance.
 A parcel that cannot be delivered goes `on_hold` with the driver's reason; an

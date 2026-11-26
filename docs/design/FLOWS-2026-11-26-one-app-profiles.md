@@ -58,7 +58,7 @@ Already right, and kept: map-first home, landmark-first places, button reasons, 
 | Admin | Staff | Operator enrollment | Existing duties | Never in the switcher; the switch API refuses operator sessions |
 
 - A **pending** captain keeps full Personal access while waiting. Today a pending driver cannot use the app at all.
-- A **captain pause** (cash shortfall, expired papers) or a re-check (vehicle changed) affects the Captain profile only. A paused captain can still open Captain mode to finish jobs in hand, hand over cash and see earnings, but gets no new work. An **account block** affects everything. Either way the person is told why and whom to contact, at sign-in and by push once closed-app push is live (ACC-07; continuation plan §4).
+- A **captain pause** (cash shortfall, expired papers) or a re-check (vehicle changed) affects the Captain profile only. A paused captain can still open Captain mode to finish jobs in hand, hand over cash and see earnings, but gets no new work. An **account block** affects everything. Either way the person is told why and whom to contact, at sign-in and by push (Android since 26 November; ACC-07; continuation plan §4).
 - **Multi-shop** (several branches per person, staff seats) comes later. A second branch becomes another row in the switcher.
 
 ### 2.2 The switcher
@@ -368,14 +368,14 @@ These still need the owner's input or access. None blocks F0–F6; F7's trip-cod
 - **ONE-01 wording.** The owner's request for profile switching changes SRS ONE-01's "one profile per person" to "one Personal profile plus approved work profiles". Role still comes from the server session. F0 makes the SRS edit for the owner to confirm.
 - **Sending messages for the customer.** The trip code for someone else (S8) and the recipient's delivery code (S4) are passed on by the booker or sender until an SMS provider is contracted (G-SMS).
 - **Captain documents.** Uploads need private storage (G-STORAGE). Until then the pilot records numbers and expiry dates, and the office checks the papers.
-- **Real push.** Notifications to a closed app need the Firebase access already listed in continuation plan §4.
+- **Real push.** Live for Android since 26 November, accepted on the A53 with the app closed (continuation plan §4). iPhones still need APNs.
 - **New areas.** Any new ride town pair, and later Israel or the airport, needs the owner to confirm partners, permits and insurance first.
 
 ---
 
 ## 11. Place in the continuation plan
 
-1. Integrate and deploy the reviewed branch (continuation plan §1). It is blocked only on T3 pull-request access and does not depend on this design.
+1. Integrate and deploy the reviewed branch (continuation plan §1). Done on 26 November: PR #120 and PR #121 are merged and released (`docs/operations/deploy.md`, "Firebase and native push").
 2. F0 runs alongside continuation plan §2 (native acceptance), with the same phone and builds.
 3. F1 and F2 next: small, visible, and every later screen benefits.
 4. F3 → F4 → F5 are the profile feature, in that order. F3 lands alone.

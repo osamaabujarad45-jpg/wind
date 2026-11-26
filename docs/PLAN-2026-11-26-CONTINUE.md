@@ -32,15 +32,9 @@ Prepared 26 November 2026. Read this before older handoffs.
 - Prepared and downloaded owner-local `.artifacts/delivery-policy-20261126/wind-reviewed-e5fd7322.tar.gz`, SHA-256 **`ee2d20112f60082bab167221c08bbf7ee9f425ec67402fa7c07e70fd6b3e2076`**. Its Docker build used one Metro worker and passed the packaged production dry run: readiness `{ "ok": true, "schema": 3 }`, web HTTP 200. Logs, reviewed source hashes and reviewer records are alongside it; private/generated evidence is excluded from Git.
 - Normal Git push now uses the existing owner's protected credential through a repository-only Git Credential Manager helper reset; the globally active CLI account was restored. Two independent environment reviewers approved the corrected deployment-access repair. The existing SSH rule now allows only the current operator `/32`; all other semantic properties were checked unchanged. The host's Ed25519 public key was obtained through authenticated Azure VM access and strict SSH verification passed.
 - Read-only production preflight at **14:53 UTC on 26 November** found `/opt/wind-releases/20261123185342` active, API/Caddy active, no ingress hold, passwordless sudo available, backup marker **14:00 UTC**, and readiness `{ "ok": true, "schema": 3 }`. No application install/restart or production data change occurred.
-- **Blocker:** T3's separate PR service returns `Validation Failed; must be a collaborator`. It identifies the correct repository; CLI owner access and the normal push work. The owner reported reconnecting T3, but the retry returned the same error. No PR was created or merged, and this candidate has **not been deployed**. That T3 connection needs effective repository write access; do not add another collaborator or bypass integration/branch protection as a workaround.
+- **Blocker (resolved 26 Nov):** the owner added the second account as a collaborator, PR #120 merged at `f709cd8b`, and it was deployed as release `20261126200823`. Original note: T3's separate PR service returned `Validation Failed; must be a collaborator`. It identifies the correct repository; CLI owner access and the normal push work. The owner reported reconnecting T3, but the retry returned the same error. No PR was created or merged, and this candidate has **not been deployed**. That T3 connection needs effective repository write access; do not add another collaborator or bypass integration/branch protection as a workaround.
 
-Resume automatically under the standing policy when T3 access works:
-
-1. Create the PR through T3 against `master`, using the prepared owner-local `.artifacts/delivery-policy-20261126/PR.md`; link it immediately if creation did not already link it. Check the actual pushed head, current base, conflicts, checks and reviews. If the base moved, integrate it normally on this feature branch and review/retest affected changes.
-2. Wait for required CI with `watch_pull_request`, ending the turn after registering the watch. Merge only the reviewed head after required checks/reviews pass; preserve branch protection. The earlier green checks cover `e5fd7322`, not a later unverified head.
-3. Fetch integrated master. Reuse the prepared package only if all application/configuration inputs are unchanged from `e5fd7322`; inspect any non-documentation difference and rebuild/retest affected inputs before reuse. Do not relabel an unverified archive as a newer revision.
-4. Follow `docs/operations/deploy.md` for the existing host. Reconfirm strict SSH identity, the operator-only SSH rule, no ingress hold, fresh backups, service-unit guards and the exact package checksum. Use the reviewed integrated installer; its live-data dry run and stopped-database checkpoint must pass before switching.
-5. Run the public deployment check from Docker, verify live packaged source hashes/release path, and record the previous release, checkpoint and rollback path. Preserve provider/database-platform gates. Native APK distribution still needs the physical acceptance below.
+**Done on 26 November (superseded steps removed):** PR #120 merged at `f709cd8b` and was deployed as release `20261126200823`; PR #121 followed as release `20261126212854`. The Android APK 1.1.6 versionCode 44 was published before its full physical acceptance; the open checks are in §4 and in the runbook's State block (`docs/operations/deploy.md`, "Firebase and native push").
 
 ## 2. Complete native acceptance of PR #119 and this server candidate
 
@@ -71,19 +65,30 @@ Resume automatically under the standing policy when T3 access works:
 
 **Acceptance:** each role has explicit reviewed/fixed/unverified findings; Arabic street-data limitations are distinguished from translation defects. No claim that a failed model session completed the audit.
 
-## 4. Activate real push only when Firebase access is available
+## 4. Native push: live on Android, acceptance to finish
 
-**Purpose:** driver matching currently relies on the open app's alerts. Closed-app delivery remains a provider/access gate.
+**Status, 26 Nov 21:55 UTC: Android push is live.** See `docs/operations/deploy.md` ("Firebase and native push", State block) and the CURRENT-WORK entry. Done:
+- Firebase access.
+- The platform-restricted config and FCM V1 key in EAS.
+- The delivery gate (PR #121).
+- The push-enabled APK vc44.
+- The production switch.
+- On the A53, background delivery of a push sent from the host, and the tap that opens Support.
+- SDK 57 notification permission and channel check (code check; the SDK 57 notification docs were not re-read this time): the app creates the `default` high-importance channel before asking (`src/native-push.ts`), and the server names it (`server/push.ts`). The Fable shared-channel module was not adopted.
 
-**Sources:** `src/native-push.ts`, `server/domain/native-push.ts`, `server/worker.ts`, `app.config.js`, `eas.json`, and the native push suites.
+**Sources:** `src/native-push.ts`, `server/domain/native-push.ts`, `server/push.ts`, `server/worker.ts`, `app.config.js`, `eas.json`, and the native push suites.
 
-1. Inspect existing access without printing credentials. If missing, request Firebase secrets through the supported secret-input tool, not chat.
-2. Recheck the SDK 57 notification documentation and permissions/channel requirements. The Fable verification tree contains a proposed shared-channel module; compare it to current code and requirements before using it.
-3. Prepare the platform-restricted Firebase configuration and a push-enabled candidate. Keep provider enable switches off until configuration and acceptance are ready.
-4. On the physical A53, test foreground, background, terminated launch, permission denial, token rotation, logout, account switch, wrong-role taps and duplicate delivery. Prove the notification opens only an authorized route once.
-5. After the independent reviews and acceptance gates pass, deliver the reviewed configuration/build through the established rollout under the standing delivery policy, then monitor a small pilot with rollback evidence.
+Done on 26 November 22:27–22:30 UTC: job and status events from real orders reached the A53 with the app terminated (runbook step 6), and logout plus account switch moved the token correctly (runbook State block).
 
-**Acceptance:** real provider/device evidence for each state, with safe session routing and an explicit rollout decision. Mocked outbox success alone does not close this task.
+Still open:
+1. The remaining states on the A53: foreground, permission denial and its recovery, token rotation, wrong-role taps, duplicate delivery, and the in-app support-reply push.
+2. iPhone push (APNs) when an iOS build is planned.
+3. Firebase password reset after email verification (design §0 item 6 and §10).
+4. Watch the pilot after the rollout: compare push receipts and support reports for missed alerts, with the runbook's rollback ready.
+
+If acceptance fails, turn the production switch off with the runbook's rollback. Phones bring their local alerts back within 10 minutes.
+
+**Acceptance:** real provider and device evidence for each state above, with safe session routing.
 
 ## 5. Keep PostgreSQL cutover separate from the live SQLite pilot
 
@@ -117,7 +122,7 @@ Resume automatically under the standing policy when T3 access works:
 ## 7. Operations follow-up after a release under the standing delivery policy
 
 - Prepare a release package and disposable SQLite rehearsal for the additive revision migration. Preserve the previous release and a pre-install database checkpoint.
-- Recheck current deployment state rather than copying dates/host state from `docs/CURRENT-WORK.md`. The original checkpoint left production untouched; the later access repair and read-only preflight are recorded above. No application deployment or production data change has occurred.
+- Recheck current deployment state rather than copying dates/host state from `docs/CURRENT-WORK.md`. The original checkpoint left production untouched; the later access repair and read-only preflight are recorded above. At the 14:53 UTC preflight no application deployment or production data change had occurred; production has since run releases `20261126200823` (PR #120) and `20261126212854` (PR #121).
 - Verify alert email delivery and run the timed replacement-host recovery drill from `docs/operations/azure-recovery-review.md`.
 - Retire/redirect the old host only with the required student-project access and approval of that outward action.
 - Verify the pilot's actual provider behavior with controlled field journeys. Routing fixtures and rendered tiles do not prove permitted roads or background GPS.
@@ -131,7 +136,7 @@ Resume automatically under the standing policy when T3 access works:
 
 - Design authority: [one-app flows and profiles](design/FLOWS-2026-11-26-one-app-profiles.md), merged from independent Claude Opus 5.5 and GPT 6.2 Sol studies. Clickable sketch (private to the owner): <https://claude.ai/artifact/M7zMDXwXBp7g7uk51wKs8C>.
 - Tickets F0–F11: `.scratch/one-app-profiles/issues/`, in build order, with `Blocked by:` lines.
-- Order (design §11): F0 baseline runs with §2 on the same phone and builds. Then F1 home and F2 map host. Then F3 → F4 → F5 for profiles, with F3 landing alone. Run this plan's §3 language review after F1, F4 and F5 change the screens. Then F6–F9, §4 push and F10. §5 cutover stays separate.
+- Order (design §11): F0 baseline runs with §2 on the same phone and builds. Then F1 home and F2 map host. Then F3 → F4 → F5 for profiles, with F3 landing alone. Run this plan's §3 language review after F1, F4 and F5 change the screens. Then F6–F9, §4 push and F10. §5 cutover stays separate. (Order overridden by the owner: F1 is built alongside F0; see CURRENT-WORK.)
 - F3–F11 change auth, session, persistence, orders or money and need two independent reviewers; F0–F2 need one.
 
 **Acceptance:** each slice's A53 acceptance in design §9, with before/after measurements under design §7.
