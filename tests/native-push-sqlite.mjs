@@ -63,6 +63,11 @@ try {
   await call('/push/native/register', { token: driver.token, body: { expoPushToken: driverToken, deviceId: driverDevice, platform: 'web' }, expect: 400 });
   const created = await call('/push/native/register', { token: driver.token, body: { expoPushToken: driverToken, deviceId: driverDevice, platform: 'android', lang: 'en' } });
   assert.equal(created.registered, true);
+  assert.equal(created.delivering, true, 'a server that sends push says so');
+  delete process.env.WIND_EXPO_PUSH_ENABLED;
+  const silent = await call('/push/native/register', { token: driver.token, body: { expoPushToken: driverToken, deviceId: driverDevice, platform: 'android', lang: 'en' } });
+  assert.equal(silent.delivering, false, 'a server with push off tells the phone to keep its local alerts');
+  process.env.WIND_EXPO_PUSH_ENABLED = '1';
   await call('/push/native/register', { token: driver.token, body: { expoPushToken: driverToken, deviceId: driverDevice, platform: 'android', lang: 'en' } });
   assert.equal(tokensOf(driver.user.id).length, 1, 'registering twice keeps one row');
 

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Persistence, Row } from '../db/persistence.ts';
+import { expoPushDelivering } from '../push.ts';
 
 type Actor = { id: number; role: string; status: string };
 type Context = { user: Actor; body: Row; req: IncomingMessage };
@@ -130,7 +131,8 @@ export class NativePush {
       ON CONFLICT(token_hash) DO UPDATE SET user_id=excluded.user_id,auth_session_hash=excluded.auth_session_hash,device_hash=excluded.device_hash,
       platform=excluded.platform,expo_push_token=excluded.expo_push_token,lang=excluded.lang,prefs_json=excluded.prefs_json,updated_at=excluded.updated_at,disabled_at=NULL`,
       tokenHash, user.id, sessionHash, deviceHash, ctx.body.platform, expoPushToken, lang, JSON.stringify(prefs), now, now);
-    return { ok: true, registered: true, platform: ctx.body.platform as string, lang, prefs };
+    // delivering: the phone mutes its local alerts only when this server will actually send the push (src/native-push.ts).
+    return { ok: true, registered: true, delivering: expoPushDelivering(), platform: ctx.body.platform as string, lang, prefs };
   }
   async unregister(ctx: Context) {
     await this.available();

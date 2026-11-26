@@ -5,7 +5,7 @@ import { registerHooks } from 'node:module';
 // Exercise the actual registration queue with a Secure Store read that outlives its API session.
 const readStarted = Promise.withResolvers();
 const releaseRead = Promise.withResolvers();
-const fake = { revision: 1, prompts: 0, writes: [], calls: [], readStarted, releaseRead };
+const fake = { revision: 1, prompts: 0, writes: [], calls: [], readStarted, releaseRead, delivering: false };
 globalThis.__nativePushSessionTest = fake;
 const modules = {
   'expo-notifications': `const fake = globalThis.__nativePushSessionTest;
@@ -14,7 +14,7 @@ const modules = {
     export const addNotificationResponseReceivedListener = () => {};
     export const getLastNotificationResponseAsync = async () => null;
     export const setNotificationChannelAsync = async () => {};
-    export const getPermissionsAsync = async () => ({ status: 'undetermined', canAskAgain: true });
+    export const getPermissionsAsync = async () => ({ status: fake.granted ? 'granted' : 'undetermined', canAskAgain: true });
     export const requestPermissionsAsync = async () => { fake.prompts++; return { status: 'granted' }; };
     export const getExpoPushTokenAsync = async () => ({ data: 'test-token' });`,
   'expo-crypto': `export const randomUUID = () => 'test-device';`,
@@ -24,7 +24,7 @@ const modules = {
   './api-client': `export const apiSessionCredential = () => null;`,
   './api': `const fake = globalThis.__nativePushSessionTest;
     export const apiSessionRevision = () => fake.revision;
-    export const api = async path => { fake.calls.push([fake.revision, path]); };
+    export const api = async path => { fake.calls.push([fake.revision, path]); return { delivering: fake.delivering }; };
     export const storage = {
       get: async key => {
         if (key !== 'pushAsked') return null;
@@ -57,10 +57,17 @@ try {
   assert.equal(await old, false);
   assert.equal(fake.prompts, 0, 'sign-out during the read prevents the old system dialog');
   assert.deepEqual(fake.writes, [], 'the old session cannot spend the device-wide prompt');
+  const { nativePushRegistered } = await import(new URL('../src/push-state.ts', import.meta.url).href);
   assert.equal(await registerNativePush('en', 'once'), true, 'the new session can still request permission');
+  assert.equal(nativePushRegistered(), false, 'a server with push off leaves local alerts on');
   assert.equal(await registerNativePush('en', 'once'), false, 'the automatic prompt is used once');
   assert.equal(fake.prompts, 1);
   assert.deepEqual(fake.calls, [[2, '/push/native/register']]);
+  // Once permission is granted, a server that delivers push takes over from the local alerts.
+  fake.delivering = true;
+  fake.granted = true;
+  assert.equal(await registerNativePush('en'), true);
+  assert.equal(nativePushRegistered(), true, 'a server that sends push mutes the local alerts');
 } finally {
   hooks.deregister();
   delete globalThis.__nativePushSessionTest;

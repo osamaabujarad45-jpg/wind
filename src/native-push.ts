@@ -140,8 +140,10 @@ async function register(lang: 'ar' | 'en', ask: false | 'once' | 'always' | 'tap
       await storage.set('pushDeviceId', deviceId);
     }
     if (!isCurrentSession()) return false;
-    await api('/push/native/register', { expoPushToken, deviceId, platform: Platform.OS, lang });
-    setNativePushRegistered(true); // the server's push now rings; local alerts stay quiet (local-alert.ts)
+    const result = await api<{ delivering?: boolean } | undefined>('/push/native/register', { expoPushToken, deviceId, platform: Platform.OS, lang });
+    // Local alerts go quiet only when the server says it really sends push; a registered token on a server with push off
+    // would otherwise leave the phone with no alert at all (local-alert.ts).
+    setNativePushRegistered(result?.delivering === true);
     return true;
   } catch { return false; /* polling fallback remains authoritative */ }
 }
