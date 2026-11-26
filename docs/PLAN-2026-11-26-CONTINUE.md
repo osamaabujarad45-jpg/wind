@@ -25,6 +25,23 @@ Prepared 26 November 2026. Read this before older handoffs.
 
 **Acceptance:** reviewed changes are saved on this one branch, the exact tested revision/tree is identified, and no unrelated snapshot is merged. A local commit is distinct from a push or deployment.
 
+### Published candidate and rollout checkpoint
+
+- The application candidate is pushed to `origin/feature/session-consolidation-20261126`: initial checkpoint `34a4f810`, snapshot-consistency fix `67d28e88`, then standing-policy commit **`e5fd732255764efc56362eb2d0f8b3cc5ab1aa11`**. Later delivery-record edits are documentation only; resolve the final branch tip with `git log -1`.
+- Two fresh independent subagents, `review_delivery_final_a` and `review_delivery_final_b`, returned **APPROVED** for the final policy/recovery diff and the committed sensitive fixes. Docker verification passed **168 integration suites**, lint, both typechecks, and **60 PostgreSQL 18.6 persistence suites + 22 legacy suites**, with a clean final exit 0. A Windows stdin carriage-return trailer was fixed by using SCP plus a Bash file and rerunning the gate. GitHub checks for `e5fd7322` also passed: **verify, persistence, image and validate**.
+- Prepared and downloaded owner-local `.artifacts/delivery-policy-20261126/wind-reviewed-e5fd7322.tar.gz`, SHA-256 **`ee2d20112f60082bab167221c08bbf7ee9f425ec67402fa7c07e70fd6b3e2076`**. Its Docker build used one Metro worker and passed the packaged production dry run: readiness `{ "ok": true, "schema": 3 }`, web HTTP 200. Logs, reviewed source hashes and reviewer records are alongside it; private/generated evidence is excluded from Git.
+- Normal Git push now uses the existing owner's protected credential through a repository-only Git Credential Manager helper reset; the globally active CLI account was restored. Two independent environment reviewers approved the corrected deployment-access repair. The existing SSH rule now allows only the current operator `/32`; all other semantic properties were checked unchanged. The host's Ed25519 public key was obtained through authenticated Azure VM access and strict SSH verification passed.
+- Read-only production preflight at **14:53 UTC on 26 November** found `/opt/wind-releases/20261123185342` active, API/Caddy active, no ingress hold, passwordless sudo available, backup marker **14:00 UTC**, and readiness `{ "ok": true, "schema": 3 }`. No application install/restart or production data change occurred.
+- **Blocker:** T3's separate PR service returns `Validation Failed; must be a collaborator`. It identifies the correct repository; CLI owner access and the normal push work. The owner reported reconnecting T3, but the retry returned the same error. No PR was created or merged, and this candidate has **not been deployed**. That T3 connection needs effective repository write access; do not add another collaborator or bypass integration/branch protection as a workaround.
+
+Resume automatically under the standing policy when T3 access works:
+
+1. Create the PR through T3 against `master`, using the prepared owner-local `.artifacts/delivery-policy-20261126/PR.md`; link it immediately if creation did not already link it. Check the actual pushed head, current base, conflicts, checks and reviews. If the base moved, integrate it normally on this feature branch and review/retest affected changes.
+2. Wait for required CI with `watch_pull_request`, ending the turn after registering the watch. Merge only the reviewed head after required checks/reviews pass; preserve branch protection. The earlier green checks cover `e5fd7322`, not a later unverified head.
+3. Fetch integrated master. Reuse the prepared package only if all application/configuration inputs are unchanged from `e5fd7322`; inspect any non-documentation difference and rebuild/retest affected inputs before reuse. Do not relabel an unverified archive as a newer revision.
+4. Follow `docs/operations/deploy.md` for the existing host. Reconfirm strict SSH identity, the operator-only SSH rule, no ingress hold, fresh backups, service-unit guards and the exact package checksum. Use the reviewed integrated installer; its live-data dry run and stopped-database checkpoint must pass before switching.
+5. Run the public deployment check from Docker, verify live packaged source hashes/release path, and record the previous release, checkpoint and rollback path. Preserve provider/database-platform gates. Native APK distribution still needs the physical acceptance below.
+
 ## 2. Complete native acceptance of PR #119 and this server candidate
 
 **Purpose:** close the phone-specific gaps left by the prior Claude session. Deterministic hook tests and a web phone run do not prove a native first frame or background behavior.
@@ -97,10 +114,10 @@ Prepared 26 November 2026. Read this before older handoffs.
 
 **Acceptance:** every retained tree has a disposition and recovery path. Only one active feature writer remains, without erasing history or private QA state.
 
-## 7. Operations follow-up after a separately approved release
+## 7. Operations follow-up after a release under the standing delivery policy
 
 - Prepare a release package and disposable SQLite rehearsal for the additive revision migration. Preserve the previous release and a pre-install database checkpoint.
-- Recheck current deployment state rather than copying dates/host state from `docs/CURRENT-WORK.md`. This takeover did not deploy or modify production.
+- Recheck current deployment state rather than copying dates/host state from `docs/CURRENT-WORK.md`. The original checkpoint left production untouched; the later access repair and read-only preflight are recorded above. No application deployment or production data change has occurred.
 - Verify alert email delivery and run the timed replacement-host recovery drill from `docs/operations/azure-recovery-review.md`.
 - Retire/redirect the old host only with the required student-project access and approval of that outward action.
 - Verify the pilot's actual provider behavior with controlled field journeys. Routing fixtures and rendered tiles do not prove permitted roads or background GPS.

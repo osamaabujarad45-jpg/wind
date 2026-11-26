@@ -113,7 +113,7 @@ The first independent subagent review requested this correction and found no add
 
 ## Remaining work and limits
 
-- A clean code/test gate is not a production deployment. Production was not altered or freshly inventoried in this task.
+- A clean code/test gate is not a production deployment. At the original 19-file checkpoint production was untouched; the later SSH-access repair, live preflight, published candidate and current rollout blocker are recorded in [the continuation plan](../PLAN-2026-11-26-CONTINUE.md#published-candidate-and-rollout-checkpoint).
 - PR #119's native first-frame acceptance, a complete TalkBack/200% native walk, real closed-app push delivery, field road/GPS evidence, and the timed replacement-host restore remain separate acceptance tasks.
 - Firebase activation and old-host retirement still depend on the owner's access/approval. Gates were not enabled to make a test appear complete.
 - Old worktrees with real edits and private QA state are preserved, not falsely labeled finished. The continuation plan explains the next review/port sequence and identifies superseded historical task designs.
