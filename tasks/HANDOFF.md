@@ -1,6 +1,6 @@
 # Start here: finish Wind safely
 
-For current work, read `AGENTS.md`, `docs/CURRENT-WORK.md`, then `docs/PLAN-2026-11-26-CONTINUE.md`. That plan reconciles the older task designs and identifies the active branch and acceptance gaps.
+For current work, read `AGENTS.md`, `docs/CURRENT-WORK.md`, then `docs/PLAN-2026-11-26-CONTINUE.md`. That plan reconciles the older task designs and identifies the active branch and acceptance gaps. Routine delivery uses the standing review-gated approval in `AGENTS.md`; the historical permission wording below does not override it.
 
 ## Historical handoff — 29 October 2026
 

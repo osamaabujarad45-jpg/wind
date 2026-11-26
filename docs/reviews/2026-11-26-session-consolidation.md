@@ -8,7 +8,7 @@ This branch recovers verified gaps from the older root review onto current `orig
 
 **Base:** `941d5cac35030119bcf543599fbc7904441e22fe`, confirmed against the remote master ref. The previous root checkout was `backup/root-review-20261125` at `2fc10b51`; local `master` is the older `b6092295` lineage and was not used as the integration base.
 
-**Boundary:** the owner approved the local checkpoint on 26 November 2026, and this report accompanies that commit. No push, PR, production deployment, production migration, provider enablement or paid-resource creation was performed by this takeover. Further outward actions require their own approval under the supplied AGENTS rules.
+**Historical checkpoint boundary:** the owner approved the local checkpoint on 26 November 2026, and this report accompanies that commit. At that checkpoint no push, PR, production deployment, production migration, provider enablement or paid-resource creation had been performed. The owner's subsequent standing delivery approval in `AGENTS.md` governs future reviewed commits, pushes, merges and deployments; this historical record does not revoke that approval.
 
 ## Session and worktree ownership
 
@@ -103,12 +103,20 @@ Cleanup checkpoint: temporary bridge processes and the task's two ADB mappings a
 
 Local logs: `.artifacts/takeover-20261126/` (`default-gate.log`, `final-gate.log`, `final-targeted.log`, `persistence.log`, and the later UI/phone logs). Raw audit is retained in the sandbox's `.artifacts/dependency-audit/raw.json` and copied with final evidence when available.
 
+## Delivery-policy follow-up and additional review finding
+
+**Issue -> change -> verification:** older handoffs required another approval for every routine commit, push and deployment -> add the owner's standing, subagent-review-gated delivery approval to `AGENTS.md` and point the active handoff/plan to it -> independently review the instruction scope and check its file pointers. Sensitive changes require two independent approvals; Docker, physical-device, branch protection and deployment checks remain mandatory. Missing credentials, new spending, destructive data operations and a PostgreSQL cutover retain their separate input/authorization gates.
+
+**Required review finding -> change -> verification:** a recovery-only order response could combine old pickup instructions with a newer revision, and a command response could do the same after commit -> serialize recovery metadata from the exact base order row, carry it inside protocol/journey snapshots, and capture the command's complete recovery response before committing -> a deterministic Docker HTTP regression failed before the fix (`5 !== 4`) and passed afterward. The test edits instructions after the base-row read, proves the stale command is refused, edits again immediately after command commit, and verifies that both the reply and replay retain coherent instructions/revisions. Legacy clients still receive no recovery field.
+
+The first independent subagent review requested this correction and found no additional blockers in the password-reset, remittance or migration changes. Fresh final approvals and the follow-up Docker gate results must be reported with the delivered revision; local command/evidence logs are kept in `.artifacts/delivery-policy-20261126/`.
+
 ## Remaining work and limits
 
 - A clean code/test gate is not a production deployment. Production was not altered or freshly inventoried in this task.
 - PR #119's native first-frame acceptance, a complete TalkBack/200% native walk, real closed-app push delivery, field road/GPS evidence, and the timed replacement-host restore remain separate acceptance tasks.
 - Firebase activation and old-host retirement still depend on the owner's access/approval. Gates were not enabled to make a test appear complete.
 - Old worktrees with real edits and private QA state are preserved, not falsely labeled finished. The continuation plan explains the next review/port sequence and identifies superseded historical task designs.
-- The approved local checkpoint contains the reviewed work and plan on the single active feature branch. A push, PR or subsequent commit requires the applicable owner approval.
+- The approved local checkpoint contains the reviewed work and plan on the single active feature branch. Subsequent delivery follows the current standing approval and gates in `AGENTS.md`.
 
 **Verdict:** the scoped reproduced defects are fixed; final gate/device results and any actual limitation must be read with this report. Continue from [the ordered plan](../PLAN-2026-11-26-CONTINUE.md), not from the old local master or a blanket cherry-pick of the backup.

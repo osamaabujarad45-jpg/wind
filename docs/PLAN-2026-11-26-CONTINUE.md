@@ -6,10 +6,10 @@ Prepared 26 November 2026. Read this before older handoffs.
 
 - Active branch: `feature/session-consolidation-20261126` in the main Fastship checkout.
 - Base: `origin/master` at `941d5cac35030119bcf543599fbc7904441e22fe` (PR #119 merged). The local branch named `master` is an older, diverged lineage. Do not branch from it.
-- This branch contains the reviewed server/recovery fixes, their regressions, the SQLite contract update, the Docker entry point, and this continuation record. Commit status and final verification are in [the review report](reviews/2026-11-26-session-consolidation.md).
+- This branch contains the reviewed server/recovery fixes, their regressions (including recovery snapshot consistency), the SQLite contract update, the Docker entry point, the standing delivery policy, and this continuation record. Commit status and final verification are in [the review report](reviews/2026-11-26-session-consolidation.md).
 - Keep one active writer. The 86 other primary sessions were inventoried from their latest handoffs; none was running when takeover began. Do not resume an old writer against this checkout.
 - The earlier root snapshot remains at `backup/root-review-20261125` (`2fc10b51`). It is evidence to compare, not a replacement for current master.
-- No new commit, push, PR, deployment, production migration, purchase, or provider activation is authorized by this document. Obtain the owner's approval for the specific outward action after preparing its reviewable result.
+- Routine commits, pushes, PRs, merges and deployments follow the owner's standing review-gated delivery approval in `AGENTS.md`. Proceed automatically when those gates pass. Actions outside that approval, such as a database-platform cutover, destructive data operation or new spending commitment, still require the specified owner input.
 - Tests and heavy builds stay on Docker cloud sandbox `sbx_001m7sknp49sr4g8bytx182r0z2`, through SSH. One job at a time. Never install dependencies in that sandbox; reuse a verified matching prepared cache.
 - Acceptance uses the physical Galaxy A53 (`R5CTB0FJP9Z`). Never start an emulator. Keep isolated test backends on loopback with `adb reverse`; preserve Chrome's profile and unrelated tabs.
 
@@ -20,8 +20,8 @@ Prepared 26 November 2026. Read this before older handoffs.
 1. Check `git status --short --branch`, `git rev-parse HEAD`, and `git diff --check`.
 2. Read the final diff for `server/main.ts`, `server/domain/payments.ts`, `server/db/sqlite-schema.ts`, `server/migrate.ts`, and their tests. The report records failing-before and passing-after evidence.
 3. Inspect the schema fixture diff. Only `orders.version`, its trigger, and the resulting column positions should change. Installed HTTP fixtures are unchanged.
-4. Completed with owner approval on 26 November 2026: save the 19 reviewed files as the local checkpoint. The commit includes only this branch's source, tests, fixture, runner entry point and documentation. `.artifacts`, environment files, databases, research clones and other worktrees remain outside the commit.
-5. If a PR is requested later, target the current remote `master`, check for intervening changes, repeat the affected gates, and describe all three behavior fixes and the migration compatibility decision. Link the PR through T3 immediately after creating it.
+4. Completed with owner approval on 26 November 2026: the 19-file checkpoint is `34a4f810c7d243155109f19484b48e03b0df4050`. Save subsequent reviewed fixes under the standing delivery policy. `.artifacts`, environment files, databases, research clones and other worktrees remain outside commits.
+5. When integrating this feature branch, target the current remote `master`, check for intervening changes, repeat the affected gates, and describe the behavior fixes and the migration compatibility decision. Link the PR through T3 immediately after creating it; follow the standing policy through merge and rollout when all release gates pass.
 
 **Acceptance:** reviewed changes are saved on this one branch, the exact tested revision/tree is identified, and no unrelated snapshot is merged. A local commit is distinct from a push or deployment.
 
@@ -32,7 +32,7 @@ Prepared 26 November 2026. Read this before older handoffs.
 **Sources:** `src/use-second-tick.ts`, `src/app/driver/index.tsx`, `tests/second-tick.test.mjs`, `scripts/check-phone-tests.mjs`, `scripts/phone-test-server.mjs`.
 
 1. Confirm the attached physical device and record the installed app/build identity. Use an isolated test app/backend; never turn a synthetic journey into a production booking.
-2. Confirm that the native app actually contains PR #119 before claiming its acceptance. If a new native build is needed, prepare its EAS profile/environment and obtain any required build approval/access; keep generated native projects out of source.
+2. Confirm that the native app actually contains PR #119 before claiming its acceptance. If a new native build is needed, use the established EAS profile/environment under the standing delivery policy; request only missing access or any new spending commitment. Keep generated native projects out of source.
 3. Leave the driver board open with no timed offers, then introduce a synthetic timed offer. Record the first visible frame: correct countdown, no disabled Accept flash, no temporary loading reason shifting the sheet.
 4. Blur and refocus the screen, let an offer expire, decline one, and accept another. Verify one action per tap, correct expiry, and no idle ticking after the last timed offer disappears.
 5. Against this server candidate, read an order's recovery snapshot, change its pickup instructions without changing status, and prove a command from the old snapshot is refused. Refresh and retry with a new command; prove the valid action happens once.
@@ -64,7 +64,7 @@ Prepared 26 November 2026. Read this before older handoffs.
 2. Recheck the SDK 57 notification documentation and permissions/channel requirements. The Fable verification tree contains a proposed shared-channel module; compare it to current code and requirements before using it.
 3. Prepare the platform-restricted Firebase configuration and a push-enabled candidate. Keep provider enable switches off until configuration and acceptance are ready.
 4. On the physical A53, test foreground, background, terminated launch, permission denial, token rotation, logout, account switch, wrong-role taps and duplicate delivery. Prove the notification opens only an authorized route once.
-5. Obtain approval for the concrete production configuration/build rollout, then monitor a small pilot with rollback evidence.
+5. After the independent reviews and acceptance gates pass, deliver the reviewed configuration/build through the established rollout under the standing delivery policy, then monitor a small pilot with rollback evidence.
 
 **Acceptance:** real provider/device evidence for each state, with safe session routing and an explicit rollout decision. Mocked outbox success alone does not close this task.
 
@@ -115,6 +115,6 @@ Prepared 26 November 2026. Read this before older handoffs.
 3. Set `WIND_TEST_DATABASE_URL=postgresql://fastship_test@127.0.0.1:55474/fastship_test` for `npm run test:persistence` on the existing PostgreSQL 18 container. Check the real server version first. Do not substitute PG16 for this gate.
 4. Build/export with one worker in Docker. Run the appropriate isolated UI suite. For the physical Chrome suite, forward only its own loopback backend and debugging ports and close only the test tab.
 5. Record command, host, exit status, source identity, provider tier and device/build identity. Report skipped checks explicitly.
-6. Run `git diff --check`, review the final file list, and ask for any still-required commit/push/deploy approval only after the concrete result is ready.
+6. Run `git diff --check`, review the final file list, and automatically complete the covered commit/push/deployment steps after subagent approval and verification. Ask only for inputs or actions outside the standing approval in `AGENTS.md`.
 
 Handback: branch and revision/tree; issue -> change -> verification for every fix; gate results; physical-device scope and limitations; remaining owner-only inputs; next exact task. Keep credentials, private account data and raw GPS out of the handback.
