@@ -15,6 +15,7 @@ import { FreightDetails } from '../../freight-details';
 import { capacityCommand, dispatchAcceptance, secondsUntil } from '../../ride-flow';
 import { BackgroundLocationAction, DriverPresenceCard } from '../../driver-presence-card';
 import { RouteLine, ServiceIcon, useFormat, VerifyEmailNudge } from '../../parts';
+import { useSecondTick } from '../../use-second-tick';
 import { localAlert, useNewIds } from '../../local-alert';
 import { useSession } from '../../session';
 import { DriverSupportCard } from '../../driver-support-card';
@@ -74,12 +75,12 @@ export default function Jobs() {
   const [busy, setBusy] = useState<number | null>(null);
   const [actionError, setActionError] = useState('');
   const focusRevision = useRef(0);
-  const [now, setNow] = useState(Date.now);
   useFocusEffect(useCallback(() => {
-    focusRevision.current++; setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => { focusRevision.current++; clearInterval(timer); };
+    focusRevision.current++;
+    return () => { focusRevision.current++; };
   }, []));
+  // The clock only drives offer countdowns and expiry, so it ticks only while this screen is focused and shows an offer.
+  const now = useSecondTick(focused && !!jobs?.some(job => job.dispatch));
   const [offering, setOffering] = useState<{ id: number; text: string } | null>(null); // the open "offer your price" form
   const rate = me?.plan === 'pro' ? me.settings.proCommission : me?.settings.commission ?? 0;
   const located = work.tracking === 'sharing';

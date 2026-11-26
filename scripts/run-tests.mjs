@@ -29,6 +29,7 @@ const suites = [
   "place-link.test.mjs",
   "presentation.test.mjs",
   "driver-presence-card.test.mjs",
+  "second-tick.test.mjs",
   "driver-presence.test.mjs",
   "driver-presence-runtime.test.mjs",
   "api-client.test.mjs",
