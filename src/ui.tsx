@@ -171,10 +171,11 @@ export function Header({ title, back = false, right, subtitle }: { title: string
     {back && <IconButton icon={row === 'row-reverse' ? 'arrow-forward' : 'arrow-back'} label={c.back}
       onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />}
     <View style={{ flex: 1 }}>
-      <Txt variant="h1" header numberOfLines={1}>{title}</Txt>
+      <Txt variant="h1" header numberOfLines={2}>{title}</Txt>
       {!!subtitle && <Txt variant="caption" numberOfLines={1}>{subtitle}</Txt>}
     </View>
-    {right}
+    {/* Capped, so a long status or link can never squeeze the title away (the order number vanished on a shop consent). */}
+    {!!right && <View style={styles.headerRight}>{right}</View>}
   </View>;
 }
 
@@ -763,6 +764,7 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   content: { paddingHorizontal: size.gutter, paddingTop: 8, paddingBottom: 28 },
   footer: { paddingHorizontal: size.gutter, paddingTop: 10, paddingBottom: 8, backgroundColor: palette.card, borderTopWidth: 1, borderTopColor: palette.hair },
   header: { alignItems: 'center', gap: 10, marginBottom: 14, minHeight: size.control },
+  headerRight: { flexShrink: 1, maxWidth: '55%' },
   iconButton: { width: size.control, height: size.control, borderRadius: size.control / 2, alignItems: 'center', justifyContent: 'center' },
   card: { backgroundColor: palette.card, borderRadius: size.radius, padding: 14, marginBottom: 12 },
   button: { minHeight: size.control, borderRadius: size.control / 2, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, gap: 8 },

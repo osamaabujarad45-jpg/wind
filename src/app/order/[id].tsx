@@ -853,11 +853,10 @@ export default function OrderScreen() {
     </MapSheet>
   </View>;
   return <Screen onRefresh={reload}>
-    <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`} back
-      right={<Row gap={8} style={{ alignItems: 'center' }}>
-        {order.status === 'completed' || finding || activeStatuses.includes(order.status) ? null : <Badge label={statusText(c, order, mine, now)} status={order.status} />}
-        {helpButton}
-      </Row>} />
+    <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`} back right={helpButton} />
+    {/* on its own line: beside the title, a long status left the order number no room on narrow screens and at large text */}
+    {order.status === 'completed' || finding || activeStatuses.includes(order.status) ? null
+      : <Row style={{ marginTop: -6, marginBottom: 10 }}><Badge label={statusText(c, order, mine, now)} status={order.status} /></Row>}
     {/* completed: the banner below already says it, with the time; a second badge one line above only echoes */}
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
     {body}

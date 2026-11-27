@@ -76,4 +76,11 @@ for (const file of ['../src/ui.tsx', '../src/app/order/[id].tsx']) {
 }
 
 assert.deepEqual(problems, [], problems.join('\n'));
+// 5. Design review 27 Nov: a long header status left the order number no room, so the right slot is capped and the order's
+// status sits on its own line. react-native-web also paints its own teal on a Switch that is on without activeThumbColor.
+assert.ok(ui.includes('{!!right && <View style={styles.headerRight}>{right}</View>}'), 'the header caps its right slot');
+assert.ok(ui.includes("headerRight: { flexShrink: 1, maxWidth: '55%' }"), 'the right slot shrinks and never takes more than 55%');
+assert.match(read('../src/app/order/[id].tsx'), /<Header title=\{orderCode\(order\.id\)\}.* back right=\{helpButton\} \/>/, 'the order status badge sits under the header, not beside the order number');
+assert.ok(read('../src/app/merchant/catalogue.tsx').includes("Platform.OS === 'web' && { activeThumbColor: palette.card }"), 'the web switch keeps the brand thumb');
+
 console.log('large-text ok');

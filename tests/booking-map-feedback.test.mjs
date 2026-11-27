@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
@@ -96,4 +97,9 @@ for (const file of ['../src/app/(customer)/index.tsx', '../src/app/order/[id].ts
   assert.match(read(file), /side && \(rtl \? \{ left: SIDE_SHEET, right: 0 \} : \{ right: SIDE_SHEET \}\)/, `${file} keeps top controls outside the sheet`);
 }
 assert.match(read('../src/app/(customer)/index.tsx'), /rtl \? \{ left: 12 \+ \(side \? SIDE_SHEET : 0\) \}/, 'the Arabic Home locate control clears its left sheet');
+// The page is LTR: without its own direction a long Arabic landmark is cut at its start, and only its end shows.
+assert.ok(page.includes("createElement('span'), { textContent: text, dir: 'auto' }"), 'map pin names take their direction from their text');
+// The page's own policy runs its inline script only when the fingerprint matches: a stale one leaves every map blank.
+const inline = /<script type="module">([\s\S]*?)<\/script>/.exec(page)[1];
+assert.ok(page.includes(`'sha256-${createHash('sha256').update(inline).digest('base64')}'`), 'map.html policy hash matches its inline script');
 console.log('Booking map padding, tap/search alternatives, swap feedback and quote stability passed');
