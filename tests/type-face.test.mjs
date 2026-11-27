@@ -36,12 +36,21 @@ for (const name of ['display', 'h1', 'h2', 'title', 'body', 'label', 'caption', 
   const [size, line] = styled(name);
   assert.ok(line >= Math.ceil(size * 1.7), `${name}: line height ${line} for size ${size} clips Arabic dots (needs 1.7x)`);
 }
-const tight = walk(join(root, 'src')).flatMap(file => readFileSync(file, 'utf8').split('\n').flatMap((text, i) =>
-  [...text.matchAll(/\{[^{}]*\}/g)].filter(([style]) => {
-    const size = /\bfontSize: (\d+)/.exec(style), line = /\blineHeight: (\d+)/.exec(style);
-    return size && line && Number(line[1]) < Math.ceil(Number(size[1]) * 1.7);
-  }).map(() => `${relative(root, file).replace(/\\/g, '/')}:${i + 1}`)));
+const sources = walk(join(root, 'src')).map(file => [relative(root, file).replace(/\\/g, '/'), readFileSync(file, 'utf8')]);
+const at = (text, index) => text.slice(0, index).split('\n').length;
+const tight = sources.flatMap(([file, text]) => [...text.matchAll(/\{[^{}]*\}/g)].filter(([style]) => {
+  const size = /\bfontSize: (\d+)/.exec(style), line = /\blineHeight: (\d+)/.exec(style);
+  return size && line && Number(line[1]) < Math.ceil(Number(size[1]) * 1.7);
+}).map(m => `${file}:${at(text, m.index)}`));
 assert.deepEqual(tight, [], 'line height is at least 1.7x the size');
+
+// A named style with a size and no line height falls back to the font's 1.25, which cuts the dots in a line-limited label.
+// Exempt: digits only (no dots), and one-line text inputs, where a line height moves the text off centre on iOS.
+const digitsOrInput = new Set(['input', 'stepperValue', 'codeDigit', 'digitText', 'railCountText', 'barBadgeText']);
+const missing = sources.flatMap(([file, text]) => [...text.matchAll(/\n\s*(\w+): (\{[^{}]*\})/g)]
+  .filter(([, name, style]) => /\bfontSize:/.test(style) && !/\blineHeight:/.test(style) && !digitsOrInput.has(name))
+  .map(m => `${file}:${at(text, m.index) + 1} ${m[1]}`));
+assert.deepEqual(missing, [], 'set lineHeight with fontSize (wind-design §5)');
 
 // No source sets fontWeight.
 const offenders = walk(join(root, 'src')).flatMap(file => readFileSync(file, 'utf8').split('\n')

@@ -76,6 +76,6 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   line: { position: 'absolute', height: 4, borderRadius: 2, backgroundColor: palette.forest },
   pickup: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },
   dropoff: { position: 'absolute', width: 16, height: 16, borderRadius: 4, backgroundColor: palette.clay, borderWidth: 3, borderColor: palette.card },
-  label: { position: 'absolute', width: 120, textAlign: 'center', fontSize: 12, fontFamily: face.semibold, color: palette.ink },
-  diagram: { position: 'absolute', top: 8, left: 12, right: 12, textAlign: 'center', fontSize: 11, fontFamily: face.medium, color: palette.secondary },
+  label: { position: 'absolute', width: 120, textAlign: 'center', fontSize: 12, lineHeight: 21, fontFamily: face.semibold, color: palette.ink },
+  diagram: { position: 'absolute', top: 8, left: 12, right: 12, textAlign: 'center', fontSize: 11, lineHeight: 19, fontFamily: face.medium, color: palette.secondary },
 }));

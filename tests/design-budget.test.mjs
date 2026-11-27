@@ -38,6 +38,10 @@ assert.deepEqual(ratchet({ 'src/a.tsx': { explanations: 5, words: 9, reasons: 1 
   { 'src/a.tsx': { explanations: 2, words: 30, reasons: 4 }, 'src/b.tsx': { explanations: 3, words: 9, reasons: 3 } }),
 { 'src/a.tsx': { explanations: 2, words: 9, reasons: 1 } });
 
+// The catalogue is walked by the English keys, so both languages must define the same ones.
+const { copy } = await import('../src/copy.ts');
+assert.deepEqual(Object.keys(copy.ar).sort(), Object.keys(copy.en).sort(), 'an Arabic-only key would escape the count');
+
 // The repository is within its committed budget.
 const root = fileURLToPath(new URL('..', import.meta.url));
 const budget = JSON.parse(readFileSync(new URL('../docs/design/text-budget.json', import.meta.url), 'utf8'));

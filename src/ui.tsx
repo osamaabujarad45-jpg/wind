@@ -514,7 +514,7 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, hint, m
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} autoCorrect={autoCorrect} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); onBlur?.(); }}
         onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
-        autoCapitalize="none" /* measured: onContentSizeChange re-reads the height on every font change, and maxHeight caps it */ style={[styles.input, { textAlign: inputAlign }, disabled && { color: palette.secondary }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
+        autoCapitalize="none" /* measured: onContentSizeChange re-reads the height on every font change, and maxHeight caps it */ style={[styles.input, multiline && { lineHeight: 28 }, { textAlign: inputAlign }, disabled && { color: palette.secondary }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
       {/* Android: a drag that starts on an unfocused field never reaches the page ScrollView, because ReactEditText keeps
           the touch whenever the field reports any scroll range (right-aligned text, or a line taller than the box at a large
           font scale; A53). Until focus this layer takes the touch, so the page scrolls; a tap focuses with the cursor at the end. */}
@@ -776,17 +776,17 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   outline: { borderWidth: 1, borderColor: palette.field },
   dangerEdge: { borderWidth: 1, borderColor: palette.error },
   buttonOff: { borderWidth: 1, borderColor: palette.line },
-  buttonText: { fontSize: 15, fontFamily: face.semibold },
+  buttonText: { fontSize: 15, lineHeight: 26, fontFamily: face.semibold },
   choices: { gap: 8, marginBottom: 6 },
   tabTrack: { backgroundColor: palette.muted, borderRadius: 14, padding: 4, gap: 4 }, // Choices tabs: the sunken track
   tab: { borderWidth: 0, backgroundColor: 'transparent', minHeight: 44 },
-  choiceText: { color: palette.ink, fontSize: 14, fontFamily: face.semibold, textAlign: 'center' },
+  choiceText: { color: palette.ink, fontSize: 14, lineHeight: 24, fontFamily: face.semibold, textAlign: 'center' },
   stepper: { alignItems: 'center', gap: 4, backgroundColor: palette.muted, borderRadius: 12, padding: 3, alignSelf: 'flex-start' }, // hugs its keys instead of a full-width bar
   stepperKey: { width: size.control, height: size.control, borderRadius: 12, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   stepperValue: { minWidth: 28, textAlign: 'center', fontSize: 15, fontFamily: face.semibold, color: palette.ink },
   chip: { paddingHorizontal: 14, minHeight: size.control, borderRadius: size.control / 2, backgroundColor: palette.card, justifyContent: 'center', borderWidth: 1, borderColor: palette.field },
   chipOn: { backgroundColor: palette.forest, borderColor: palette.forest },
-  chipText: { fontSize: 14, fontFamily: face.semibold, color: palette.ink },
+  chipText: { fontSize: 14, lineHeight: 24, fontFamily: face.semibold, color: palette.ink },
   field: { marginBottom: 12 },
   codeCell: { flex: 1, minHeight: 56, maxWidth: 56, borderRadius: 12, borderWidth: 1, borderColor: palette.field, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   codeCellActive: { borderColor: palette.forest, borderWidth: 2 },
@@ -796,24 +796,24 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   inputFocused: { borderColor: palette.forest, borderWidth: 2, paddingHorizontal: 11, paddingVertical: 0 }, // 2px focus ring; the padding keeps the text and the height still
   inputError: { borderColor: palette.error, backgroundColor: palette.errorPale },
   inputDisabled: { borderColor: palette.dash, backgroundColor: palette.muted }, // a locked field must not look typeable (A53 walk, 18 Nov)
-  fieldError: { flex: 1, color: palette.error, fontSize: 13, fontFamily: face.semibold },
+  fieldError: { flex: 1, color: palette.error, fontSize: 13, lineHeight: 23, fontFamily: face.semibold },
   input: { fontFamily: face.regular, flex: 1, minHeight: size.control, paddingVertical: 10, color: palette.ink, fontSize: 16 },
-  error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, fontFamily: face.semibold, marginBottom: 10, overflow: 'hidden', textAlign: 'center' },
-  badge: { alignItems: 'center', gap: 5, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 99, alignSelf: 'flex-start', maxWidth: '100%' },
+  error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, lineHeight: 23, fontFamily: face.semibold, marginBottom: 10, overflow: 'hidden', textAlign: 'center' },
+  badge: { alignItems: 'center', gap: 5, paddingVertical: 1, paddingHorizontal: 8, borderRadius: 99, alignSelf: 'flex-start', maxWidth: '100%' },
   badgeQuiet: { paddingHorizontal: 0 },
-  badgeText: { fontSize: 12, fontFamily: face.semibold, flexShrink: 1 }, // a long English status wraps inside its card instead of running past it
+  badgeText: { fontSize: 12, lineHeight: 21, fontFamily: face.semibold, flexShrink: 1 }, // a long English status wraps inside its card instead of running past it
   group: { backgroundColor: palette.card, borderRadius: size.radius, overflow: 'hidden', marginBottom: 12 },
   groupDivider: { borderTopWidth: 1, borderTopColor: palette.hair },
   listRow: { alignItems: 'center', gap: 12, minHeight: size.row, paddingHorizontal: 14, paddingVertical: 6 },
   listIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   listCopy: { flex: 1, minWidth: 0 },
   listLabel: { fontSize: 15, lineHeight: 26, fontFamily: face.medium, color: palette.ink },
-  listValue: { fontFamily: face.regular, fontSize: 13, color: palette.secondary },
+  listValue: { fontFamily: face.regular, fontSize: 13, lineHeight: 23, color: palette.secondary },
   empty: { alignItems: 'center', gap: 8, paddingVertical: 32, paddingHorizontal: 10 },
   emptyIcon: { width: 56, height: 56, borderRadius: 18, backgroundColor: palette.olivePale, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
   rail: { width: 248 /* admin-rail token (theme.ts sizes.adminRail) */, backgroundColor: palette.card, borderEndWidth: 1, borderEndColor: palette.hair, paddingHorizontal: 12, paddingVertical: 16 },
   railBrand: { alignItems: 'center', gap: 10, paddingHorizontal: 8, paddingBottom: 18 },
-  railTitle: { fontSize: 16, fontFamily: face.semibold, color: palette.ink, flexShrink: 1 },
+  railTitle: { fontSize: 16, lineHeight: 28, fontFamily: face.semibold, color: palette.ink, flexShrink: 1 },
   railItem: { alignItems: 'center', gap: 10, minHeight: 44, paddingHorizontal: 10, borderRadius: 10 },
   railText: { flex: 1, fontSize: 14, lineHeight: 24, fontFamily: face.medium },
   railCount: { minWidth: 22, minHeight: 22, borderRadius: 11, backgroundColor: palette.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },

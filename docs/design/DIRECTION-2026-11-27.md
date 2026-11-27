@@ -25,6 +25,8 @@ The owner's brief: too much text on screen; the app reads as generated; use the 
 2. **Text.** At the start of this work, screen code made 440 references to explanatory sentences (counted when either language is long) and had 98 reason lines under buttons (every state, not all visible at once). The heaviest: `order/[id].tsx` (93 sentences), `book.tsx` (42), `driver/index.tsx` (27), `admin/cash.tsx` (21). `scripts/design-check.mjs` now holds this budget and only lets it go down.
 3. **Sameness.** Cards, pills and tinted icon tiles on every screen leave no hierarchy.
 
+The budget was re-based once, on 27 November, when the checker began counting a string that is long in either language and the web worker's notification words. The old and new source counted the same under the new checker (440 references, 9555 words, 98 reason lines; catalogue 15684, push 566, web worker 406), so no text was added.
+
 ## Order of work
 
 Each slice is one reviewable change, based on the committed F5. Each ends with the text budget lowered, new Arabic and English captures opened, and phone checks.

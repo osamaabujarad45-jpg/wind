@@ -643,7 +643,7 @@ try {
   await login(switching, '0599000710');
   await button(switching, c.accept).click();
   await switching.waitForFunction(() => window.pendingPermission.length > 0);
-  await switching.getByRole('tab', { name: c.account, exact: true }).click();
+  await switching.getByRole('tab', { name: new RegExp(`^${c.account}(, \\d+)?$`) }).click(); // the name carries a count when one waits
   await button(switching, c.logout).click();
   await switching.waitForURL('**/auth');
   await field(switching, c.identifier).fill('0599000708');

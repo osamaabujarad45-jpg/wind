@@ -758,7 +758,7 @@ export default function OrderScreen() {
     {/* Booked ahead is neither finding nor active: without this the closed sheet is a bare grip. */}
     {!!booked && <Row gap={8} style={{ marginBottom: 4 }}>
       <Ionicons name="calendar-outline" size={18} color={palette.olive} />
-      <Txt variant="h2" numberOfLines={1} style={{ flex: 1 }}>{fill(c.scheduledFor, { t: time(booked) })}</Txt>
+      <Txt variant="h2" numberOfLines={2} style={{ flex: 1 }}>{fill(c.scheduledFor, { t: time(booked) })}</Txt>
     </Row>}
     {finding && <View style={{ alignItems: 'center', paddingBottom: 8 }}>
       <Radar color={palette.forest} size={64}>
