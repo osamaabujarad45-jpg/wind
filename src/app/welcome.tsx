@@ -1,152 +1,55 @@
-// First-launch welcome: three short slides, then sign in. Shown once per device (session.onboarded).
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeInDown, useReducedMotion, ZoomIn } from '../motion';
 import { Ionicons } from '@expo/vector-icons';
-import { ServiceIcon } from '../parts';
 import { useSession } from '../session';
 import { InstallLink } from '../install-link';
-import { Button, fill, haptic, headingFont, Logo, maxScale, Press, Row, Txt, useCopy } from '../ui';
+import { Button, Card, Logo, Press, Row, Txt, useCopy } from '../ui';
 import { themedStyles, useTheme } from '../theme-context';
-
-const SLIDES = 3;
 
 export default function Welcome() {
   const { palette } = useTheme();
   const styles = useStyles();
   const { finishOnboarding, language, setLanguage } = useSession();
-  const { c } = useCopy();
-  const [index, setIndex] = useState(0);
-  const reduced = useReducedMotion();
-  const last = index === SLIDES - 1;
-  const title = [c.ob1Title, c.ob2Title, c.ob3Title][index];
-  const body = [c.ob1Body, c.ob2Body, c.ob3Body][index];
+  const { c, rtl } = useCopy();
 
   return <SafeAreaView style={styles.safe}>
-    <Row style={{ justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8 }}>
-      <Row gap={10}>
-        <Logo size={32} />
-        <Txt variant="h2">{c.brand}</Txt>
-      </Row>
-      <Row gap={8}>
-        <Press accessibilityLabel={c.language} onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} style={styles.pill}>
-          <Txt variant="label">{c.language}</Txt>
-        </Press>
-        {!last && <Press accessibilityLabel={c.skip} onPress={finishOnboarding} style={styles.pill}>
-          <Txt variant="label" style={{ color: palette.secondary }}>{c.skip}</Txt>
-        </Press>}
-      </Row>
+    <Row gap={12} style={styles.header}>
+      <Logo size={36} decorative />
+      <Txt variant="h2" style={{ flex: 1 }}>{c.brand}</Txt>
+      <Press accessibilityLabel={c.language} onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} style={styles.language}>
+        <Txt variant="label">{c.language}</Txt>
+      </Press>
     </Row>
-
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.body}>
-      <Animated.View key={`art-${index}`} entering={reduced ? undefined : FadeIn.duration(320)} style={styles.art}>
-        {index === 0 && <ServicesArt />}
-        {index === 1 && <PriceArt label={c.ob2Save} />}
-        {index === 2 && <HandoverArt label={c.ob3Code} steps={[c.assigned, c.in_transit, c.completed]} />}
-      </Animated.View>
-      <Animated.View key={`text-${index}-${language}`} entering={reduced ? undefined : FadeInDown.duration(320).delay(80)} style={{ gap: 10 }}>
-        <Txt variant="h1" center>{title}</Txt>
-        <Txt center style={{ fontSize: 15, lineHeight: 23 }}>{body}</Txt>
-      </Animated.View>
-    </ScrollView>
-
-    <View style={styles.footer}>
-      <Row gap={8} style={{ justifyContent: 'center' }}>
-        {Array.from({ length: SLIDES }, (_, i) => <Pressable key={i} accessibilityRole="radio" style={styles.slideKey}
-          accessibilityLabel={fill(c.stepOf, { n: i + 1, total: SLIDES })} aria-checked={i === index}
-          onPress={() => setIndex(i)}>
-          <View style={[styles.dot, i === index && styles.dotOn]} />
-        </Pressable>)}
-      </Row>
-      <Button title={last ? c.start : c.next} icon={last ? 'flash-outline' : undefined}
-        onPress={() => { haptic.tap(); if (last) finishOnboarding(); else setIndex(index + 1); }} />
+    <ScrollView contentContainerStyle={styles.body}>
+      <Card style={styles.card}>
+        <View style={styles.map} aria-hidden>
+          <View style={styles.street} />
+          <View style={styles.crossStreet} />
+          <Row style={styles.route} gap={12}>
+            <View style={styles.start} />
+            <View style={styles.path} />
+            <Ionicons name="location" size={34} color={palette.clay} style={{ transform: [{ rotate: rtl ? '-14deg' : '14deg' }] }} />
+          </Row>
+        </View>
+        <Txt variant="h1" header center>{c.welcomeTitle}</Txt>
+        <Txt center>{c.welcomeBody}</Txt>
+        <Button title={c.continue} onPress={finishOnboarding} />
+      </Card>
       <InstallLink />
-    </View>
+    </ScrollView>
   </SafeAreaView>;
 }
 
-// Slide 1: the product itself, a small map with the pickup, the road and the drop-off pin (design review 17 Nov: the cube and
-// bar said nothing). Pure views, no image; the route follows reading direction, like the route rail in the app.
-function ServicesArt() {
-  const styles = useStyles();
-  const { rtl } = useCopy();
-  const reduced = useReducedMotion();
-  const start = rtl ? 'right' : 'left';
-  const dots = [0, 1, 2, 3, 4, 5, 6];
-  return <View style={styles.map} accessible={false}>
-    {/* streets: pale bands across the wash */}
-    <View style={[styles.street, { top: 38, transform: [{ rotate: '-8deg' }] }]} />
-    <View style={[styles.street, { top: 104, transform: [{ rotate: '6deg' }] }]} />
-    <View style={[styles.avenue, { [start]: 118, transform: [{ rotate: rtl ? '-14deg' : '14deg' }] }]} />
-    {dots.map(i => <Animated.View key={i} entering={reduced ? undefined : FadeInDown.duration(220).delay(120 + i * 70)}
-      style={[styles.routeDot, { bottom: 34 + i * 12, [start]: 46 + i * 26 }]} />)}
-    <View style={[styles.pickup, { bottom: 24, [start]: 30 }]} />
-    {/* the app's own drop-off mark (clay square on a white ring, as on the live map), not a stock pin */}
-    <Animated.View entering={reduced ? undefined : ZoomIn.duration(300).delay(640)} style={[styles.dropoff, { bottom: 112, [start]: 222 }]} />
-    <View style={[styles.parcelChip, { top: 14, [start]: 16 }]}><ServiceIcon service="parcel" size={36} /></View>
-  </View>;
-}
-
-function PriceArt({ label }: { label: string }) {
-  const { palette } = useTheme();
-  const styles = useStyles();
-  const { c, row, language } = useCopy(); // keyed Text below: Android re-measures after an in-app language switch
-  return <View style={{ alignItems: 'center', gap: 18 }}>
-    <Ionicons name="receipt-outline" size={64} color={palette.olive} />
-    <View style={[styles.saveBadge, { flexDirection: row }]}>
-      <Ionicons name="pricetag" size={16} color={palette.olive} />
-      <Text maxFontSizeMultiplier={maxScale} key={language} style={styles.saveText}>{label}</Text>
-    </View>
-    <Txt variant="caption">{c.cash}</Txt>
-  </View>;
-}
-
-// Slide 3: status steps and the 4-digit handover code.
-function HandoverArt({ label, steps }: { label: string; steps: string[] }) {
-  const { palette } = useTheme();
-  const styles = useStyles();
-  const reduced = useReducedMotion();
-  return <View style={{ width: 270, gap: 14 }}>
-    <View style={styles.panel}>
-      {steps.map((step, i) => <Animated.View key={step} entering={reduced ? undefined : FadeInDown.duration(280).delay(100 + i * 110)}>
-        <Row gap={10} style={{ paddingVertical: 5 }}>
-          <View style={[styles.stepDot, i < 2 && { backgroundColor: palette.olive }]}>
-            {i < 2 && <Ionicons name="checkmark" size={12} color={palette.onFill} />}
-          </View>
-          <Txt variant={i < 2 ? 'title' : 'body'} style={{ flex: 1, fontSize: 14 }}>{step}</Txt>
-        </Row>
-      </Animated.View>)}
-    </View>
-    <Animated.View entering={reduced ? undefined : ZoomIn.duration(320).delay(460)} style={[styles.panel, { backgroundColor: palette.muted, borderColor: palette.muted }]}>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Txt variant="title">{label}</Txt>
-        <Text maxFontSizeMultiplier={maxScale} style={styles.code}>4827</Text>
-      </Row>
-    </Animated.View>
-  </View>;
-}
-
-const useStyles = themedStyles((palette, theme) => StyleSheet.create({
+const useStyles = themedStyles(palette => StyleSheet.create({
   safe: { flex: 1, width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: palette.paper },
-  pill: { paddingHorizontal: 14, minHeight: 44, borderRadius: 22, justifyContent: 'center', backgroundColor: palette.card },
-  body: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 16, gap: 30 },
-  art: { minHeight: 220, borderRadius: 22, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center', ...(theme.name === 'night' ? theme.shadow : { boxShadow: '0px 4px 14px rgba(14,31,25,0.06)' }) },
-  footer: { paddingHorizontal: 20, paddingBottom: 16, gap: 18 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.field }, // inactive dots were 1.2:1 on paper
-  dotOn: { width: 24, backgroundColor: palette.olive },
-  slideKey: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  // a pale tag, not the forest fill of a button: on the welcome slide it read as something to press
-  saveBadge: { alignItems: 'center', gap: 8, backgroundColor: palette.olivePale, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 99 },
-  saveText: { color: palette.olive, fontSize: 16, fontWeight: '900' },
-  map: { width: 270, maxWidth: '100%', height: 160, borderRadius: 18, overflow: 'hidden', backgroundColor: palette.mapWash },
-  street: { position: 'absolute', left: -20, right: -20, height: 14, backgroundColor: palette.card, opacity: 0.85 },
-  avenue: { position: 'absolute', top: -20, width: 18, height: 190, backgroundColor: palette.card, opacity: 0.85 },
-  routeDot: { position: 'absolute', width: 8, height: 8, borderRadius: 4, backgroundColor: palette.olive },
-  pickup: { position: 'absolute', width: 18, height: 18, borderRadius: 9, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },
-  dropoff: { position: 'absolute', width: 20, height: 20, borderRadius: 5, backgroundColor: palette.clay, borderWidth: 3, borderColor: palette.card }, // at the end of the dotted road
-  parcelChip: { position: 'absolute', padding: 4, borderRadius: 14, backgroundColor: palette.card, ...(theme.name === 'night' ? theme.shadow : { boxShadow: '0px 2px 8px rgba(14,31,25,0.10)' }) },
-  panel: { backgroundColor: palette.card, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: palette.line },
-  stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: palette.field, alignItems: 'center', justifyContent: 'center' },
-  code: { fontSize: 28, fontFamily: headingFont.bold, color: palette.ink, letterSpacing: 6, writingDirection: 'ltr' },
+  header: { paddingVertical: 12, paddingHorizontal: 20 },
+  language: { paddingHorizontal: 14, minHeight: 44, minWidth: 44, borderRadius: 22, justifyContent: 'center', backgroundColor: palette.card },
+  body: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 16, gap: 16 },
+  card: { gap: 16, padding: 18 },
+  map: { minHeight: 146, overflow: 'hidden', borderRadius: 16, justifyContent: 'center', backgroundColor: palette.mapWash },
+  street: { position: 'absolute', top: '23%', left: -12, right: -12, height: 16, transform: [{ rotate: '-12deg' }], backgroundColor: palette.card },
+  crossStreet: { position: 'absolute', bottom: '21%', left: -12, right: -12, height: 16, transform: [{ rotate: '8deg' }], backgroundColor: palette.card },
+  route: { paddingHorizontal: '14%' },
+  start: { width: 20, height: 20, borderRadius: 10, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },
+  path: { flex: 1, borderTopWidth: 4, borderStyle: 'dashed', borderColor: palette.olive },
 }));

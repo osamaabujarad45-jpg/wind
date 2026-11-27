@@ -1,6 +1,6 @@
 import { deadlineMilliseconds, serverOffset } from '../api-clock';
 // Route, service details, payment and one confirm action; uncertain submissions keep their identity.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, AppState, BackHandler, Keyboard, Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +9,7 @@ import { api, ApiError, apiSessionRevision, errorCode, storage, useApi } from '.
 import { againForm, orderRequest, pendingKey, pendingOutcome, pendingReleasable, pendingSettlesAt, pickupForm, newBooking, readBooking, scheduleSlots, type PendingBooking, type PendingOutcome } from '../booking';
 import { pickupErrorKey } from '../customer-location';
 import { HERE_PICKUP_MS, pickupLocation, rememberedHere, rememberHere } from '../pickup-location';
-import { city, CLOSED_MINUTES, isCity, isolate, isValidPhone, optionsFor, orderCode, quote, roadAlerts, sameDayBookingOpen, services, servedCity, SLOW_MINUTES, smartPrice, type CityId, type Order, type ParcelPriority, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
+import { city, CLOSED_MINUTES, isCity, isolate, isValidPhone, optionsFor, orderCode, quote, roadAlerts, sameDayBookingOpen, servedCity, SLOW_MINUTES, smartPrice, type CityId, type Order, type ParcelPriority, type Places, type Point, type PriceQuote, type Referral, type Road, type SavedPlace, type Service } from '../model';
 import { roadPath } from '../map-math';
 import { canShowOnRenderer, routeProvider } from '../map-provider';
 import { MapSheet, SIDE_SHEET, useSideSheet } from '../map-sheet';
@@ -21,7 +21,8 @@ import { RouteCheckpoints, type RoadRoute } from '../road';
 import { useSession } from '../session';
 import { emptyFreightDraft, freightDraftFromScope, freightScope } from '../freight-scope';
 import { FreightScopeForm } from '../freight-details';
-import { Button, Card, Check, Choices, confirm, ErrorText, fill, Field, haptic, IconButton, Press, Reason, Row, Stepper, Txt, useCopy } from '../ui';
+import { bookingService, readHomeDestination } from '../personal-services';
+import { Button, Card, Check, Choices, confirm, ErrorText, fill, Field, haptic, Header, IconButton, Loading, Press, Reason, Row, Screen, Stepper, Txt, useCopy } from '../ui';
 import { themedStyles, useTheme } from '../theme-context';
 
 export default function Book() {
@@ -33,7 +34,8 @@ export default function Book() {
 function BookForm() {
   const { palette, shadow } = useTheme();
   const styles = useStyles();
-  const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; when?: string; again?: string; keep?: string }>();
+  const params = useLocalSearchParams<{ service?: string; from?: string; to?: string; pick?: string; when?: string; again?: string; keep?: string; saved?: string }>();
+  const homeDestination = params.saved ? `saved:${params.saved}` : params.again && params.keep === 'dropoff' ? `${params.again}:dropoff` : null;
   const { me, refresh } = useSession();
   const { c, language, money, err, row, rtl } = useCopy();
   const { time } = useFormat();
@@ -82,7 +84,7 @@ function BookForm() {
   const [sheetPeek, setSheetPeek] = useState(0);
   const [topBar, setTopBar] = useState(0);
   const [pinPanel, setPinPanel] = useState(0);
-  const pickupTouched = useRef(isCity(params.from) || !!params.again); // the customer chose: GPS must not move it
+  const pickupTouched = useRef(isCity(params.from) || (!!params.again && params.keep !== 'dropoff')); // the customer chose: GPS must not move it
   const [locating, setLocating] = useState(false);
   const [pickupNote, setPickupNote] = useState('');
   const [dropoffNote, setDropoffNote] = useState('');
@@ -150,9 +152,12 @@ function BookForm() {
   const freightPinsMissing = wantsScope && (!pickupPoint || !dropoffPoint);
   const scopeIncomplete = scopeInvalid || freightPinsMissing;
   const sending = useRef(false);
-  const savedKey = pendingKey(me!.user.id);
+  const accountId = me!.user.id;
+  const savedKey = pendingKey(accountId);
   const releasable = pendingReleasable(outcome);
   const enabledServices = me?.capabilities?.enabledServices ?? ['parcel'];
+  const send = bookingService('send', enabledServices);
+  const canChangeSendSize = enabledServices.includes('parcel') && enabledServices.includes('freight');
   const available = enabledServices.includes(service);
   const locked = busy || !!pending || !ready || locating || !available;
   const [storageAttempt, setStorageAttempt] = useState(0); // a failed read of the saved booking fails closed, and can be asked again
@@ -184,7 +189,15 @@ function BookForm() {
   // Saved and recent places: landmarks are the address here, so reuse them instead of retyping.
   const isCustomer = me?.user.role === 'customer';
   const [places, setPlaces] = useState<Places>({ saved: [], recent: [] });
-  useEffect(() => { if (isCustomer) api<Places>('/me/places').then(setPlaces).catch(() => undefined); }, [isCustomer]);
+  const placesRequest = useRef<Promise<Places> | null>(null);
+  useEffect(() => {
+    if (!isCustomer) return;
+    let mounted = true;
+    const request = api<Places>('/me/places');
+    placesRequest.current = request;
+    void request.then(result => { if (mounted) setPlaces(result); }).catch(() => undefined);
+    return () => { mounted = false; placesRequest.current = null; };
+  }, [isCustomer]);
   useEffect(() => { if (isCustomer) api<Referral>('/me/referral').then(r => setCredits(r.credits)).catch(() => undefined); }, [isCustomer]);
   const [roads, setRoads] = useState<Road[]>([]);
   useEffect(() => { api<Road[]>('/roads').then(setRoads).catch(() => undefined); }, []);
@@ -267,6 +280,7 @@ function BookForm() {
       if (pickupChosen) setStep('trip'); else { setField('pickup'); setStep('search'); }
     }
   };
+  const applyHomeDestination = useEffectEvent((place: TripPlace) => applyPlace('dropoff', place));
   // A shared location (GEO-03) starts the pin at its point; the customer still confirms it on the map.
   const openPin = (which: TripField, shared?: Point) => {
     locationRequest.current?.abort(); setLocating(false);
@@ -356,7 +370,10 @@ function BookForm() {
       }
       if (!mounted) return;
       setCopyFailed(false);
+      const selectedPlace = !existing && homeDestination && copied.current !== homeDestination
+        ? readHomeDestination(accountId, homeDestination) : null;
       if (existing) {
+        if (homeDestination) copied.current = homeDestination; // recovery owns the draft, including after Edit or a language change
         const p = existing.payload;
         latest.current = existing;
         setPending(existing); setService(p.service); setPickupCity(p.pickupCity); setDropoffCity(p.dropoffCity);
@@ -370,12 +387,30 @@ function BookForm() {
         setRecipientName(p.recipientName ?? ''); setRecipientPhone(p.recipientPhone ?? '');
         setWhen(p.scheduledFor ? 'later' : 'now'); setSlot(p.scheduledFor ?? null); // a retried booking keeps its time
         void checkPending(existing);
-      } else if (params.again && copied.current !== `${params.again}:${params.keep}`) {
+      } else if (selectedPlace) {
+        copied.current = homeDestination;
+        applyHomeDestination(selectedPlace);
+      } else if (params.saved && copied.current !== `saved:${params.saved}`) {
+        const places = await placesRequest.current?.catch(() => null);
+        if (!mounted) return;
+        const place = places?.saved.find(item => String(item.id) === params.saved);
+        copied.current = `saved:${params.saved}`;
+        if (place) applyHomeDestination({ ...place, point: place.point ?? null });
+        else setError(c.placeUnavailable);
+      } else if (!params.saved && params.again && copied.current !== `${params.again}:${params.keep}`) {
         // Order again (SPEC-order-again.md): an in-flight pending booking above always wins over the old order.
         // Missing, foreign or offline: an empty form, and it says so rather than look like the old route was copied.
-        const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => { if (mounted) { setCopyFailed(true); setError(c.orderAgainFailed); } return null; });
+        const old = await api<Order>(`/orders/${encodeURIComponent(params.again)}`).catch(() => {
+          if (mounted) {
+            if (!homeDestination) setCopyFailed(true);
+            setError(homeDestination ? c.placeUnavailable : c.orderAgainFailed);
+          }
+          return null;
+        });
         if (!mounted) return;
-        if (old && params.keep === 'pickup') { // send another (SPEC-send-another.md): pickup only, the next recipient is typed fresh
+        if (old && params.keep === 'dropoff') {
+          applyHomeDestination({ city: old.dropoffCity, note: old.dropoffNote ?? '', point: old.dropoffPoint ?? null });
+        } else if (old && params.keep === 'pickup') { // send another (SPEC-send-another.md): pickup only, the next recipient is typed fresh
           const p = pickupForm(old);
           setService(p.service); setPickupCity(p.pickupCity); setPickupPoint(p.pickupPoint); setPickupNote(p.pickupNote); setOption(p.option); setPriority('standard'); // a new parcel: not the old priority
           setSameFrom(true); setCopiedFrom(old.id);
@@ -389,12 +424,12 @@ function BookForm() {
           setSameFrom(false); setCopiedFrom(old.id);
           setPickupChosen(true); setDropoffChosen(true); setStep('trip');
         }
-        if (old) copied.current = `${params.again}:${params.keep}`;
+        if (old || homeDestination) copied.current = `${params.again}:${params.keep}`;
       }
       setReady(true);
     }).catch(() => { if (mounted) setError(c.bookingStorageError); });
     return () => { mounted = false; };
-  }, [savedKey, checkPending, c.bookingStorageError, c.orderAgainFailed, params.again, params.keep, storageAttempt]);
+  }, [accountId, savedKey, checkPending, c.bookingStorageError, c.orderAgainFailed, c.placeUnavailable, homeDestination, params.again, params.keep, params.saved, storageAttempt]);
 
   // An unknown answer becomes a real absence at the command's deadline: check again then, so Edit and Discard unlock by themselves.
   const settlesAt = pending && outcome?.state === 'unknown' ? pendingSettlesAt(pending) : null;
@@ -614,6 +649,11 @@ function BookForm() {
   const edit_ = (which: TripField) => { if (locked) return; haptic.tap(); setSwapNotice(''); setField(which); setStep('search'); };
   const camera = step === 'pin' ? pinCenter ?? previewFrom : here ?? previewFrom;
   const side = useSideSheet();
+  if (!ready && homeDestination) return <Screen>
+    <Header title={service === 'ride' ? c.whereTo : c.personalSendWhere} back />
+    <ErrorText>{error}</ErrorText>
+    <Loading failed={!!error} onRetry={retryStorage} />
+  </Screen>;
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
     <View style={StyleSheet.absoluteFill} accessibilityElementsHidden={step === 'search'} importantForAccessibility={step === 'search' ? 'no-hide-descendants' : 'auto'} aria-hidden={step === 'search'}>
     <SceneMap fill mode={step === 'pin' ? 'pin' : step === 'trip' && routeChosen ? 'route' : 'browse'} center={{ latitude: camera.latitude, longitude: camera.longitude }} zoom={step === 'pin' ? pinZoom : 15}
@@ -697,13 +737,16 @@ function BookForm() {
         {!ready && error && <Button title={c.help} variant="ghost" onPress={() => router.push('/help')} />}
         {copiedFrom !== null && !pending && <Txt variant="caption" style={{ marginBottom: 12 }}>{fill(sameFrom ? c.sendAnotherFrom : c.orderAgainFrom, { code: orderCode(copiedFrom) })}</Txt>}
 
-        {services.filter(s => enabledServices.includes(s)).map(s => {
+        {([enabledServices.includes('ride') ? 'ride' : undefined, send] as const).map(line => {
+          if (!line) return null;
+          const s = line === 'parcel' && service === 'freight' && canChangeSendSize ? 'freight' : line;
+          const label = line === 'ride' ? c.ride : c.personalSend;
           const on = s === service, value = estimate(s), approx = on || s === 'parcel' ? '' : '≈ '; // TalkBack hears the estimate mark too
-          return <Press key={s} disabled={busy || !!pending || !ready || locating} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={value !== null ? `${c[s]}, ${approx}${money(value)}` : c[s]} onPress={() => switchService(s)}
+          return <Press key={line} disabled={busy || !!pending || !ready || locating} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={value !== null ? `${label}, ${approx}${money(value)}` : label} onPress={() => { if (!on) switchService(line); }}
             style={[styles.service, { flexDirection: row }, on && styles.serviceOn]}>
             <ServiceIcon service={s} size={36} />
             <View style={{ flex: 1 }}>
-              <Txt variant="title" numberOfLines={1}>{c[s]}</Txt>
+              <Txt variant="title">{label}</Txt>
               {on && minutes !== null && <Txt variant="micro" numberOfLines={1}>{`${smart?.estimated ? '≈ ' : ''}${etaShort(c, minutes, slowRoute)}${preview ? ` · ${preview.km} ${c.km}` : ''}`}</Txt>}
             </View>
             {on && quoting ? <ActivityIndicator size="small" color={palette.olive} /> : value !== null && <Txt variant="title">{`${approx}${money(value)}`}</Txt>}
@@ -764,7 +807,13 @@ function BookForm() {
           </>
           : <>
             <Txt variant="label" style={{ marginBottom: 6 }}>{c.size}</Txt>
-            <Choices label={c.size} items={optionsFor(service).map(key => ({ key, label: c[key as 'small'] }))} value={option} onChange={setOption} disabled={locked} />
+            {service === 'freight' && canChangeSendSize && <Choices label={c.size} items={[{ key: 'parcel', label: c.parcel }, { key: 'freight', label: c.freight }]}
+              value={service} onChange={next => { if (next !== service) switchService(next); }} disabled={locked} />}
+            <Choices label={service === 'freight' && canChangeSendSize ? c.freight : c.size}
+              items={[...optionsFor(service).map(key => ({ key, label: c[key as 'small'] })),
+                ...(service === 'parcel' && canChangeSendSize ? [{ key: 'freight', label: c.freight }] : [])]}
+              value={option} onChange={next => next === 'freight' ? switchService('freight') : setOption(next)} disabled={locked} />
+            {service === 'parcel' && !enabledServices.includes('freight') && <Txt variant="caption">{c.personalFreightUnavailable}</Txt>}
           </>}
         {service === 'parcel' && <>
           <Txt variant="label" style={{ marginVertical: 6 }}>{c.parcelPriority}</Txt>

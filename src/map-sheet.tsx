@@ -16,7 +16,7 @@ export function useSideSheet() {
   return width > height && height < 520;
 }
 
-export function MapSheet({ header, footer, children, open, onOpenChange, onPeek, safeBottom = true, scrollRef, expandedRatio = 0.86, onRefresh }: {
+export function MapSheet({ header, footer, children, open, onOpenChange, onPeek, safeBottom = true, scrollRef, expandedRatio = 0.86, onRefresh, scrollHeader = false }: {
   header: React.ReactNode; footer?: React.ReactNode; children?: React.ReactNode;
   open: boolean; onOpenChange: (open: boolean) => void;
   /** The closed height: the map keeps its camera and pin clear of it. */
@@ -26,6 +26,8 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   scrollRef?: React.RefObject<ScrollView | null>;
   expandedRatio?: number;
   onRefresh?: () => Promise<unknown>;
+  /** Keep a growing summary reachable without covering the map or moving the drag handle off-screen. */
+  scrollHeader?: boolean;
 }) {
   const { palette } = useTheme();
   const styles = useStyles();
@@ -40,6 +42,7 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   const sideStyle = side && (rtl ? styles.sideLeft : styles.side);
   const peek = GRIP + headerHeight + (footer ? footerHeight : padBottom);
   const [room, setRoom] = useState(0); // the height above the keyboard, so an open sheet's top stays below the status bar
+  const headerLimit = Math.max(0, Math.floor(((room || screen) - insets.top) * (open ? 0.36 : 0.65)) - GRIP - padBottom);
   const expanded = Math.min((room || screen) - insets.top, side ? screen : Math.max(peek, Math.round(screen * expandedRatio)));
   const travel = Math.max(0, expanded - peek);
   const keyboardUp = room > 0 && room < screen - 150; // only footers read this, and no sheet with a footer sits inside tabs
@@ -57,6 +60,8 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   useEffect(() => { settleRef.current = settle; });
   const [refreshing, setRefreshing] = useState(false);
   const refresh = onRefresh && (async () => { setRefreshing(true); try { await onRefresh(); } finally { setRefreshing(false); } });
+  // The body stays mounted for the slide. On web, inert keeps its hidden controls out of the tab order.
+  const webBody = nativeDriver ? undefined : { inert: !open };
   const measured = headerHeight > 0;
   useEffect(() => { if (measured) settleRef.current(open, false); }, [measured, travel]); // eslint-disable-line react-hooks/exhaustive-deps -- a remeasure repositions; it never animates
   useEffect(() => { if (measured) settleRef.current(open); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps -- only a change of state animates
@@ -78,16 +83,21 @@ export function MapSheet({ header, footer, children, open, onOpenChange, onPeek,
   return <KeyboardAvoidingView pointerEvents="box-none" style={StyleSheet.absoluteFill} behavior="padding">
     <View pointerEvents="box-none" style={{ flex: 1, justifyContent: 'flex-end' }} onLayout={e => setRoom(Math.floor(e.nativeEvent.layout.height))}>
       <Animated.View style={[styles.sheet, sideStyle, { height: expanded, transform: [{ translateY: y }] }]}>
-        <View {...pan.panHandlers} style={styles.handleArea}>
-          <Pressable onPress={() => onOpenChange(!open)} accessibilityRole="button" accessibilityLabel={open ? c.sheetCollapse : c.sheetExpand} accessibilityState={{ expanded: open }} aria-expanded={open} style={styles.gripArea}>
-            <View style={styles.grip} />
-          </Pressable>
-          <View onLayout={e => setHeaderHeight(Math.ceil(e.nativeEvent.layout.height))}>{header}</View>
+        <View {...(!scrollHeader && pan.panHandlers)} style={[styles.handleArea, scrollHeader && styles.scrollableHandleArea]}>
+          <View {...(scrollHeader && pan.panHandlers)} style={styles.grab}>
+            <Pressable onPress={() => onOpenChange(!open)} accessibilityRole="button" accessibilityLabel={open ? c.sheetCollapse : c.sheetExpand} accessibilityState={{ expanded: open }} aria-expanded={open} style={styles.gripArea}>
+              <View style={styles.grip} />
+            </Pressable>
+          </View>
+          <View onLayout={e => setHeaderHeight(Math.ceil(e.nativeEvent.layout.height))}>
+            {scrollHeader ? <ScrollView style={{ maxHeight: headerLimit, flexGrow: 0 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">{header}</ScrollView> : header}
+          </View>
           {!footer && !open && <View style={{ height: padBottom }} />}{/* the closed sheet's content stays above the system navigation bar; open, the same space would be a dead band mid-sheet */}
         </View>
         <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 + (footer ? 0 : padBottom) }} keyboardShouldPersistTaps="handled"
           refreshControl={refresh && <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={palette.olive} />}
-          showsVerticalScrollIndicator={false} accessibilityElementsHidden={!open} importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}>
+          showsVerticalScrollIndicator={false} aria-hidden={!open} accessibilityElementsHidden={!open} importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}
+          {...webBody}>
           {children}
         </ScrollView>
         {/* React Native Web also applies the scroll style to its refresh wrapper. Reserve the footer height only once. */}
@@ -104,6 +114,8 @@ const useStyles = themedStyles((palette, { sheetShadow }) => StyleSheet.create({
   side: { left: 'auto', right: 0, width: SIDE_SHEET, alignSelf: 'auto' },
   sideLeft: { left: 0, right: 'auto', width: SIDE_SHEET, alignSelf: 'auto' },
   handleArea: { paddingHorizontal: 16, cursor: 'grab', touchAction: 'none' } as object,
+  scrollableHandleArea: { cursor: 'auto', touchAction: 'auto' } as object,
+  grab: { cursor: 'grab', touchAction: 'none' } as object,
   gripArea: { height: GRIP, alignItems: 'center', justifyContent: 'center' },
   grip: { width: 40, height: 4, borderRadius: 2, backgroundColor: palette.dash },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 16, paddingTop: 10, backgroundColor: palette.paper,

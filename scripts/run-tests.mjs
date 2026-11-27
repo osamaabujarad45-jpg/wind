@@ -30,6 +30,7 @@ const suites = [
   "presentation.test.mjs",
   "driver-presence-card.test.mjs",
   "second-tick.test.mjs",
+  "personal-home.test.mjs",
   "driver-presence.test.mjs",
   "driver-presence-runtime.test.mjs",
   "api-client.test.mjs",

@@ -11,7 +11,7 @@ import { useTheme } from '../../theme-context';
 
 export default function ShopStore() {
   const { palette } = useTheme();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, destinationOrder } = useLocalSearchParams<{ id: string; destinationOrder?: string }>();
   const { c, language, money } = useCopy();
   const { data, error, reload } = useApi<{ merchant: Merchant; items: MerchantItem[] }>(`/shop/merchants/${Number(id)}`, 60_000);
   const cart = useCart();
@@ -25,7 +25,8 @@ export default function ShopStore() {
   const sections = [...new Set(data.items.map(i => i.section))];
   const mine = cart?.merchantId === m.id ? cart : null;
   const goods = cartGoods(mine);
-  const footer = mine ? <Button title={fill(c.shopViewCart, { shop: m.name, total: money(goods / 100) })} icon="basket-outline" onPress={() => router.push('/shop/cart')} /> : undefined;
+  const footer = mine ? <Button title={fill(c.shopViewCart, { shop: m.name, total: money(goods / 100) })} icon="basket-outline"
+    onPress={() => router.push({ pathname: '/shop/cart', params: { destinationOrder } })} /> : undefined;
   return <Screen onRefresh={reload} footer={footer}>
     <Header title={m.name} back subtitle={[m.open ? c.shopOpen : c.shopClosed, fill(c.shopMinimum, { r: money(m.minOrderAgorot / 100) }),
       fill(c.shopDeliveryFee, { r: money(m.deliveryFeeAgorot / 100) })].join(' · ')} />

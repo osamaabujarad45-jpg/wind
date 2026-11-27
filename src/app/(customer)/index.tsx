@@ -1,76 +1,117 @@
-// Home, Uber/Careem pattern: one "Where to?" entry, the three services as small tiles, the live order,
-// recent routes to book again, and short cards that explain saving and safety.
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { wrapAbove } from '../../text-scale';
+// Personal home keeps the current trip and the next booking over the map.
+import { useCallback, useEffect, useState } from 'react';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useApi } from '../../api';
 import { pickupErrorKey } from '../../customer-location';
 import { MapSheet, SIDE_SHEET, useSideSheet } from '../../map-sheet';
-import { activeStatuses, city, currentRank, defaultSettings, services, type Order, type Point, type Service } from '../../model';
+import { activeStatuses, city, currentRank, isolate, isOpen, type Order, type Places, type Point, type Service } from '../../model';
+import { bookingService, lastShopAddress, personalServices, rememberHomeDestination, type PersonalService } from '../../personal-services';
 import { pickupLocation, rememberedHere, rememberHere } from '../../pickup-location';
 import { SceneMap } from '../../scene-map';
-import { OrderRow, ServiceIcon, tripTitle, VerifyEmailNudge } from '../../parts';
+import { OrderRow, VerifyEmailNudge } from '../../parts';
 import { useSession } from '../../session';
 import { storage } from '../../storage';
-import { Appear, ErrorText, fill, IconButton, iconSize, ListGroup, Loading, Logo, maxScale, Press, Rail, Row, Section, Txt, useCopy, useLines, type IconName } from '../../ui';
+import { wrapAbove } from '../../text-scale';
+import { Choices, ErrorText, fill, IconButton, iconSize, ListGroup, Loading, Logo, Press, Row, Section, Txt, useCopy } from '../../ui';
 import { themedStyles, useTheme } from '../../theme-context';
 
-const book = (params: { service: Service; from?: string; to?: string; pick?: 'to'; when?: 'later'; again?: string }) => router.push({ pathname: '/book', params });
+const CHOICE_KEY = 'wind.homeService';
+const urgency = (order: Order) => order.shop?.state === 'awaiting_approval' ? 3 : currentRank(order);
+const book = (service: Service, place?: { saved: string } | { again: string; keep: 'dropoff' }) =>
+  router.push({ pathname: '/book', params: { service, pick: 'to', ...place } });
 
 export default function Home() {
   const { palette, shadow } = useTheme();
   const styles = useStyles();
   const { me } = useSession();
   const { c, row, rtl, language } = useCopy();
-  // Past the wrap threshold a tile stacks its icon over the label: beside it, a third of the width cut أغراض mid-word (A53, 200%).
-  // Four services stack too: a quarter of the row left "Items & …" cut at normal text size (screens, 21 Nov).
-  const fontScale = useWindowDimensions().fontScale;
+  const { height, fontScale } = useWindowDimensions();
   const { data, error, reload } = useApi<Order[]>('/orders', 10_000);
   const orders = data ?? [];
-  // A newer booked-ahead order hid a live trip or a search running now behind "See all". Stable sort keeps newest first per rank.
-  const active = orders.filter(o => o.status === 'requested' || o.status === 'searching' || activeStatuses.includes(o.status)).sort((a, b) => currentRank(b) - currentRank(a));
-  // Latest distinct routes, newest first: the "book again" list. Only finished trips, as Amazon's "Buy it again"
-  // skips what is still on its way; an in-flight route already shows above it.
-  const done = orders.filter(o => !active.includes(o));
-  const recent = done.filter((o, i) => done.findIndex(x => x.service === o.service && x.pickupCity === o.pickupCity && x.dropoffCity === o.dropoffCity) === i).slice(0, 3);
+  const active = orders.filter(isOpen).sort((a, b) => urgency(b) - urgency(a));
+  const primary = active.find(o => o.service === 'ride' && activeStatuses.includes(o.status)) ?? active[0];
+  const otherActive = active.filter(o => o !== primary);
   const first = me?.user.name.split(' ')[0] ?? '';
   const greet = new Date().getHours() < 12 ? c.goodMorning : c.goodEvening;
-  const enabledServices = me?.capabilities?.enabledServices ?? ['parcel'];
-  const stacked = fontScale > wrapAbove || services.filter(service => enabledServices.includes(service)).length > 3; // the tiles drawn
-  const firstService: Service = enabledServices.includes('ride') ? 'ride' : 'parcel'; // "where to" books a trip; shop delivery has its own tile
+
+  const enabled = me?.capabilities?.enabledServices ?? ['parcel'];
+  const lines = personalServices.filter(line => bookingService(line, enabled));
+  const label = { ride: c.personalRide, send: c.personalSend, shop: c.personalShop };
+  const [remembered, setRemembered] = useState<PersonalService>();
+  useEffect(() => {
+    let mounted = true;
+    void storage.exclusive(() => storage.get(CHOICE_KEY), CHOICE_KEY).then(value => {
+      const restored = personalServices.find(line => line === value);
+      if (mounted) setRemembered(current => current ?? restored);
+    }).catch(() => undefined);
+    return () => { mounted = false; };
+  }, []);
+  function select(line: PersonalService) {
+    setRemembered(line);
+    void storage.exclusive(() => storage.set(CHOICE_KEY, line), CHOICE_KEY).catch(() => undefined);
+  }
+  const choice = remembered && lines.includes(remembered) ? remembered : lines[0];
+  const service = choice ? bookingService(choice, enabled) : undefined;
+  const { data: places, reload: reloadPlaces } = useApi<Places>(service === 'shop' ? '/me/places?shopDelivery=1' : service ? '/me/places' : null);
+  const shopAddress = choice === 'shop' ? places?.shopDelivery === undefined ? lastShopAddress(orders) : places.shopDelivery : null;
+  const destination = choice === 'ride' ? c.whereTo : choice === 'send' ? c.personalSendWhere
+    : shopAddress ? fill(c.personalShopWhere, { address: isolate(shopAddress.note) }) : c.personalShopNoAddress;
+
+  // Keep landmark and pin together. Recent destinations reuse an order ID rather than putting the address in the URL.
+  const saved = places?.saved ?? [];
+  const seen = new Set(saved.map(place => JSON.stringify([place.city, place.note])));
+  const quickPlaces = [
+    ...saved.map(place => ({
+      key: `saved:${place.id}`, note: place.note, city: place.city, point: place.point ?? null, title: c[`place_${place.label}`],
+      icon: place.label === 'home' ? 'home-outline' as const : place.label === 'work' ? 'briefcase-outline' as const : 'bookmark-outline' as const,
+      params: { saved: String(place.id) },
+    })),
+    ...orders.flatMap(order => {
+      if (isOpen(order) || order.status === 'cancelled' || !order.dropoffNote) return [];
+      const key = JSON.stringify([order.dropoffCity, order.dropoffNote]);
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [{ key: `${order.id}:dropoff`, note: order.dropoffNote, city: order.dropoffCity, point: order.dropoffPoint ?? null,
+        title: order.dropoffNote, icon: 'time-outline' as const, params: { again: String(order.id), keep: 'dropoff' as const } }];
+    }).slice(0, 3),
+  ];
+  const peekPlaces = fontScale > wrapAbove || height < 680 ? 0 : 2;
+  const renderPlaces = (start: number, end?: number) => {
+    const visible = quickPlaces.slice(start, end);
+    if (!visible.length || !service || service === 'shop') return null;
+    return <ListGroup>{visible.map(place => <Press key={place.key}
+      accessibilityLabel={`${place.title}, ${place.note}, ${city(place.city)[language]}`}
+      onPress={() => {
+        if (me) rememberHomeDestination(me.user.id, place.key, { city: place.city, note: place.note, point: place.point });
+        book(service, place.params);
+      }} style={[styles.place, { flexDirection: row }]}>
+      <Ionicons name={place.icon} size={iconSize.md} color={palette.olive} />
+      <View style={{ flex: 1 }}>
+        <Txt variant="label" numberOfLines={2}>{place.title}</Txt>
+        {place.title !== place.note && <Txt variant="caption" numberOfLines={2}>{place.note}</Txt>}
+      </View>
+      <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={iconSize.sm} color={palette.secondary} />
+    </Press>)}</ListGroup>;
+  };
+
   const [here, setHere] = useState<(Point & { accuracy?: number | null }) | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationNote, setLocationNote] = useState('');
   const [open, setOpen] = useState(false);
-  // The first-order guide lives on the sheet, which starts closed: with no orders and the guide not hidden, the sheet opens once
-  // so a new customer sees it (Haiku polish H2).
-  const guideKey = `${GUIDE_KEY}.${me?.user.id ?? 0}`; // per account: another account on this phone still sees it
-  // The flag read belongs to the account it was read for: another account is unknown (hidden) until its own read lands.
-  const [guideRead, setGuideRead] = useState<{ key: string; hidden: boolean } | null>(null);
-  const guideHidden = guideRead?.key === guideKey ? guideRead.hidden : null;
-  const setGuideHidden = (hidden: boolean) => setGuideRead({ key: guideKey, hidden });
-  useEffect(() => {
-    storage.get(guideKey).then(value => setGuideRead({ key: guideKey, hidden: value === '1' }), () => setGuideRead({ key: guideKey, hidden: false }));
-  }, [guideKey]);
-  const guideShown = data?.length === 0 && guideHidden === false;
-  const guideOpened = useRef(false);
-  useEffect(() => { if (guideShown && !guideOpened.current) { guideOpened.current = true; setOpen(true); } }, [guideShown]);
   const [peek, setPeek] = useState(0);
-  const [topBar, setTopBar] = useState(0); // the greeting row's measured height: the camera keeps clear of it at any text size
+  const [topBar, setTopBar] = useState(0);
   const side = useSideSheet();
-  // A map behind another screen holds a GPU context and its tiles for nothing: a low-end phone needs that memory.
   const [focused, setFocused] = useState(true);
   useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
-  // Before any fix: the last place this customer booked from, else the middle of the West Bank.
   const lastCity = orders[0]?.pickupCity;
   const camera = here ? { latitude: here.latitude, longitude: here.longitude } : lastCity ? { latitude: city(lastCity).latitude, longitude: city(lastCity).longitude } : { latitude: 31.95, longitude: 35.05 };
-  // RIDE-14: unnamed cars around the customer, the way a ride app opens. Only with rides on and a fix; a rough spot is enough.
-  const nearbyAt = here && enabledServices.includes('ride') && focused ? `${here.latitude.toFixed(3)},${here.longitude.toFixed(3)}` : null;
+  const nearbyAt = here && enabled.includes('ride') && focused ? `${here.latitude.toFixed(3)},${here.longitude.toFixed(3)}` : null;
   const nearby = useApi<{ cars: Point[]; count: number; nearestKm: number | null }>(nearbyAt ? `/drivers/nearby?service=ride&near=${nearbyAt}` : null, 15_000);
   const cars = nearbyAt ? nearby.data?.cars ?? null : null;
+  const nearbyLabel = cars?.length ? fill(c.nearbyCars, { n: cars.length, km: nearby.data?.nearestKm ?? '' }) : c.nearbyNone;
   async function locate() {
     setLocating(true); setLocationNote('');
     try {
@@ -78,7 +119,7 @@ export default function Home() {
       setHere({ ...fix.point, accuracy: fix.accuracy }); void rememberHere(fix.point);
     } catch (e) { setLocationNote(c[pickupErrorKey(e)]); } finally { setLocating(false); }
   }
-  // Opening the map reuses consent already given; only the customer's own tap on Locate may raise the system prompt.
+  // Only the customer's own tap on Locate may raise the system prompt.
   useEffect(() => {
     const request = new AbortController();
     void rememberedHere().then(known => { if (known && !request.signal.aborted) setHere(current => current ?? { latitude: known.latitude, longitude: known.longitude }); });
@@ -88,50 +129,39 @@ export default function Home() {
     return () => request.abort();
   }, []);
 
-  const sheet = <>
-    <VerifyEmailNudge />
-    {guideShown && <FirstOrderGuide onStart={() => book({ service: firstService })} onHide={() => { setGuideHidden(true); void storage.set(guideKey, '1').catch(() => undefined); }} />}
-    <ErrorText>{error && c.updatesPaused}</ErrorText>
-    {!data && <Loading failed={!!error} onRetry={reload} />}
-
-    {recent.length > 0 && <>
-      <Section title={c.recent} action={c.seeAll} onAction={() => router.navigate('/orders')} />
-      <ListGroup>
-        {recent.map(o => <Press key={o.id} accessibilityLabel={o.service === 'shop' ? `${tripTitle(o, language, rtl)}, ${c[o.service]}` // a shop row opens the order, it does not book again
-          : `${c.request} ${city(o.pickupCity)[language]} ${city(o.dropoffCity)[language]}`}
-          onPress={() => o.service === 'shop' ? router.push(`/order/${o.id}`) : book({ service: o.service, from: o.pickupCity, to: o.dropoffCity, again: String(o.id) })} style={[styles.recent, { flexDirection: row }]}>
-          <View style={styles.clock}><Ionicons name="time-outline" size={iconSize.md} color={palette.secondary} /></View>
-          <View style={{ flex: 1 }}>
-            <Txt variant="title" numberOfLines={1}>{tripTitle(o, language, rtl)}</Txt>
-            <Txt variant="caption">{c[o.service]} · {o.pickupNote}</Txt>
-          </View>
-          <Ionicons name="refresh" size={iconSize.md} color={palette.olive} />
-        </Press>)}
-      </ListGroup>
-    </>}
-
-    {/* One card left (Plus members): full width, not a half-empty rail. */}
-    {me?.plan ? <Promo tone="olive" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} wide />
-      : <Rail gap={10} style={{ marginHorizontal: -16, marginTop: 10 }} contentStyle={{ paddingHorizontal: 16, paddingBottom: 4 }}>
-        <Promo tone="olive" icon="shield-checkmark-outline" title={c.promoSafe} body={c.promoSafeBody} onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} />
-        <Promo tone="olive" icon="sparkles-outline" title={c.plusTitle}
-          body={fill(c.plusPitch, { pct: Math.round((me?.settings.plusDiscount ?? defaultSettings.plusDiscount) * 100), price: me?.settings.plusPrice ?? defaultSettings.plusPrice })} onPress={() => router.navigate('/account')} />
-      </Rail>}
-  </>;
-
+  const primaryInSheet = height < 540;
+  const primaryCard = primary && <OrderRow order={primary} compact={fontScale > wrapAbove} />;
+  const moreLabel = fill(c.personalMoreActive, { n: otherActive.length });
+  const entry = choice && service ? <>
+    <Choices tabs label={c.personalServices} items={lines.map(key => ({ key, label: label[key] }))} value={choice} onChange={select} />
+    <Press accessibilityLabel={destination} onPress={() => {
+      if (service !== 'shop') return book(service);
+      if (!shopAddress || !me) return router.push('/shop');
+      rememberHomeDestination(me.user.id, `shop:${shopAddress.id}`, shopAddress);
+      router.push({ pathname: '/shop', params: { destinationOrder: String(shopAddress.id) } });
+    }}
+      style={[styles.search, { flexDirection: row }]}>
+      <Ionicons name="search" size={20} color={palette.ink} />
+      <Txt variant="title" style={{ flex: 1 }}>{destination}</Txt>
+    </Press>
+  </> : <Txt variant="label">{c.serviceUnavailable}</Txt>;
   return <View style={{ flex: 1, backgroundColor: palette.paper }}>
-    {/* The map is the screen, the way a ride app opens: you, where you are. Everything else sits on the sheet over it. */}
     {focused && <SceneMap fill mode="browse" center={camera} zoom={here ? 15 : lastCity ? 12 : 8.6} user={here} cars={cars} insets={{ top: topBar, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }}
-      label={cars ? `${c.home}. ${cars.length ? fill(c.nearbyCars, { n: cars.length, km: nearby.data?.nearestKm ?? '' }) : c.nearbyNone}` : c.home} />}
+      label={cars ? `${c.home}. ${nearbyLabel}` : c.home} />}
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.top, side && (rtl ? { left: SIDE_SHEET, right: 0 } : { right: SIDE_SHEET })]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
       <View style={[styles.topRow, { flexDirection: row }]} pointerEvents="box-none">
         <View style={[styles.hello, shadow, { flexDirection: row }]}>
-          <Logo size={30} />
+          <Logo size={30} decorative />
           <View style={{ flexShrink: 1 }}>
-            <Txt variant="micro" numberOfLines={1}>{greet}</Txt>
-            <Txt variant="title" numberOfLines={1}>{first}</Txt>
+            <Txt variant="micro">{greet}</Txt>
+            <Txt variant="title">{first}</Txt>
           </View>
         </View>
+        <Press accessibilityLabel={c.personalRoads} containerStyle={{ flexShrink: 1 }} onPress={() => router.push('/roads')}
+          style={[styles.roads, shadow, { flexDirection: row }]}>
+          <Ionicons name="trail-sign-outline" size={iconSize.md} color={palette.olive} />
+          <Txt variant="label" style={{ flexShrink: 1 }}>{c.personalRoads}</Txt>
+        </Press>
         <IconButton icon="help-circle-outline" label={c.help} onPress={() => router.push('/help')} />
       </View>
     </SafeAreaView>
@@ -140,109 +170,55 @@ export default function Home() {
     </View> : <Press accessibilityLabel={c.useLocation} disabled={locating} onPress={() => { void locate(); }}
       containerStyle={[styles.locate, { alignSelf: 'center', bottom: peek + 12 }, side && { transform: [{ translateX: (rtl ? 1 : -1) * SIDE_SHEET / 2 }] }]} style={[styles.askLocation, shadow, { flexDirection: row }]}>
       <Ionicons name="navigate" size={16} color={palette.lime} />
-      <Txt variant="label" style={{ color: palette.onFill }}>{locating ? c.locating : c.useLocation}</Txt>
+      <Txt variant="label" style={{ color: palette.onFill, flexShrink: 1 }}>{locating ? c.locating : c.useLocation}</Txt>
     </Press>}
     {!!locationNote && <View style={[styles.note, shadow, { bottom: peek + 66 }, side && (rtl ? { left: SIDE_SHEET + 12 } : { right: SIDE_SHEET + 12 })]} accessibilityLiveRegion="polite">
       <Txt variant="caption">{locationNote}</Txt>
     </View>}
-    <MapSheet open={open} onOpenChange={setOpen} onPeek={setPeek} safeBottom={false} onRefresh={reload}
-      header={<View style={{ paddingBottom: 12 }}>
-        {/* The one entry point: destination first, with "Later" a real control rather than a label drawn like a button. */}
-        <View style={[styles.search, { flexDirection: row }]}>
-          <Press accessibilityLabel={c.whereTo} containerStyle={{ flex: 1 }} onPress={() => book({ service: firstService, pick: 'to' })} style={[styles.searchMain, { flexDirection: row }]}>
-            <View style={styles.searchIcon}><Ionicons name="search" size={20} color={palette.ink} /></View>
-            <Text key={language} maxFontSizeMultiplier={maxScale} numberOfLines={useLines(1)} style={[styles.searchText, { textAlign: rtl ? 'right' : 'left' }]}>{c.whereTo}</Text>
-          </Press>
-          <Press accessibilityLabel={c.later} onPress={() => book({ service: firstService, when: 'later' })} style={[styles.now, { flexDirection: row }]}>
-            <Ionicons name="calendar-outline" size={iconSize.sm} color={palette.ink} />
-            <Text key={language} maxFontSizeMultiplier={maxScale} style={styles.nowText}>{c.later}</Text>
-          </Press>
-        </View>
-        {cars && <Row gap={6} style={{ marginBottom: 8 }}>
-          <Ionicons name="car-outline" size={iconSize.sm} color={palette.olive} />
-          <Txt variant="caption" style={{ flex: 1 }}>{cars.length ? fill(c.nearbyCars, { n: cars.length, km: nearby.data?.nearestKm ?? '' }) : c.nearbyNone}</Txt>
-        </Row>}
-        <Row gap={8} style={{ alignItems: 'stretch' }}>
-          {services.filter(service => enabledServices.includes(service)).map((service, i) => <Appear key={service} index={i} style={{ flex: 1 }}>
-            <Press tilt accessibilityLabel={c[service]} containerStyle={{ flexGrow: 1 }} onPress={() => service === 'shop' ? router.push('/shop') : book({ service })} style={[styles.tile, shadow, stacked ? styles.tileStacked : { flexDirection: row }]}>
-              <ServiceIcon service={service} size={28} />
-              {/* flex, not flexShrink: Android measured مشوار narrower than it draws and cut its last letter (A53) */}
-              <Txt variant="label" numberOfLines={2} center={stacked} style={stacked ? { alignSelf: 'stretch', fontSize: 12 } : { flex: 1, fontSize: 12 }}>{c[service]}</Txt>
-            </Press>
-          </Appear>)}
-        </Row>
-        {active.length > 0 && <View style={{ marginTop: 10 }}>
-          <Section title={c.activeOrder} />
-          {active.slice(0, 1).map((order, i) => <OrderRow key={order.id} order={order} index={i} />)}
-          {active.length > 1 && <Press accessibilityLabel={c.seeAll} onPress={() => router.navigate('/orders')}><Txt variant="label" center style={{ color: palette.olive, paddingVertical: 6 }}>{`${c.seeAll} (${active.length})`}</Txt></Press>}
-        </View>}
+    <MapSheet open={open} onOpenChange={setOpen} onPeek={setPeek} scrollHeader safeBottom={false} onRefresh={() => Promise.all([reload(), reloadPlaces()])}
+      header={<View style={{ paddingBottom: 8 }}>
+        {!primaryInSheet && primaryCard}
+        {!open && <>
+          {primaryInSheet && primary && <Press accessibilityLabel={c.activeOrder} onPress={() => router.push(`/order/${primary.id}`)} style={styles.more}>
+            <Txt variant="label" style={{ color: palette.olive }}>{c.activeOrder}</Txt>
+          </Press>}
+          {entry}
+          {otherActive.length > 0 && <Press accessibilityLabel={moreLabel} onPress={() => setOpen(true)} style={styles.more}>
+            <Txt variant="label" style={{ color: palette.olive }}>{moreLabel}</Txt>
+          </Press>}
+          {renderPlaces(0, peekPlaces)}
+        </>}
       </View>}>
-      {sheet}
+      {primaryInSheet && primaryCard}
+      {otherActive.length > 0 && <>
+        <Section title={moreLabel} />
+        {otherActive.map(order => <OrderRow key={order.id} order={order} compact />)}
+      </>}
+      {open && entry}
+      <VerifyEmailNudge />
+      <ErrorText>{error && c.updatesPaused}</ErrorText>
+      {!data && <Loading failed={!!error} onRetry={reload} />}
+      {cars && <Row gap={6} style={{ marginBottom: 8 }}>
+        <Ionicons name="car-outline" size={iconSize.sm} color={palette.olive} />
+        <Txt variant="caption" style={{ flex: 1 }}>{nearbyLabel}</Txt>
+      </Row>}
+      {open && service && service !== 'shop' && quickPlaces.length > 0 && <>
+        <Section title={c.personalSavedAndRecent} />
+        {renderPlaces(0)}
+      </>}
     </MapSheet>
   </View>;
 }
 
-function Promo({ tone, icon, title, body, onPress, wide }: { tone: 'forest' | 'olive'; icon: IconName; title: string; body: string; onPress: () => void; wide?: boolean }) {
-  const { palette } = useTheme();
-  const styles = useStyles();
-  const t = { forest: [palette.forest, palette.lime, `${palette.onFill}C7` /* 78%: white by day, ink on the Night lime */], olive: [palette.olivePale, palette.olive, palette.ink] }[tone];
-  return <Press accessibilityLabel={`${title}. ${body}`} onPress={onPress} style={[styles.promo, wide && styles.wide, { backgroundColor: t[0] }]}>
-    <Ionicons name={icon} size={20} color={t[1]} />
-    <Txt variant="title" numberOfLines={2} style={{ color: tone === 'forest' ? palette.lime : palette.ink, marginTop: 8 }}>{title}</Txt>
-    <Txt variant="caption" numberOfLines={2} style={{ color: t[2], opacity: tone === 'forest' ? 1 : 0.8 }}>{body}</Txt>
-  </Press>;
-}
-
 const useStyles = themedStyles(palette => StyleSheet.create({
   top: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 8 },
-  topRow: { alignItems: 'center', justifyContent: 'space-between' },
+  topRow: { alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   hello: { alignItems: 'center', gap: 8, flexShrink: 1, backgroundColor: palette.card, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 },
-  locate: { position: 'absolute' },
-  askLocation: { alignItems: 'center', gap: 8, minHeight: 44, paddingHorizontal: 16, borderRadius: 22, backgroundColor: palette.forest },
+  roads: { minHeight: 44, alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 22, backgroundColor: palette.card },
+  locate: { position: 'absolute', maxWidth: '85%' },
+  askLocation: { alignItems: 'center', gap: 8, minHeight: 44, paddingHorizontal: 16, paddingVertical: 4, borderRadius: 22, backgroundColor: palette.forest },
   note: { position: 'absolute', left: 12, right: 12, backgroundColor: palette.card, borderRadius: 12, padding: 10 },
-  // minHeight, not height: the flexed label inside a ScrollView stretched this row to the viewport
-  // on the A53 until a scroll (reproduced 29 Oct 2026). The flex now sits on the pressable container;
-  // minHeight still lets a large font scale grow the row instead of clipping it.
-  search: { alignItems: 'center', gap: 4, minHeight: 56, borderRadius: 26, backgroundColor: palette.muted, paddingHorizontal: 6, paddingVertical: 6, marginBottom: 10 },
-  searchMain: { flex: 1, alignItems: 'center', gap: 4, minHeight: 40 },
-  searchIcon: { width: 38, alignItems: 'center' },
-  searchText: { flex: 1, fontSize: 17, fontWeight: '800', color: palette.ink },
-  now: { alignItems: 'center', gap: 5, minHeight: 40, paddingHorizontal: 12, borderRadius: 20, backgroundColor: palette.card },
-  nowText: { fontSize: 13, fontWeight: '700', color: palette.ink },
-  // flexGrow, not flex: 1. Inside the Pressable's column, flex: 1 set a zero height basis and held the tile at minHeight, so large text spilled out.
-  guide: { backgroundColor: palette.card, borderRadius: 16, padding: 14, marginBottom: 12 },
-  guideStep: { minWidth: 24, minHeight: 24, paddingHorizontal: 6, borderRadius: 12, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center' },
-  guideCta: { marginTop: 12, minHeight: 48, borderRadius: 24, backgroundColor: palette.forest, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
-  tile: { flexGrow: 1, alignItems: 'center', gap: 6, borderRadius: 14, backgroundColor: palette.card, minHeight: 48, paddingHorizontal: 8 },
-  tileStacked: { flexDirection: 'column', justifyContent: 'center', paddingVertical: 8 },
-  recent: { alignItems: 'center', gap: 12, minHeight: 58, paddingHorizontal: 14, paddingVertical: 8 },
-  clock: { width: 32, height: 32, borderRadius: 16, backgroundColor: palette.muted, alignItems: 'center', justifyContent: 'center' },
-  promo: { width: 224, borderRadius: 16, padding: 14, minHeight: 118 },
-  wide: { width: 'auto', minHeight: 0, marginTop: 20 },
+  search: { alignItems: 'center', gap: 12, minHeight: 52, borderRadius: 20, backgroundColor: palette.muted, paddingHorizontal: 14, paddingVertical: 8, marginBottom: 6 },
+  more: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 },
+  place: { minHeight: 44, alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 6 },
 }));
-
-// First order: how Wind works in three facts (price first, cash to the driver, the handover code), and one button that
-// starts it. Shown until the first order exists or the customer hides it (product audit 21 Nov; Careem/Talabat pattern).
-const GUIDE_KEY = 'wind.firstOrderGuide.hidden';
-function FirstOrderGuide({ onStart, onHide }: { onStart: () => void; onHide: () => void }) {
-  const { palette, shadow } = useTheme();
-  const styles = useStyles();
-  const { c, row } = useCopy();
-  const steps: [IconName, string][] = [['location-outline', c.guideStepPlace], ['pricetag-outline', c.guideStepPrice], ['cash-outline', c.guideStepCash]];
-  return <Appear index={0}>
-    <View style={[styles.guide, shadow]}>
-      <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <Txt variant="title" header style={{ flex: 1 }}>{c.guideTitle}</Txt>
-        <IconButton icon="close" label={c.guideHide} tone="muted" onPress={onHide} />
-      </Row>
-      {steps.map(([icon, text], i) => <View key={icon} accessible accessibilityLabel={`${i + 1}. ${text}`} style={{ flexDirection: row, gap: 10, alignItems: 'center', marginTop: 8 }}>
-        <View style={styles.guideStep}><Txt variant="label" style={{ color: palette.lime }}>{String(i + 1)}</Txt></View>
-        <Ionicons name={icon} size={iconSize.md} color={palette.olive} />
-        <Txt variant="caption" style={{ flex: 1, color: palette.ink }}>{text}</Txt>
-      </View>)}
-      <Press accessibilityLabel={c.guideStart} onPress={onStart} style={[styles.guideCta, { flexDirection: row }]}>
-        <Txt variant="label" style={{ color: palette.onFill }}>{c.guideStart}</Txt>
-      </Press>
-    </View>
-  </Appear>;
-}

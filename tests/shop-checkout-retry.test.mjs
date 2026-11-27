@@ -5,6 +5,7 @@ import ts from 'typescript';
 import * as booking from '../src/booking.ts';
 import { copy, fill } from '../src/copy.ts';
 import * as model from '../src/model.ts';
+import * as personal from '../src/personal-services.ts';
 import * as checkout from '../src/shop-checkout.ts';
 import { themeModules } from './theme-mock.mjs';
 
@@ -12,15 +13,19 @@ const c = copy.en;
 const cart = { merchantId: 1, merchantName: 'Market', city: 'ramallah', minOrderAgorot: 0,
   deliveryFeeAgorot: 800, serviceFeeAgorot: 0,
   lines: [{ itemId: 10, qtyMilli: 1000, policy: 'remove', unitAgorot: 2000, nameEn: 'Bread' }] };
+const shopSelection = { id: 23, customerId: 17, service: 'shop', status: 'completed',
+  dropoffCity: 'ramallah', dropoffPoint: { latitude: 31.91, longitude: 35.21 }, dropoffNote: 'Saved directions' };
 const state = [], references = [], posts = [], navigation = [];
 const store = new Map();
 const protectedStore = new Map();
 let cursor, refCursor, focus, failFirst, firstStatus, rejectRetry, cartCleared, receiptNow, receiptOrderId, protectedWriteFails, protectedReadFails, cartReadFails;
+let destinationOrder, selectedOrder, selectedError;
+const selectionReloads = [];
 class ApiError extends Error {
   constructor(message, status) { super(message); this.status = status; }
 }
 const exports = {};
-const ui = new Proxy({ useCopy: () => ({ c, language: 'en', money: String }), fill, palette: {} },
+const ui = new Proxy({ useCopy: () => ({ c, err: code => c[`err_${code}`], language: 'en', money: String }), fill, palette: {} },
   { get: (target, name) => target[name] ?? name });
 const modules = {
   react: {
@@ -34,10 +39,14 @@ const modules = {
   },
   'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
   'react-native': { View: 'View' },
-  'expo-router': { router: { replace: path => navigation.push(path) }, useLocalSearchParams: () => ({}), useFocusEffect: run => { focus = run; } },
+  'expo-router': { router: { replace: path => navigation.push(path) }, useLocalSearchParams: () => ({ destinationOrder }), useFocusEffect: run => { focus = run; } },
   '../../api': {
     ApiError,
     errorCode: error => error.message,
+    useApi: path => {
+      assert.equal(path, destinationOrder ? `/orders/${destinationOrder}` : null);
+      return { data: selectedOrder, error: selectedError, reload: () => { selectionReloads.push(path); } };
+    },
     api: async (path, body) => {
       if (path.startsWith('/orders/commands/')) return { orderId: receiptOrderId };
       assert.equal(path, '/orders');
@@ -61,6 +70,7 @@ const modules = {
       if (value === null) protectedStore.delete(key); else protectedStore.set(key, value);
     } } },
   '../../model': model,
+  '../../personal-services': personal,
   '../../pin-sheet': { __esModule: true, default: 'PinSheet' },
   '../../session': { useSession: () => ({ me: { user: { id: 17, role: 'customer', phone: '0599100017' } } }) },
   '../../shop-cart': { useCart: () => cart, storedCart: async required => { if (cartReadFails && required) throw new Error('basket unavailable'); return cart; }, clearCart: async () => { cartCleared = true; },
@@ -133,6 +143,8 @@ for (const receiptState of ['unknown', 'absent', 'present']) {
   assert.equal(posts.length, 1);
   close();
   state.length = references.length = 0; // the app was restarted, only storage survives
+  destinationOrder = '23';
+  selectedOrder = shopSelection;
   if (receiptState === 'absent') receiptNow = posts[0].commandExpiresAt + 60_000;
   if (receiptState === 'present') receiptOrderId = 13;
   cartReadFails = receiptState === 'absent';
@@ -159,7 +171,10 @@ for (const receiptState of ['unknown', 'absent', 'present']) {
     }
     assert.equal(store.size, 0);
     assert.equal(protectedStore.size, 0);
-  } finally { dismiss(); }
+  } finally {
+    dismiss();
+    destinationOrder = selectedOrder = undefined;
+  }
 }
 
 for (const outcome of ['restored', 'restored-on-reentry', 'reenter', 'expired', 'committed']) {
@@ -234,5 +249,47 @@ try {
   assert.equal(store.size, 0, 'no pending marker is created for an unsent order');
   assert.equal(find(render(), 'Field', props => props.label === c.shopLandmark).value, 'Blue door');
 } finally { close(); }
+
+state.length = references.length = 0;
+destinationOrder = '23';
+const addressField = () => find(render(), 'Field', props => props.label === c.shopLandmark);
+render();
+const closeWhileLoading = focus();
+try {
+  await flush();
+  assert.equal(addressField().value, '', 'checkout can render while the selected order is loading');
+  addressField().onChangeText('My new directions');
+  selectedOrder = shopSelection;
+  assert.equal(addressField().value, 'My new directions', 'a late order lookup preserves the customer’s edit');
+} finally { closeWhileLoading(); }
+state.length = references.length = 0;
+render();
+const closeFreshCheckout = focus();
+try {
+  await flush();
+  assert.equal(addressField().value, 'Saved directions', 'the exact selection works on a fresh checkout');
+  selectedOrder = { ...shopSelection, customerId: 19 };
+  assert.equal(addressField().value, '', 'checkout never displays a different customer’s address');
+} finally { closeFreshCheckout(); }
+
+state.length = references.length = 0;
+selectedOrder = undefined;
+selectedError = 'network';
+render();
+const closeAfterLookupFailure = focus();
+try {
+  await flush();
+  find(render(), 'Button', props => props.title === c.retry).onPress();
+  assert.deepEqual(selectionReloads, ['/orders/23'], 'retry requests the same selected order');
+  selectedError = undefined;
+  find(render(), 'Button', props => props.title === c.shopPinSet).onPress();
+  const initialPin = find(render(), 'PinSheet').start;
+  selectedOrder = shopSelection;
+  const picker = find(render(), 'PinSheet');
+  assert.deepEqual(picker.start, initialPin, 'the open picker retains its starting location');
+  picker.onConfirm({ latitude: 31.904, longitude: 35.204 });
+  assert.equal(addressField().value, '', 'a late response cannot pair its saved landmark with the manual pin');
+  assert.ok(find(render(), 'Button', props => props.title === c.shopPinChange), 'the manual pin remains selected');
+} finally { closeAfterLookupFailure(); }
 
 console.log('Shop checkout keeps the exact command across restart, restores the draft on absence, and releases a first-send refusal');

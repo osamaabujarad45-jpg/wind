@@ -76,7 +76,8 @@ export type Road = { id: number; name: string; cities: CityId[]; point: Point | 
 export const roadAlerts = (roads: Road[], ...on: CityId[]) =>
   roads.filter(r => (r.status === 'slow' || r.status === 'closed') && r.cities.some(c => on.includes(c)));
 export type SavedPlace = { id: number; label: 'home' | 'work' | 'other'; city: CityId; note: string; point?: Point; pinSaved?: boolean };
-export type Places = { saved: SavedPlace[]; recent: { city: CityId; note: string; point?: Point }[] };
+export type ShopDeliveryAddress = { id: number; city: CityId; note: string; point: Point };
+export type Places = { saved: SavedPlace[]; recent: { city: CityId; note: string; point?: Point }[]; shopDelivery?: ShopDeliveryAddress | null };
 export type SafetyKind = 'unsafe_driving' | 'harassment' | 'accident' | 'threat' | 'other';
 // "other" leads: it is the preselected chip, and a chip rail's far end starts off-screen (Safety in order/[id].tsx)
 export const safetyKinds: SafetyKind[] = ['other', 'unsafe_driving', 'harassment', 'accident', 'threat'];

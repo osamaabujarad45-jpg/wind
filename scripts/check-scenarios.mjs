@@ -3,6 +3,7 @@
 // npm run test:scenarios [-- --no-build]
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -357,6 +358,8 @@ try {
   pass('driver accepts, real MapLibre renders pickup/dropoff/driver, GPS reaches customer');
 
   stage = 'chat and recipient';
+  await button(customerPage, c.sheetExpand).click();
+  await button(driverPage, c.sheetExpand).click();
   await field(customerPage, c.chatMessage).fill('Please use the shop entrance.');
   await button(customerPage, c.send).click();
   await driverPage.getByText('Please use the shop entrance.', { exact: true }).waitFor();
@@ -453,6 +456,7 @@ try {
   assert.ok(state(scheduledId).scheduled_for > Date.now());
   const scheduledSnapshot = await call(`/orders/${scheduledId}?journeyProtocol=1`, { token: customerToken });
   assert.ok(!(await call('/jobs', { token: driverToken })).some(o => o.id === scheduledId), 'Future jobs must not be dispatched immediately');
+  await button(customerPage, c.sheetExpand).click();
   await button(customerPage, c.cancelOrder).click();
   await atStatus(scheduledId, 'cancelled');
   pass('scheduled booking stays out of immediate driver dispatch and can be cancelled');
@@ -493,6 +497,7 @@ try {
   await button(driverPage, c.reportProblem).click();
   await atStatus(returnId, 'on_hold');
   await adminPage.goto(`${base}/order/${returnId}`);
+  await button(adminPage, c.sheetExpand).click();
   await field(adminPage, c.proofResetReason).fill('Sender confirms return to the pickup shop.');
   await button(adminPage, c.returnToSender).click();
   await atStatus(returnId, 'returning');
@@ -705,22 +710,33 @@ try {
   const pickup = { latitude: 31.9038, longitude: 35.2034 }, dropoff = { latitude: 32.2211, longitude: 35.2544 };
   // Expose the test page's map instance through the intercepted HTML only; production stays unchanged.
   await androidMap.route('**/map.html', async route => {
-    const response = await route.fetch();
+    const response = await route.fetch({ headers: { ...route.request().headers(), 'accept-encoding': 'identity' } });
     const html = (await response.text()).replace('const map = new ml.Map({', 'const map = window.testMap = new ml.Map({')
       .replace('marker = new ml.Marker({', 'marker = window.testMarker = new ml.Marker({');
-    await route.fulfill({ response, body: html });
+    const module = html.match(/<script type="module">([\s\S]*?)<\/script>/)?.[1];
+    assert.ok(module, 'map page has an inline module');
+    const hash = createHash('sha256').update(module.replace(/\r\n?/g, '\n')).digest('base64');
+    const instrumented = html.replace(/'sha256-[^']+'/u, `'sha256-${hash}'`);
+    const headers = response.headers();
+    delete headers['content-encoding'];
+    delete headers['content-length'];
+    await route.fulfill({ status: response.status(), headers, body: instrumented });
   });
   let releaseTiles;
   const tilesReady = new Promise(resolve => { releaseTiles = resolve; });
-  await androidMap.route('https://tiles.openfreemap.org/**', async route => {
-    if (!route.request().url().includes('/styles/')) await tilesReady;
+  // The style can reference a separate TileJSON document. Only hold actual tiles so style.load can fire.
+  const basemapTile = /^https:\/\/tiles\.openfreemap\.org\/.*\/\d+\/\d+\/\d+\.(?:pbf|png)(?:\?.*)?$/;
+  await androidMap.route(basemapTile, async route => {
+    await tilesReady;
     await route.continue();
   });
-  await androidMap.goto(`${base}/map/v1/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'ar', pickup, dropoff, driver: { latitude: 31.9145, longitude: 35.2044, accuracy: 10, heading: 90 }, padding: 40, recenter: copy.ar.recenter }))}`);
-  await androidMap.locator('.maplibregl-marker').nth(1).waitFor();
-  const prematureReady = await androidMap.evaluate(() => window.mapMessages.some(m => m.type === 'ready'));
-  releaseTiles();
-  assert.equal(prematureReady, false, 'Android must not enable pin confirmation before its map tiles load');
+  const firstTile = androidMap.waitForRequest(basemapTile);
+  const bridgeUrl = `${base}/map/v1/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'ar', pickup, dropoff, driver: { latitude: 31.9145, longitude: 35.2044, accuracy: 10, heading: 90 }, padding: 40, recenter: copy.ar.recenter }))}`;
+  try {
+    await Promise.all([androidMap.goto(bridgeUrl), firstTile]);
+    const prematureReady = await androidMap.evaluate(() => window.mapMessages.some(m => m.type === 'ready'));
+    assert.equal(prematureReady, false, 'Android must not enable pin confirmation before its map tiles load');
+  } finally { releaseTiles(); }
   await androidMap.waitForFunction(() => window.mapMessages.some(m => m.type === 'ready'));
   await androidMap.locator('.maplibregl-marker').nth(2).waitFor(); // initial fragment driver needs no host injection
   await androidMap.evaluate(driver => window.wind({ driver, focus: 'pickup' }), { latitude: 31.9145, longitude: 35.2044, accuracy: 10, heading: 90 });
@@ -847,7 +863,7 @@ try {
     const later = window.setTimeout;
     window.setTimeout = (fn, ms, ...args) => later(fn, ms === 20_000 ? 5_000 : ms, ...args);
   });
-  await badTiles.route('https://tiles.openfreemap.org/**', route => route.request().url().includes('/styles/') ? route.continue() : route.abort());
+  await badTiles.route(basemapTile, route => route.abort());
   await badTiles.goto(`${base}/map/v1/map.html#${encodeURIComponent(JSON.stringify({ mode: 'route', language: 'en', pickup, dropoff, padding: 40 }))}`);
   await badTiles.waitForFunction(() => window.mapMessages.some(m => m.type === 'drawing'));
   await badTiles.waitForFunction(() => window.mapMessages.some(m => m.type === 'failed'), null, { timeout: 12_000 });
@@ -861,12 +877,12 @@ try {
     window.setTimeout = (fn, ms, ...args) => later(fn, ms === 25_000 || ms === 20_000 ? 5_000 : ms, ...args);
   });
   await login(webBadTiles, '0599000701');
-  await webBadTiles.route('https://tiles.openfreemap.org/**', route => route.request().url().includes('/styles/') ? route.continue() : route.abort());
+  await webBadTiles.route(basemapTile, route => route.abort());
   await webBadTiles.goto(base + '/book?from=ramallah&to=nablus');
   await openPickupPin(webBadTiles);
   await webBadTiles.getByText(c.pinUnavailable, { exact: true }).waitFor();
   assert.equal(await button(webBadTiles, c.confirmPickupSpot).count(), 0, 'A blank web map cannot confirm a pin');
-  await webBadTiles.unroute('https://tiles.openfreemap.org/**');
+  await webBadTiles.unroute(basemapTile);
   await webBadTiles.getByRole('button', { name: c.retry, exact: true }).last().click();
   await until(() => button(webBadTiles, c.confirmPickupSpot).isEnabled(), Boolean, 'The web pin picker did not recover after tile service returned');
   pass('web pin picker refuses blank tiles and recovers after Retry');

@@ -86,6 +86,21 @@ try {
   await page.getByRole('button', { name: c.createAccount, exact: true }).click();
   await page.waitForURL(url => !url.pathname.startsWith('/auth'));
   checks.push('customer signup on physical Android Chrome');
+  for (const language of ['en', 'ar']) {
+    const home = copy[language];
+    await page.evaluate(value => localStorage.setItem('language', value), language);
+    await page.reload();
+    const send = page.getByRole('button', { name: home.personalSendWhere, exact: true });
+    await send.waitFor();
+    assert.equal(await page.getByRole('radio', { name: home.personalRide, exact: true }).count(), 0, 'Ride is off in this sandbox');
+    assert.equal(await page.getByRole('radio', { name: home.personalShop, exact: true }).count(), 0, 'Shop is off in this sandbox');
+    await page.screenshot({ path: join(output, `a53-personal-home-${language}.png`) });
+    await send.click();
+    await page.waitForURL(url => url.pathname === '/book' && url.searchParams.get('service') === 'parcel');
+    await page.goto(base);
+    checks.push(`Personal Home sends to parcel booking with unavailable services hidden (${language})`);
+  }
+  await page.evaluate(() => localStorage.setItem('language', 'en'));
   await page.goto(base + '/book?from=ramallah&to=nablus');
   await page.getByRole('button', { name: new RegExp(`^${c.pickup}: `) }).click();
   await page.getByRole('button', { name: c.setOnMap, exact: true }).click();

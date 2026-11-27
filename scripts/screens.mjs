@@ -255,7 +255,7 @@ db.prepare("UPDATE shop_orders SET merchant_state = 'handed_over' WHERE order_id
 if (!args.includes('--no-build') || !existsSync(join(webDir, 'index.html'))) {
   console.log('Building the web app…');
   rmSync(webDir, { recursive: true, force: true });
-  const built = spawnSync('npx', ['expo', 'export', '--platform', 'web', '--clear', '--output-dir', webDir], {
+  const built = spawnSync('npx', ['expo', 'export', '--platform', 'web', '--max-workers', '1', '--clear', '--output-dir', webDir], {
     cwd: root, stdio: 'inherit', shell: process.platform === 'win32',
     env: { ...process.env, NODE_ENV: 'production', CI: '1', WIND_LOCAL_TEST: '1', EXPO_UNSTABLE_METRO_OPTIMIZE_GRAPH: '1', EXPO_UNSTABLE_TREE_SHAKING: '1', // same bundle as the Dockerfile
       EXPO_PUBLIC_API_URL: `http://localhost:${API_PORT}`, EXPO_PUBLIC_SUPPORT_WHATSAPP: '970590000000' },
@@ -276,10 +276,8 @@ await new Promise(resolve => web.listen(WEB_PORT, resolve));
 // role: whose session (null = signed out). motion: keep animations running (default: reduced motion for stable shots).
 // theme: 'night' captures the Night theme (design system v2); every other shot pins Day, so a run after sunset still matches.
 const screens = [
-  { id: 'intro', group: 'Launch', name: 'Animated intro', route: '/', file: 'src/intro.tsx', role: null, fresh: true, frames: [150, 450, 750, 1050, 1400] },
-  { id: 'welcome-1', group: 'Launch', name: 'Welcome · services', route: '/', file: 'src/app/welcome.tsx', role: null, fresh: true },
-  { id: 'welcome-2', group: 'Launch', name: 'Welcome · clear pricing', route: '/', file: 'src/app/welcome.tsx', role: null, fresh: true, clicks: ['next'] },
-  { id: 'welcome-3', group: 'Launch', name: 'Welcome · track & handover', route: '/', file: 'src/app/welcome.tsx', role: null, fresh: true, clicks: ['next', 'next'] },
+  { id: 'intro', group: 'Launch', name: 'Branded launch frame', route: '/', file: 'src/intro.tsx', role: 'customer', holdSession: true },
+  { id: 'welcome', group: 'Launch', name: 'Welcome', route: '/', file: 'src/app/welcome.tsx', role: null, fresh: true },
   { id: 'sign-in', group: 'Launch', name: 'Sign in', route: '/auth', file: 'src/app/auth.tsx', role: null },
   { id: 'sign-up', group: 'Launch', name: 'Create account (driver)', route: '/auth', file: 'src/app/auth.tsx', role: null, clicks: ['signUp', 'driver'] },
   { id: 'sign-up-customer', group: 'Launch', name: 'Create account (customer)', route: '/auth', file: 'src/app/auth.tsx', role: null, clicks: ['signUp'] },
@@ -397,7 +395,7 @@ for (const language of ['ar', 'en']) {
     if (screen.state) continue; // captured after the scenarios that set them up
     const viewport = screen.desktop ? { width: 1280, height: 800 } : phone; // Wind Control on a desktop: the side rail layout (1x: a desktop screen, and the PNG stays small)
     const context = await browser.newContext({ viewport, deviceScaleFactor: screen.desktop ? 1 : 2, locale: language === 'ar' ? 'ar-PS' : 'en-GB',
-      reducedMotion: screen.motion || screen.frames || screen.fresh ? 'no-preference' : 'reduce' });
+      reducedMotion: screen.motion ? 'no-preference' : 'reduce' });
     await context.addInitScript(({ token, language, onboarded, theme, cart }) => {
       if (sessionStorage.getItem('seeded')) return; // only before the first load; the app owns storage after that
       sessionStorage.setItem('seeded', '1');
@@ -412,16 +410,14 @@ for (const language of ['ar', 'en']) {
     const page = await context.newPage();
     const base = `http://localhost:${WEB_PORT}`;
 
-    if (screen.frames) {
-      await page.goto(base + screen.route, { waitUntil: 'commit' });
-      await page.waitForSelector('text=' + copy[language].brand, { timeout: 30_000 });
-      const start = Date.now();
-      for (const [i, at] of screen.frames.entries()) {
-        await page.waitForTimeout(Math.max(0, at - (Date.now() - start)));
-        const file = join(outDir, language, `${screen.id}-${i + 1}.png`);
-        await page.screenshot({ path: file });
-        shots.push({ ...screen, language, file, frame: i + 1 });
-      }
+    if (screen.holdSession) {
+      // Capture the startup frame with a pending session request. The app itself does not wait to show it.
+      await page.route(url => url.pathname === '/api/me', () => {});
+      await page.goto(base + screen.route, { waitUntil: 'domcontentloaded' });
+      await page.getByRole('img', { name: copy[language].brand }).waitFor({ timeout: 30_000 });
+      const file = join(outDir, language, `${screen.id}.png`);
+      await page.screenshot({ path: file });
+      shots.push({ ...screen, language, file });
       await context.close();
       continue;
     }
@@ -430,7 +426,7 @@ for (const language of ['ar', 'en']) {
     if (screen.fix) await call('/location', ahmad.token, { latitude: 31.7420, longitude: 35.2837, heading: 235 });
     await page.goto(base + screen.route, { waitUntil: 'load' });
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => console.log(`no network idle on ${screen.route}, capturing anyway`)); // a live screen holds a long-poll open
-    await page.waitForTimeout(screen.fresh || screen.motion ? 2600 : 1200); // intro + first data load
+    await page.waitForTimeout(screen.motion ? 2600 : 1200); // allow the first data and map render
     if (screen.tap) { await page.getByText(screen.tap, { exact: true }).first().click(); await page.waitForTimeout(900); } // literal text, e.g. a seeded name
     for (const click of screen.clicks ?? []) {
       await page.getByText(copy[language][click], { exact: true }).first().click();
@@ -439,7 +435,7 @@ for (const language of ['ar', 'en']) {
     if (screen.motion) await page.waitForTimeout(900); // mid-ripple
     await waitForMaps(page, `${screen.id} ${language}`);
     // Full-screen map+sheet screens stay at one phone viewport (as on the device); card/form screens grow to their full scroll height.
-    const fullScreenMap = await page.evaluate(() => [...document.querySelectorAll('iframe[title="map"]')]
+    const fullScreenMap = screen.id === 'home' || await page.evaluate(() => [...document.querySelectorAll('iframe[title="map"]')]
       .some(f => f.getBoundingClientRect().height >= innerHeight - 8));
     const extra = fullScreenMap ? 0 : await page.evaluate(() => Math.max(0, ...[...document.querySelectorAll('div')]
       .filter(d => ['auto', 'scroll'].includes(getComputedStyle(d).overflowY) && d.scrollHeight > d.clientHeight + 4)
@@ -894,7 +890,88 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   }
   console.log('Driver presence at 360 px, 100% and 130% text: no horizontal overflow, Go online reachable, reduced motion active');
 }
-// ---------- 4d. booking at 360 px and large text, same approximation as 4c: not a device's font-scale behaviour ----------
+// ---------- 4d. Personal home address and sheet controls at 200% text ----------
+if (!only || only.includes('personal-home-narrow')) {
+  const base = `http://localhost:${WEB_PORT}`;
+  const narrowDir = join(root, '.screens', 'narrow');
+  mkdirSync(narrowDir, { recursive: true });
+  for (const language of ['ar', 'en']) {
+    const t = copy[language];
+    const address = (language === 'ar' ? 'بجوار المدرسة عند التقاطع الثاني ' : 'Next to the school at the second junction ').repeat(10).slice(0, 200).trim();
+    const pin = { latitude: 32.3102, longitude: 35.0299 };
+    const context = await browser.newContext({ viewport: { width: 360, height: 620 }, reducedMotion: 'reduce' });
+    await context.addInitScript(({ token, language, cart }) => {
+      if (sessionStorage.getItem('seeded')) return;
+      sessionStorage.setItem('seeded', '1');
+      localStorage.setItem('token', token);
+      localStorage.setItem('language', language);
+      localStorage.setItem('onboarded', '1');
+      if (cart) localStorage.setItem('wind.shopCart.v1', JSON.stringify(cart));
+    }, { token: layla.token, language, cart: language === 'ar' ? exampleCart : null });
+    const page = await context.newPage();
+    const selected = (await call('/me/places?shopDelivery=1', layla.token)).shopDelivery;
+    assert.ok(selected, 'the customer has a confirmed Shop order');
+    db.prepare('UPDATE orders SET dropoff_note=?,dropoff_lat=?,dropoff_lng=? WHERE id=?').run(address.trim(), pin.latitude, pin.longitude, selected.id);
+    await page.goto(base, { waitUntil: 'load' });
+    const scheduledTime = await page.evaluate(({ locale, stamp }) => new Date(stamp).toLocaleString(locale,
+      { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Hebron' }),
+    { locale: language === 'ar' ? 'ar-PS-u-nu-latn' : 'en-GB', stamp: scheduled.scheduledFor });
+    const scheduledLabel = t.scheduledFor.replace('{t}', scheduledTime);
+    await page.getByRole('button', { name: t.sheetExpand, exact: true }).click();
+    const scheduledCard = page.getByRole('button', { name: scheduledLabel });
+    await scheduledCard.waitFor({ state: 'visible' });
+    assert.ok(await scheduledCard.getByText(scheduledLabel, { exact: true }).isVisible(), 'the pickup time is printed in the compact card');
+    const activeCard = await scheduledCard.elementHandle();
+    await page.getByRole('button', { name: t.sheetCollapse, exact: true }).click();
+    assert.equal(await scheduledCard.count(), 0, 'the collapsed sheet removes hidden cards from the accessibility tree');
+    assert.equal(await activeCard.evaluate(node => {
+      node.focus();
+      return document.activeElement === node;
+    }), false, 'the collapsed sheet prevents focus on an offscreen card');
+    await activeCard.dispose();
+    await page.getByRole('radio', { name: t.personalShop, exact: true }).click();
+    const entry = page.getByRole('button', { name: t.personalShopWhere.replace('{address}', `\u2068${address}\u2069`), exact: true });
+    await entry.waitFor();
+    await page.evaluate(() => {
+      for (const element of document.querySelectorAll('body *')) {
+        if (![...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim())) continue;
+        const style = getComputedStyle(element);
+        element.style.fontSize = `${parseFloat(style.fontSize) * 2}px`;
+        if (style.lineHeight !== 'normal') element.style.lineHeight = `${parseFloat(style.lineHeight) * 2}px`;
+      }
+    });
+    await page.screenshot({ path: join(narrowDir, `home-shop-${language}-200.png`) });
+    const grip = page.getByRole('button', { name: t.sheetExpand, exact: true });
+    await grip.click({ trial: true });
+    await entry.click();
+    await page.waitForURL(url => url.pathname === '/shop' && /^\d+$/.test(url.searchParams.get('destinationOrder') ?? ''));
+    if (language === 'en') {
+      await page.getByRole('button', { name: new RegExp(bakery.name) }).click();
+      await page.getByRole('button', { name: t.shopAddItem.replace('{item}', cheese.nameEn), exact: true }).click();
+    }
+    await page.getByRole('button', { name: t.shopViewCart.split('{shop}')[0].trim() }).click();
+    await page.waitForURL(url => url.pathname === '/shop/cart');
+    const landmark = page.getByLabel(t.shopLandmark, { exact: true });
+    await landmark.waitFor();
+    assert.equal(await landmark.inputValue(), address.trim(), 'checkout carries the exact Home landmark');
+    await page.reload();
+    await page.getByRole('button', { name: t.shopPinChange, exact: true }).waitFor();
+    assert.equal(await landmark.inputValue(), address.trim(), 'checkout restores the selected order before submission after reload');
+    await page.route(url => url.pathname === '/api/orders', route => route.request().method() === 'POST'
+      ? route.fulfill({ status: 409, json: { error: 'price_changed' } }) : route.fallback());
+    const sent = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/orders');
+    await page.getByRole('button', { name: t.shopPlace.split('{r}')[0].trim() }).click();
+    const body = (await sent).postDataJSON();
+    assert.equal(body.dropoffCity, 'tulkarm');
+    assert.deepEqual(body.dropoffPoint, pin, 'checkout carries the exact Home pin');
+    assert.equal(body.dropoffNote, address.trim());
+    assert.deepEqual(body.lines, [{ itemId: cheese.id, qtyMilli: language === 'ar' ? 500 : 1000, policy: 'ask_first' }]);
+    await context.close();
+  }
+  console.log('Personal home at 360 × 620 and 200% text: sheet controls reachable and exact Shop pin and landmark restored after reload in Arabic and English');
+}
+
+// ---------- 4e. booking at 360 px and large text, same approximation as 4c: not a device's font-scale behaviour ----------
 if (!only || only.includes('booking-narrow')) {
   const narrowDir = join(root, '.screens', 'narrow');
   mkdirSync(narrowDir, { recursive: true });
@@ -999,7 +1076,7 @@ if (!only) {
     ]),
   ].join('\n');
   writeFileSync(join(outDir, 'README.md'), md + '\n');
-  writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(rows.map(({ clicks, fresh, motion, frames, role, shown, ...r }) => ({ ...r, session: role })), null, 2) + '\n');
+  writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(rows.map(({ clicks, fresh, motion, holdSession, role, shown, ...r }) => ({ ...r, session: role })), null, 2) + '\n');
 
   const card = (label, paths) => paths.map(p => `<figure><img src="${p}" loading="lazy" alt="${label}"><figcaption>${label}</figcaption></figure>`).join('');
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

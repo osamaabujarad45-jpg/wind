@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { city, defaultSettings, quote } from '../src/model.ts';
+import { city, defaultSettings, HISTORY_PAGE, quote } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-places-'));
@@ -85,8 +85,23 @@ try {
   assert.deepEqual(places.recent, [{ city: 'bethlehem', note: 'Manger Square' }]); // Old market is saved now
   assert.deepEqual((await call('/me/places', { token: other.token })).recent, []);
 
+  const point = { latitude: 32.3102, longitude: 35.0299 };
+  const stamp = Date.now();
+  const history = db.prepare(`INSERT INTO orders(customer_id,service,shared,pickup_city,dropoff_city,pickup_note,dropoff_note,
+    dropoff_lat,dropoff_lng,contact,detail,option,loading_help,price,status,created_at,updated_at)
+    VALUES(?,?,0,'tulkarm','tulkarm','Pickup',?,?,?,'0599600001','Synthetic history','small',0,20,?,?,?)`);
+  const earlierShop = Number(history.run(customer.user.id, 'shop', 'Blue door', point.latitude, point.longitude, 'completed', stamp, stamp).lastInsertRowid);
+  for (let i = 0; i < HISTORY_PAGE + 1; i++) history.run(customer.user.id, 'parcel', 'Newer parcel', point.latitude, point.longitude, 'completed', stamp, stamp);
+  history.run(customer.user.id, 'shop', 'Cancelled shop', point.latitude, point.longitude, 'cancelled', stamp, stamp);
+  assert.ok((await call('/orders', { token: t })).every(entry => entry.id !== earlierShop), 'the saved shop is beyond the first history page');
+  assert.deepEqual((await call('/me/places?shopDelivery=1&town=tulkarm', { token: t })).shopDelivery,
+    { id: earlierShop, city: 'tulkarm', note: 'Blue door', point });
+  assert.equal((await call('/me/places?shopDelivery=1&town=ramallah', { token: t })).shopDelivery, null);
+  assert.equal((await call('/me/places?shopDelivery=1', { token: other.token })).shopDelivery, null);
+  await call('/me/places?shopDelivery=1', { token: driver.token, expect: 403 });
+
   // Account deletion removes them (open orders block deletion, so cancel first).
-  for (const o of await call('/orders', { token: t })) await call(`/orders/${o.id}/cancel`, { token: t, body: {} });
+  for (const o of await call('/orders?status=searching', { token: t })) await call(`/orders/${o.id}/cancel`, { token: t, body: {} });
   await call('/me/delete', { token: t, body: { password: 'secret1' } });
   assert.equal(db.prepare('SELECT COUNT(*) n FROM saved_places').get().n, 0);
 

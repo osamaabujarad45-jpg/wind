@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Linking, Platform, StyleSheet, View } from 'react-native';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider as NavigationTheme, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Font from 'expo-font';
 import Animated, { useReducedMotion } from '../motion';
-import { Intro, INTRO_MS } from '../intro';
+import { Intro } from '../intro';
 import { DriverWorkProvider } from '../driver-work';
 import { SessionProvider, useSession } from '../session';
 import { SUPPORT_URL, UPDATE_URL } from '../api';
@@ -19,7 +19,7 @@ import type { OfflineSummary } from '../offline-summary';
 import { ThemeProvider, useTheme } from '../theme-context';
 
 SplashScreen.preventAutoHideAsync();
-// Native builds embed the heading fonts (expo-font plugin in app.json); the web loads them while the intro plays.
+// Native builds embed the heading fonts (expo-font plugin in app.json); the web loads them separately.
 if (Platform.OS === 'web') Font.loadAsync({
   'ReadexPro-Bold': require('../../assets/fonts/ReadexPro-Bold.ttf'),
   'ReadexPro-SemiBold': require('../../assets/fonts/ReadexPro-SemiBold.ttf'),
@@ -44,31 +44,26 @@ function DriverWorkRoutes() {
   return <DriverWorkProvider key={actor}><Routes /></DriverWorkProvider>;
 }
 
-// Covers the app from the native splash until the intro has played and the session is loaded,
-// then fades away over whatever screen the session resolved to.
-const FADE_MS = 280;
+// Keep the splash frame through startup, then let the resolved screen accept input immediately.
+const FADE_MS = 180;
 function IntroOverlay() {
   const session = useSession(), theme = useTheme();
   const ready = session.ready && theme.ready;
   const reduced = useReducedMotion();
-  const [played, setPlayed] = useState(false);
   const [gone, setGone] = useState(false);
-  const hidden = useRef(false);
-  useEffect(() => {
-    const timer = setTimeout(() => setPlayed(true), reduced ? 0 : INTRO_MS);
-    return () => clearTimeout(timer);
-  }, [reduced]);
-  const leaving = played && ready;
+  const [laidOut, setLaidOut] = useState(false);
+  const leaving = ready && laidOut && !reduced;
   useEffect(() => {
     if (!leaving) return;
     const timer = setTimeout(() => setGone(true), FADE_MS);
     return () => clearTimeout(timer);
   }, [leaving]);
-  if (gone) return null;
+  if (gone || (ready && laidOut && reduced)) return null;
   // A CSS fade rather than an exit animation, so the web build (no Reanimated, see motion.tsx) fades too.
-  return <Animated.View pointerEvents={leaving ? 'none' : 'auto'} style={[StyleSheet.absoluteFill, leaving && {
-    animationName: { from: { opacity: 1 }, to: { opacity: 0 } }, animationDuration: `${FADE_MS}ms`, animationFillMode: 'forwards' }]}
-    onLayout={() => { if (!hidden.current) { hidden.current = true; SplashScreen.hideAsync(); } }}>
+  return <Animated.View pointerEvents={ready ? 'none' : 'auto'} aria-hidden={ready} style={[StyleSheet.absoluteFill, leaving && {
+    animationName: { from: { opacity: 1 }, to: { opacity: 0 } }, animationDuration: `${FADE_MS}ms`, animationFillMode: 'forwards',
+  }]}
+    onLayout={() => { if (!laidOut) { setLaidOut(true); SplashScreen.hide(); } }}>
     <Intro />
   </Animated.View>;
 }

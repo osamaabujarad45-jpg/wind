@@ -507,10 +507,6 @@ console.log('Phone UI rules passed');
   assert.ok(sheet.includes('c.pinSheetHint') && sheet.includes('c.pinSheetUnavailable'));
   assert.ok(readFileSync(new URL('../src/app/roads.tsx', import.meta.url), 'utf8').includes('unavailable={c.roadPinUnavailable}'), 'roads has no landmark field: its own failure text');
 }
-{ // Home's "current order": a live trip, then a search running now, then a booking for later (A53, 8 and 12 Nov).
-  const home = readFileSync(new URL('../src/app/(customer)/index.tsx', import.meta.url), 'utf8');
-  assert.ok(home.includes('.sort((a, b) => currentRank(b) - currentRank(a))'), 'live trips sort first (currentRank, tested in presentation.test.mjs)');
-}
 { // A live trip named the customer twice for the driver: sheet header and body card (A53, 8 Nov).
   const order = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');
   assert.ok(order.includes("{(isAdmin || !live) && <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />}"), 'body card skips the customer over the live map');

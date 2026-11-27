@@ -1371,7 +1371,18 @@ ${p.note}`);
   });
   return { saved: located, recent };
 }
-route('GET', '/api/me/places', async ({ user }) => { need(user, 'customer'); return (await places(user)); });
+route('GET', '/api/me/places', async ({ user, query }) => {
+  need(user, 'customer');
+  const result = await places(user);
+  if (query.get('shopDelivery') !== '1') return result;
+  const town = query.get('town');
+  if (town !== null && !isCity(town)) fail(400, 'invalid_input');
+  const address = await one(`SELECT id, dropoff_city, dropoff_note, dropoff_lat, dropoff_lng FROM orders
+    WHERE customer_id=? AND service='shop' AND status<>'cancelled' AND dropoff_lat IS NOT NULL AND dropoff_lng IS NOT NULL
+    AND dropoff_note<>''${town ? ' AND dropoff_city=?' : ''} ORDER BY id DESC LIMIT 1`, user.id, ...(town ? [town] : []));
+  return { ...result, shopDelivery: address ? { id: Number(address.id), city: address.dropoff_city, note: address.dropoff_note,
+    point: { latitude: Number(address.dropoff_lat), longitude: Number(address.dropoff_lng) } } : null };
+});
 route('POST', '/api/me/places', async ({ user, body }) => {
   need(user, 'customer');
   if (!['home', 'work', 'other'].includes(body.label) || !isCity(body.city)) fail(400, 'invalid_input');

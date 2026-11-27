@@ -344,8 +344,10 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
     // Booking: a refused retry or offline save reads in the header beside the pending card, not after the last field (review 8 Nov).
     { const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
       const bookHeader = book.slice(book.indexOf('header={<View style={{ paddingBottom: 8 }}>'), book.indexOf('footer={pending ? undefined'));
-      assert.equal(book.match(/<ErrorText>\{error\}<\/ErrorText>/g)?.length, 1, 'the booking error is shown once');
-      assert.ok(bookHeader.includes('<ErrorText>{error}</ErrorText>'), 'in the sheet header');
+      assert.equal(book.match(/<ErrorText>\{error\}<\/ErrorText>/g)?.length, 2, 'only the map and its shortcut loading screen render the booking error');
+      assert.equal(bookHeader.match(/<ErrorText>\{error\}<\/ErrorText>/g)?.length, 1, 'the booking map shows its error once, in the sheet header');
+      const shortcutLoading = book.slice(book.indexOf('if (!ready && homeDestination) return <Screen>'), book.indexOf('return <View style={{ flex: 1, backgroundColor: palette.paper }}>'));
+      assert.equal(shortcutLoading.match(/<ErrorText>\{error\}<\/ErrorText>/g)?.length, 1, 'shortcut restoration shows its own error before the map mounts');
       assert.ok(book.includes("if (fixMarked.current && !Object.values(next).some(Boolean)) { fixMarked.current = false; setError(''); }") && book.includes('setError(c.fixMarked); fixMarked.current = true;'), 'and the fix-marked banner clears with the last marked field'); }
     // A booked-ahead order is neither finding nor active: its closed sheet showed a bare grip (A53, 8 Nov).
     assert.ok(header.includes('{!!booked && <Row') && screen.includes("const booked = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor"), 'a closed sheet still says when a booked-ahead order is due');
