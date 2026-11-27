@@ -14,6 +14,7 @@ export type RefusalDeps = {
   permanentApprovalRequired: boolean;
   // scheduled orders reach drivers this long before pickup (server/main.ts RELEASE_BEFORE)
   releaseBefore: number;
+  modeRefusal?: (order: RefusalOrder, driverId: number) => Promise<string | null>;
 };
 
 /** The order fields the checks read. The admin passes its row; the driver accept passes its model with the same names. */
@@ -24,6 +25,8 @@ export async function driverRefusal(deps: RefusalDeps, order: RefusalOrder, driv
   if (driver.role !== 'driver') return 'not_found';
   if (driver.status !== 'active') return driver.status === 'pending' ? 'pending_approval' : 'blocked';
   if (deps.permanentApprovalRequired && !driver.approved_at) return 'pending_approval';
+  const modeRefusal = await deps.modeRefusal?.(order, Number(driver.id));
+  if (modeRefusal) return modeRefusal;
   if (!deps.enabledServices.includes(order.service)) return 'service_unavailable';
   if (!deps.servesFor(driver.vehicle).includes(order.service)) return 'wrong_vehicle';
   if (order.scheduled_for != null && order.scheduled_for > Date.now() + deps.releaseBefore) return 'not_released_yet';

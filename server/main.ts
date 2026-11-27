@@ -34,6 +34,8 @@ import { logServerError } from './domain/diagnostics.ts';
 import { hashPassword as createPasswordHash, verifyPassword, PasswordBusyError, closePasswordHasher } from './domain/passwords.ts';
 import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
 import { previewProfiles } from './domain/account-profiles.ts';
+import { captainActivity, captainGrant, captainHasWork, captainOfflineReason, captainOnline, defaultMode, expireCaptainAvailability, hasCaptainProfile, registerModeRoutes, setCaptainAvailability, setCaptainOffline, supportedMode, switchSessionMode } from './domain/session-mode.ts';
+import { initializeSqliteModeSwitching, modeActivationKey } from './db/account-profiles.ts';
 import { clientAddress } from './domain/client-address.ts';
 import { firebaseReset } from './domain/firebase-reset.ts';
 import { firebaseContinuationUrl, firebaseEmailService, recordRecoveryEmailProof, recoveryEmailVerified, validMailboxProof, registerRecoveryEmailRoutes, retireFirebaseEmail } from './domain/firebase-email.ts';
@@ -47,7 +49,7 @@ import { registerCashOpsRoutes } from './domain/cash-ops.ts';
 import { registerSupportRoutes } from './domain/support.ts';
 import { doorCash } from './domain/door-cash.ts';
 import { registerAdminAssignRoutes } from './domain/admin-assign.ts';
-import { driverRefusal } from './domain/driver-refusal.ts';
+import { driverRefusal, type RefusalOrder } from './domain/driver-refusal.ts';
 import { registerBookingReceiptRoutes } from './domain/booking-receipts.ts';
 import { registerCashReceiptRoutes } from './domain/cash-receipts.ts';
 import { cashClientFenced, clientUpdateRequired, registerRuntimeRoutes, tripCodeClientTooOld } from './domain/runtime-readiness.ts';
@@ -67,7 +69,7 @@ import { promisify } from 'node:util';
 import {
   activeStatuses, cities, city, pickupPayCents as pickupPayFor, commissionOn, crowKm, distanceKm, exceptionReasons, finishedStatuses, pickupRefusal, pickupRefusalDetails, defaultSettings, fractionSettings, invalidSetting, isCity, nextStatus, normalizeEmail, normalizePhone,
   alongTheWay, canTake, CLOSED_MINUTES, nearestCity, onTheWay, poolable, HISTORY_PAGE, isNight, latinDigits, offerRange, overCashCeiling, optionsFor, orderCode, planForRole, quote, rideSeatDemand, rideVehiclesFor, roadAlerts, seatsFor, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
-  type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
+  type AccountMode, type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { BOOKING_COMMAND_TTL_MS } from '../src/booking.ts';
 import { createOpencode, registerOpencodeRoutes } from './domain/opencode.ts';
@@ -206,10 +208,21 @@ if (webRoot && production) setImmediate(() => { // warm so the first visitor aft
   } catch { /* served lazily instead */ }
 });
 
+const accountModes = process.env.WIND_PROFILE_SWITCHING === '1';
+const modeRollback = import.meta.main && process.argv[2] === 'rollback-profiles';
+if (modeRollback && (process.argv[3] !== '--confirm' || accountModes || process.env.WIND_DATABASE_URL
+  || !process.env.DB_PATH || !isAbsolute(process.env.DB_PATH) || !existsSync(process.env.DB_PATH)))
+  throw new Error('Profile rollback requires --confirm, disabled profile switching and an existing SQLite database');
 // Retained sync export is for offline legacy fixture setup; HTTP/domain work uses persistence below.
 export const db = new DatabaseSync(process.env.WIND_DATABASE_URL ? ':memory:' : process.env.DB_PATH ?? 'wind.db');
-initializeSqlite(db);
+if (!modeRollback) initializeSqlite(db);
 export const persistence = runtimePersistence(db);
+if (accountModes && persistence.backend !== 'sqlite') throw new Error('Profile switching requires the SQLite pilot runtime');
+if (accountModes && production && !(Number.isSafeInteger(Number(process.env.WIND_MIN_CLIENT_BUILD)) && Number(process.env.WIND_MIN_CLIENT_BUILD) >= 10107))
+  throw new Error('Profile switching requires client build 10107 or later');
+if (accountModes) initializeSqliteModeSwitching(db, enabledServices.includes('shop'));
+else if (persistence.backend === 'sqlite' && !modeRollback && db.prepare('SELECT 1 FROM settings WHERE key = ?').get(modeActivationKey))
+  throw new Error('Account profiles are active on this SQLite database. Keep profile switching enabled or complete the profile rollback.');
 type Row = Record<string, any>;
 const one = (sql: string, ...p: SQLInputValue[]) => persistence.one(sql, ...p);
 const all = (sql: string, ...p: SQLInputValue[]) => persistence.all(sql, ...p);
@@ -291,15 +304,17 @@ async function toUser(r: Row): Promise<User> {
     phoneVerifiedAt: r.phone_verified_at ?? null, emailVerifiedAt: await recoveryEmailVerified(persistence, r) ? r.email_verified_at : null };
 }
 
-async function activePlan(userId: number): Promise<Plan | null> {
+async function activePlan(userId: number, role?: Role): Promise<Plan | null> {
   return ((await one(`SELECT s.plan FROM subscriptions s JOIN users u ON u.id = s.user_id WHERE s.user_id = ?
-    AND s.status = 'active' AND s.ends_at > ? AND s.plan = CASE u.role WHEN 'customer' THEN 'plus' WHEN 'driver' THEN 'pro' END`, userId, Date.now()))?.plan as Plan) ?? null;
+    AND s.status = 'active' AND s.ends_at > ? AND s.plan = COALESCE(?, CASE u.role WHEN 'customer' THEN 'plus' WHEN 'driver' THEN 'pro' END)`,
+  userId, Date.now(), (accountModes && role ? planForRole[role] : null) ?? null))?.plan as Plan) ?? null;
 }
 
-async function latestSubscription(userId: number): Promise<Subscription | null> {
+async function latestSubscription(userId: number, role?: Role): Promise<Subscription | null> {
   const r = (await one(`SELECT s.* FROM subscriptions s JOIN users u ON u.id = s.user_id WHERE s.user_id = ?
     AND (s.status = 'pending' OR (s.status = 'active' AND s.ends_at > ?))
-    AND s.plan = CASE u.role WHEN 'customer' THEN 'plus' WHEN 'driver' THEN 'pro' END ORDER BY s.id DESC LIMIT 1`, userId, Date.now()));
+    AND s.plan = COALESCE(?, CASE u.role WHEN 'customer' THEN 'plus' WHEN 'driver' THEN 'pro' END) ORDER BY s.id DESC LIMIT 1`,
+  userId, Date.now(), (accountModes && role ? planForRole[role] : null) ?? null));
   return r ? toSubscription(r) : null;
 }
 
@@ -332,8 +347,9 @@ type JobCardData = { customers: Map<number, { rating: number | null; trips: numb
   offers: Map<number, { price: number; createdAt: number }> };
 
 async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order> {
-  const owner = viewer.role === 'admin' || viewer.id === r.customer_id;
-  const assigned = viewer.id === r.driver_id;
+  const personal = viewer.id === r.customer_id && (!viewer.accountMode || viewer.accountMode === 'personal');
+  const owner = viewer.role === 'admin' || personal;
+  const assigned = viewer.id === r.driver_id && (!viewer.accountMode || viewer.accountMode === 'captain');
   const custody = (viewer.role === 'admin' || assigned) && r.status === 'returning' && r.service !== 'ride'
     ? await returnCustody(persistence, r) : null;
   const live = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
@@ -343,7 +359,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
   const scopeInfo = await resourceScope.summary(r.id, viewer, r);
   // T33: destination-change visibility and pending card follow the capability, not the dialect.
   // One capability probe per request, not per order in a list.
-  const canChangeDest = (viewer.id === r.customer_id || viewer.id === r.driver_id) && await persistence.memo('destinationAvailable', () => destinationAvailable(persistence));
+  const canChangeDest = (personal || assigned) && await persistence.memo('destinationAvailable', () => destinationAvailable(persistence));
   const destinationChange = canChangeDest && destinationEligible(r)
     ? await pendingDestination(persistence, r) : null;
   return {
@@ -358,14 +374,14 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     pickupContact: partyPhones ? r.pickup_contact ?? r.contact : null,
     recipientName: owner || assigned ? r.recipient_name ?? '' : '', recipientPhone: partyPhones ? r.recipient_phone ?? null : null,
     price: r.price, commission: r.service === 'shop' && !owner && !assigned ? null : r.commission ?? null, status: r.status, // a shop never sees the captain's commission
-    ...(canChangeDest && viewer.id === r.customer_id && { canChangeDestination: destinationEligible(r) }),
+    ...(canChangeDest && personal && { canChangeDestination: destinationEligible(r) }),
     ...(destinationChange && { destinationChange }),
     handoverCode: owner ? r.handover_code ?? null : null, // the customer gives it to the driver at delivery
     rating: r.rating ?? null, createdAt: r.created_at, updatedAt: r.updated_at,
     // Stage times for the status timeline: known only where the state was reached.
     assignedAt: r.assigned_at ?? null, pickedUpAt: r.picked_up_at ?? null, completedAt: r.completed_at ?? null,
-    sharing: viewer.id === r.customer_id && !!r.share_token_hash, scheduledFor: r.scheduled_for ?? null, discount: r.discount ?? 0,
-    returnCode: viewer.id === r.customer_id && r.status === 'returning' && r.service !== 'shop' ? r.return_code ?? null : null, // the sender gives it back to the driver; a shop's goods go back to the shop
+    sharing: personal && !!r.share_token_hash, scheduledFor: r.scheduled_for ?? null, discount: r.discount ?? 0,
+    returnCode: personal && r.status === 'returning' && r.service !== 'shop' ? r.return_code ?? null : null, // the sender gives it back to the driver; a shop's goods go back to the shop
     exceptionReason: owner || assigned ? r.exception_reason ?? null : null,
     exceptionDetail: owner || assigned ? r.exception_detail ?? null : null,
     // Door cash is dispute evidence for the driver who took it and for support; the customer's screen never carries it.
@@ -404,7 +420,7 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     customerRating: assigned || viewer.role === 'admin' ? r.customer_rating ?? null : null,
     ...(viewer.role === 'driver' && (assigned || r.status === 'searching') && { customerStats: cards
       ? cards.customers.get(Number(r.customer_id)) ?? { rating: null, trips: 0 } : await customerStats(r.customer_id) }),
-    ...(viewer.id === r.customer_id && r.status === 'searching' && r.recommended_price != null && { offers: (await offersFor(r.id)) }),
+    ...(personal && r.status === 'searching' && r.recommended_price != null && { offers: (await offersFor(r.id)) }),
     ...(dispatchInfo ? { dispatch: dispatchInfo as Order['dispatch'] } : {}),
     ...(rideInfo ? { ride: rideInfo as Order['ride'] } : {}),
     ...(scopeInfo ? { declaredScope: scopeInfo as Order['declaredScope'] } : {}),
@@ -476,8 +492,9 @@ const offersFor = async (orderId: number): Promise<Offer[]> => {
     ORDER BY f.price, f.created_at LIMIT 20`, orderId, Date.now() - OFFER_TTL, ...rideVehicles,
     ...(measured ? [rideSeatDemand(order?.option), JSON.stringify(Object.fromEntries(rideVehicles.map(vehicle => [vehicle, seatsFor(vehicle)])))] : []));
   // A driver already carrying shared riders offers only while the seats still fit (the accept checks the same).
-  const fits = await Promise.all(rows.map(async f => !order || servesFor(f.vehicle).includes(order.service) && canTake(await activeLoad(Number(f.driver_id)), order.service as Service,
-    { shared: !!Number(order.shared ?? 0), option: order.option == null ? null : String(order.option) }, (f.vehicle ?? null) as Vehicle | null)));
+  const fits = await Promise.all(rows.map(async f => !order || (servesFor(f.vehicle).includes(order.service) && canTake(await activeLoad(Number(f.driver_id)), order.service as Service,
+    { shared: !!Number(order.shared ?? 0), option: order.option == null ? null : String(order.option) }, (f.vehicle ?? null) as Vehicle | null)
+    && !await profileAssignmentRefusal({ id: orderId, service: order.service }, f.driver_id))));
   return Promise.all(rows.filter((_, i) => fits[i])
     .map(async f => ({ driverId: f.driver_id, name: f.name, vehicle: f.vehicle ?? null, price: f.price, createdAt: f.created_at, ...(await driverStats(f.driver_id)) })));
 };
@@ -486,16 +503,19 @@ async function getOrder(id: number, viewer: User, liveProtocol = false, recovery
   const r = (await one(`${orderSelect} WHERE o.id = ?`, id)) ?? fail(404, 'not_found');
   const released = viewer.role === 'driver' && r.status === 'searching' &&
     !!(await one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', r.id, viewer.id));
-  const canSee = viewer.role === 'admin' || r.customer_id === viewer.id || r.driver_id === viewer.id ||
+  const personal = (!viewer.accountMode || viewer.accountMode === 'personal') && r.customer_id === viewer.id;
+  const captain = (!viewer.accountMode || viewer.accountMode === 'captain') && r.driver_id === viewer.id;
+  const canSee = viewer.role === 'admin' || personal || captain ||
     (viewer.role === 'driver' && viewer.status === 'active' && r.status === 'searching' && enabledServices.includes(r.service) && servesFor(viewer.vehicle).includes(r.service)
-      && (r.scheduled_for == null || r.scheduled_for <= Date.now() + RELEASE_BEFORE)) || (await shop.merchantSees(r, viewer));
+      && (r.scheduled_for == null || r.scheduled_for <= Date.now() + RELEASE_BEFORE) && !await profileAssignmentRefusal({ id: r.id, service: r.service }, viewer.id)) ||
+    (await shop.merchantSees(r, viewer));
   if (!canSee || released) fail(404, 'not_found');
   const order = await toOrder(r, viewer);
   if (liveProtocol) order.assignmentEpoch = Number(r.assignment_epoch);
   // Bind the revision to these instructions, even if the row changes during serialization.
   if (recoveryProtocol) order.recovery = recoveryMetadata(r);
   // The rating Uber shows beside the car, computed for one order only: on a list this would be a stats query per row.
-  if (order.driverId && (viewer.role === 'admin' || viewer.id === r.customer_id || viewer.id === r.driver_id))
+  if (order.driverId && (viewer.role === 'admin' || personal || captain))
     order.driverRating = (await driverStats(order.driverId)).rating;
   return order;
 }
@@ -505,10 +525,12 @@ const text = (v: unknown, max: number, required = true) => {
   if ((required && !s) || s.length > max) fail(400, 'invalid_input');
   return s;
 };
-const need = (user: User, ...roles: Role[]) => { if (!roles.includes(user.role)) fail(403, 'forbidden'); };
+const need = (user: User, ...roles: Role[]) => {
+  if (!roles.includes(user.role) || user.accountMode === 'shop') fail(403, 'forbidden');
+};
 const needActive = (user: User) => {
   if (user.status !== 'active') fail(403, user.status === 'pending' ? 'pending_approval' : 'blocked');
-  if (production && selfService && user.role === 'driver' && !user.permanentlyApprovedAt) fail(403, 'pending_approval');
+  if (production && selfService && user.role === 'driver' && !user.permanentlyApprovedAt && user.accountMode !== 'captain') fail(403, 'pending_approval');
 };
 
 // Durable fixed windows; the reverse proxy also limits traffic before expensive password work.
@@ -595,11 +617,13 @@ async function entraAccount(claims: EntraClaims, body: Row, placeholder: string)
       const plate = role === 'driver' ? text(body.plate, 12, false) || null : null;
       const name = claims.name ?? text(body.name, 60);
       if (!placeholder) fail(409, 'entra_link_required'); // raced with a linked-row removal: retry the exchange
+      const legacyDriver = role === 'driver' && !accountModes;
       const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, plate, created_at, email, consent_at, consent_version, entra_oid, phone_verified_at, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        registrationPhone, name, placeholder, role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
+        registrationPhone, name, placeholder, legacyDriver ? 'driver' : 'customer', legacyDriver ? 'pending' : 'active', legacyDriver ? vehicle : null, legacyDriver ? plate : null, Date.now(), email,
         selfService ? Date.now() : null, selfService ? '2026-10-03' : null, claims.oid,
         phone === registrationPhone ? Date.now() : null, email ? Date.now() : null)).lastInsertRowid);
-      if (role === 'driver') await queuePush((await adminIds()), 'attention', 0, '/admin/users');
+      if (accountModes && vehicle) await createCaptainApplication(id, vehicle, plate);
+      else if (legacyDriver) await queuePush((await adminIds()), 'attention', 0, '/admin/users');
       user = (await one('SELECT * FROM users WHERE id = ?', id))!;
     }
   }
@@ -675,6 +699,10 @@ async function ledgerReady() {
   return persistence.backend === 'postgres' && !!(await ledgerAvailable(persistence));
 }
 const postOrderJournals = async (orderId: number) => {
+  if (accountModes) {
+    const order = await one('SELECT driver_id FROM orders WHERE id = ?', orderId);
+    if (order?.driver_id != null) await closeCaptainIfSettled(order.driver_id);
+  }
   if (!(await ledgerReady())) return;
   const o = (await one('SELECT * FROM orders WHERE id = ?', orderId))!;
   const receivable = await ledger.ensureAccount(`driver:${o.driver_id}:receivable`, 'driver_receivable', Number(o.driver_id));
@@ -714,9 +742,14 @@ const captainPayAvailable = async () => persistence.backend === 'sqlite' || pers
   !!(await one("SELECT to_regclass('schema_migrations') AS migrations"))?.migrations
     && !!(await one('SELECT version FROM schema_migrations WHERE version=40')));
 const postCashJournal = async (entryId: number) => {
-  if (!(await ledgerReady())) return;
-  const journal = await ledger.cashJournal((await one('SELECT * FROM cash_entries WHERE id = ?', entryId))!);
-  if (journal) await ledger.postJournal(journal);
+  const entry = await one('SELECT * FROM cash_entries WHERE id = ?', entryId);
+  if (!entry) return;
+  if (await ledgerReady()) {
+    const journal = await ledger.cashJournal(entry);
+    if (journal) await ledger.postJournal(journal);
+  }
+  await shop.releaseSettledGoods(entry);
+  if (accountModes && entry.status === 'confirmed') await closeCaptainIfSettled(entry.driver_id);
 };
 registerLedgerRoutes(route, ledger);
 // Order locks serialize every payment to a captain for the same order.
@@ -850,6 +883,7 @@ registerPickupPayRoutes(route, async ({ user, params, body }) => {
     const decision = { granted, km, reason, paidCents, decidedBy: user.id, decidedAt: Date.now() };
     await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PICKUP_PAY_DECIDED', ?, ?)`,
       user.id, id, JSON.stringify(decision), decision.decidedAt);
+    if (accountModes) await closeCaptainIfSettled(order.driver_id);
     await persistence.exec('COMMIT');
     return decision;
   } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
@@ -882,10 +916,11 @@ const recoveryChallenge = (purpose: EntraPurpose) => async ({ user, req }: Pick<
   return { nonce };
 };
 registerEntraRoutes(route, entraExchange, recoveryChallenge);
-await phoneIdentity.reconcileStale();
+if (!modeRollback) await phoneIdentity.reconcileStale();
 
 route('GET', '/api/health', async ({ query }) => ({ ok: true, ...(query.get('protocol') === '1' ? { protocol: await protocolCapabilities() } : {}) }), true);
-route('GET', '/api/auth/options', () => ({ registrationOpen, emailReset: emailReady, ...(firebaseEmail.resetEnabled ? { emailResetLinkProof: true } : {}) }), true);
+route('GET', '/api/auth/options', () => ({ registrationOpen, emailReset: emailReady,
+  ...(accountModes && { profiles: true }), ...(firebaseEmail.resetEnabled ? { emailResetLinkProof: true } : {}) }), true);
 route('GET', '/api/ready', async () => {
   let schema = 3;
   try {
@@ -932,11 +967,13 @@ route('POST', '/api/auth/register', async ({ body, req }) => {
   const [id, session] = await persistence.atomic({ purpose: 'http_public' }, async () => {
     await persistence.exec('BEGIN IMMEDIATE');
     try {
+      const legacyDriver = role === 'driver' && !accountModes;
       const id = Number((await run('INSERT INTO users (phone, name, password, role, status, vehicle, plate, created_at, email, consent_at, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        phone, name, hashed, role, role === 'driver' ? 'pending' : 'active', vehicle, plate, Date.now(), email,
+        phone, name, hashed, legacyDriver ? 'driver' : 'customer', legacyDriver ? 'pending' : 'active', legacyDriver ? vehicle : null, legacyDriver ? plate : null, Date.now(), email,
         selfService ? Date.now() : null, selfService ? '2026-10-03' : null)).lastInsertRowid);
       // A new driver waits for approval: tell the admins, or they only see it on the dashboard (SPEC-driver-signup-alert.md).
-      if (role === 'driver') await queuePush((await adminIds()), 'attention', 0, '/admin/users');
+      if (accountModes && vehicle) await createCaptainApplication(id, vehicle, plate);
+      else if (legacyDriver) await queuePush((await adminIds()), 'attention', 0, '/admin/users');
       const session = await startSession(id);
       await persistence.exec('COMMIT');
       return [id, session] as const;
@@ -990,21 +1027,39 @@ route('POST', '/api/auth/login', async ({ body }) => {
 async function startSession(userId: number) {
   const token = randomBytes(32).toString('hex');
   const sessionHash = sha(token);
-  (await run('INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at) VALUES (?, ?, ?, ?)', sessionHash, userId, Date.now(), Date.now()));
-  return { token, ...(await me((await toUser((await one('SELECT * FROM users WHERE id = ?', userId))!)), false, sessionHash)) };
+  const now = Date.now();
+  const account = (await one('SELECT * FROM users WHERE id = ?', userId))!;
+  if (!accountModes) {
+    await run('INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at) VALUES (?, ?, ?, ?)', sessionHash, userId, now, now);
+    return { token, ...await me(await toUser(account), false, sessionHash) };
+  }
+  const mode = await defaultMode(persistence, account, now);
+  await run(`INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, active_mode, mode_revision, last_activity_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`, sessionHash, userId, now, now, mode, mode === 'personal' ? 0 : 1, now);
+  return { token, ...await me(await userInMode(account, mode, mode === 'personal' ? 0 : 1), false, sessionHash) };
 }
 
 async function me(user: User, payroll = false, sessionHash?: string) {
   const rideOfferSeconds = user.role === 'driver' ? await dispatch.offerSeconds(user.id) : undefined;
   const offerRecoveryEmail = user.role === 'customer' && !user.email && (emailReady || firebaseEmail.resetEnabled)
     && !!await one("SELECT 1 FROM orders WHERE customer_id = ? AND status = 'completed' LIMIT 1", user.id);
-  const profilePreview = sessionHash && process.env.WIND_PROFILE_SHADOW === '1'
-    ? await previewProfiles(persistence, user, sessionHash, enabledServices.includes('shop')) : undefined;
-  if (profilePreview) console.info(JSON.stringify({ category: 'profile_shadow', mode: profilePreview.mode,
-    roleMatches: profilePreview.role === user.role, captainAvailable: profilePreview.captain?.available ?? false }));
-  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), ...settingsResponse(await settings(), payroll && user.role === 'admin'), rideOfferSeconds,
-    ...(profilePreview && { profilePreview }),
+  const shadow = process.env.WIND_PROFILE_SHADOW === '1';
+  const profiles = sessionHash && (shadow || accountModes)
+    ? await previewProfiles(persistence, user, sessionHash, enabledServices.includes('shop'), accountModes) : undefined;
+  if (profiles && shadow) console.info(JSON.stringify({ category: 'profile_shadow', mode: profiles.mode,
+    roleMatches: profiles.role === user.role, captainAvailable: profiles.captain?.available ?? false }));
+  const accountProfile = accountModes && profiles ? { ...profiles,
+    captainOnline: profiles.mode === 'captain' && await captainOnline(persistence, user.id, Date.now(), sessionHash),
+    workInHand: profiles.mode === 'captain' && await captainHasWork(persistence, user.id),
+    ...(profiles.mode === 'captain' && sessionHash && { captainOfflineReason: await captainOfflineReason(persistence, user.id, sessionHash) }),
+    updates: await waitingProfileUpdates(user.id),
+    ...(profiles.mode === 'shop' && profiles.shop && { shopOrdersOpen: Number((await one(`SELECT COUNT(*) AS n FROM shop_orders s
+      JOIN orders o ON o.id = s.order_id WHERE s.merchant_id = ? AND o.status IN ('requested','searching',${activeSql})`, profiles.shop.id))!.n) }) } : undefined;
+  return { user, subscription: user.accountMode === 'shop' ? null : await latestSubscription(user.id, user.role),
+    plan: user.accountMode === 'shop' ? null : await activePlan(user.id, user.role), ...settingsResponse(await settings(), payroll && user.role === 'admin'), rideOfferSeconds,
+    ...(profiles && shadow && { profilePreview: profiles }), ...(accountProfile && { accountProfile }),
     capabilities: { enabledServices, pooling: enabledServices.includes('ride'), ...(await presenceOffered() ? {} : { driverPresence: false }),
+      ...(accountModes && { accountProfiles: true }),
       emailVerification: emailReady,
       ...(firebaseEmail.verificationEnabled ? { emailVerificationLink: true } : {}),
       ...(firebaseEmail.resetEnabled ? { emailResetLinkProof: true } : {}),
@@ -1112,8 +1167,13 @@ async function lockEmailAccount(id: number) {
   const row = await one(`SELECT * FROM users WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id);
   return row && row.status !== 'blocked' ? row : fail(401, 'unauthorized');
 }
-async function currentEmailProfile(id: number) {
+async function currentEmailProfile(id: number, req?: IncomingMessage) {
+  if (accountModes && req) return emailTransaction(() => sessionProfile(req));
   return me(await toUser((await one('SELECT * FROM users WHERE id = ?', id))!));
+}
+async function sessionProfile(req: IncomingMessage, payroll = false) {
+  const token = bearer(req) ?? fail(401, 'unauthorized');
+  return me(await authenticate(req, false) ?? fail(401, 'unauthorized'), payroll, sha(token));
 }
 async function emailTransaction<T>(work: () => Promise<T>) {
   await persistence.exec('BEGIN IMMEDIATE');
@@ -1185,7 +1245,7 @@ route('POST', '/api/me/email', async ctx => {
     await run('DELETE FROM email_codes WHERE user_id = ?', account.id);
     await clearFirebaseReset(account.id);
   });
-  return currentEmailProfile(ctx.user.id);
+  return currentEmailProfile(ctx.user.id, ctx.req);
 });
 route('POST', '/api/me/email/verify', async ctx => {
   if (!emailReady) fail(503, 'email_unavailable');
@@ -1204,7 +1264,7 @@ route('POST', '/api/me/email/verify', async ctx => {
       await recordRecoveryEmailProof(persistence, account.id, account.email, 'cloudflare-code');
     }
   }).then(refusal => { if (refusal) throw refusal; });
-  return currentEmailProfile(ctx.user.id);
+  return currentEmailProfile(ctx.user.id, ctx.req);
 });
 
 // The same response for missing and eligible accounts. Only a current, proven address can receive recovery mail.
@@ -1283,7 +1343,7 @@ const confirmVerificationLink: Handler = async ctx => {
       fail(400, 'wrong_email_code');
     await recordRecoveryEmailProof(persistence, current.id, current.email, 'firebase-link');
   });
-  return currentEmailProfile(ctx.user.id);
+  return currentEmailProfile(ctx.user.id, ctx.req);
 };
 
 const adoptResetLink: Handler = async ({ body }) => {
@@ -1336,7 +1396,15 @@ route('POST', '/api/auth/reset', async ({ body }) => {
   return { ok: true }; // the app then signs in normally, through every login gate
 }, true);
 
-route('POST', '/api/auth/logout', async ({ user }) => {
+route('POST', '/api/auth/logout', async ({ user, req }) => {
+  if (accountModes && user.role !== 'admin') return emailTransaction(async () => {
+    const current = await authenticate(req, false);
+    if (!current) return { ok: true };
+    const hash = sha(bearer(req)!);
+    if (current.accountMode === 'captain') await setCaptainOffline(persistence, current.id);
+    await run('DELETE FROM sessions WHERE user_id = ? AND token_hash = ?', current.id, hash);
+    return { ok: true };
+  });
   forgetDriver(user.id); // off the nearby-cars map at once (nearby.ts)
   (await run('DELETE FROM sessions WHERE user_id = ?', user.id));
   (await run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id)); // every session ended, so every browser stops alerting
@@ -1344,8 +1412,80 @@ route('POST', '/api/auth/logout', async ({ user }) => {
 });
 route('GET', '/api/me', async ({ user, query, req }) => {
   const token = bearer(req);
+  if (accountModes) return emailTransaction(async () => {
+    const current = await authenticate(req, false) ?? fail(401, 'unauthorized');
+    const sessionHash = sha(token!);
+    if (current.accountMode === 'captain' && query.get('launch') === '1')
+      await setCaptainOffline(persistence, current.id, await captainOfflineReason(persistence, current.id, sessionHash, Date.now(), true));
+    return me(current, query.get('payroll') === '1', sessionHash);
+  });
   return me(user, query.get('payroll') === '1', token && sha(token));
 });
+
+async function changeSessionMode({ user, body, req }: Pick<Ctx, 'body' | 'req'> & { user: { id: number } }) {
+  if (!accountModes) fail(404, 'not_found');
+  const mode = body.mode;
+  if (!supportedMode(mode) || !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision < 0) fail(400, 'invalid_input');
+  const token = bearer(req) ?? fail(401, 'unauthorized');
+  const sessionHash = sha(token);
+  return emailTransaction(async () => {
+    if (!await authenticate(req, false)) fail(401, 'unauthorized');
+    await switchSessionMode(persistence, sessionHash, user.id, mode, body.expectedRevision, enabledServices.includes('shop'), fail);
+    return sessionProfile(req);
+  });
+}
+
+async function changeCaptainAvailability({ user, body, req }: Pick<Ctx, 'body' | 'req'> & { user: { id: number } }) {
+  if (!accountModes) fail(404, 'not_found');
+  if (typeof body.online !== 'boolean' || !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision < 0) fail(400, 'invalid_input');
+  const token = bearer(req) ?? fail(401, 'unauthorized');
+  const sessionHash = sha(token);
+  return emailTransaction(async () => {
+    if (!await authenticate(req, false)) fail(401, 'unauthorized');
+    await setCaptainAvailability(persistence, sessionHash, user.id, body.expectedRevision, body.online, fail);
+    return sessionProfile(req);
+  });
+}
+
+async function endOtherSessions({ user, body, req }: Pick<Ctx, 'body' | 'req'> & { user: { id: number } }) {
+  if (!accountModes) fail(404, 'not_found');
+  if ((await authenticate(req, false))?.role === 'admin') fail(403, 'forbidden');
+  const hash = sha(bearer(req) ?? fail(401, 'unauthorized'));
+  await limit(identityKey('other-phones', user.id), 5, 10 * 60_000);
+  const account = await one('SELECT password FROM users WHERE id = ?', user.id);
+  if (!await checkLoginPassword(String(body.password ?? ''), account?.password)) fail(401, 'wrong_credentials');
+  await emailTransaction(async () => {
+    const locked = await one('SELECT password FROM users WHERE id = ?', user.id);
+    if (locked?.password !== account?.password || !await authenticate(req, false)) fail(401, 'unauthorized');
+    if (await one("SELECT 1 FROM sessions WHERE user_id = ? AND active_mode = 'captain' AND token_hash <> ?", user.id, hash))
+      await setCaptainOffline(persistence, user.id);
+    const removed = await run('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', user.id, hash);
+    await run('DELETE FROM push_subscriptions WHERE user_id = ? AND auth_session_hash IS NULL', user.id);
+    if (removed.changes) await run("INSERT INTO security_events(actor_id,action,detail,created_at) VALUES (?,'OTHER_SESSIONS_ENDED',?,?)", user.id,
+      JSON.stringify({ workInHand: await captainHasWork(persistence, user.id) }), Date.now());
+  });
+  return { ok: true };
+}
+
+async function createCaptainApplication(userId: number, vehicle: Vehicle, plate: string | null) {
+  const inserted = await run(`INSERT INTO captain_profiles(user_id, state, vehicle, plate, legacy_role, legacy_status, application_id)
+    VALUES (?, 'under_review', ?, ?, 'customer', 'active', ?) ON CONFLICT (user_id) DO NOTHING`, userId, vehicle, plate, randomBytes(16).toString('hex'));
+  if (inserted.changes) await queuePush(await adminIds(), 'attention', 0, '/admin');
+}
+
+async function applyAsCaptain({ req, body }: Pick<Ctx, 'body' | 'req'>) {
+  if (!accountModes) fail(404, 'not_found');
+  const user = await authenticate(req, false) ?? fail(401, 'unauthorized');
+  need(user, 'customer'); needActive(user);
+  if (!vehicles.includes(body.vehicle)) fail(400, 'invalid_vehicle');
+  const account = await one('SELECT role FROM users WHERE id = ?', user.id);
+  if (account?.role !== 'customer') fail(409, 'profile_exists');
+  await createCaptainApplication(user.id, body.vehicle, text(body.plate, 12, false) || null);
+  return me(user, false, sha(bearer(req)!));
+}
+
+registerModeRoutes(route, { switchMode: changeSessionMode, availability: changeCaptainAvailability, endOtherSessions,
+  apply: applyAsCaptain, notification: resolveProfileNotification });
 
 // Destination filter (SPEC-driver-destination.md): only jobs dropping off in that city, for 3 hours.
 const HEADING_FOR = 3 * 3_600_000; // ponytail: Uber-like window; tune from how long intercity drives home take
@@ -1393,6 +1533,9 @@ route('POST', '/api/me/password', async ({ user, body, req }) => {
   const password = await hashPassword(newPassword(body.password));
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
+    const locked = await lockEmailAccount(user.id);
+    if (!await recoveryEmailSessionActive(locked, sha(currentToken))) fail(401, 'unauthorized');
+    if (locked.password !== stored || (proof && locked.entra_oid !== account.entra_oid)) fail(401, 'wrong_password');
     if (proof) await spendEntraProof(proof);
     // Re-check the exact credential the KDF approved: a concurrent change must not be overwritten.
     if (!(await run('UPDATE users SET password = ? WHERE id = ? AND password = ?', password, user.id, stored)).changes) fail(401, 'wrong_password');
@@ -1687,7 +1830,7 @@ type PushKind = 'assigned' | 'at_pickup' | 'in_transit' | 'completed' | 'returne
   | 'approved' | 'support' | 'support_reply' | 'cash' | 'attention' | 'safety' | 'plan'
   | 'destination_request' | 'destination_accepted' | 'destination_declined' | 'admin_assigned' | 'admin_unassigned' | 'dispatch_assigned' // WP-02
   | 'merchant_order' | 'shop_consent' | 'shop_update' // shop delivery (SRS §7)
-  | 'office'; // SHIP-19 returned goods at the office
+  | 'office' | 'captain_offline' | 'captain_idle'; // SHIP-19 returned goods at the office
 // T37: the subject is read at send time and must be configured (no obsolete host default).
 const PUSH_SUBJECT = () => pushSubject();
 let pushKeyCache: { privateKey: ReturnType<typeof createPrivateKey>; publicRaw: Buffer } | undefined;
@@ -1701,11 +1844,139 @@ async function pushKeys() {
   return pushKeyCache;
 }
 // path opens a page that is not an order (order 0: cash, plans, admin queues); flushed only after the commit.
-const queuePush = async (userIds: (number | null)[], kind: PushKind, order: number, path?: string) => {
+const queuePush = async (userIds: (number | null)[], kind: PushKind, order: number, path?: string, changeId?: number) => {
   const ids = userIds.filter((id): id is number => id != null);
   if (ids.length && persistence.backend === 'postgres') { await enqueuePush(persistence, ids, kind, order, path); return; }
-  if (ids.length) persistence.defer(async () => (await sendPush(ids, kind, order, path)));
+  if (ids.length) persistence.defer(async () => (await sendPush(ids, kind, order, path, changeId)));
 };
+
+type ProfileNotice = { userId: number; mode: AccountMode; kind: PushKind; orderId: number; expiresAt: number; waiting?: boolean; changeId?: number };
+const profileNotices = new Map<string, ProfileNotice>();
+
+async function waitingProfileUpdates(userId: number) {
+  let ref: string | null = null;
+  const updates = new Set<string>();
+  for (const [key, notice] of [...profileNotices]) {
+    if (notice.userId !== userId || !notice.waiting) continue;
+    if (!await profileNoticeCurrent(notice)) { profileNotices.delete(key); continue; }
+    ref = key;
+    updates.add(`${notice.mode}:${notice.orderId}:${notice.kind}:${notice.changeId ?? 0}`);
+  }
+  return { count: updates.size, ref };
+}
+
+function profileNoticeUrl(userId: number, mode: AccountMode, kind: PushKind, orderId: number, changeId?: number) {
+  const ref = randomBytes(18).toString('base64url');
+  if (profileNotices.size >= 2048) profileNotices.delete(profileNotices.keys().next().value!);
+  profileNotices.set(ref, { userId, mode, kind, orderId, changeId, expiresAt: Date.now() + (kind === 'job' ? 5 : 60) * 60_000 });
+  return `/profiles?notice=${ref}`;
+}
+
+function clearWaitingProfileNotice(target: ProfileNotice) {
+  for (const notice of profileNotices.values()) {
+    if (notice.userId === target.userId && notice.mode === target.mode && notice.kind === target.kind
+        && notice.orderId === target.orderId && notice.changeId === target.changeId)
+      notice.waiting = false;
+  }
+}
+
+async function profileNoticeCurrent(notice: ProfileNotice) {
+  if (notice.expiresAt <= Date.now()) return false;
+  const account = notice.mode === 'captain' ? await one('SELECT role, status, captain_state, vehicle FROM users WHERE id = ?', notice.userId) : null;
+  if (notice.mode === 'captain' && (!account || !captainGrant(account))) return false;
+  const owner = notice.mode === 'shop' && enabledServices.includes('shop')
+    ? await one('SELECT id, status, paused_new FROM merchants WHERE owner_user_id = ?', notice.userId) : null;
+  if (notice.mode === 'shop' && !owner) return false;
+  if (!notice.orderId) return true;
+  const order = await one('SELECT id, customer_id, driver_id, service, status, scheduled_for FROM orders WHERE id = ?', notice.orderId);
+  if (!order) return false;
+  if (notice.kind === 'job') {
+    return !!account && account.captain_state === 'active' && order.status === 'searching' && order.customer_id !== notice.userId
+      && enabledServices.includes(order.service) && servesFor(account.vehicle).includes(order.service)
+      && (order.scheduled_for == null || order.scheduled_for <= Date.now() + RELEASE_BEFORE)
+      && !await one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', order.id, notice.userId)
+      && (order.service !== 'shop' || !await shop.driverExcluded(order.id, notice.userId));
+  }
+  if (owner) {
+    const shopOrder = await one('SELECT merchant_state, accept_deadline FROM shop_orders WHERE order_id = ? AND merchant_id = ?', order.id, owner.id);
+    return !!shopOrder && (notice.kind !== 'merchant_order' || (order.status === 'requested' && shopOrder.merchant_state == null
+      && shopOrder.accept_deadline > Date.now() && owner.status === 'active' && !owner.paused_new));
+  }
+  if (notice.kind === 'shop_consent' && !await one(`SELECT 1 FROM shop_orders s JOIN shop_changes c ON c.order_id = s.order_id
+    WHERE s.order_id = ? AND c.id = ? AND s.merchant_state = 'awaiting_approval' AND c.status = 'pending' AND c.expires_at > ?`,
+  order.id, notice.changeId ?? null, Date.now())) return false;
+  return (notice.mode === 'captain' ? order.driver_id : order.customer_id) === notice.userId;
+}
+
+async function resolveProfileNotification({ req, query }: Pick<Ctx, 'req' | 'query'>) {
+  return emailTransaction(async () => {
+    const user = await authenticate(req, false) ?? fail(401, 'unauthorized');
+    const ref = query.get('ref') ?? '';
+    const notice = (accountModes ? profileNotices.get(ref) : undefined) ?? fail(404, 'not_found');
+    if (notice.userId !== user.id || !user.accountMode) return fail(404, 'not_found');
+    const unavailable = () => { profileNotices.delete(ref); return fail(404, 'not_found'); };
+    if (!await profileNoticeCurrent(notice)) return unavailable();
+    if (user.accountMode !== notice.mode) {
+      notice.waiting = true;
+      return { mode: notice.mode, path: null };
+    }
+    if (notice.orderId) {
+      if (notice.kind === 'job' && !await captainOnline(persistence, user.id)) {
+        clearWaitingProfileNotice(notice);
+        return { mode: 'captain', path: '/driver' };
+      }
+      try { await getOrder(notice.orderId, user); }
+      catch (error) {
+        if (error instanceof HttpError && error.status === 404) return unavailable();
+        throw error;
+      }
+      clearWaitingProfileNotice(notice);
+      return { mode: notice.mode, path: notice.mode === 'shop' ? `/merchant/order/${notice.orderId}` : `/order/${notice.orderId}` };
+    }
+    clearWaitingProfileNotice(notice);
+    return { mode: notice.mode, path: notice.mode === 'captain' ? '/driver/earnings' : notice.mode === 'shop' ? '/merchant' : '/' };
+  });
+}
+
+async function livePushSession(userId: number, sessionHash: string | null) {
+  const now = Date.now();
+  const session = await one(`SELECT s.active_mode, u.* FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.user_id = ? AND (? IS NULL OR s.token_hash = ?) AND s.created_at > ?
+      AND COALESCE(s.last_seen_at, s.created_at) > ? LIMIT 1`,
+  userId, sessionHash, sessionHash, now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY);
+  return session && await sessionEligible(session) ? session : undefined;
+}
+
+async function profilePushTarget(userId: number, sessionHash: string | null, kind: PushKind, orderId: number, url: string, changeId?: number) {
+  const full = { kind, order: orderId, url };
+  if (!accountModes) return full;
+  const neutral = (kind: string) => ({ kind, order: 0, url: '/profiles' });
+  const session = await livePushSession(userId, sessionHash);
+  if (!session) return null;
+  if (session.role === 'admin') return sessionHash ? full : { kind: 'account_update', order: 0, url: '/admin' };
+  const scoped = (mode: AccountMode, quietKind: string, id = orderId) => ({
+    ...(sessionHash && session.active_mode === mode ? full : neutral(quietKind)),
+    url: profileNoticeUrl(userId, mode, kind, id, changeId),
+  });
+  if (kind === 'job') {
+    const order = await one("SELECT id, service FROM orders WHERE id = ? AND status = 'searching'", orderId);
+    if (!order || await profileAssignmentRefusal({ id: order.id, service: order.service }, userId)) return null;
+    return scoped('captain', 'captain_profile_update');
+  } else if (url.startsWith('/merchant')) {
+    const shopOrder = await one(`SELECT 1 FROM shop_orders s JOIN merchants m ON m.id = s.merchant_id
+      WHERE s.order_id = ? AND m.owner_user_id = ?`, orderId, userId);
+    if (orderId && !shopOrder) return null;
+    return scoped('shop', 'shop_profile_update');
+  } else if (url.startsWith('/driver')) {
+    return sessionHash && session.active_mode === 'captain' ? full : scoped('captain', 'captain_profile_update', 0);
+  } else if (orderId) {
+    const order = await one('SELECT customer_id, driver_id FROM orders WHERE id = ?', orderId);
+    if (order?.driver_id === userId) return scoped('captain', 'captain_profile_update');
+    if (order?.customer_id === userId) return scoped('personal', 'profile_update');
+    return kind === 'admin_unassigned' ? scoped('captain', 'captain_profile_update', 0) : null;
+  }
+  return sessionHash ? full : neutral('profile_update');
+}
 rideLifecycle.onBoardingLocked = async orderId => { await queuePush((await adminIds()), 'attention', orderId, '/admin/orders'); };
 rideLifecycle.onNoShow = async (orderId, customerId) => { await queuePush([customerId], 'cancelled', orderId); };
 const adminIds = async () => (await all("SELECT id FROM users WHERE role = 'admin' AND status = 'active'")).map(a => a.id as number);
@@ -1744,20 +2015,22 @@ export async function alertMissedBackup(now = Date.now()) {
   if (sent) await flushPush();
   return sent;
 }
-async function sendPush(userIds: number[], kind: PushKind, order: number, path?: string) {
+async function sendPush(userIds: number[], kind: PushKind, order: number, path?: string, changeId?: number) {
   const url = path ?? (kind === 'job' ? '/driver' : `/order/${order}`);
   const ids = userIds.map(() => '?').join(',');
   const urgent = URGENT_KINDS.includes(kind), ttl = kind === 'job' ? 300 : kind === 'offer' ? OFFER_TTL / 1000 : 3600;
   for (const s of (await all(`SELECT * FROM push_subscriptions WHERE user_id IN (${ids})`, ...userIds)))
-    void persistence.detached(() => capped(() => deliver(s, JSON.stringify({ kind: webPushKind(kind), order, url, lang: s.lang }), urgent ? 'high' : 'normal', ttl)));
+    void persistence.detached(() => capped(() => deliverWebPush(s, kind, order, url, urgent ? 'high' : 'normal', ttl, changeId)));
   // Ending a session removes its token (foreign key), and blocking an account ends its sessions, so each row here is live.
   for (const t of (await all(`SELECT * FROM native_push_tokens WHERE user_id IN (${ids})`, ...userIds)))
     if (!nativeSuppression(t.prefs_json, kind, t.disabled_at))
       void persistence.detached(() => capped(async () => {
         const current = await one('SELECT * FROM native_push_tokens WHERE token_hash=? AND user_id=? AND auth_session_hash=? AND device_hash=?',
           t.token_hash, t.user_id, t.auth_session_hash, t.device_hash);
-        if (current && !nativeSuppression(current.prefs_json, kind, current.disabled_at))
-          await deliverNative(current, JSON.stringify({ kind, order, url, lang: current.lang }), ttl, urgent);
+        if (current && !nativeSuppression(current.prefs_json, kind, current.disabled_at)) {
+          const target = await profilePushTarget(current.user_id, current.auth_session_hash, kind, order, url, changeId);
+          if (target) await deliverNative(current, JSON.stringify({ ...target, lang: current.lang }), ttl, urgent);
+        }
       }));
 }
 
@@ -1772,16 +2045,43 @@ async function deliverNative(t: Row, message: string, ttl: number, urgent: boole
   try { await sendExpoPush(t, message, ttl, urgent); }
   catch (error) { if (isDeviceNotRegistered(error)) await run('DELETE FROM native_push_tokens WHERE token_hash=? AND user_id=? AND auth_session_hash=? AND device_hash=?', t.token_hash, t.user_id, t.auth_session_hash, t.device_hash); /* otherwise best effort, like web push */ }
 }
-async function deliver(s: Row, message: string, urgency: string, ttl: number) {
+async function deliverWebPush(original: Row, kind: PushKind, order: number, url: string, urgency: string, ttl: number, changeId?: number) {
   try {
-    const { privateKey, publicRaw } = (await pushKeys());
-    const res = await fetch(s.endpoint as string, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000), body: encrypt(Buffer.from(message), Buffer.from(s.p256dh as string, 'base64url'), Buffer.from(s.auth as string, 'base64url')),
-      headers: { TTL: String(ttl), Urgency: urgency, 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Authorization: vapid(s.endpoint as string, publicRaw, privateKey, PUSH_SUBJECT()) } });
+    const { privateKey, publicRaw } = await pushKeys();
+    // SQLite serializes the final authority read with launching the provider request. Await the network outside the lock.
+    const attempt = await persistence.transaction(async () => {
+      const sessionHash = original.auth_session_hash ?? null;
+      const s = await one('SELECT * FROM push_subscriptions WHERE endpoint = ? AND user_id = ? AND auth_session_hash IS ?',
+        original.endpoint, original.user_id, sessionHash);
+      if (!s) return;
+      let target;
+      if (accountModes) target = await profilePushTarget(s.user_id, sessionHash, kind, order, url, changeId);
+      else if (await livePushSession(s.user_id, sessionHash))
+        target = sessionHash ? { kind, order, url } : { kind: 'account_update', order: 0, url: '/' };
+      if (!target) return;
+      const message = JSON.stringify({ ...target, kind: webPushKind(target.kind), lang: s.lang });
+      const response = fetch(s.endpoint as string, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000),
+        body: encrypt(Buffer.from(message), Buffer.from(s.p256dh as string, 'base64url'), Buffer.from(s.auth as string, 'base64url')),
+        headers: { TTL: String(ttl), Urgency: urgency, 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Authorization: vapid(s.endpoint as string, publicRaw, privateKey, PUSH_SUBJECT()) } }).catch(() => null);
+      return { s, response };
+    }, { commandId: randomUUID() });
+    const res = await attempt?.response;
+    if (!res || !attempt) return;
     await res.body?.cancel();
-    if (res.status === 404 || res.status === 410) (await run('DELETE FROM push_subscriptions WHERE endpoint = ?', s.endpoint)); // the browser dropped it
+    const { s } = attempt;
+    if (res.status === 404 || res.status === 410) await run(`DELETE FROM push_subscriptions
+      WHERE endpoint = ? AND user_id = ? AND auth_session_hash IS ? AND created_at = ?`,
+    s.endpoint, s.user_id, s.auth_session_hash ?? null, s.created_at); // leave a registration that replaced this one in flight
   } catch { /* best effort: the app still shows everything on next open */ }
 }
 /** A new job reaches free, approved drivers whose vehicle can take it (at most 100 per order). */
+async function profileAssignmentRefusal(order: Pick<RefusalOrder, 'id' | 'service'>, driverId: number) {
+  if (!accountModes) return null;
+  if (await one('SELECT 1 FROM orders WHERE id = ? AND customer_id = ?', order.id, driverId)) return 'own_order';
+  if (order.service === 'shop' && await shop.driverExcluded(order.id, driverId)) return 'shop_job_unavailable';
+  return await captainOnline(persistence, driverId) ? null : 'captain_offline';
+}
+
 async function newJobPush(service: Service, orderId: number, customerId: number, exceptDriver = 0) {
   // Booking is never refused for this, but one account cannot keep 100 drivers' phones ringing: 5 job alerts per 10 minutes.
   try { (await limit(identityKey('job-push', customerId), 5, 10 * 60_000)); } catch { return false; }
@@ -1808,6 +2108,10 @@ async function newJobPush(service: Service, orderId: number, customerId: number,
     for (const o of await all(`SELECT driver_id, service, shared, option FROM orders WHERE status IN (${activeSql}) AND driver_id IN (${candidates.map(() => '?').join(',')})`, ...candidates.map(d => d.id)))
       loads.set(Number(o.driver_id), [...(loads.get(Number(o.driver_id)) ?? []), { service: o.service as Service, shared: !!Number(o.shared ?? 0), option: o.option == null ? null : String(o.option) }]);
     drivers = candidates.filter(d => canTake(loads.get(Number(d.id)) ?? [], service, next, (d.vehicle ?? null) as Vehicle | null)).slice(0, 100);
+  }
+  if (accountModes) {
+    const candidates = await Promise.all(drivers.map(async driver => await profileAssignmentRefusal({ id: orderId, service }, driver.id) ? null : driver));
+    drivers = candidates.filter(driver => driver !== null);
   }
   await queuePush(drivers.map(d => d.id as number), 'job', orderId);
   return true;
@@ -1868,21 +2172,29 @@ async function releaseJobAlerts(now: number) {
   await flushPush();
 }
 route('GET', '/api/push/key', async () => ({ key: b64url((await pushKeys()).publicRaw) }), true);
-route('POST', '/api/push/subscribe', async ({ user, body }) => {
+route('POST', '/api/push/subscribe', async ({ user, body, req }) => {
   const endpoint = pushEndpoint(body.endpoint) ?? fail(400, 'invalid_input');
   const key = Buffer.from(String(body.p256dh ?? ''), 'base64url'), auth = Buffer.from(String(body.auth ?? ''), 'base64url');
   if (key.length !== 65 || key[0] !== 4 || auth.length !== 16) fail(400, 'invalid_input');
   try { createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: b64url(key.subarray(1, 33)), y: b64url(key.subarray(33)) }, format: 'jwk' }); }
   catch { fail(400, 'invalid_input'); } // a point off the curve would fail on every send
-  // A shared browser follows whoever signed in last (knowing the endpoint is the browser's own secret); five browsers per person.
-  (await run(`INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, lang, created_at) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, lang = excluded.lang, created_at = excluded.created_at`,
-  endpoint, user.id, b64url(key), b64url(auth), body.lang === 'en' ? 'en' : 'ar', Date.now()));
-  (await run('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint NOT IN (SELECT endpoint FROM push_subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 5)', user.id, user.id));
-  return { ok: true };
+  const bind = persistence.backend === 'sqlite';
+  const subscribe = async () => {
+    if (bind && !await authenticate(req, false)) fail(401, 'unauthorized');
+    await run(`INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, lang, created_at${bind ? ', auth_session_hash' : ''})
+      VALUES (?, ?, ?, ?, ?, ?${bind ? ', ?' : ''})
+      ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, lang = excluded.lang,
+      created_at = excluded.created_at${bind ? ', auth_session_hash = excluded.auth_session_hash' : ''}`,
+    endpoint, user.id, b64url(key), b64url(auth), body.lang === 'en' ? 'en' : 'ar', Date.now(), ...(bind ? [sha(bearer(req)!)] : []));
+    await run('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint NOT IN (SELECT endpoint FROM push_subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 5)', user.id, user.id);
+    return { ok: true };
+  };
+  return bind ? emailTransaction(subscribe) : subscribe();
 });
-route('POST', '/api/push/unsubscribe', async ({ user, body }) => {
-  (await run('DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?', String(body.endpoint ?? ''), user.id));
+route('POST', '/api/push/unsubscribe', async ({ user, body, req }) => {
+  const bind = persistence.backend === 'sqlite';
+  await run(`DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?${bind ? ' AND (auth_session_hash IS NULL OR auth_session_hash = ?)' : ''}`,
+    String(body.endpoint ?? ''), user.id, ...(bind ? [sha(bearer(req)!)] : []));
   return { ok: true };
 });
 
@@ -1928,7 +2240,7 @@ async function recommend(user: User, b: Row) {
   const closed = [...(trip?.through ?? []), ...reports.filter(r => r.status === 'closed' && (!r.point || !trip) && onTrip(r)).map(r => r.name as string)];
   const delayMinutes = slow.length * SLOW_MINUTES + closed.length * CLOSED_MINUTES;
   const price = smartPrice((await settings()), { service, option, loadingHelp: service === 'freight' && !!b.loadingHelp, km, minutes, delayMinutes, at,
-    plus: (await activePlan(user.id)) === 'plus', shared });
+    plus: (await activePlan(user.id, 'customer')) === 'plus', shared });
   await guardCashCeiling(price); // the price screen and a destination change hear it before anyone commits
   return { price, km, minutes, delayMinutes, night: isNight(at), slow, closed, avoids: trip?.avoids ?? [], estimated: !trip, standard: service === 'parcel', ...(service === 'parcel' && { priority }), ...(shared && { shared }), line: trip?.line ?? null, at };
 }
@@ -1963,7 +2275,7 @@ route('POST', '/api/price', async ({ user, body }) => {
   const tariffVersion = tariffVersionFor(tariffSnapshot);
   const tariffBps = tariffBasisPoints(tariffSnapshot);
   const priceMinor = minorUnits(base.price);
-  const commissionRate = (await activePlan(user.id)) === 'pro' ? (tariffSnapshot.proCommission as number) : (tariffSnapshot.commission as number);
+  const commissionRate = (await activePlan(user.id, 'driver')) === 'pro' ? (tariffSnapshot.proCommission as number) : (tariffSnapshot.commission as number);
   const commissionMinor = Number.isFinite(commissionRate) ? minorUnits(commissionOn(base.price, commissionRate as number)) : null;
   const feasibility = (await evaluateQuoteFeasibility(persistence, { service, routeLine: base.line, estimated: base.estimated, pickup: point ?? null, dropoff: dropoff ?? null }));
   if (feasibility.verdict.feasibility === 'infeasible') fail(409, 'route_prohibited');
@@ -2237,7 +2549,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   // Smart orders arrive with their recommendation; Souq and apps before 1.0.8 keep the fixed tariff.
   const priority = bookingPriority(service, body.priority, fail, body.scheduledFor ?? null);
   const price = recommended ?? quote((await settings()), { service, pickupCity: body.pickupCity, dropoffCity: body.dropoffCity, option, loadingHelp, shared,
-    plus: (await activePlan(user.id)) === 'plus' });
+    plus: (await activePlan(user.id, 'customer')) === 'plus' });
   // The app shows a price before commitment; if tariffs or the plan changed since, make the customer re-confirm.
   if (body.quotedPrice != null && Number(body.quotedPrice) !== price) fail(409, 'price_changed');
   await guardCashCeiling(price);
@@ -2257,6 +2569,13 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
   else await guardOpenRide(user.id, service);
   checkPriorityCutoff(priority, fail);
   if (authorize) user = await authorize();
+  if (accountModes && service === 'ride' && (scheduledFor === null || scheduledFor <= now + 2 * 60 * 60_000)) {
+    if (await captainHasWork(persistence, user.id)) fail(409, 'work_in_hand');
+    if (await captainOnline(persistence, user.id, now)) {
+      if (body.confirmCaptainOffline !== true) fail(409, 'captain_confirm_offline');
+      await setCaptainOffline(persistence, user.id, 'ride_due');
+    }
+  }
   const id = Number((await run(`INSERT INTO orders (customer_id, service, shared, pickup_city, dropoff_city, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
     pickup_note, dropoff_note, contact, pickup_contact, detail, option, loading_help, price, status, handover_code, created_at, updated_at, scheduled_for, discount, recommended_price, route_km,
     recipient_name, recipient_phone, priority)
@@ -2282,6 +2601,7 @@ async function createOrder(user: User, body: Row, smart?: { price: number; km: n
 }
 
 route('POST', '/api/orders', async ({ user, body, req }) => {
+  requireModeRevision(user, req);
   need(user, 'customer');
   needActive(user);
   if (body.promoCode != null) (await limit(identityKey('promo', user.id), 20, 60 * 60_000)); // no unlimited code guessing through booking
@@ -2303,6 +2623,7 @@ route('POST', '/api/orders', async ({ user, body, req }) => {
       await one('SELECT token_hash FROM sessions WHERE user_id=? AND token_hash=? FOR SHARE', user.id, sha(token));
     }
     const current = (await authenticate(req, false)) ?? fail(401, 'unauthorized');
+    if (lock) requireModeRevision(current, req);
     need(current, 'customer');
     needActive(current);
     return current;
@@ -2492,7 +2813,9 @@ route('POST', '/api/partner/orders/:id/cancel', async ({ req, params }) => {
   }));
 }, true);
 
-route('GET', '/api/orders', async ({ user, query }) => {
+route('GET', '/api/orders', async ({ user, query, req }) => {
+  need(user, 'customer', 'driver', 'admin');
+  if (user.accountMode === 'captain') await captainActivity(persistence, user.id, sha(bearer(req)!));
   const status = query.get('status'), before = query.get('before');
   const where = user.role === 'admin' ? '1 = 1' : user.role === 'driver' ? 'o.driver_id = ?' : 'o.customer_id = ?';
   const args: SQLInputValue[] = user.role === 'admin' ? [] : [user.id];
@@ -2619,10 +2942,14 @@ async function shareOrder(id: number, customerId: number) {
   (await run('UPDATE orders SET share_token_hash = ?, share_created_at = ? WHERE id = ?', sha(token), Date.now(), r.id));
   return { token, path: `/track/${token}` };
 }
-route('POST', '/api/orders/:id/share', async ({ user, params }) => (await shareOrder(Number(params[0]), user.id)));
+route('POST', '/api/orders/:id/share', async ({ user, params }) => {
+  if (user.accountMode) need(user, 'customer');
+  return shareOrder(Number(params[0]), user.id);
+});
 // Souq keeps the returned link for its buyer and seller; a new call rotates it.
 route('POST', '/api/partner/orders/:id/share', async ({ req, params }) => (await shareOrder((await partnerOrder(req, Number(params[0]))).id, (await partnerUser()).id)), true);
 route('POST', '/api/orders/:id/share/revoke', async ({ user, params }) => {
+  if (user.accountMode) need(user, 'customer');
   if (!(await run('UPDATE orders SET share_token_hash = NULL, share_created_at = NULL WHERE id = ? AND customer_id = ?', Number(params[0]), user.id)).changes)
     fail(404, 'not_found');
   return { ok: true };
@@ -2660,6 +2987,7 @@ async function trackView(token: string) {
 // One dispute per finished order, opened by its customer within a week. Resolution is a recorded
 // decision only; refunds and cash corrections belong to cash settlement.
 route('POST', '/api/orders/:id/dispute', async ({ user, params, body }) => {
+  if (user.accountMode) need(user, 'customer');
   const r = (await one('SELECT * FROM orders WHERE id = ? AND customer_id = ?', Number(params[0]), user.id)) ?? fail(404, 'not_found');
   const reason = text(body.reason, 1000);
   if (reason.length < 10) fail(400, 'invalid_input');
@@ -2719,20 +3047,28 @@ const safetyFree = async (orderId: number) => {
 route('POST', '/api/orders/:id/sos', async ({ user, params, body }) => {
   if (!safetyKinds.includes(body.kind)) fail(400, 'invalid_input');
   const note = text(body.note, 300, false);
-  const r = (await one('SELECT o.id, o.status, o.customer_id, o.driver_id, l.lat, l.lng, l.updated_at loc_at FROM orders o LEFT JOIN driver_locations l ON l.driver_id = o.driver_id AND l.updated_at >= COALESCE(o.assigned_at, 0) WHERE o.id = ?',
-    Number(params[0]))) ?? fail(404, 'not_found');
-  const role = r.customer_id === user.id ? 'customer' : r.driver_id === user.id ? 'driver' : user.role === 'admin' ? null : fail(404, 'not_found');
-  if (!role || !activeStatuses.includes(r.status)) fail(409, 'cannot_report');
-  if (!(await one("SELECT id FROM safety_incidents WHERE order_id = ? AND reporter_id = ? AND status = 'open'", r.id, user.id))) {
-    (await limit(identityKey('sos', user.id), 10, DAY)); // each report pauses a trip and pages an administrator
-    const fresh = r.lat != null && Date.now() - r.loc_at <= 10 * 60_000;
-    const id = Number((await run(`INSERT INTO safety_incidents (order_id, reporter_id, reporter_role, kind, note, lat, lng, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, r.id, user.id, role, body.kind, note, fresh ? r.lat : null, fresh ? r.lng : null, Date.now())).lastInsertRowid);
-    (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'SAFETY_REPORTED', ?, ?)`,
-      user.id, r.id, JSON.stringify({ incident: id, kind: body.kind }), Date.now()));
-    await queuePush((await adminIds()), 'safety', r.id, '/admin/orders'); // a report pages every administrator
-  }
-  return (await getOrder(r.id, user));
+  const orderId = Number(params[0]);
+  await persistence.exec('BEGIN IMMEDIATE');
+  try {
+    const r = (await one(`SELECT o.id, o.status, o.customer_id, o.driver_id, l.lat, l.lng, l.updated_at loc_at
+      FROM orders o LEFT JOIN driver_locations l ON l.driver_id = o.driver_id AND l.updated_at >= COALESCE(o.assigned_at, 0)
+      WHERE o.id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE OF o' : ''}`, orderId)) ?? fail(404, 'not_found');
+    const role = r.customer_id === user.id && (!user.accountMode || user.accountMode === 'personal') ? 'customer'
+      : r.driver_id === user.id && (!user.accountMode || user.accountMode === 'captain') ? 'driver'
+      : user.role === 'admin' ? null : fail(404, 'not_found');
+    if (!role || !activeStatuses.includes(r.status)) fail(409, 'cannot_report');
+    if (!(await one("SELECT id FROM safety_incidents WHERE order_id = ? AND reporter_id = ? AND status = 'open'", r.id, user.id))) {
+      await limit(identityKey('sos', user.id), 10, DAY);
+      const fresh = r.lat != null && Date.now() - r.loc_at <= 10 * 60_000;
+      const id = Number((await run(`INSERT INTO safety_incidents (order_id, reporter_id, reporter_role, kind, note, lat, lng, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, r.id, user.id, role, body.kind, note, fresh ? r.lat : null, fresh ? r.lng : null, Date.now())).lastInsertRowid);
+      await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'SAFETY_REPORTED', ?, ?)`,
+        user.id, r.id, JSON.stringify({ incident: id, kind: body.kind }), Date.now());
+      await queuePush(await adminIds(), 'safety', r.id, '/admin/orders');
+    }
+    await persistence.exec('COMMIT');
+  } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
+  return getOrder(orderId, user);
 });
 
 route('GET', '/api/admin/incidents', async ({ user }) => {
@@ -2767,7 +3103,9 @@ route('POST', '/api/admin/incidents/:id/resolve', async ({ user, params, body })
 // administrators read for support. Never part of the public tracking view.
 async function chatAccess(user: User, id: number) {
   const r = (await one('SELECT id, status, customer_id, driver_id, updated_at FROM orders WHERE id = ?', id)) ?? fail(404, 'not_found');
-  const role = r.customer_id === user.id ? 'customer' : r.driver_id === user.id ? 'driver' : user.role === 'admin' ? 'admin' : fail(404, 'not_found');
+  const role = r.customer_id === user.id && (!user.accountMode || user.accountMode === 'personal') ? 'customer'
+    : r.driver_id === user.id && (!user.accountMode || user.accountMode === 'captain') ? 'driver'
+    : user.role === 'admin' ? 'admin' : fail(404, 'not_found');
   return { r, role, active: activeStatuses.includes(r.status) };
 }
 // A released job's conversation stays with that assignment: the next driver starts a fresh thread.
@@ -2887,7 +3225,7 @@ route('POST', '/api/admin/roads/:id/remove', async ({ user, params }) => {
 });
 
 // Drivers
-route('GET', '/api/jobs', async ({ user, query }) => {
+route('GET', '/api/jobs', async ({ user, query, req }) => {
   need(user, 'driver');
   needActive(user);
   if (!servesFor(user.vehicle).length) fail(409, 'no_vehicle'); // say why the list is empty
@@ -2895,7 +3233,9 @@ route('GET', '/api/jobs', async ({ user, query }) => {
   const oversized = allowed.includes('ride') ? optionsFor('ride').filter(option => !canTake([], 'ride', { option }, user.vehicle)) : [];
   const paging = query.get('page') === '1';
   const pageSize = paging ? 20 : 50; // keep legacy responses stable while bounding mobile rendering and per-request work
-  if (!allowed.length) return paging ? { version: 1, jobs: [], nextCursor: null } : [];
+  if (accountModes) await captainActivity(persistence, user.id, sha(bearer(req)!));
+  if (!allowed.length || (accountModes && !await captainOnline(persistence, user.id, Date.now(), sha(bearer(req)!))))
+    return paging ? { version: 1, jobs: [], nextCursor: null } : [];
   // Scheduled orders wait until shortly before pickup, then queue by pickup time like any other.
   // A driver heading somewhere sees only jobs going there (SPEC-driver-destination.md). Once the device says where it is, that
   // widens to jobs along the way (RIDE-13): Tulkarm → Ramallah also shows a rider from Anabta to Nablus, never one going back.
@@ -2916,9 +3256,11 @@ route('GET', '/api/jobs', async ({ user, query }) => {
     ${oversized.length ? `AND (o.service <> 'ride' OR COALESCE(o.option, '1') NOT IN (${oversized.map(() => '?').join(',')}))` : ''}
     AND (o.scheduled_for IS NULL OR o.scheduled_for <= ?) AND (? = '' OR o.dropoff_city = ?${way.length ? ` OR (o.pickup_city IN (${way.map(() => '?').join(',')}) AND o.dropoff_city IN (${way.map(() => '?').join(',')}))` : ''})
     AND NOT EXISTS(SELECT 1 FROM order_releases r WHERE r.order_id = o.id AND r.driver_id = ?)
+    ${accountModes ? `AND o.customer_id <> ? AND NOT EXISTS (SELECT 1 FROM shop_orders s JOIN merchants m ON m.id = s.merchant_id
+      WHERE s.order_id = o.id AND (m.owner_user_id = ? OR s.paused_at IS NOT NULL OR s.merchant_state = 'awaiting_approval'))` : ''}
     ${cursor ? 'AND (COALESCE(o.scheduled_for, o.created_at) > ? OR (COALESCE(o.scheduled_for, o.created_at) = ? AND o.id > ?))' : ''}
     ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT ${paging ? pageSize + 1 : pageSize}`, ...allowed, ...oversized, Date.now() + RELEASE_BEFORE, heading, heading, ...way, ...way, user.id,
-    ...(cursor ? [cursor[0], cursor[0], cursor[1]] : []));
+    ...(accountModes ? [user.id, user.id] : []), ...(cursor ? [cursor[0], cursor[0], cursor[1]] : []));
   // The town list keeps a job whose two ends are on the way; the direction check drops one that would go backwards.
   const fits = (r: Row) => !origin || r.dropoff_city === heading || alongTheWay(origin, heading as CityId, { pickupCity: r.pickup_city as CityId, dropoffCity: r.dropoff_city as CityId });
   const page = rows.slice(0, pageSize), visible = page.filter(fits);
@@ -2956,7 +3298,7 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
       if (!servesFor(user.vehicle).includes(offered.service)) fail(409, 'wrong_vehicle');
       const carryingOffer = (await activeLoad(user.id));
       if (!canTake(carryingOffer, offered.service, offered, user.vehicle)) fail(409, 'vehicle_busy');
-      const offeredRate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
+      const offeredRate = await driverRate(user.id);
       await guardCashCap(user.id, offered.price, offeredRate);
       const changedOffer = (await run(`UPDATE orders SET driver_id = ?, commission = ?, status = 'assigned', updated_at = ?, assigned_at = ? WHERE id = ? AND status = 'searching' AND NOT EXISTS(SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?)`, user.id, commissionOn(offered.price, offeredRate), Date.now(), Date.now(), offered.id, offered.id, user.id)).changes;
       if (!changedOffer) fail(409, 'already_taken');
@@ -2980,10 +3322,10 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
   const order = (await getOrder(Number(params[0]), user));
   // ponytail: one active job until inspected aggregate load/route policy supports batching.
   const carrying = (await activeLoad(user.id));
-  const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
+  const rate = await driverRate(user.id);
   if (order.status !== 'searching') fail(409, 'already_taken'); // say so before any cash message; the UPDATE below still decides
   // The driver checks shared with the admin assign (driver-refusal.ts). Parcels stack up to PARCEL_LOAD; rides and freight are exclusive.
-  const refused = await driverRefusal({ one, enabledServices, servesFor, canTake, activeLoad, guardCashCap, permanentApprovalRequired: production && selfService, releaseBefore: RELEASE_BEFORE },
+  const refused = await driverRefusal({ one, enabledServices, servesFor, canTake, activeLoad, guardCashCap, permanentApprovalRequired: production && selfService, releaseBefore: RELEASE_BEFORE, modeRefusal: profileAssignmentRefusal },
     { id: order.id, service: order.service, price: order.price, scheduled_for: order.scheduledFor, shared: order.shared, option: order.option }, freshDriver!, rate);
   if (refused) fail(409, refused);
   await guardRideAssignment(order.id);
@@ -3042,13 +3384,13 @@ route('POST', '/api/orders/:id/offers/:driver/accept', async ({ user, params }) 
     if (r.status !== 'searching') fail(409, 'order_changed');
     const f = (await one(`SELECT f.price, u.id, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id WHERE f.order_id = ? AND f.driver_id = ? ${offerOpen}`,
       r.id, Number(params[1]), Date.now() - OFFER_TTL)) ?? fail(409, 'offer_expired');
-    if (!servesFor(f.vehicle).includes(r.service)) fail(409, 'offer_expired');
+    if (!servesFor(f.vehicle).includes(r.service) || await profileAssignmentRefusal({ id: r.id, service: r.service }, Number(f.id))) fail(409, 'offer_expired');
     // Offers outlive a driver's next job while they can still pool (RIDE-13): one that no longer fits the vehicle has lapsed.
     const offerCarrying = await activeLoad(Number(f.id));
     if (!canTake(offerCarrying, r.service, { shared: !!Number(r.shared ?? 0), option: r.option == null ? null : String(r.option) }, f.vehicle as Vehicle | null)) fail(409, 'offer_expired');
     await guardRideAssignment(r.id);
     await guardCashCeiling(Number(f.price), r.id); // lowered since the driver offered, or a goods COD added since
-    const rate = (await activePlan(f.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
+    const rate = await driverRate(f.id);
     await guardCashCap(Number(f.id), Number(f.price), rate, 'offer_expired'); // the driver went over the cash cap since offering
     const now = Date.now();
     if (shippingOrder(r)) await recordAssignedFrom(r.id, Number(f.id), user.id);
@@ -3078,10 +3420,10 @@ registerDestinationRoutes(route, { need, needActive, fail, limit, identityKey, t
   db: persistence, settings, tariffVersionFor, activePlan, safetyFree, queuePush, getOrder, recommend, restoredDiscount, commissionOn });
 // Shop delivery (SRS §7): hidden unless WIND_ENABLED_SERVICES lists `shop` (ONE-13).
 const shop = registerShop(route, { db: persistence, need, needActive, fail, text, bookedPoint, normalizePhone, settings,
-  enabled: () => enabledServices.includes('shop'), queuePush: (ids, kind, order, path) => queuePush(ids, kind as PushKind, order, path), getOrder, adminIds,
+  enabled: () => enabledServices.includes('shop'), queuePush, getOrder, adminIds,
   dispatch: (orderId, customerId) => dispatchOrBroadcast('shop', orderId, customerId), limit, identityKey,
   owedCents: async driverId => (await cashBalances('u.id = ?', driverId))[0]?.owedCents ?? 0, flushPush, journal: postShopJournal,
-  driverCommand: (user, id, body, apply) => driverCommand(user, id, body, apply) });
+  driverCommand: (user, id, body, apply) => driverCommand(user, id, body, apply), safetyFree, profileModes: accountModes });
 /** One pass of the shop timers; the server runs it each minute and tests call it with a chosen time. */
 export const shopSweep = (now = Date.now()) => shop.sweep(now);
 
@@ -3107,6 +3449,7 @@ route('POST', '/api/orders/:id/release', async ({ user, params }) => {
         job_alerted_at = COALESCE(job_alerted_at, ?), updated_at = ? WHERE id = ?`, restoredPrice, discount, now, now, current.id)); // back to the recommendation
       (await run('INSERT OR IGNORE INTO order_releases (order_id, driver_id, released_at) VALUES (?, ?, ?)', current.id, user.id, now));
       await rideLifecycle.clearAssignment(current.id);
+      if (accountModes) await closeCaptainIfSettled(user.id);
       (await persistence.exec('COMMIT'));
       return current;
     } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
@@ -3153,7 +3496,7 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
       if ((await one('SELECT failures FROM proof_attempts WHERE order_id = ?', r.id))?.failures === 5) await queuePush((await adminIds()), 'attention', r.id, '/admin/orders'); // the fifth miss locks it
       fail(400, 'wrong_code');
     }
-    const rate = (await activePlan(user.id)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
+    const rate = await driverRate(user.id);
     const door = next === 'completed' ? (r.service === 'shop' ? await shop.doorCash(r, body) : doorCash(r.price, r.discount, body, fail)) : null;
     await persistence.savepoint(async () => {
       // A11: the five door columns are one immutable fact, written here and nowhere else (write-once triggers in both schemas).
@@ -3466,7 +3809,7 @@ route('POST', '/api/location', async ({ user, body, req }) => {
     const checkedAt = Date.now();
     source = `SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (
       SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id
-      WHERE u.id = ? AND u.role = 'driver' AND u.status = 'active' AND s.token_hash = ?
+      WHERE u.id = ? AND u.role = 'driver' AND ${accountModes ? "s.active_mode = 'captain' AND u.status IN ('active','pending')" : "u.status = 'active'"} AND s.token_hash = ?
         AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?
         AND (? = 0 OR u.phone_verified_at IS NOT NULL OR u.approved_at IS NOT NULL OR EXISTS (SELECT 1 FROM recovery_email_proofs p
           WHERE p.user_id = u.id AND p.email = u.email AND p.verified_at = u.email_verified_at))
@@ -3486,6 +3829,7 @@ route('POST', '/api/location', async ({ user, body, req }) => {
   const accepted = Number(written.changes) > 0;
   if (!accepted && persistence.backend === 'sqlite' && !await authenticate(req)) fail(401, 'unauthorized');
   if (accepted) {
+    if (accountModes) await captainActivity(persistence, user.id, sha(bearer(req)!));
     // The watchers wait on the order, not on the driver: a reassignment wakes the same people.
     const affected = await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql})`, user.id) as { id: number }[];
     // PG wraps the handler in an outer transaction. Wake after COMMIT so another reader
@@ -3696,7 +4040,7 @@ registerPlaceSearchRoutes(route, { fail, limit, limitKey: id => identityKey('pla
 registerNearbyRoutes(route, { fail, need, needActive, limit, limitKey: id => identityKey('nearby', id), enabledServices: () => enabledServices, servesFor,
   available: async (driverId, service, vehicle) => {
     const driver = await one('SELECT role, status FROM users WHERE id = ?', driverId);
-    if (!driver || driver.role !== 'driver' || driver.status !== 'active') return false;
+    if (!driver || driver.role !== 'driver' || driver.status !== 'active' || (accountModes && !await captainOnline(persistence, driverId))) return false;
     // A car shows while it could take one more rider (idle, or a shared run with a seat free) or one more parcel.
     return canTake(await activeLoad(driverId), service, service === 'ride' ? { shared: true, option: '1' } : undefined, vehicle);
   } });
@@ -3812,7 +4156,7 @@ async function cashExposureCents(driverId: number) {
     FROM users u WHERE u.id = ?`, driverId));
   return r ? cashOwed(r.commission, r.discounts, r.adjustments, r.remitted) + Number(r.shop_due) + Number(r.active) + Number(r.shop_hold) : 0;
 }
-const driverRate = async (driverId: number) => (await activePlan(driverId)) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
+const driverRate = async (driverId: number) => (await activePlan(driverId, 'driver')) === 'pro' ? (await settings()).proCommission : (await settings()).commission;
 /** Refuses work that would take a driver past settings.driverCashCap; `code` is what the caller is told. */
 async function guardCashCap(driverId: number, price: number, rate: number, code = 'cash_cap_exceeded', orderId?: number) {
   const cap = Math.round((await settings()).driverCashCap * 100);
@@ -3840,11 +4184,30 @@ async function openPickupPayReviews(driverId?: number) {
 }
 // A driver leaves the ledger (deletion or role change) only once nothing is owed in either direction, nothing is waiting
 // for confirmation, and no block review or pickup-pay review is still undecided (R5-H2). A decided review, including a denial, does not fence.
-async function cashSettled(userId: number) {
+async function cashSettlementPending(userId: number) {
   const balance = (await cashBalances('u.id = ?', userId))[0];
-  if (balance && (balance.owedCents !== 0 || balance.pendingCents > 0)) fail(409, 'cash_outstanding');
-  if (await blockReviewsAvailable() && await one('SELECT 1 n FROM courier_block_reviews WHERE driver_id = ? AND decided_at IS NULL', userId)) fail(409, 'review_pending');
-  if ((await openPickupPayReviews(userId)).length) fail(409, 'review_pending');
+  if (balance && (balance.owedCents !== 0 || balance.pendingCents > 0)) return 'cash_outstanding';
+  if (await blockReviewsAvailable() && await one('SELECT 1 n FROM courier_block_reviews WHERE driver_id = ? AND decided_at IS NULL', userId)) return 'review_pending';
+  return (await openPickupPayReviews(userId)).length ? 'review_pending' : null;
+}
+async function cashSettled(userId: number) {
+  const pending = await cashSettlementPending(userId);
+  if (pending) fail(409, pending);
+}
+
+// The caller owns the SQLite write transaction used by work and cash decisions.
+async function closeCaptainIfSettled(userId: number) {
+  if (!await one("SELECT 1 FROM users WHERE id = ? AND captain_state = 'closing'", userId)) return;
+  if (await captainHasWork(persistence, userId) || await cashSettlementPending(userId)) return;
+  await setCaptainOffline(persistence, userId);
+  await run(`UPDATE sessions SET active_mode = 'personal', mode_revision = mode_revision + 1
+    WHERE user_id = ? AND active_mode = 'captain'`, userId);
+  await run(`UPDATE users SET role = 'customer', captain_state = NULL, vehicle = NULL, plate = NULL,
+    heading_city = NULL, heading_until = NULL WHERE id = ?`, userId);
+  await run('DELETE FROM captain_profiles WHERE user_id = ?', userId);
+  await run("UPDATE subscriptions SET ends_at = MIN(ends_at, ?) WHERE user_id = ? AND plan = 'pro' AND status = 'active'", Date.now(), userId);
+  await run("UPDATE subscriptions SET status = 'rejected' WHERE user_id = ? AND plan = 'pro' AND status = 'pending'", userId);
+  await run("INSERT INTO security_events(actor_id,action,detail,created_at) VALUES (?,'CAPTAIN_CLOSED','{}',?)", userId, Date.now());
 }
 // Installed apps show `note` and ignore `source`. Trip and pickup pay keep the machine note in the ledger; the response carries both languages.
 function cashEntryNote(r: Row) {
@@ -3864,7 +4227,8 @@ async function settleableDriver(driverId: number) {
     ${persistence.backend === 'postgres' ? 'FOR UPDATE' : ''}`, driverId));
 }
 const needCashFinance = async (user: User) => needStaff(await staffActor(persistence, user), fail, 'finance');
-registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush, postCashJournal, lockCashDriver, needCashFinance });
+const cashSettlement = <T,>(work: () => Promise<T>) => persistence.inTransaction ? persistence.savepoint(work) : emailTransaction(work);
+registerCashOpsRoutes(route, { one, all, run, fail, need, text, cashEntry, queuePush, postCashJournal, lockCashDriver, needCashFinance, settle: cashSettlement });
 registerCashReceiptRoutes(route, { need, fail, uuid, one, cashEntry });
 // In-app support inbox (SPEC-support-inbox.md): people write to support; admins with the support scope answer, close and tag.
 const supportScoped = async (user: User) => ['support', 'platform_admin'].includes(staffRoleOf(await staffActor(persistence, user)) ?? '');
@@ -3886,7 +4250,8 @@ registerSupportRoutes(route, { one, all, run, fail, text, limit: (key, maximum, 
 // WP-02: admin assign / reassign, through the same guards as the driver accept.
 registerAdminAssignRoutes(route, { one, all, run, db: persistence, fail, need, text, enabledServices, servesFor, canTake, activeLoad, driverRate, commissionOn, guardCashCap,
   safetyFree, hasOpenOffer: id => dispatch.hasOpenOffer(id), guardRideAssignment, ensureAssignment: (o, d, s) => rideLifecycle.ensureAssignment(o, d, s), assignedFrom: recordAssignedFrom, getOrder, queuePush,
-  permanentApprovalRequired: production && selfService, releaseBefore: RELEASE_BEFORE, eligibility, measured: () => measuredCapability(persistence) });
+  permanentApprovalRequired: production && selfService, releaseBefore: RELEASE_BEFORE,
+  modeRefusal: accountModes ? profileAssignmentRefusal : undefined, eligibility, measured: () => measuredCapability(persistence) });
 
 route('GET', '/api/driver/cash', async ({ user, query }) => {
   need(user, 'driver');
@@ -3900,7 +4265,7 @@ route('GET', '/api/driver/cash', async ({ user, query }) => {
       (SELECT id FROM cash_entries WHERE driver_id = ? ORDER BY id DESC LIMIT 1 OFFSET 49), 0)) ORDER BY id DESC`, user.id, user.id)).map(cashEntry) };
 });
 
-route('POST', '/api/driver/cash/:id/confirm', async ({ user, params, body }) => {
+route('POST', '/api/driver/cash/:id/confirm', async ({ user, params, body }) => cashSettlement(async () => {
   need(user, 'driver');
   if (!['confirm', 'dispute'].includes(body.decision)) fail(400, 'invalid_input');
   const entry = (await one("SELECT * FROM cash_entries WHERE id = ? AND driver_id = ? AND kind = 'remittance'", Number(params[0]), user.id)) ?? fail(404, 'not_found');
@@ -3910,7 +4275,7 @@ route('POST', '/api/driver/cash/:id/confirm', async ({ user, params, body }) => 
   if (body.decision === 'dispute') await queuePush([entry.recorded_by], 'attention', 0, '/admin/cash'); // the admin who recorded it decides
   else await postCashJournal(entry.id); // T30: the confirmed handover settles in the same transaction
   return cashEntry((await one('SELECT * FROM cash_entries WHERE id = ?', entry.id))!);
-});
+}));
 
 route('GET', '/api/admin/cash', async ({ user }) => {
   need(user, 'admin');
@@ -4010,9 +4375,10 @@ route('POST', '/api/admin/cash/remittance', async ({ user, body, req }) => (awai
 route('POST', '/api/admin/cash/adjustment', async ({ user, body, req }) => (await recordCash(user, body, 'adjustment', req.headers['x-wind-client'])));
 
 // Subscriptions: requested in-app, paid in cash / bank transfer, activated by an admin.
-route('POST', '/api/subscriptions', async ({ user }) => {
+route('POST', '/api/subscriptions', async ({ user, req }) => {
+  need(user, 'customer', 'driver');
   const plan = planForRole[user.role] ?? fail(403, 'forbidden');
-  if ((await latestSubscription(user.id))) fail(409, 'already_subscribed');
+  if ((await latestSubscription(user.id, user.role))) fail(409, 'already_subscribed');
   const s = (await settings());
   try {
     (await run("INSERT INTO subscriptions (user_id, plan, status, price, created_at) VALUES (?, ?, 'pending', ?, ?)",
@@ -4023,7 +4389,7 @@ route('POST', '/api/subscriptions', async ({ user }) => {
     throw error;
   }
   await queuePush((await adminIds()), 'attention', 0, '/admin/subscriptions');
-  return (await me(user));
+  return me(user, false, sha(bearer(req)!));
 });
 
 // Admin
@@ -4072,7 +4438,8 @@ route('GET', '/api/admin/stats', async ({ user }) => {
     statuses: Object.fromEntries((await all('SELECT status, COUNT(*) n FROM orders GROUP BY status')).map(r => [r.status, r.n])),
     services: Object.fromEntries((await all(`SELECT service, COUNT(*) n FROM orders WHERE status IN (${finishedSql}) GROUP BY service`)).map(r => [r.service, r.n])),
     users: Object.fromEntries((await all("SELECT role, COUNT(*) n FROM users WHERE phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%' GROUP BY role")).map(r => [r.role, r.n])),
-    pendingDrivers: (await one("SELECT COUNT(*) n FROM users WHERE role = 'driver' AND status = 'pending'"))!.n,
+    pendingDrivers: (await one(`SELECT COUNT(*) n FROM users u WHERE (u.role = 'driver' AND u.status = 'pending')
+      ${accountModes ? "OR (u.role = 'driver' AND u.status = 'active' AND u.captain_state = 'review') OR (u.role = 'customer' AND u.status = 'active' AND EXISTS (SELECT 1 FROM captain_profiles p WHERE p.user_id = u.id AND p.state = 'under_review'))" : ''}`))!.n,
     // null for staff without the support scope: the app hides the Support tab and shortcut they could not open.
     openSupport: await supportScoped(user) ? (await one("SELECT COUNT(*) n FROM support_threads WHERE status = 'open' AND last_from = 'user'"))!.n : null,
     pendingSubscriptions: (await one("SELECT COUNT(*) n FROM subscriptions WHERE status = 'pending'"))!.n,
@@ -4093,6 +4460,21 @@ route('GET', '/api/admin/users', async ({ user, query }) => {
   need(user, 'admin');
   const role = query.get('role'), q = `%${query.get('q') ?? ''}%`;
   const search = ['name','phone','email'].map(column => `${column} ${persistence.backend === 'postgres' ? "ILIKE ? ESCAPE ''" : 'LIKE ?'}`).join(' OR ');
+  if (accountModes) {
+    const rows = await all(`SELECT u.*, p.vehicle AS application_vehicle, p.plate AS application_plate,
+      p.state AS profile_state, p.revision AS profile_revision, p.application_id
+      FROM users u LEFT JOIN captain_profiles p ON p.user_id = u.id
+      WHERE (? IS NULL OR u.role = ? OR (? = 'driver' AND u.role = 'customer' AND u.status = 'active' AND p.state = 'under_review'))
+        AND (${search}) AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'
+      ORDER BY (u.status = 'pending' OR u.captain_state = 'review' OR p.state = 'under_review') DESC, u.id DESC LIMIT 200`, role, role, role, q, q, q);
+    return Promise.all(rows.map(async row => {
+      const waiting = row.status === 'active' && (row.profile_state === 'under_review' || row.profile_state === 'review');
+      const application = waiting && row.role === 'customer' && role === 'driver';
+      const projected = await toUser(application ? { ...row, role: 'driver', status: 'pending', approved_at: null,
+        vehicle: row.application_vehicle, plate: row.application_plate } : waiting && row.role === 'driver' ? { ...row, status: 'pending' } : row);
+      return waiting ? { ...projected, captainApproval: { applicationId: row.application_id, revision: Number(row.profile_revision), state: row.profile_state } } : projected;
+    }));
+  }
   return (await Promise.all((await all(`SELECT * FROM users WHERE (? IS NULL OR role = ?) AND (${search}) AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'
     ORDER BY status = 'pending' DESC, id DESC LIMIT 200`, role, role, q, q, q)).map(toUser)));
 });
@@ -4107,18 +4489,26 @@ const editUser: Handler = async ({ user, params, body }) => {
   const name = body.name === undefined ? target.name : text(body.name, 60);
   const phone = body.phone === undefined ? target.phone : normalizePhone(String(body.phone)) ?? fail(400, 'invalid_phone');
   const email = body.email === undefined ? target.email ?? null : body.email === null || body.email === '' ? null : normalizeEmail(body.email) ?? fail(400, 'invalid_email');
-  let status = body.status === undefined ? target.status : ['active', 'pending', 'blocked'].includes(body.status) ? body.status : fail(400, 'invalid_status');
+  const statuses = accountModes ? ['active', 'blocked'] : ['active', 'pending', 'blocked'];
+  let status = body.status === undefined ? target.status : statuses.includes(body.status) ? body.status : fail(400, 'invalid_status');
   const role = body.role === undefined ? target.role : ['customer', 'driver'].includes(body.role) ? body.role : fail(400, 'invalid_role');
-  const vehicle = role === 'driver' ? vehicles.includes(body.vehicle ?? target.vehicle ?? 'car') ? body.vehicle ?? target.vehicle ?? 'car' : fail(400, 'invalid_vehicle') : null;
-  const plate = role === 'driver' ? (body.plate === undefined ? target.plate ?? null : text(body.plate, 12, false) || null) : null;
+  const addingCaptain = accountModes && role === 'driver' && target.role === 'customer';
+  const closingCaptain = accountModes && role === 'customer' && target.role === 'driver';
+  const storedRole = closingCaptain ? 'driver' : role;
+  const vehicle = closingCaptain ? target.vehicle : role === 'driver'
+    ? vehicles.includes(body.vehicle ?? target.vehicle ?? 'car') ? body.vehicle ?? target.vehicle ?? 'car' : fail(400, 'invalid_vehicle') : null;
+  const plate = closingCaptain ? target.plate : role === 'driver'
+    ? (body.plate === undefined ? target.plate ?? null : text(body.plate, 12, false) || null) : null;
   if ((await one('SELECT id FROM users WHERE phone = ? AND id <> ?', phone, target.id))) fail(409, 'phone_taken');
   if (email && (await one('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id <> ?', email, target.id))) fail(409, 'email_taken');
   const identityChanged = phone !== target.phone || email !== (target.email ?? null);
   const roleChanged = role !== target.role;
-  const vehicleChanged = vehicle !== target.vehicle;
-  const identityOrRoleChange = identityChanged || roleChanged || vehicleChanged || (status !== target.status && status === 'pending');
-  if (selfService && role === 'driver' && (identityChanged || roleChanged || vehicleChanged) && status === 'active') status = 'pending';
-  if (production && selfService && role === 'driver' && status === 'active' && !target.approved_at) fail(409, 'pending_approval');
+  const vehicleChanged = vehicle !== target.vehicle || (accountModes && plate !== (target.plate ?? null));
+  const recheck = identityChanged || (!addingCaptain && vehicleChanged) || (status !== target.status && status === 'pending');
+  const identityOrRoleChange = recheck || (!accountModes && roleChanged);
+  if (!accountModes && selfService && role === 'driver' && (identityChanged || roleChanged || vehicleChanged) && status === 'active') status = 'pending';
+  if (production && selfService && role === 'driver' && status === 'active' && !target.approved_at
+      && !addingCaptain && !(accountModes && hasCaptainProfile(target))) fail(409, 'pending_approval');
   let carrying: Row[] = [], prelocked: number[] = [];
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
@@ -4129,13 +4519,14 @@ const editUser: Handler = async ({ user, params, body }) => {
       prelocked = (await all(`SELECT id FROM orders WHERE driver_id = ? AND status IN (${activeSql}) ORDER BY id FOR UPDATE`, target.id)).map(r => Number(r.id));
     if (persistence.backend === 'postgres') await one('SELECT id FROM users WHERE id=? FOR UPDATE', target.id);
     // Every decision below came from the read before the lock: another admin's block or approval in between must not be silently reverted.
-    const locked = (await one('SELECT name, phone, email, status, role, vehicle, plate, approved_at, phone_verified_at, email_verified_at FROM users WHERE id = ?', target.id)) ?? fail(404, 'not_found');
+    const locked = (await one(`SELECT name, phone, email, status, role, vehicle, plate, approved_at, phone_verified_at, email_verified_at
+      ${accountModes ? ', captain_state' : ''} FROM users WHERE id = ?`, target.id)) ?? fail(404, 'not_found');
     if (Object.keys(locked).some(key => (locked[key] ?? null) !== (target[key] ?? null))) fail(409, 'user_changed');
     if (identityOrRoleChange &&
       (await one(`SELECT id FROM orders WHERE (driver_id = ? AND status IN (${activeSql})) OR (customer_id = ? AND status IN ('requested','searching',${activeSql}))`, target.id, target.id))) fail(409, 'active_orders');
-    if (roleChanged && target.role === 'driver') (await cashSettled(target.id));
+    if (!accountModes && roleChanged && target.role === 'driver') (await cashSettled(target.id));
     // A blocked customer loses the handover code, so a courier on the way could never finish. Support cancels or waits first.
-    if (target.role === 'customer' && status === 'blocked' && target.status !== 'blocked'
+    if ((target.role === 'customer' || accountModes) && status === 'blocked' && target.status !== 'blocked'
       && (await one(`SELECT id FROM orders WHERE customer_id = ? AND status IN ('requested','searching',${activeSql})`, target.id))) fail(409, 'customer_active_order');
     // Blocking a courier mid-job must not strand what they carry, and support says so explicitly (recovery: 'return').
     if (target.role === 'driver' && status === 'blocked' && target.status !== 'blocked') {
@@ -4147,15 +4538,38 @@ const editUser: Handler = async ({ user, params, body }) => {
       for (const o of carrying) o.supportHolds = o.status === 'returning' && (await returnCustody(persistence, o)).supportHasGoods;
       if (carrying.some(o => !o.supportHolds) && body.recovery !== 'return') fail(409, 'carrying_parcels');
     }
+    const priorCaptain = accountModes && storedRole === 'driver' ? target.captain_state : null;
+    const captainState = closingCaptain || priorCaptain === 'closing' ? 'closing'
+      : !priorCaptain && !addingCaptain ? null : status === 'blocked' ? 'paused'
+      : recheck || (priorCaptain === 'paused' && target.status === 'blocked') ? 'review' : addingCaptain ? 'active' : priorCaptain;
+    const accountStatus = accountModes && status === 'pending' ? 'active' : status;
+    const approvedAt = addingCaptain && captainState !== 'review' ? Date.now()
+      : identityChanged || (!accountModes && roleChanged) || (vehicleChanged && !addingCaptain)
+        ? null : target.approved_at ?? null;
     (await run(`UPDATE users SET name = ?, phone = ?, email = ?, status = ?, role = ?, vehicle = ?, plate = ?,
       phone_verified_at = ?, email_verified_at = ?, approved_at = ? WHERE id = ?`,
-      name, phone, email, status, role, vehicle, plate, phone !== target.phone ? null : target.phone_verified_at ?? null,
+      name, phone, email, accountStatus, storedRole, vehicle, plate, phone !== target.phone ? null : target.phone_verified_at ?? null,
       email !== (target.email ?? null) ? null : target.email_verified_at ?? null,
-      identityChanged || roleChanged || vehicleChanged ? null : target.approved_at ?? null, target.id));
-    if (roleChanged) await endRoleBenefits(target.id);
+      approvedAt, target.id));
+    if (accountModes && storedRole === 'driver') {
+      await run('UPDATE users SET captain_state = ? WHERE id = ?', captainState, target.id);
+      await run(`INSERT INTO captain_profiles (user_id,state,vehicle,plate,approved_at,legacy_role,legacy_status,application_id)
+        VALUES (?,?,?,?,?,'driver',?,?) ON CONFLICT(user_id) DO UPDATE SET state=excluded.state, vehicle=excluded.vehicle,
+          plate=excluded.plate, approved_at=COALESCE(excluded.approved_at,captain_profiles.approved_at), revision=captain_profiles.revision+1`, target.id,
+      captainState === 'active' ? 'approved' : captainState ?? 'under_review', vehicle, plate, approvedAt, target.status, randomBytes(16).toString('hex'));
+      if (captainState !== 'active') await setCaptainOffline(persistence, target.id);
+      if (closingCaptain) await run("INSERT INTO security_events(actor_id,action,detail,created_at) VALUES (?,'CAPTAIN_CLOSING',?,?)",
+        user.id, JSON.stringify({ targetId: target.id }), Date.now());
+      if (addingCaptain && captainState === 'active') await run("INSERT INTO security_events(actor_id,action,detail,created_at) VALUES (?,'USER_APPROVED',?,?)",
+        user.id, JSON.stringify({ targetId: target.id, role: 'driver' }), Date.now());
+    }
+    if (!accountModes && roleChanged) await endRoleBenefits(target.id);
+    if (accountModes && storedRole === 'customer' && (identityChanged || accountStatus !== target.status))
+      await run('UPDATE captain_profiles SET revision = revision + 1 WHERE user_id = ?', target.id);
     const emailChanged = email !== (target.email ?? null);
     if (emailChanged) await run('DELETE FROM email_codes WHERE user_id = ?', target.id);
-    if (body.status !== undefined || identityChanged || roleChanged || vehicleChanged) await revokeUserAccess(target.id);
+    if (body.status !== undefined || identityChanged || (!accountModes && roleChanged) || (vehicleChanged && !addingCaptain))
+      await revokeUserAccess(target.id);
     if (emailChanged) await run('DELETE FROM recovery_email_proofs WHERE user_id = ?', target.id);
     const now = Date.now();
     const auditFields = [
@@ -4163,12 +4577,12 @@ const editUser: Handler = async ({ user, params, body }) => {
       phone !== target.phone ? 'phone' : null,
       email !== (target.email ?? null) ? 'email' : null,
       status !== target.status ? 'status' : null,
-      roleChanged ? 'role' : null,
+      storedRole !== target.role ? 'role' : null,
       vehicle !== (target.vehicle ?? null) ? 'vehicle' : null,
       plate !== (target.plate ?? null) ? 'plate' : null,
     ].filter(Boolean);
     if (auditFields.length) (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'USER_UPDATED', ?, ?)`,
-      user.id, JSON.stringify({ targetId: target.id, fields: auditFields, identityChanged, roleChanged }), now));
+      user.id, JSON.stringify({ targetId: target.id, fields: auditFields, identityChanged, roleChanged: storedRole !== target.role }), now));
     for (const o of carrying) {
       // Support already took the goods from this captain mid-return (supportHolds, above): nothing is stranded with the captain, so
       // the block is not a custody block and the order closes as support's takeover (Sol second recheck of PR #101).
@@ -4205,6 +4619,7 @@ const editUser: Handler = async ({ user, params, body }) => {
       (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'COURIER_BLOCKED', ?, ?)`,
         user.id, o.id, JSON.stringify({ driverId: target.id, from: o.status, assignmentEpoch: o.assignment_epoch, custody: !o.requeued && o.service !== 'ride' && !o.supportHolds }), now));
     }
+    if (closingCaptain) await closeCaptainIfSettled(target.id);
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   for (const o of carrying) {
@@ -4212,7 +4627,8 @@ const editUser: Handler = async ({ user, params, body }) => {
     else if (o.service === 'ride') await queuePush([o.customer_id], 'cancelled', o.id);
     else if (o.status !== 'returning') await queuePush([o.customer_id], 'returning', o.id);
   }
-  if (role === 'driver' && status === 'active' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
+  if (addingCaptain && !recheck && status === 'active') await queuePush([target.id], 'approved', 0, '/profiles');
+  else if (role === 'driver' && status === 'active' && target.status !== 'active') await queuePush([target.id], 'approved', 0, '/driver');
   return (await toUser((await one('SELECT * FROM users WHERE id = ?', target.id)) ?? fail(404, 'not_found')));
 };
 // PostgreSQL 39 can review rides and shop orders. Shipping reviews require SQLite's additive table or PostgreSQL 40.
@@ -4225,6 +4641,7 @@ const twoWorkingDays = (at: number) => { let t = at; for (let n = 0; n < 2;) { t
 async function createDeliveryBlockReview(order: Row, driverId: number, blockerId: number, from: string, blockedAt: number, dueAt = twoWorkingDays(blockedAt)) {
   const pay = order.service === 'shop'
     ? Number(((await one('SELECT delivery_fee_agorot FROM shop_orders WHERE order_id = ?', order.id)) ?? fail(409, 'shop_state')).delivery_fee_agorot)
+        * (await shop.shopReattempted(order.id, order.assigned_at) ? 2 : 1)
     : Math.max(1, await shippingDeliveryAttempts(order)) * fareCents(order);
   return (await run(`INSERT INTO courier_block_reviews (order_id, driver_id, blocked_by, service, from_status, trip_pay_cents, blocked_at, due_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (order_id) DO NOTHING`, order.id, driverId, blockerId, order.service, from, pay, blockedAt, dueAt)).changes;
@@ -4261,7 +4678,7 @@ export const recoverBlockReviews = () => persistence.scope(async () => {
     }
   }
 }).catch(error => logServerError('maintenance_failed', error));
-await recoverBlockReviews();
+if (!modeRollback) await recoverBlockReviews();
 const blockReviewView = (r: Row) => ({ dueAt: Number(r.due_at), tripPayCents: Number(r.trip_pay_cents), decidedAt: r.decided_at == null ? null : Number(r.decided_at),
   cleared: r.cleared == null ? null : !!r.cleared, paidCents: r.paid_cents == null ? null : Number(r.paid_cents), blockedBy: Number(r.blocked_by) });
 registerBlockReviewRoutes(route, async ({ user, params, body }) => {
@@ -4299,6 +4716,7 @@ registerBlockReviewRoutes(route, async ({ user, params, body }) => {
     await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'BLOCK_REVIEW_DECIDED', ?, ?)",
       user.id, id, JSON.stringify({ driverId, cleared: body.cleared, tripPayCents: pay, paidCents: paid }), now);
     if (paid) await queuePush([driverId], 'cash', 0, '/driver/earnings');
+    if (accountModes) await closeCaptainIfSettled(driverId);
     const result = blockReviewView((await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', id))!);
     await persistence.exec('COMMIT');
     return result;
@@ -4312,6 +4730,22 @@ route('POST', '/api/admin/users/:id/approve', async ({ user, params, body }) => 
   try {
     const target = (await one("SELECT * FROM users WHERE id = ? AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
     if (target.role === 'admin') fail(409, 'cannot_change_admin');
+    if (accountModes) {
+      const profile = await one('SELECT state, revision, application_id, vehicle, plate FROM captain_profiles WHERE user_id = ?', target.id);
+      const eligible = !!profile && target.status === 'active' && (target.role === 'customer' && profile.state === 'under_review'
+        || target.role === 'driver' && target.captain_state === 'review' && profile.state === 'review');
+      if (!eligible || profile.application_id !== body.expectedApplicationId || profile.revision !== body.expectedRevision
+          || profile.state !== body.expectedState) fail(409, 'user_changed');
+      const approvedAt = Date.now();
+      await run(`UPDATE users SET role = 'driver', captain_state = 'active', vehicle = ?, plate = ?, approved_at = ? WHERE id = ?`,
+        profile!.vehicle, profile!.plate, approvedAt, target.id);
+      await run("UPDATE captain_profiles SET state = 'approved', approved_at = ?, revision = revision + 1 WHERE user_id = ?", approvedAt, target.id);
+      await run(`INSERT INTO security_events(actor_id, action, detail, created_at) VALUES (?,'USER_APPROVED',?,?)`, user.id,
+        JSON.stringify({ targetId: target.id, role: 'driver', from: profile!.state }), approvedAt);
+      await queuePush([target.id], 'approved', 0, '/profiles');
+      await persistence.exec('COMMIT');
+      return toUser((await one('SELECT * FROM users WHERE id = ?', target.id))!);
+    }
     // Unblocking a courier must not skip what blocking enforces. The admin users screen sends
     // this route to clear a block, so without this check a blocked driver holding parcels came
     // back to 'active' in one call, bypassing the carrying_parcels guard in editUser.
@@ -4414,8 +4848,11 @@ route('POST', '/api/admin/subscriptions/:id', async ({ user, params, body }) => 
     try {
       const sub = (await one("SELECT * FROM subscriptions WHERE id = ? AND status = 'pending'", Number(params[0]))) ?? fail(404, 'not_found');
       if (body.action === 'activate') {
-        const target = (await one('SELECT role FROM users WHERE id = ?', sub.user_id))!;
-        if (sub.plan !== planForRole[target.role as User['role']]) fail(409, 'invalid_action');
+        const target = (await one('SELECT id, role, status, approved_at, captain_state FROM users WHERE id = ?', sub.user_id))!;
+        const eligible = accountModes
+          ? (sub.plan === 'plus' && target.role !== 'admin') || (sub.plan === 'pro' && captainGrant(target))
+          : sub.plan === planForRole[target.role as User['role']];
+        if (!eligible) fail(409, 'invalid_action');
         if (!(await run("UPDATE subscriptions SET status = 'active', activated_at = ?, ends_at = ? WHERE id = ? AND status = 'pending'", Date.now(), Date.now() + 30 * DAY, sub.id)).changes)
           fail(409, 'subscription_decided');
       }
@@ -4520,18 +4957,30 @@ async function readBody(req: IncomingMessage): Promise<Row> {
 }
 
 const bearer = (req: IncomingMessage) => /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1];
+function requireModeRevision(user: User, req: IncomingMessage) {
+  if (user.accountMode && req.headers['x-wind-mode-revision'] !== String(user.modeRevision)) fail(409, 'mode_changed');
+}
 const sessionEligible = async (r: Row) => r.status !== 'blocked' && await contactAllowed(r)
   && (!production || (selfService ? r.role !== 'admin' || r.phone_verified_at || r.approved_at : r.phone_verified_at));
+async function userInMode(row: Row, mode: unknown, revision: number): Promise<User> {
+  if (!accountModes || row.role === 'admin') return toUser(row);
+  const accountMode = mode === 'captain' && captainGrant(row) ? 'captain'
+    : mode === 'shop' && enabledServices.includes('shop') && await one('SELECT 1 FROM merchants WHERE owner_user_id = ?', row.id) ? 'shop' : 'personal';
+  const user = await toUser({ ...row, role: accountMode === 'captain' ? 'driver' : 'customer' });
+  return { ...user, accountMode, modeRevision: revision };
+}
 async function authenticate(req: IncomingMessage, touch = true, lockSession = false): Promise<User | null> {
   const token = bearer(req);
   if (!token) return null;
   const now = Date.now();
-  const r = (await one(`SELECT u.*, s.created_at AS session_created_at, s.last_seen_at AS session_last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?${lockSession ? ' FOR KEY SHARE OF s' : ''}`,
+  const r = (await one(`SELECT u.*, s.created_at AS session_created_at, s.last_seen_at AS session_last_seen_at
+    ${accountModes ? ', s.active_mode AS session_mode, s.mode_revision AS session_mode_revision' : ''}
+    FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?${lockSession ? ' FOR KEY SHARE OF s' : ''}`,
     sha(token), now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY));
   if (!r || !await sessionEligible(r)) return null;
   if (touch && now - Number(r.session_last_seen_at ?? r.session_created_at) > 60 * 60_000)
     void run('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?', now, sha(token)).catch(() => {});
-  return (await toUser(r));
+  return userInMode(r, r.session_mode, Number(r.session_mode_revision));
 }
 
 let draining = false;
@@ -4540,7 +4989,7 @@ const publicAuthLimits: Record<string, number> = { '/api/auth/login': 50, '/api/
 export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) => {
   if (production) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
   res.setHeader('Access-Control-Allow-Origin', '*'); // Bearer [REDACTED], no cookies: open CORS is safe
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Wind-Client');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Wind-Client, X-Wind-Mode-Revision');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -4575,6 +5024,10 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
 
     const invoke = async () => {
       const target = /^\/api\/(?:orders|jobs|admin\/orders)\/(\d+)(?:\/|$)/.exec(url.pathname);
+      // Release checks its saved acknowledgement before it reads the live order.
+      if (user?.accountMode && target && url.pathname.startsWith('/api/orders/') && !url.pathname.endsWith('/release')
+        && ['POST','PATCH','DELETE'].includes(req.method ?? ''))
+        await getOrder(Number(target[1]), user);
       if (persistence.backend === 'postgres' && target && ['POST','PATCH','DELETE'].includes(req.method ?? '')) {
         // Handler-owned authorization/replay ordering is part of the installed-client contract.
         await one('SELECT id FROM orders WHERE id=? FOR UPDATE', Number(target[1]));
@@ -4628,7 +5081,20 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       return result;
       } catch (error) { if (boundary) await persistence.exec('ROLLBACK'); throw error; }
     };
-    if (req.method === 'POST' && /^\/api\/driver\/presence\//.test(url.pathname)) {
+    const profileWrite = user?.accountMode && ['POST','PATCH','DELETE'].includes(req.method ?? '')
+      && /^\/api\/(?:orders|jobs|location|driver|captain|merchant|roads|subscriptions|promos|me\/places)(?:\/|$)/.test(url.pathname)
+      && url.pathname !== '/api/orders' && !/^\/api\/orders\/[^/]+\/payments(?:\/|$)/.test(url.pathname);
+    if (profileWrite) {
+      let refusal: HttpError | undefined;
+      payload = await persistence.sqliteModeWrite(async () => {
+        if (body.commandId !== undefined) fail(409, 'durable_protocol_unavailable');
+        user = await authenticate(req, false) ?? fail(401, 'unauthorized');
+        requireModeRevision(user, req);
+        try { return await invoke(); }
+        catch (error) { if (!(error instanceof HttpError)) throw error; refusal = error; }
+      });
+      if (refusal) throw refusal;
+    } else if (req.method === 'POST' && /^\/api\/driver\/presence\//.test(url.pathname)) {
       need(user!,'driver');
       if(!url.pathname.endsWith('/offline') || user!.status!=='active') needActive(user!);
       let failure:HttpError|undefined;
@@ -4666,6 +5132,10 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       });
       if (failure) throw failure;
     } else payload = await invoke();
+    if (user?.accountMode && req.method === 'GET' && /^\/api\/(?:orders|jobs|driver|merchant)(?:\/|$)/.test(url.pathname)) {
+      const latest = await authenticate(req, false) ?? fail(401, 'unauthorized');
+      if (latest.accountMode !== user.accountMode || latest.modeRevision !== user.modeRevision) fail(409, 'mode_changed');
+    }
     if (url.searchParams.get('journeyProtocol') === '1' && user && /^\/api\/(orders|jobs|admin\/orders)(?:\/|$)/.test(url.pathname)) {
       const viewer = await authenticate(req, false) ?? fail(401, 'unauthorized');
       const decorate = async (value: unknown) => {
@@ -4733,7 +5203,11 @@ server.on('listening', () => {
     if(presenceSweepRunning || draining)return;
     presenceSweepRunning=true;
     presenceSweepJob = presenceSweepJob.then(() => persistence.detached(async () => {
-      for(let batch=0;batch<10;batch++) if(await presence.sweep()<100)break;
+      if (accountModes) await emailTransaction(async () => {
+        await expireCaptainAvailability(persistence, (id, reason) => queuePush([id], reason === 'idle' ? 'captain_idle' : 'captain_offline', 0, '/driver'));
+        for (const { id } of await all("SELECT id FROM users WHERE captain_state = 'closing'")) await closeCaptainIfSettled(id);
+      });
+      else for(let batch=0;batch<10;batch++) if(await presence.sweep()<100)break;
     })).catch(error => { logServerError('presence_maintenance_failed',error); }).finally(() => { presenceSweepRunning=false; });
   };
   sweep();
@@ -4754,6 +5228,52 @@ export async function pruneExpired() {
   (await run('DELETE FROM sessions WHERE created_at < ? OR COALESCE(last_seen_at, created_at) < ?', Date.now() - SESSION_DAYS * DAY, Date.now() - SESSION_IDLE_DAYS * DAY));
   (await run('DELETE FROM push_subscriptions WHERE user_id NOT IN (SELECT user_id FROM sessions)')); // the last session gone, no browser should keep alerting
   (await run('DELETE FROM request_limits WHERE until < ?', Date.now()));
+}
+
+async function rollbackSqliteProfiles() {
+  if (accountModes || persistence.backend !== 'sqlite') throw Object.assign(new Error('Profile rollback requires SQLite and disabled profile switching'), { code: 'PROFILE_ROLLBACK_CONFIG' });
+  return emailTransaction(async () => {
+    if (await shop.legacyPayoutChanges()) throw Object.assign(new Error('The older release would change shop payouts'), { code: 'PROFILE_ROLLBACK_LEGACY_PAYOUT' });
+    // Older writers update subscriptions by endpoint without maintaining the session binding.
+    if ((await all('PRAGMA table_info(push_subscriptions)')).some(column => column.name === 'auth_session_hash'))
+      await run('UPDATE push_subscriptions SET auth_session_hash = NULL WHERE auth_session_hash IS NOT NULL');
+    if (!await one('SELECT 1 FROM settings WHERE key = ?', modeActivationKey)) return;
+    const deferred = await all(`SELECT u.id, u.status, u.captain_state, p.vehicle, p.plate FROM users u JOIN captain_profiles p ON p.user_id = u.id
+      WHERE u.phone NOT LIKE 'deleted-%' AND u.phone NOT LIKE 'partner:%'
+        AND ((u.role = 'customer' AND p.state = 'under_review')
+          OR (u.role = 'driver' AND u.captain_state IN ('review','paused','closing')))`);
+    // The old client has one inbox per stored role. Preserve the current database if any live work would lose its inbox.
+    if (await one(`SELECT 1 FROM users u WHERE u.role = 'driver' AND EXISTS (SELECT 1 FROM orders o
+      WHERE o.customer_id = u.id AND o.status IN ('requested','searching',${activeSql})) LIMIT 1`)
+      || await one(`SELECT 1 FROM merchants m JOIN users u ON u.id = m.owner_user_id
+        JOIN shop_orders s ON s.merchant_id = m.id JOIN orders o ON o.id = s.order_id
+        WHERE u.role = 'driver' AND o.status IN ('requested','searching',${activeSql}) LIMIT 1`))
+      throw Object.assign(new Error('Multi-profile work is still open'), { code: 'PROFILE_ROLLBACK_WORK_OPEN' });
+    const inaccessibleShops = await all(`SELECT m.id FROM merchants m JOIN users u ON u.id = m.owner_user_id
+      LEFT JOIN captain_profiles p ON p.user_id = u.id
+      WHERE (u.role = 'driver' AND COALESCE(u.captain_state, '') <> 'closing')
+        OR (u.role = 'customer' AND p.state = 'under_review')`);
+    for (const shop of inaccessibleShops) {
+      const balance = (await one("SELECT COALESCE(SUM(amount_agorot),0) AS n FROM shop_ledger WHERE book = 'merchant' AND merchant_id = ?", shop.id))!.n;
+      if (Number(balance) !== 0) throw Object.assign(new Error('Shop balance would lose its legacy inbox'), { code: 'PROFILE_ROLLBACK_SHOP_CASH' });
+      await run('UPDATE merchants SET paused_new = 1, updated_at = ? WHERE id = ? AND paused_new = 0', Date.now(), shop.id);
+    }
+    for (const user of deferred) {
+      if (await one(`SELECT 1 FROM orders o WHERE (o.customer_id = ? OR o.driver_id = ? OR EXISTS (
+        SELECT 1 FROM shop_orders s JOIN merchants m ON m.id = s.merchant_id WHERE s.order_id = o.id AND m.owner_user_id = ?))
+        AND o.status IN ('requested','searching',${activeSql}) LIMIT 1`, user.id, user.id, user.id)
+        || await cashSettlementPending(user.id))
+        throw Object.assign(new Error('Profile work or cash is still open'), { code: 'PROFILE_ROLLBACK_WORK_OPEN' });
+      if (user.captain_state === 'closing') { await closeCaptainIfSettled(user.id); continue; }
+      await run(`UPDATE users SET role = 'driver', status = ?, vehicle = ?, plate = ?, approved_at = NULL WHERE id = ?`,
+        user.status === 'blocked' ? 'blocked' : 'pending', user.vehicle, user.plate, user.id);
+      await run('DELETE FROM sessions WHERE user_id = ?', user.id);
+      await run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id);
+    }
+    await run(`UPDATE sessions SET active_mode = 'personal', captain_online_at = NULL, mode_revision = mode_revision + 1
+      WHERE active_mode IN ('captain','shop')`);
+    await run('DELETE FROM settings WHERE key = ?', modeActivationKey);
+  });
 }
 export async function sweepFirebaseResets() {
   await run('DELETE FROM firebase_resets WHERE requested_at <= ?', Date.now() - 60 * 60_000);
@@ -4799,7 +5319,13 @@ export async function promote(input: string) {
 }
 
 if (import.meta.main) {
-  if (process.argv[2] === 'delete-account') {
+  if (modeRollback) {
+    try {
+      await persistence.scope(rollbackSqliteProfiles);
+      console.log('SQLite profile rollback complete');
+    } catch (error) { logAccountCommandFailure(error); process.exitCode = 1; }
+    finally { db.close(); }
+  } else if (process.argv[2] === 'delete-account') {
     try {
       if (process.argv[4] !== '--phone-verified') throw Object.assign(new Error('Operator attestation required'), { code: 'OPERATOR_REQUEST_PROOF_REQUIRED' });
       const phone = normalizePhone(process.argv[3] ?? '') ?? fail(400, 'invalid_phone');
@@ -4824,8 +5350,13 @@ if (import.meta.main) {
       const vehicle = role === 'driver' ? (vehicles.includes(process.argv[7] as Vehicle) ? process.argv[7] : process.argv[7] ? fail(400, 'invalid_vehicle') : 'car') : null;
       const name = text(process.argv[5], 60), password = newPassword(readFileSync(0, 'utf8').trimEnd());
       if ((await one('SELECT id FROM users WHERE phone = ?', phone))) fail(409, 'phone_taken');
-      (await run('INSERT INTO users (phone, name, password, role, status, vehicle, created_at, phone_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        phone, name, await hashPassword(password), role, role === 'driver' ? 'pending' : 'active', vehicle, Date.now(), Date.now()));
+      const hashed = await hashPassword(password);
+      await persistence.scope(() => emailTransaction(async () => {
+        const application = accountModes && role === 'driver';
+        const inserted = await run('INSERT INTO users (phone, name, password, role, status, vehicle, created_at, phone_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          phone, name, hashed, application ? 'customer' : role, role === 'driver' && !application ? 'pending' : 'active', application ? null : vehicle, Date.now(), Date.now());
+        if (application) await createCaptainApplication(Number(inserted.lastInsertRowid), vehicle as Vehicle, null);
+      }));
       console.log('Verified account enrolled; drivers still require approval');
     } catch (error) { logAccountCommandFailure(error); process.exitCode = 1; }
     finally { db.close(); }

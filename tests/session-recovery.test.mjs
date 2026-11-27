@@ -16,7 +16,9 @@ class ApiError extends Error { constructor(message, status) { super(message); th
 function session({ failKey, failure, token = 'saved-token', summary = null, platform = 'android', accounts = {} }) {
   const slots = [], timers = new Map(), values = new Map(), listeners = new Map(), calls = [];
   if (token) values.set('token', token);
-  let cursor = 0, effects = [], revision = 0, credential = null, actor = null, failedRead = failKey, failedWrite = null, pauseRemoval = null, pauseRecord = null, pausePresence = null, pauseTokenRemoval = null, pauseBeforeDelete = null, pauseMe = null, meFailure = null, unauthorized = null, lockTail = Promise.resolve();
+  let cursor = 0, effects = [], revision = 0, modeRevision, credential = null, actor = null, failedRead = failKey, failedWrite = null, pauseRemoval = null, pauseRecord = null, pausePresence = null, pauseTokenRemoval = null, pauseBeforeDelete = null, pauseMe = null, meFailure = null, unauthorized = null, lockTail = Promise.resolve();
+  let pauseTracking = null, trackingError = null, switchResponse = null, localPushDrops = 0, pausePushDrop = null;
+  const pushBindings = [], retiredPush = [];
   const storage = {
     exclusive(run) { const next = lockTail.then(run); lockTail = next.catch(() => {}); return next; },
     async get(key, required = false) { if (key === failedRead && (platform !== 'web' || required)) throw new Error('keystore'); return values.get(key) ?? null; },
@@ -59,13 +61,16 @@ function session({ failKey, failure, token = 'saved-token', summary = null, plat
     'react-native': { Platform: { OS: platform }, AppState: { addEventListener: () => ({ remove() {} }) } },
     'expo-localization': { getLocales: () => [{ languageCode: 'en' }] }, 'expo-constants': { __esModule: true, default: { expoConfig: {} } },
     './api': { API_URL: 'http://localhost', ApiError, api: async path => { calls.push({ path, credential });
-      if (path === '/me' && pauseMe) { const held = pauseMe, requested = credential; pauseMe = null; held.started(); await held.promise; return accounts[requested]; }
-      if (path === '/me' && meFailure) throw meFailure;
-      if (path === '/me' && accounts[credential]) return accounts[credential];
+      const profileRead = path === '/me' || path === '/me?launch=1';
+      if (profileRead && pauseMe) { const held = pauseMe, requested = credential; pauseMe = null; held.started(); await held.promise; return accounts[requested]; }
+      if (profileRead && meFailure) throw meFailure;
+      if (profileRead && accounts[credential]) return accounts[credential];
+      if (path === '/session/mode' && switchResponse) return switchResponse();
       if (path === '/runtime/configuration') return {};
       throw failure; }, errorCode: e => e instanceof ApiError ? e.message : 'server_error',
-      configureApi(next, onUnauthorized) { if (credential !== next) revision++; credential = next; unauthorized = onUnauthorized; }, invalidateApiSessionActions() { revision++; }, storage },
-    './api-client': { apiSessionCredential: () => credential, apiSessionRevision: () => revision, serverOffset: () => 0 },
+      configureApi(next, onUnauthorized) { if (credential !== next) { modeRevision = undefined; revision++; } credential = next; unauthorized = onUnauthorized; }, invalidateApiSessionActions() { revision++; }, storage },
+    './api-client': { apiSessionCredential: () => credential, apiSessionRevision: () => revision,
+      configureApiModeRevision(next) { if (modeRevision !== next) revision++; modeRevision = next; }, serverOffset: () => 0 },
     './offline-recovery': { configureRecoveryActor(next) { if (actor && next !== actor) revision++; actor = next; }, savedOfflineSummary: async () => summary },
     './recovery-storage': { recoveryStorage: recovery, pendingRecoveryWake: async () => null, acknowledgeRecoveryWake: async () => {} },
     './chat-outbox': chatOutbox,
@@ -74,9 +79,20 @@ function session({ failKey, failure, token = 'saved-token', summary = null, plat
     './deadline-recovery': { createDeadlineReconciler: () => async () => {} }, './map-failures': { retryMapProviders() {} },
     './runtime-config': { resetRuntime() {}, configureRuntime() {}, effectiveRuntime: () => ({ values: { offlineMaxAgeMs: 60_000 } }) }, './client-diagnostics': { clientDiagnostics: { record() {}, clear() {} } },
     './diagnostic-client': { startDiagnosticDelivery: () => () => {} }, './phone-test': { phoneTestConfig: () => null },
-    './push': { disablePush: noop, dropLocalPush: noop }, './native-push': { registerNativePush: noop, unregisterNativePush: noop },
+    './push': {
+      async dropLocalPush() {
+        if (pausePushDrop) { pausePushDrop.started(); await pausePushDrop.promise; }
+        localPushDrops++;
+        retiredPush.push(credential);
+      },
+      refreshPush: async () => { pushBindings.push(credential); },
+    },
+    './native-push': { registerNativePush: noop, unregisterNativePush: noop },
     './copy': { copy: { ar: { sessionEndedNotice: 'ended' }, en: { sessionEndedNotice: 'ended' } } }, './phone/notice': notice,
-    './background-location': { stopBackgroundLocation: noop }, './driver-presence-runtime': { stopPresence: async () => { if (pausePresence) { pausePresence.started(); await pausePresence.promise; } }, validatePresenceContextOnLaunch: noop },
+    './background-location': { stopBackgroundLocation: async () => {
+      if (pauseTracking) { const held = pauseTracking; pauseTracking = null; held.started(); await held.promise; }
+      if (trackingError) throw trackingError;
+    } }, './driver-presence-runtime': { suspendPresence() {}, stopPresence: async () => { if (pausePresence) { pausePresence.started(); await pausePresence.promise; } }, validatePresenceContextOnLaunch: noop },
   };
   const context = { exports: {}, require: name => { assert.ok(name in modules, name); return modules[name]; }, Date,
     window: { addEventListener: (event, fn) => listeners.set(event, fn), removeEventListener: event => listeners.delete(event) }, document: { documentElement: {} },
@@ -85,13 +101,17 @@ function session({ failKey, failure, token = 'saved-token', summary = null, plat
   return {
     render() { cursor = 0; effects = []; const tree = context.exports.SessionProvider({ children: null }); effects.forEach(fn => fn()); return tree.props.value; },
     expire(ms) { for (const [id, timer] of [...timers]) if (timer.delay <= ms) { timers.delete(id); timer.fn(); } },
-    credential: () => credential, stored: key => values.get(key) ?? null, calls,
+    credential: () => credential, stored: key => values.get(key) ?? null, localPushDrops: () => localPushDrops, calls, pushBindings, retiredPush,
     recoveryRecords: () => [...values.keys()].filter(key => key.startsWith('wind.recovery.v1.') && !key.endsWith('.index')),
     failRead(key) { failedRead = key; },
     failWrite(key) { failedWrite = key; },
     failMe(error) { meFailure = error; },
     pauseMe(pending) { pauseMe = pending; },
+    pauseTracking(pending) { pauseTracking = pending; },
+    failTracking(error) { trackingError = error; },
+    onSwitch(fn) { switchResponse = fn; },
     pausePresence(pending) { pausePresence = pending; },
+    pausePushDrop(pending) { pausePushDrop = pending; },
     pauseRemoval(pending) { pauseRemoval = pending; },
     pauseRecord(pending) { pauseRecord = pending; },
     pauseTokenRemoval(pending) { pauseTokenRemoval = pending; },
@@ -142,8 +162,145 @@ const gate = () => { let resolve, started; const promise = new Promise(r => { re
   const entered = new Promise(r => { started = r; }); return { promise, resolve, started, entered }; };
 
 {
+  const personal = { ...account(1), accountProfile: { mode: 'personal', revision: 2 } };
+  const h = session({ platform: 'android', accounts: { 'saved-token': personal } });
+  const stopping = gate();
+  h.pauseTracking(stopping);
+  h.failTracking(new Error('native stop still failing after process restart'));
+  h.render(); await stopping.entered;
+  assert.ok(h.calls.some(call => call.path === '/me?launch=1'), 'server availability is cleared independently of native cleanup');
+  assert.equal(h.render().me, null);
+  stopping.resolve();
+  await settle();
+  assert.equal(h.render().ready, true);
+  assert.equal(h.render().locationCleanupRequired, true);
+  assert.equal(h.render().me, null, 'startup waits for native location cleanup');
+  h.failTracking(null);
+  await h.render().refresh(true);
+  assert.equal(h.render().locationCleanupRequired, false);
+  assert.equal(h.render().me, personal);
+  h.close();
+}
+
+{
+  const h = session({ platform: 'android', failure: new ApiError('unauthorized', 401) });
+  const stopping = gate();
+  h.pauseTracking(stopping);
+  h.failTracking(new Error('native stop failed after a 401'));
+  h.render(); await stopping.entered;
+  h.expireSession(); await settle();
+  assert.equal(h.render().ready, false, 'a revoked session cannot render sign-in while native cleanup is pending');
+  stopping.resolve(); await settle();
+  assert.equal(h.render().ready, true);
+  assert.equal(h.render().locationCleanupRequired, true);
+  assert.equal(h.render().me, null);
+  h.failTracking(null);
+  await h.render().refresh(true);
+  assert.equal(h.render().locationCleanupRequired, false, 'retry also works after the revoked token has been removed');
+  assert.equal(notice.takeAuthNotice(), 'ended');
+  h.close();
+}
+
+{
+  const captain = { ...account(1), user: { ...account(1).user, role: 'driver' }, accountProfile: { mode: 'captain', revision: 1 } };
+  const h = session({ platform: 'android', accounts: { 'saved-token': captain } });
+  h.render(); await settle();
+  assert.equal(h.render().me, captain);
+  const stopping = gate(), deleting = gate();
+  h.pauseTracking(stopping);
+  h.pauseBeforeDelete(deleting);
+  h.expireSession();
+  await Promise.all([stopping.entered, deleting.entered]);
+  stopping.resolve(); await settle();
+  assert.equal(h.stored('token'), 'saved-token', 'SecureStore deletion is still pending after location cleanup');
+  assert.equal(h.render().me, null, 'a revoked Captain cannot resume tracking while its token is still stored');
+  assert.equal(h.render().ready, false, 'sign-in stays gated while the API still holds the revoked token');
+  const requests = h.calls.length;
+  await h.render().refresh(true);
+  assert.equal(h.render().me, null, 'a refresh cannot restore the revoked account during teardown');
+  assert.equal(h.calls.length, requests, 'a refresh skips the revoked credential');
+  deleting.resolve(); await settle();
+  assert.equal(h.credential(), null);
+  assert.equal(h.stored('token'), null);
+  assert.equal(h.render().ready, true, 'sign-in opens after the revoked API credential is detached');
+  assert.equal(h.render().locationCleanupRequired, false);
+  assert.equal(notice.takeAuthNotice(), 'ended');
+  h.close();
+}
+
+{
+  const other = account(2), h = session({ platform: 'web', accounts: { 'saved-token': account(1), 'new-token': other } });
+  h.render(); await settle(); h.render();
+  const otherTab = gate(), held = h.holdLock(otherTab);
+  h.expireSession();
+  await h.replaceInOtherTab('new-token', false);
+  otherTab.resolve(); await held; await settle();
+  assert.equal(h.stored('token'), 'new-token');
+  assert.equal(h.localPushDrops(), 0, 'revocation must preserve a replacement tab’s browser subscription before its storage event arrives');
+  h.deliverToken('new-token'); await settle();
+  assert.equal(h.render().me, other);
+  assert.equal(h.render().ready, true);
+  assert.equal(h.pushBindings.at(-1), 'new-token', 'a replacement binds its notifications without visiting settings');
+  assert.equal(notice.takeAuthNotice(), 'ended');
+  h.close();
+}
+
+{
+  const profile = (mode, revision) => ({ ...account(1), accountProfile: { mode, revision },
+    user: { ...account(1).user, role: mode === 'captain' ? 'driver' : 'customer' } });
+  const accounts = { 'saved-token': profile('captain', 1) };
+  const h = session({ accounts });
+  h.render(); await settle(); h.render(); await settle();
+  const stopping = gate(); h.pauseTracking(stopping);
+  accounts['saved-token'] = profile('personal', 2);
+  const refreshing = h.render().refresh(true);
+  await stopping.entered;
+  assert.equal(h.render().me.accountProfile.mode, 'captain', 'a refresh waits until native tracking stops');
+  accounts['saved-token'] = profile('captain', 3);
+  await h.render().refresh(true);
+  stopping.resolve(); await refreshing;
+  assert.equal(h.render().me.accountProfile.revision, 3, 'cleanup cannot let an older response replace a newer mode');
+  h.onSwitch(() => {
+    accounts['saved-token'] = profile('personal', 4);
+    throw new ApiError('server_error', 502);
+  });
+  h.failTracking(new Error('native stop failed'));
+  await assert.rejects(h.render().switchMode('personal'), /profile_location_cleanup/);
+  assert.equal(h.render().locationCleanupRequired, true);
+  assert.equal(h.render().me.accountProfile.mode, 'captain');
+  h.failTracking(null);
+  await h.render().refresh(true);
+  assert.equal(h.render().locationCleanupRequired, false);
+  assert.equal(h.render().me.accountProfile.mode, 'personal', 'a truncated switch response reconciles from the server');
+  h.close();
+}
+
+{
+  const captain = { ...account(1), user: { ...account(1).user, role: 'driver' }, accountProfile: { mode: 'captain', revision: 1 } };
+  const h = session({ platform: 'android', accounts: { 'saved-token': captain } });
+  h.render(); await settle();
+  assert.equal(h.render().me, captain);
+  const stopping = gate();
+  h.pauseTracking(stopping);
+  h.failTracking(new Error('native stop failed after Captain session was revoked'));
+  h.expireSession();
+  await stopping.entered; await settle();
+  assert.equal(h.credential(), null, 'native stop must not delay clearing a revoked credential');
+  assert.equal(h.render().me, null);
+  assert.equal(h.render().locationCleanupRequired, true);
+  stopping.resolve(); await settle();
+  assert.equal(h.render().locationCleanupRequired, true, 'revocation retains the failed cleanup gate');
+  h.failTracking(null);
+  await h.render().refresh(true);
+  assert.equal(h.render().locationCleanupRequired, false);
+  assert.equal(notice.takeAuthNotice(), 'ended');
+  h.close();
+}
+
+{
   const h = session({ accounts: { 'saved-token': account(1) } });
   h.render(); await settle(); await h.seed('command', { order: 'pending' });
+  assert.equal(h.calls.filter(call => call.path === '/me?launch=1').length, 1, 'only the restored launch clears Captain availability');
   h.failMe(new ApiError('network'));
   await h.render().refresh();
   assert.equal(h.render().offline, false, 'background refresh must stay quiet under a loaded form');
@@ -327,6 +484,18 @@ for (const platform of ['android', 'web']) {
   assert.equal((await h.read('command')).order, 'pending', `${platform}: a sign-out that could not remove the token keeps the recovery record of the session still open`);
   h.close();
 }
+{
+  const h = session({ platform: 'web', accounts: { 'saved-token': account(1) } });
+  h.render(); await settle(); h.render();
+  h.failRead('token');
+  h.expireSession(); await settle();
+  assert.equal(h.credential(), null);
+  assert.equal(h.render().me, null);
+  assert.equal(h.render().ready, true);
+  assert.equal(h.localPushDrops(), 0, 'a failed storage read cannot prove ownership of the shared endpoint');
+  assert.equal(notice.takeAuthNotice(), 'ended');
+  h.close();
+}
 for (const platform of ['android', 'web']) {
   const h = session({ platform, accounts: { 'saved-token': account(1) } });
   h.render(); await settle();
@@ -364,6 +533,21 @@ for (const platform of ['android', 'web']) {
   h.deliverToken('new-token'); await settle();
   assert.equal(h.credential(), 'new-token');
   assert.equal(h.render().me.user.id, next.user.id);
+  h.close();
+}
+{
+  const other = account(2), h = session({ platform: 'web', accounts: { 'saved-token': account(1), 'new-token': other } });
+  h.render(); await settle(); h.render();
+  const push = gate(); h.pausePushDrop(push);
+  const logout = h.render().signOut();
+  await push.entered;
+  const signIn = h.signInOtherTab('new-token');
+  await settle();
+  assert.equal(h.stored('token'), 'saved-token', 'replacement sign-in waits for the old browser unsubscribe');
+  push.resolve(); await logout; await signIn;
+  assert.deepEqual(h.retiredPush, ['saved-token'], 'unlinking push uses the old account only');
+  h.deliverToken('new-token'); await settle();
+  assert.equal(h.render().me, other);
   h.close();
 }
 {
@@ -410,3 +594,68 @@ for (const platform of ['android', 'web']) {
   h.close();
 }
 console.log('Session recovery: failed removal keeps the recovery record, 401 always ends the session on screen, sign-out and sign-in serialize across tabs');
+
+{
+  const pushSource = ts.transpileModule(readFileSync(new URL('../src/push.ts', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  let token = 'first', tail = Promise.resolve(), bindError = null, afterPermission = null, beforeUnsubscribe = null;
+  const saved = new Map();
+  const requests = [], unsubscribed = [];
+  const subscription = {
+    endpoint: 'https://fcm.googleapis.com/fcm/send/synthetic',
+    options: {},
+    toJSON() { return { endpoint: this.endpoint, keys: {} }; },
+    async unsubscribe() { unsubscribed.push(token); return true; },
+  };
+  const registration = { pushManager: { getSubscription: async () => subscription } };
+  const storage = {
+    exclusive(work) { const next = tail.then(work); tail = next.catch(() => {}); return next; },
+    get: async key => key === 'token' ? token : saved.get(key) ?? null,
+    set: async (key, value) => { if (value === null) saved.delete(key); else saved.set(key, value); },
+  };
+  const modules = {
+    'react-native': { Platform: { OS: 'web' } },
+    './api-client': { apiSessionCredential: () => token },
+    './api': { ApiError, storage, api: async path => {
+      requests.push([path, token]);
+      if (path === '/push/unsubscribe' && beforeUnsubscribe) { beforeUnsubscribe.started(); await beforeUnsubscribe.promise; }
+      if (path === '/push/subscribe' && bindError) throw bindError;
+      return { key: 'AA' };
+    } },
+  };
+  const context = { exports: {}, require: name => modules[name], atob, btoa, crypto, TextEncoder,
+    window: { PushManager: {}, Notification: {} },
+    Notification: { requestPermission: async () => { afterPermission.started(); await afterPermission.promise; return 'granted'; } },
+    navigator: { serviceWorker: { getRegistration: async () => registration, register: noop, ready: Promise.resolve(registration) } },
+  };
+  runInNewContext(pushSource, context);
+  const { enablePush, disablePush, refreshPush } = context.exports;
+  afterPermission = gate();
+  const enabling = enablePush('en');
+  await afterPermission.entered;
+  await storage.exclusive(async () => { token = 'second'; });
+  afterPermission.resolve();
+  await assert.rejects(enabling, /session_changed/);
+  assert.deepEqual(requests, [], 'a permission reply cannot enable push for the account that replaced it');
+
+  bindError = Object.assign(new ApiError('session_changed', 401), { servedStatus: 200 });
+  await refreshPush('en');
+  assert.deepEqual(unsubscribed, [], 'a profile revision change preserves a successful same-token bind');
+  bindError = new ApiError('network');
+  await assert.rejects(refreshPush('en'), /network/);
+  assert.deepEqual(unsubscribed, [], 'temporary failure preserves a binding already confirmed for this token');
+  await storage.exclusive(async () => { token = 'third'; });
+  await assert.rejects(refreshPush('en'), /network/);
+  assert.deepEqual(unsubscribed, ['third'], 'a failed rebind retires the endpoint when ownership changed');
+
+  beforeUnsubscribe = gate();
+  const disabling = disablePush();
+  await beforeUnsubscribe.entered;
+  const replacement = storage.exclusive(async () => { token = 'fourth'; });
+  await settle();
+  assert.equal(token, 'third', 'settings unsubscribe and token replacement share the lock');
+  beforeUnsubscribe.resolve();
+  await disabling; await replacement;
+  assert.deepEqual(requests, [['/push/subscribe', 'second'], ['/push/subscribe', 'second'], ['/push/subscribe', 'third'], ['/push/unsubscribe', 'third']]);
+  assert.deepEqual(unsubscribed, ['third', 'third']);
+}

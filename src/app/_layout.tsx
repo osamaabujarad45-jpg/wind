@@ -28,7 +28,7 @@ if (Platform.OS === 'web') Font.loadAsync({
 export default function RootLayout() {
   return <SessionProvider><ThemeProvider>
     <ThemedStatusBar />
-    <DriverWorkRoutes />
+    <DriverWorkProvider><Routes /></DriverWorkProvider>
     <IntroOverlay />
   </ThemeProvider></SessionProvider>;
 }
@@ -36,12 +36,6 @@ export default function RootLayout() {
 // Dark status bar icons on Day, light ones on Night.
 function ThemedStatusBar() {
   return <StatusBar style={useTheme().name === 'night' ? 'light' : 'dark'} />;
-}
-
-function DriverWorkRoutes() {
-  const { me } = useSession();
-  const actor = me?.user.role === 'driver' && me.user.status === 'active' ? me.user.id : 'idle';
-  return <DriverWorkProvider key={actor}><Routes /></DriverWorkProvider>;
 }
 
 // Keep the splash frame through startup, then let the resolved screen accept input immediately.
@@ -85,11 +79,11 @@ function OfflineOrders({ summary }: { summary: OfflineSummary }) {
 
 function Routes() {
   const { palette } = useTheme();
-  const { ready, offline, offlineSummary, me, onboarded, refresh } = useSession();
+  const { ready, offline, locationCleanupRequired, offlineSummary, me, onboarded, refresh } = useSession();
   const { c } = useCopy();
   const mustUpdate = useSyncExternalStore(subscribeClientUpdate, clientUpdateRequired);
   const rootKey = useRootNavigationState()?.key;
-  const canOpenNotification = ready && !offline && !mustUpdate && !!rootKey;
+  const canOpenNotification = ready && !offline && !locationCleanupRequired && !mustUpdate && !!rootKey;
   useEffect(() => {
     syncNativePushNavigation(canOpenNotification, me);
     return () => syncNativePushNavigation(false, null);
@@ -104,6 +98,9 @@ function Routes() {
       </View>} />
   </View>;
   if (!ready) return null;
+  if (locationCleanupRequired) return <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: palette.paper }}>
+    <Empty icon="location-outline" title={c.profileLocationCleanup} action={<Button title={c.retry} onPress={refresh} />} />
+  </View>;
   const summary = !me || (offlineSummary && me.user.status === 'active' && me.user.id === offlineSummary.actorId && me.user.role === offlineSummary.role)
     ? offlineSummary : null;
   if (offline) return <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: palette.paper }}>
@@ -111,6 +108,7 @@ function Routes() {
     {!!summary?.orders.length && <OfflineOrders summary={summary} />}
   </View>;
   const role = me?.user.role;
+  const profile = me?.accountProfile;
   // Each role only has its own screens; landing on another role's route redirects to the first allowed one.
   return <NavigationThemed><Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.paper } }}>
     <Stack.Protected guard={!me && !onboarded}>
@@ -119,16 +117,15 @@ function Routes() {
     <Stack.Protected guard={!me && onboarded}>
       <Stack.Screen name="auth" options={{ animation: 'fade' }} />
     </Stack.Protected>
-    <Stack.Protected guard={role === 'customer'}>
+    <Stack.Protected guard={role === 'customer' && profile?.mode !== 'shop'}>
       <Stack.Screen name="(customer)" />
       <Stack.Screen name="book" />
-      {/* Shop delivery and merchant mode: the same customer account (MER-05). */}
       <Stack.Screen name="shop/index" />
       <Stack.Screen name="shop/[id]" />
       <Stack.Screen name="shop/cart" />
-      <Stack.Screen name="merchant/index" />
-      <Stack.Screen name="merchant/order/[id]" />
-      <Stack.Screen name="merchant/catalogue" />
+    </Stack.Protected>
+    <Stack.Protected guard={role === 'customer' && (!profile || profile.mode === 'shop' || (profile.mode === 'personal' && !profile.shop))}>
+      <Stack.Screen name="merchant" />
     </Stack.Protected>
     <Stack.Protected guard={role === 'driver'}>
       <Stack.Screen name="driver" />
@@ -141,6 +138,9 @@ function Routes() {
       <Stack.Screen name="receipt/[id]" />
       <Stack.Screen name="profile" />
       <Stack.Screen name="roads" />
+    </Stack.Protected>
+    <Stack.Protected guard={!!profile}>
+      <Stack.Screen name="profiles" />
     </Stack.Protected>
     {/* Reachable signed in or out: store review requires support before sign-in. */}
     <Stack.Screen name="help" />

@@ -761,6 +761,18 @@
       "endpoints": [
         { "method": "GET", "path": "/api/drivers/nearby", "anonymousStatus": 401 }
       ]
+    },
+    {
+      "packet": "F4-account-modes",
+      "source": "server/domain/session-mode.ts",
+      "registrar": "registerModeRoutes",
+      "endpoints": [
+        { "method": "POST", "path": "/api/session/mode", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/session/captain/availability", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/session/other-phones", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/captain/application", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/session/notifications", "anonymousStatus": 401 }
+      ]
     }
   ]
 }

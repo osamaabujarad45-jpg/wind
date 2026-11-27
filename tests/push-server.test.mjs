@@ -1,6 +1,6 @@
 // Web Push server (SPEC-web-push.md): subscriptions and events, against a mocked push service.
 import assert from 'node:assert/strict';
-import { createDecipheriv, createECDH, createHmac, generateKeyPairSync, randomUUID } from 'node:crypto';
+import { createDecipheriv, createECDH, createHash, createHmac, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { rmSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,9 +18,12 @@ const base = `http://127.0.0.1:${server.address().port}/api`;
 const realFetch = globalThis.fetch;
 const sent = [];
 let reply = 201;
-globalThis.fetch = (url, init) => String(url).startsWith('https://fcm.googleapis.com/')
-  ? (sent.push({ url: String(url), headers: init.headers, body: init.body }), Promise.resolve(new Response(null, { status: reply })))
-  : realFetch(url, init);
+globalThis.fetch = (url, init) => {
+  if (!String(url).startsWith('https://fcm.googleapis.com/')) return realFetch(url, init);
+  if (persistence.backend === 'sqlite') assert.equal(persistence.inTransaction, true, 'provider handoff shares the binding and session lock');
+  sent.push({ url: String(url), headers: init.headers, body: init.body });
+  return Promise.resolve(new Response(null, { status: reply }));
+};
 // Wait for the pushes a request queued instead of sleeping. sendPush hands each delivery to
 // persistence.detached() after the response, so record those promises and await them; a regression
 // that queues an extra push still reaches `sent`.
@@ -66,7 +69,7 @@ function ownBrowser() {
         hmac(prk, Buffer.from('Content-Encoding: nonce\0\x01')).subarray(0, 12));
       decipher.setAuthTag(sealed.subarray(-16));
       const plain = Buffer.concat([decipher.update(sealed.subarray(0, -16)), decipher.final()]);
-      return JSON.parse(plain.subarray(0, -1).toString()).kind; // the last byte is the record delimiter
+      return JSON.parse(plain.subarray(0, -1).toString()); // the last byte is the record delimiter
     },
   };
 }
@@ -209,7 +212,7 @@ try {
   await call('/push/subscribe', { token: customer.token, body: { endpoint: fcm('c'), ...senderBrowser.keys } });
   await call('/push/subscribe', { token: admin.token, body: { endpoint: fcm('a'), ...adminBrowser.keys } });
   // What each push said, read with the key of the browser it went to. The recipient order inside one fan-out is not part of the contract.
-  const heard = () => sent.map(s => [s.url, browsers.get(s.url).read(s.body)]);
+  const heard = () => sent.map(s => [s.url, browsers.get(s.url).read(s.body).kind]);
   const sortedPairs = pairs => pairs.slice().sort((x, y) => (x[0] < y[0] ? -1 : 1));
   let parcel = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
   parcel = await call(`/jobs/${parcel.id}/accept`, { token: courier.token, body: {} });
@@ -313,6 +316,58 @@ try {
   const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
   for (const kind of ['on_hold', 'returning', 'decided', 'approved', 'support', 'cash', 'attention', 'safety', 'plan'])
     assert.equal(sw.split(`${kind}:`).length - 1, 2, `${kind} needs Arabic and English words`);
+
+  if (persistence.backend === 'sqlite') {
+    const fresh = await call('/auth/login', { body: { phone: '0599150002', password: 'secret1' } });
+    const hash = token => createHash('sha256').update(token).digest('hex');
+    const owner = () => persistence.one('SELECT user_id, auth_session_hash FROM push_subscriptions WHERE endpoint = ?', fcm('c'));
+    assert.equal((await owner()).auth_session_hash, hash(customer.token), 'shadow mode binds the browser to its registering session');
+    db.prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?').run(Date.now() - 31 * 86_400_000, hash(customer.token));
+    const customerUpdate = async () => {
+      sent.length = 0;
+      await call(`/orders/${order.id}/messages`, { token: driver.token, body: { body: 'Delivery update' } });
+      await settle();
+    };
+    await customerUpdate();
+    assert.deepEqual(sent, [], 'another live session does not authorize alerts for an expired browser session');
+
+    // A pre-upgrade registration still reaches that browser with a neutral alert until it can bind again.
+    db.prepare('UPDATE push_subscriptions SET auth_session_hash = NULL WHERE endpoint = ?').run(fcm('c'));
+    await customerUpdate();
+    assert.deepEqual(sent.map(s => [s.url, senderBrowser.read(s.body)]),
+      [[fcm('c'), { kind: 'account_update', order: 0, url: '/', lang: 'ar' }]]);
+    await call('/push/subscribe', { token: fresh.token, body: { endpoint: fcm('c'), ...senderBrowser.keys } });
+    await customerUpdate();
+    assert.deepEqual(heard(), [[fcm('c'), 'message']]);
+
+    const list = persistence.all;
+    let seen, release;
+    const listed = new Promise(resolve => { seen = resolve; });
+    const resume = new Promise(resolve => { release = resolve; });
+    persistence.all = async function(sql, ...args) {
+      const rows = await list.call(this, sql, ...args);
+      if (sql.startsWith('SELECT * FROM push_subscriptions WHERE user_id IN') && rows.some(row => row.endpoint === fcm('c'))) {
+        seen();
+        await resume;
+      }
+      return rows;
+    };
+    const delivery = customerUpdate();
+    try {
+      await listed;
+      await call('/push/subscribe', { token: courier.token, body: { endpoint: fcm('c'), ...senderBrowser.keys } });
+    } finally {
+      persistence.all = list;
+      release();
+      await delivery;
+    }
+    assert.deepEqual(sent, [], 'a rebind after target enumeration invalidates the queued alert');
+    await call('/push/unsubscribe', { token: fresh.token, body: { endpoint: fcm('c') } });
+    assert.equal((await owner()).auth_session_hash, hash(courier.token), 'the former browser account cannot remove the replacement endpoint');
+    await customerUpdate();
+    assert.deepEqual(sent, []);
+    customer.token = fresh.token;
+  }
 
   // Logging out ends every session, so every browser of that account stops alerting.
   await call('/auth/logout', { token: customer.token, body: {} });

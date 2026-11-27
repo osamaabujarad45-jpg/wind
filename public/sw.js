@@ -1,6 +1,9 @@
 // Wind Web Push (SPEC-web-push.md). The payload is { kind, order, url, lang }: no names, places or message text.
 const words = {
   ar: { title: 'ويند', assigned: 'قبل سائق طلبك', at_pickup: 'وصل السائق إلى نقطة الاستلام', in_transit: 'طلبك في الطريق',
+    account_update: 'لديك تحديث في ويند.', profile_update: 'لديك تحديث. افتح ويند لاختيار ملفك.', captain_profile_update: 'لديك تحديث في ملف السائق.',
+    shop_profile_update: 'لديك تحديث للمتجر.', captain_offline: 'توقّف استقبال الطلبات. لديك مشوار قريب.',
+    captain_idle: 'توقّف استقبال الطلبات بعد ٣٠ دقيقة من عدم النشاط.',
     completed: 'تم التسليم', returned: 'اكتمل إرجاع الطلب', office: 'المرتجع في مكتب ويند. افتح الطلب لمعرفة مدة الحفظ.', message: 'رسالة جديدة بخصوص الطلب', job: 'طلب جديد متاح لك',
     released: 'اعتذر السائق؛ نبحث لك عن سائق آخر', cancelled: 'أُلغي الطلب',
     offer: 'عرض سائق سعراً لطلبك', offer_accepted: 'قُبل سعرك: توجّه إلى الاستلام',
@@ -10,6 +13,9 @@ const words = {
     destination_request: 'طلب الزبون تغيير الوجهة: افتح الطلب للموافقة أو الرفض', destination_accepted: 'وافق السائق على تغيير الوجهة', destination_declined: 'رفض السائق تغيير الوجهة',
     admin_assigned: 'أسندت إليك الإدارة طلباً: افتح الطلب', admin_unassigned: 'نُقل أحد طلباتك إلى سائق آخر: راجع قائمة طلباتك', dispatch_assigned: 'عيّنت الإدارة سائقاً لطلبك' },
   en: { title: 'Wind', assigned: 'A driver accepted your order', at_pickup: 'Your driver is at pickup', in_transit: 'Your order is on its way',
+    account_update: 'You have a Wind update.', profile_update: 'You have an update. Open Wind to choose your profile.', captain_profile_update: 'You have a Captain update.',
+    shop_profile_update: 'You have a shop update.', captain_offline: 'You went offline because you have a ride coming up.',
+    captain_idle: 'You went offline after 30 minutes of inactivity.',
     completed: 'Delivered', returned: 'The return is complete', office: 'The return is at the Wind office. Open the order for the holding deadline.', message: 'New message about your order', job: 'A new job is available',
     released: 'Your driver dropped out; finding another', cancelled: 'The order was cancelled',
     offer: 'A driver offered a price', offer_accepted: 'Your price was accepted: go to pickup',

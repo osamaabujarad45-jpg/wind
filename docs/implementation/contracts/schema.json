@@ -444,7 +444,7 @@
       "type": "table",
       "name": "push_subscriptions",
       "tableName": "push_subscriptions",
-      "sql": "CREATE TABLE push_subscriptions (\n  endpoint TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), p256dh TEXT NOT NULL, auth TEXT NOT NULL,\n  lang TEXT NOT NULL DEFAULT 'ar', created_at INTEGER NOT NULL)"
+      "sql": "CREATE TABLE push_subscriptions (\n  endpoint TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), p256dh TEXT NOT NULL, auth TEXT NOT NULL,\n  lang TEXT NOT NULL DEFAULT 'ar', created_at INTEGER NOT NULL, auth_session_hash TEXT REFERENCES sessions(token_hash) ON DELETE CASCADE)"
     },
     {
       "type": "table",
@@ -3516,11 +3516,29 @@
           "notnull": 1,
           "dflt_value": null,
           "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "auth_session_hash",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
         }
       ],
       "foreignKeys": [
         {
           "id": 0,
+          "seq": 0,
+          "table": "sessions",
+          "from": "auth_session_hash",
+          "to": "token_hash",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
           "seq": 0,
           "table": "users",
           "from": "user_id",

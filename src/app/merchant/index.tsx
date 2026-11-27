@@ -1,11 +1,8 @@
-// Merchant mode (MER-01, MER-02, MER-04, MER-05): the same account and app, opened from Account. A shop applies here (ACC-06),
-// waits for approval, then works its inbox: new orders say so in words (not a sound alone), with the accept clock.
 import { useEffect, useState } from 'react';
-import { AccessibilityInfo, Platform } from 'react-native';
 import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { api, useApi } from '../../api';
-import { cities, hhmm, minuteFromText, shopCategories, statusFlow, type Merchant, type Order, type Point, type ShopCategory } from '../../model';
+import { ApiError, api, useApi } from '../../api';
+import { MerchantControls, MerchantHours, MerchantStatement, merchantStatus, useMerchantStatement } from '../../merchant-settings';
+import { cities, isOpen, licenceExpiryFromText, shopCategories, statusFlow, type Merchant, type Order, type Point, type ShopCategory } from '../../model';
 import { registerNativePush } from '../../native-push';
 import PinSheet from '../../pin-sheet';
 import { useSession } from '../../session';
@@ -13,106 +10,48 @@ import { useCountdown } from '../../shop-ui';
 import { Badge, Button, Card, Choices, Empty, ErrorText, Field, fill, Header, ListGroup, ListRow, Loading, Press, Row, Screen, Section, Stat, Txt, useCopy } from '../../ui';
 import { useTheme } from '../../theme-context';
 
-type Statement = { balanceAgorot: number; payableAgorot: number; entries: { id: number; orderId: number | null; kind: string; amountAgorot: number; note: string; reference: string | null; createdAt: number }[] };
-
 export default function MerchantHome() {
-  const { palette } = useTheme();
-  const { c, money, rtl, err, language } = useCopy();
+  const { c, err, language } = useCopy();
+  const { me } = useSession();
+  const shopProfile = me?.accountProfile?.mode === 'shop';
   const mine = useApi<{ merchant: Merchant | null }>('/merchant');
   const merchant = mine.data?.merchant;
-  // A working shop is asked for notifications here: new orders are its work (customers are asked after their first order).
   const working = !!merchant && merchant.status !== 'pending';
   useEffect(() => { if (working) void registerNativePush(language, 'always'); }, [working, language]);
-  const inbox = useApi<{ merchant: Merchant; orders: Order[] }>(merchant && merchant.status !== 'pending' ? '/merchant/orders' : null, 10_000);
-  const statement = useApi<Statement>(merchant && merchant.status !== 'pending' ? '/merchant/statement' : null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [hoursSaved, setHoursSaved] = useState(false); // kept here: the hours card remounts when the saved hours come back
-  if (!mine.data) return <Screen><Header title={c.merchantMode} back /><Loading failed={!!mine.error} onRetry={mine.reload} /></Screen>;
-  if (!merchant) return <Apply onDone={mine.reload} />;
-  if (merchant.status === 'pending') return <Screen onRefresh={mine.reload}><Header title={merchant.name} back />
-    <Empty icon="hourglass-outline" title={c.merchantPending} body={c.merchantPendingBody} /></Screen>;
-  const orders = inbox.data?.orders ?? [];
-  const open = orders.filter(o => ['requested', 'searching', 'assigned', 'at_pickup', 'returning'].includes(o.status));
-  const fresh = open.filter(o => o.status === 'requested' && !o.shop?.state);
-  const freshLabel = fresh.length === 1 ? c.merchantNewOrder : fill(c.merchantNewOrders, { n: fresh.length }); // one order is said in words, more by count
-  async function pause(paused: boolean) {
-    setBusy(true); setError('');
-    try { await api('/merchant/settings', { paused }); await mine.reload(); }
-    catch (e) { setError(err(e)); }
-    finally { setBusy(false); }
-  }
-  return <Screen onRefresh={async () => { await mine.reload(); await inbox.reload(); await statement.reload(); }}>
-    <Header title={merchant.name} back subtitle={merchant.status === 'paused' ? c.merchantLicencePaused : merchant.pausedNew ? c.merchantPausedNew : merchant.open ? c.shopOpen : c.shopClosed} />
-    {/* The banner opens the first new order: it named the work but led nowhere (design review 17 Nov). */}
-    {fresh.length > 0 && <Press onPress={() => router.push(`/merchant/order/${fresh[0].id}`)} accessibilityLabel={freshLabel}>
-      <Card tone="warn"><Row style={{ justifyContent: 'space-between' }}>
-        <Txt variant="label" style={{ flex: 1 }}>{freshLabel}</Txt>
-        <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={18} color={palette.warn} />
-      </Row></Card>
-    </Press>}
-    <Row style={{ flexWrap: 'wrap' }}>
-      <Stat label={c.merchantOpenOrders} value={String(open.length)} />
-      <Stat label={c.merchantBalance} value={money((statement.data?.balanceAgorot ?? 0) / 100)} index={1} detail={fill(c.merchantPayable, { r: money((statement.data?.payableAgorot ?? 0) / 100) })} />
-    </Row>
-    <Button title={merchant.pausedNew ? c.merchantResume : c.merchantPause} variant={merchant.pausedNew ? 'primary' : 'outline'} loading={busy} onPress={() => pause(!merchant.pausedNew)} />
-    <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.merchantPauseHint}</Txt>
-    <ErrorText>{error}</ErrorText>
-    <ListGroup>
-      <ListRow icon="pricetags-outline" label={c.merchantCatalogue} onPress={() => router.push('/merchant/catalogue')} />
-    </ListGroup>
-    <Section title={c.merchantInbox} />
-    {!orders.length && <Empty icon="file-tray-outline" title={c.merchantNoOrders} />}
-    {/* orders waiting on the shop come first; the rest keep the server's order */}
-    {[...fresh, ...orders.filter(o => !fresh.includes(o))].map(o => <InboxRow key={o.id} order={o} />)}
-    {/* a setting touched rarely: below the inbox, which is the shop's main work */}
-    <Hours key={JSON.stringify(merchant.hours)} merchant={merchant} saved={hoursSaved} onSaved={done => { setHoursSaved(done); if (done) mine.reload(); }} />
-    {!!statement.data?.entries.length && <Card>
-      <Section title={c.merchantStatement} />
-      {statement.data.entries.slice(0, 20).map(e => <Row key={e.id} style={{ justifyContent: 'space-between', paddingVertical: 3 }}>
-        <Txt variant="caption" style={{ flex: 1 }}>{`${(c as Record<string, string>)[`ledger_${e.kind}`] ?? e.kind}${e.orderId ? ` · W-${String(e.orderId).padStart(5, '0')}` : ''}${e.reference ? ` · ${e.reference}` : ''}`}</Txt>
-        <Txt variant="caption" style={{ writingDirection: 'ltr' }}>{money(e.amountAgorot / 100)}</Txt>
-      </Row>)}
-    </Card>}
-  </Screen>;
-}
+  const inbox = useApi<{ merchant: Merchant; orders: Order[] }>(working ? '/merchant/orders' : null, 10_000);
+  const statement = useMerchantStatement(working && !shopProfile);
 
-/** MER-02 / DLV-01: one opening range for every day (the pilot's need); empty means open whenever not paused. */
-function Hours({ merchant, saved, onSaved }: { merchant: Merchant; saved: boolean; onSaved: (done: boolean) => void }) {
-  const { c, err } = useCopy();
-  const first = merchant.hours[0];
-  // The editor writes one range for every day; hours stored per day (by support) are replaced on save, and it says so.
-  const uniform = !merchant.hours.length || (merchant.hours.length === 7 && new Set(merchant.hours.map(h => h.weekday)).size === 7
-    && merchant.hours.every(h => h.openMinute === first.openMinute && h.closeMinute === first.closeMinute));
-  const [opens, setOpens] = useState(first ? hhmm(first.openMinute) : '');
-  const [closes, setCloses] = useState(first ? hhmm(first.closeMinute) : '');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const open = minuteFromText(opens), close = minuteFromText(closes);
-  const empty = !opens.trim() && !closes.trim();
-  const ok = empty || (open < 1440 && close >= 0 && open !== close);
-  async function save() {
-    setBusy(true); setError(''); onSaved(false);
-    try {
-      await api('/merchant/settings', { hours: empty ? [] : [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, openMinute: open, closeMinute: close })) });
-      onSaved(true);
-      if (Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(c.saved);
-    } catch (e) { setError(err(e)); }
-    finally { setBusy(false); }
-  }
-  const edit = (set: (text: string) => void) => (text: string) => { set(text); if (saved) onSaved(false); };
-  return <Card>
-    <Section title={c.merchantHours} />
-    {/* decimal-pad has no colon on Android, so 8.30 is read as 08:30 */}
-    <Field label={c.merchantOpens} value={opens} onChangeText={edit(setOpens)} keyboardType="decimal-pad" maxLength={5} />
-    {/* Go saves: on a phone the keyboard covers the button below (Android and web; iOS's decimal pad has no Go key) */}
-    <Field label={c.merchantCloses} value={closes} onChangeText={edit(setCloses)} keyboardType="decimal-pad" maxLength={5} onSubmitEditing={ok && !busy ? save : undefined} />
-    <Txt variant="caption">{c.merchantHoursHint}</Txt>
-    {!uniform && <Txt variant="caption" style={{ marginTop: 4 }}>{c.merchantHoursReplace}</Txt>}
-    <Button title={c.merchantSaveHours} size="sm" variant="outline" loading={busy} disabled={!ok} reason={ok ? undefined : c.merchantHoursBad} onPress={save} />
-    {saved && <Txt variant="caption" center style={{ marginTop: 6 }}>{c.saved}</Txt>}
-    <ErrorText>{error}</ErrorText>
-  </Card>;
+  if (!mine.data) return <Screen><Header title={c.merchantMode} back={!shopProfile} /><Loading failed={!!mine.error} onRetry={mine.reload} /></Screen>;
+  if (!merchant) return <Apply onDone={mine.reload} />;
+  if (merchant.status === 'pending') return <Screen onRefresh={mine.reload}>
+    <Header title={merchant.name} back={!shopProfile} />
+    <Empty icon="hourglass-outline" title={c.merchantPending} body={shopProfile ? c.merchantDraftCatalogue : c.merchantPendingBody} />
+  </Screen>;
+
+  const orders = inbox.data?.orders ?? [];
+  const open = orders.filter(isOpen);
+  const fresh = open.filter(order => order.status === 'requested' && !order.shop?.state);
+  const ordered = [...fresh, ...open.filter(order => !fresh.includes(order)), ...orders.filter(order => !isOpen(order))];
+  const freshLabel = fresh.length === 1 ? c.merchantNewOrder : fill(c.merchantNewOrders, { n: fresh.length });
+
+  return <Screen onRefresh={() => Promise.all([mine.reload(), inbox.reload(), statement.reload()])}>
+    <Header title={merchant.name} back={!shopProfile} subtitle={merchantStatus(merchant, c)} />
+    {fresh.length > 0 && <Button title={freshLabel} icon="receipt-outline" onPress={() => router.push(`/merchant/order/${fresh[0].id}`)} />}
+    {!shopProfile && <>
+      <Stat label={c.merchantOpenOrders} value={String(open.length)} />
+      <MerchantControls merchant={merchant} reload={mine.reload} />
+      <ListGroup><ListRow icon="pricetags-outline" label={c.merchantCatalogue} onPress={() => router.push('/merchant/catalogue')} /></ListGroup>
+    </>}
+    <Section title={c.merchantInbox} />
+    {!!inbox.error && inbox.data && <ErrorText>{err(inbox.error)}</ErrorText>}
+    {!inbox.data ? <Loading failed={!!inbox.error} onRetry={inbox.reload} />
+      : ordered.length === 0 ? <Empty icon="file-tray-outline" title={c.merchantNoOrders} />
+      : ordered.map(order => <InboxRow key={order.id} order={order} />)}
+    {!shopProfile && <>
+      <MerchantHours merchant={merchant} reload={mine.reload} />
+      <MerchantStatement {...statement} />
+    </>}
+  </Screen>;
 }
 
 function InboxRow({ order }: { order: Order }) {
@@ -137,7 +76,7 @@ function InboxRow({ order }: { order: Order }) {
 /** ACC-06: shop name, category, pin, phone, trade licence and its expiry. An admin approves it (MER-08). */
 function Apply({ onDone }: { onDone: () => void }) {
   const { c, language, err } = useCopy();
-  const { me } = useSession();
+  const { me, switchMode } = useSession();
   const [name, setName] = useState('');
   const [category, setCategory] = useState<ShopCategory>('grocery');
   const [town, setTown] = useState<(typeof cities)[number]['id']>('tulkarm');
@@ -149,12 +88,20 @@ function Apply({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [today] = useState(() => Date.now());
-  const expiresAt = /^\d{4}-\d{2}-\d{2}$/.test(expiry) ? Date.parse(`${expiry}T00:00:00Z`) : NaN;
+  const expiresAt = licenceExpiryFromText(expiry);
   const reason = name.trim().length < 2 ? c.merchantNameNeeded : !point ? c.shopPinNeeded : licence.trim().length < 2 ? c.merchantLicenceNeeded
     : !(expiresAt > today) ? c.merchantExpiryNeeded : '';
   async function apply() {
     setBusy(true); setError('');
-    try { await api('/merchant/apply', { name: name.trim(), category, city: town, point, phone, licenceNo: licence.trim(), licenceExpiresAt: expiresAt }); onDone(); }
+    try {
+      try {
+        await api('/merchant/apply', { name: name.trim(), category, city: town, point, phone, licenceNo: licence.trim(), licenceExpiresAt: expiresAt });
+      } catch (error) {
+        if (!me?.accountProfile || !(error instanceof ApiError && error.message === 'merchant_exists')) throw error;
+      }
+      if (me?.accountProfile) await switchMode('shop');
+      onDone();
+    }
     catch (e) { setError(err(e)); }
     finally { setBusy(false); }
   }
@@ -170,7 +117,7 @@ function Apply({ onDone }: { onDone: () => void }) {
     <Button title={point ? c.shopPinChange : c.merchantPinSet} variant={point ? 'outline' : 'soft'} icon="storefront-outline" onPress={() => setPicking(true)} />
     <Field label={c.merchantPhone} value={phone} onChangeText={setPhone} keyboardType="phone-pad" autoComplete="tel" />
     <Field label={c.merchantLicence} value={licence} onChangeText={setLicence} maxLength={60} />
-    <Field label={c.merchantExpiry} value={expiry} onChangeText={setExpiry} placeholder="2027-12-31" keyboardType="number-pad" maxLength={10} />
+    <Field label={c.merchantExpiry} value={expiry} onChangeText={setExpiry} placeholder="20271231" keyboardType="number-pad" maxLength={10} />
     <ErrorText>{error}</ErrorText>
     {picking && <PinSheet title={c.merchantPinSet} start={point ?? centre} onClose={() => setPicking(false)} onConfirm={p => { setPoint(p); setPicking(false); }} />}
   </Screen>;

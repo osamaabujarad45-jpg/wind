@@ -47,6 +47,7 @@ its data is backed up and those installs are rebuilt.
   production web export for `WIND_API_HOST` (default: this address), the runtime dependency closure, and the deploy.md assembly.
   It refuses any secret or database file, dry-runs the packaged API on :4010 and writes a tarball with its SHA-256.
   Before launching the installer, verify the automatic fallback release. If it predates verified-email proofs, complete the [email rollback checks](#email-checks-before-rolling-back-to-an-older-release). Verify the settings in the environment file and service overrides before the installer can switch releases. Keep ingress closed if the fallback configuration cannot be verified.
+  If account profiles are active on the database, verify that both the candidate and the automatic fallback support [the active profile schema and configuration](#account-profiles-on-the-sqlite-pilot).
   1. Copy the tarball and `infra/vm-israel/install-release.sh` to the VM.
   2. Run `sudo bash install-release.sh /tmp/wind-release.tar.gz <sha256>`. It:
      - takes the database lock (the `/data` directory itself; restore and the backup job take the same lock, so none of them runs during another);
@@ -77,6 +78,7 @@ its data is backed up and those installs are rebuilt.
   2. Find the previous release: `ls -dt /opt/wind-releases/*` (`readlink /opt/windapi` is the active one).
   3. Write and sync the persistent hold before rollback preparation. Keep any earlier hold and complete its checks before lifting it. Run `sudo sh -c 'printf "%s\n" "manual rollback in progress" >> /etc/wind-ingress-hold && sync' && sudo systemctl stop caddy`.
   4. Before switching to a release that predates verified-email proofs, complete the [email rollback checks](#email-checks-before-rolling-back-to-an-older-release). Proceed with the hold in place once the fallback configuration has been verified.
+     For an older release that reads legacy account roles, complete the [SQLite profile rollback](#account-profiles-on-the-sqlite-pilot) before switching the release pointer.
   5. Stop `wind-api`, then run `sudo ln -sfn /opt/wind-releases/<previous> /opt/windapi.next && sudo mv -T /opt/windapi.next /opt/windapi`.
   6. For a code-only rollback, keep `/data/wind.db` and start `wind-api`. If also replacing the database, follow the backup restore procedure below. The restore starts the API. Finish its reconciliation with the hold in place.
   7. Check `curl -fsS http://127.0.0.1:4000/api/ready`. Once the authoritative database is ready and reconciliation is complete, run `sudo systemctl start wind-backup.timer` and verify its next scheduled run with `systemctl list-timers wind-backup.timer`. Then run `sudo rm /etc/wind-ingress-hold && sudo sync && sudo systemctl start caddy` and run the deployment check.
@@ -321,6 +323,25 @@ Firebase email links stay off until the lead has two independent approvals for t
 Set the private `WIND_FIREBASE_RECIPIENT_KEY` to 32 random bytes encoded as base64url. Use the same key on every API instance that writes this database. This key lets the journal coordinate cleanup by recipient without retaining the email address. Keep it with the deployment and restore configuration. Reconcile pending attempts before changing it.
 
 The provider rehearsal must confirm that the admin account import rejects duplicate addresses and UIDs, writes the ownership claim with the temporary UID, and returns that claim on sign-in and administrative lookup. Use an isolated project and the scoped service account. The ownership claim protects cleanup even when a profile field changes. The SQLite restore script retires attempts and keeps the cleanup journal before starting the API. Keep ingress closed until later verified email changes have been reconciled with the last authoritative database and incident timeline. [Identity Platform account import](https://cloud.google.com/identity-platform/docs/reference/rest/v1/projects.accounts/batchCreate) · [Restore procedure](restore.md)
+
+### Account profiles on the SQLite pilot
+
+Keep `WIND_PROFILE_SWITCHING=0` for the first deployment. Compare the existing role to the profile preview with `WIND_PROFILE_SHADOW=1`. Before activating profile switching, publish the reviewed signed client, verify the install link and the old-client update screen on the A53, and rehearse the activation and rollback on isolated SQLite copies.
+
+SQLite binds new browser notifications to the session that registered them, including during the shadow deployment. Existing registrations show a generic update until the browser opens Wind and renews its subscription.
+
+For activation on the Israel host, hold ingress and take a verified checkpoint of the stopped database. Set `WIND_PROFILE_SWITCHING=1` and `WIND_MIN_CLIENT_BUILD=10107` or later, then restart the reviewed release. Check Personal booking, Captain work and cash, and the Shop inbox before lifting the hold. Any automatic fallback from that point must support activated profiles and use the same mode configuration. Review the same compatibility before starting or restoring a Docker container.
+
+To fall back to a release that uses legacy roles, keep the hold in place and stop the API and backup timer. Take a fresh checkpoint and rehearse the conversion and the older API against a copy of the current database. Run the reviewed candidate's offline command as the service user under the database lock, including after a shadow deployment with profile switching disabled. Shop cash settlement works during shadow operation and can affect what an older release reports as payable. For the Israel deployment, substitute the fixed path of that candidate in this command.
+
+```sh
+sudo systemd-run --wait --pipe --collect -p User=wind -p EnvironmentFile=/etc/wind-api.env \
+  -p WorkingDirectory=/opt/wind-releases/<reviewed-release> \
+  /usr/bin/flock -x /data /usr/bin/env WIND_PROFILE_SWITCHING=0 DB_PATH=/data/wind.db \
+  /opt/node/bin/node server/main.ts rollback-profiles --confirm
+```
+
+The command keeps orders and cash rows. It restores pending driver rows for applications and rechecks and revokes sessions whose legacy role or status is being restored. It pauses shops whose owners would lose their Shop inbox. It detaches browser subscriptions from their sessions so the older API can update them by endpoint. It refuses if an affected shop has an outstanding balance backed by cleared captain cash, if an inaccessible shop has any outstanding balance, or if an account would lose access to outstanding work or cash. A later job can make the older API hold the cleared cash again. On refusal, keep the current release and use it to finish or settle those obligations. When the command succeeds, set `WIND_PROFILE_SWITCHING=0` and restore a `WIND_MIN_CLIENT_BUILD` supported by the selected fallback's web bundle and signed APK. Check `/api/ready` both with the fallback's `X-Wind-Client` build number and without it. Verify the approval queue, current orders, shop pauses and balances and backup schedule before reopening ingress. Keep the current database if it contains acknowledged work since activation.
 
 ### Email checks before rolling back to an older release
 

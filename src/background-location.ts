@@ -4,6 +4,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import { API_URL } from './api';
+import { apiModeRevision } from './api-client.ts';
 import { deliverDriverFix, type ActiveGps, type TrackingContext, type TrackingReceipt } from './location-delivery';
 import { acquireActiveGps } from './active-gps-session';
 import { driverLocationDiagnostics } from './driver-location-diagnostics';
@@ -39,6 +40,9 @@ const serial = <T,>(action: () => Promise<T>): Promise<T> => {
   queue = next.then(() => {}, () => {});
   return next;
 };
+async function stopNativeLocation() {
+  if (await Location.hasStartedLocationUpdatesAsync(TASK)) await Location.stopLocationUpdatesAsync(TASK);
+}
 export function stopBackgroundLocation(expectedId?: string) {
   if (Platform.OS === 'web') return Promise.resolve();
   // Revoke in-memory authority immediately, even if registration is still in flight.
@@ -47,14 +51,14 @@ export function stopBackgroundLocation(expectedId?: string) {
   return serial(async () => {
     if (expectedId && (await read<TrackingContext>(CONTEXT))?.id !== expectedId) return;
     trackingEnabled = false;
-    await SecureStore.deleteItemAsync(CONTEXT);
-    await SecureStore.deleteItemAsync(RECEIPT);
+    await Promise.allSettled([SecureStore.deleteItemAsync(CONTEXT), SecureStore.deleteItemAsync(RECEIPT)]);
     invalidateRead(CONTEXT); invalidateRead(RECEIPT);
-    if (await Location.hasStartedLocationUpdatesAsync(TASK)) await Location.stopLocationUpdatesAsync(TASK);
+    await stopNativeLocation();
   });
 }
 export function startBackgroundLocation(actor: number, orderId: number, orderIds?: number[], valid: () => boolean = () => true) {
   const generation = authorityGeneration;
+  const modeRevision = apiModeRevision();
   return serial(async () => {
     const token = await SecureStore.getItemAsync('token');
     if (!token || generation !== authorityGeneration || !valid()) return;
@@ -93,10 +97,10 @@ export function startBackgroundLocation(actor: number, orderId: number, orderIds
       if (saved?.sessionId === activeGps.sessionId && Number.isSafeInteger(saved.seq)) activeGps.seq = Math.max(activeGps.seq, saved.seq);
       if (previous?.token === token && previous.activeGps?.sessionId === activeGps.sessionId)
         activeGps.seq = Math.max(activeGps.seq, previous.activeGps.seq);
-      context = { id: Crypto.randomUUID(), token, actor, orderId, activeGps };
+      context = { id: Crypto.randomUUID(), token, actor, orderId, activeGps, modeRevision };
     } else {
-      context = trackingEnabled && previous?.token === token && previous.actor === actor && previous.orderId === orderId
-        ? previous : { id: Crypto.randomUUID(), token, actor, orderId };
+      context = trackingEnabled && previous?.token === token && previous.actor === actor && previous.orderId === orderId && previous.modeRevision === modeRevision
+        ? previous : { id: Crypto.randomUUID(), token, actor, orderId, modeRevision };
     }
     await SecureStore.setItemAsync(CONTEXT, JSON.stringify(context), accessible); invalidateRead(CONTEXT);
     if (generation !== authorityGeneration || !valid() || await SecureStore.getItemAsync('token') !== token) return;
@@ -163,12 +167,13 @@ const deliveryIO = {
     }),
     acknowledge: receipt => SecureStore.setItemAsync(RECEIPT, JSON.stringify(receipt), accessible).then(() => invalidateRead(RECEIPT)),
     monotonic: () => globalThis.performance?.now?.() ?? Date.now(),
-    post: async (token, body) => {
+    post: async (token, body, modeRevision) => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15_000);
       try {
         const response = await fetch(`${API_URL}/api/location`, { method: 'POST', signal: controller.signal,
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
+            ...(modeRevision !== undefined && { 'X-Wind-Mode-Revision': String(modeRevision) }) }, body: JSON.stringify(body) });
         const receipt = await response.json().catch(() => null) as { accepted?: boolean } | null;
         return { status: response.ok && !receipt ? 502 : response.status, accepted: receipt?.accepted };
       } finally { clearTimeout(timer); }
@@ -182,6 +187,7 @@ if (Platform.OS !== 'web' && !TaskManager.isTaskDefined(TASK)) TaskManager.defin
     // A stale task may run before React restores and validates the account.
     const restored = await read<TrackingContext>(CONTEXT);
     if (restored) await stopBackgroundLocation(restored.id);
+    else await serial(async () => { if (!trackingEnabled) await stopNativeLocation(); }).catch(() => {});
     return;
   }
   const fix = data.locations.reduce((latest, candidate) => candidate.timestamp > latest.timestamp ? candidate : latest);

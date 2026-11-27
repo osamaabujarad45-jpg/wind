@@ -32,13 +32,16 @@ const wallClock = () => Date.now();
 export default function Jobs() {
   const { palette, shadow } = useTheme();
   const styles = useStyles();
-  const { me, refresh } = useSession();
+  const { me, refresh, setCaptainOnline } = useSession();
   const { c, money, err, language, rtl } = useCopy();
   const side = useSideSheet();
   const { time } = useFormat();
   const active = me?.user.status === 'active';
+  const profile = me?.accountProfile;
+  const canBrowse = active && (!profile || profile.captainOnline);
+  const [availabilityPending, setAvailabilityPending] = useState(false);
   // A cursor is valid only for this driver and destination filter; changing either returns to the first page.
-  const pageScope = `${me?.user.id ?? ''}:${me?.user.heading?.city ?? ''}:${me?.user.heading?.until ?? ''}`;
+  const pageScope = `${me?.user.id ?? ''}:${me?.user.heading?.city ?? ''}:${me?.user.heading?.until ?? ''}:${canBrowse}`;
   const [pages, setPages] = useState<{ scope: string; cursors: string[] }>({ scope: '', cursors: [] });
   const cursors = pages.scope === pageScope ? pages.cursors : [];
   const cursor = cursors.at(-1);
@@ -56,7 +59,7 @@ export default function Jobs() {
     setFocused(true);
     return () => { setFocused(false); locateRequest.current?.abort(); locateRequest.current = null; setLocateOn(false); };
   }, []));
-  const { data, error, reload } = useApi<JobsPage | Order[]>(active ? `/jobs?page=1&capacityProtocol=1&lang=${language}${here ? `&near=${here.latitude.toFixed(3)},${here.longitude.toFixed(3)}` : ''}${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}` : null, 8000);
+  const { data, error, reload } = useApi<JobsPage | Order[]>(canBrowse ? `/jobs?page=1&capacityProtocol=1&lang=${language}${here ? `&near=${here.latitude.toFixed(3)},${here.longitude.toFixed(3)}` : ''}${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}` : null, 8000);
   const page = data && !Array.isArray(data) && data.version === 1 && Array.isArray(data.jobs)
     && (data.nextCursor === null || typeof data.nextCursor === 'string') ? data : undefined;
   const badCursor = !!page?.nextCursor && (!/^\d{1,16}:\d{1,16}$/.test(page.nextCursor) || page.nextCursor === cursor);
@@ -95,7 +98,15 @@ export default function Jobs() {
   const seatsReason = fill(c.accept_blocked_seats, { n: freeSeats(carrying, vehicle) });
   const pooledLoad = carrying.every(poolable); // a shared run: a refusal is about seats, not about finishing first
   // With presence on, an offline idle captain takes no work from any surface: accept, offer or detail (H-02, Sol R2-M5).
-  const offline = presenceOn && !assigned && work.presenceState !== 'online';
+  const offline = profile ? !profile.captainOnline : presenceOn && !assigned && work.presenceState !== 'online';
+
+  async function toggleAvailability() {
+    if (!profile || availabilityPending) return;
+    setAvailabilityPending(true); setActionError('');
+    try { await setCaptainOnline(!profile.captainOnline); }
+    catch (e) { setActionError(err(e)); }
+    finally { setAvailabilityPending(false); }
+  }
   // Why Accept and the offer buttons wait, in one sentence under them (design §10). Null exactly when they can be pressed.
   const acceptReason = (order: Order) => busy !== null ? c.accept_busy : order.dispatch?.myOffer && !clock.current ? c.accept_wait_status
     : dispatchAcceptance(order, now) === null ? c.dispatchExpired : !work.known ? c.accept_wait_status
@@ -246,7 +257,16 @@ export default function Jobs() {
     {assigned && work.known && <DriverSupportCard diagnostics={work.diagnostics} open={supportOpen} onToggle={() => setSupportOpen(value => !value)} />}
 
     {/* During a job presence is stopped (driver-work) and Go online can't be pressed; the card returns if it has something to say. */}
-    {presenceOn && !(assigned && !work.presenceError && !work.presencePending) ? <>
+    {profile ? <Card>
+      <View accessibilityLiveRegion="polite"><Txt variant="title">{profile.captainOnline ? c.captainOnline : c.captainOffline}</Txt></View>
+      {!profile.captainOnline && profile.captainOfflineReason && <Txt variant="caption">
+        {profile.captainOfflineReason === 'idle' ? c.captainIdleNotice
+          : profile.captainOfflineReason === 'ride_due' ? c.captainRideNotice : c.captainLaunchOfflineNotice}
+      </Txt>}
+      {profile.captain?.state === 'approved' ? <Button title={profile.captainOnline ? c.captainGoOffline : c.captainGoOnline}
+        variant={profile.captainOnline ? 'outline' : 'primary'} loading={availabilityPending} onPress={toggleAvailability} />
+        : <Txt variant="caption">{c.captainFinishWork}</Txt>}
+    </Card> : presenceOn && !(assigned && !work.presenceError && !work.presencePending) ? <>
       {/* Pre-assignment presence. Starts only from the card's own consent and go-online presses; never on mount. */}
       <View style={{ marginTop: assigned && work.known ? 12 : 0 }}>
         <DriverPresenceCard state={work.presenceState} consentAccepted={work.presenceConsentAccepted}
@@ -276,7 +296,7 @@ export default function Jobs() {
     {/* The same wait on every card (a current job, offline) is said once here, not repeated under each offer (UI compare, 22 Nov). */}
     {sharedWait && <Reason>{sharedWait}</Reason>}
 
-    {!jobs && pagingUnavailable ? <Empty icon="alert-circle-outline" title={c.jobsPagingTitle} body={c.jobsPagingUnavailable} />
+    {profile && offline ? null : !jobs && pagingUnavailable ? <Empty icon="alert-circle-outline" title={c.jobsPagingTitle} body={c.jobsPagingUnavailable} />
       : !jobs ? <Loading failed={!!error} onRetry={reload} /> : jobs.length === 0
       ? <Empty icon="hourglass-outline" title={pagingUnavailable ? c.jobsPagingTitle : cursors.length ? c.jobsNoMore : c.noJobs}
         body={pagingUnavailable ? c.jobsPagingUnavailable : cursors.length ? c.jobsNoMoreDesc : c.noJobsDesc} />
@@ -300,7 +320,7 @@ export default function Jobs() {
                 {/* what the driver keeps leads, and the customer's fare sits under it, so the two figures read as one sum */}
                 <Txt variant="micro">{c.earnLabel}</Txt>
                 <Txt variant="h1" style={{ color: palette.olive, fontVariant: ['tabular-nums'] }}>{money(earn)}</Txt>
-                <Txt variant="micro">{fill(c.customerPays, { p: money(order.price - order.discount) })}</Txt>
+                {!order.shop && <Txt variant="micro">{fill(c.customerPays, { p: money(order.price - order.discount) })}</Txt>}
               </View>
             </Row>
             {order.discount > 0 && <Row gap={6} style={[styles.note, { marginTop: 0, marginBottom: 10 }]}>

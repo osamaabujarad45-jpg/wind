@@ -616,7 +616,7 @@ export default function OrderScreen() {
     </Card>}
 
     {order.shop && isCustomer && <ShopCustomerPanel order={order} onChange={setData} />}
-    {order.shop && mine && atPickup && <ShopHandover order={order} onChange={setData} />}
+    {order.shop && mine && atPickup && !order.safetyHold && <ShopHandover key={`${order.id}:${order.shop.readySnapshotId ?? ''}`} order={order} onChange={setData} onReload={reload} />}
     {order.shop && isAdmin && <ShopAdminPanel order={order} onChange={setData} />}
     {isAdmin && order.pickupPayReview && <PickupPayReviewCard key={order.id} orderId={order.id} fareCents={Math.round(order.price * 100)} review={order.pickupPayReview} onDone={reload} />}
     {isAdmin && order.blockReview && <BlockReviewCard order={order} review={order.blockReview} me={me!.user.id} now={now} onDone={reload} />}

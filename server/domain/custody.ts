@@ -29,7 +29,8 @@ export function registerCustodyRoutes(route: Register, deps: Deps) {
     const o = await deps.db.one(`SELECT o.id, o.customer_id, o.driver_id, o.assignment_epoch, o.service, o.status, o.created_at, o.assigned_at, o.picked_up_at, o.completed_at,
       u.name AS driver_name FROM orders o LEFT JOIN users u ON u.id = o.driver_id WHERE o.id = ?`, id);
     // Not the driver's view: a courier sees their own job; the chain is for the sender and support.
-    if (!o || o.service === 'ride' || o.service === 'shop' || (user.role !== 'admin' && user.id !== o.customer_id)) deps.fail(404, 'not_found');
+    if (!o || o.service === 'ride' || o.service === 'shop' || (user.role !== 'admin' &&
+      (user.id !== o.customer_id || (user.accountMode && user.accountMode !== 'personal')))) deps.fail(404, 'not_found');
     const steps: CustodyStep[] = [{ at: Number(o!.created_at), kind: 'booked', by: 'sender' }];
     // Releases name the courier who gave the job back, so every earlier holder is in the chain, not only the current one.
     for (const r of await deps.db.all('SELECT r.released_at, u.name FROM order_releases r JOIN users u ON u.id = r.driver_id WHERE r.order_id = ?', id))

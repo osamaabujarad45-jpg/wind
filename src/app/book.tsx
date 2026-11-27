@@ -105,6 +105,7 @@ function BookForm() {
   const [loadingHelp, setLoadingHelp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [askCaptainOffline, setAskCaptainOffline] = useState(false);
   const fixMarked = useRef(false); // the banner is the fix-marked one, whatever the language
   const [swapNotice, setSwapNotice] = useState('');
   const [locationError, setLocationError] = useState('');
@@ -566,7 +567,8 @@ function BookForm() {
       const command = pending ? { ...pending, attemptedAt: Date.now() }
         : newBooking({ service, pickupCity, dropoffCity, pickupPoint, ...(dropoffPoint && { dropoffPoint }), pickupNote, dropoffNote,
           contact, detail, option, loadingHelp, shared: sharedSeats, quotedPrice: price,
-          ...(declaredScope && { declaredScope }), ...(service === 'parcel' && priority === 'same_day' && sameDayAllowed && { priority }),
+          ...(declaredScope && { declaredScope }), ...(service === 'ride' && askCaptainOffline && { confirmCaptainOffline: true as const }),
+          ...(service === 'parcel' && priority === 'same_day' && sameDayAllowed && { priority }),
           ...(service !== 'ride' && recipientPhone.trim() && { recipientName: recipientName.trim(), recipientPhone: recipientPhone.trim() }), ...(scheduledFor !== null && { scheduledFor }),
           ...(applied && { promoCode: applied.code, expectedDiscount: applied.discount }), ...(smart && { pricing: 'smart' as const }), ...(smart?.quoteId && { quoteId: smart.quoteId }) });
       setOutcome(null); // a new attempt invalidates the answer that arrived before it
@@ -594,7 +596,9 @@ function BookForm() {
         setError(saved ? c.bookingOfflineSaved : c.bookingStorageError);
         if (saved && latest.current) void checkPending(latest.current); // an unknown answer arms the deadline re-check
       } else {
-        setError(err(e));
+        const confirmOffline = !retrying && errorCode(e) === 'captain_confirm_offline';
+        setError(confirmOffline ? '' : err(e));
+        if (confirmOffline) setAskCaptainOffline(true);
         if (e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status) && errorCode(e) !== 'idempotency_conflict'
           && (!retrying || errorCode(e) === 'priority_cutoff') && errorCode(e) !== 'booking_command_expired') { // a retry refused by the cutoff is terminal too
           try { await storage.set(savedKey, null, true); if (!current()) return; latest.current = null; setPending(null); setOutcome(null); }
@@ -760,7 +764,8 @@ function BookForm() {
         </Press>}
       </View>}
       footer={pending ? undefined : <>
-        <Button title={scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed && !scopeIncomplete ? money(pay) : undefined}
+        {askCaptainOffline && <Reason>{c.err_captain_confirm_offline}</Reason>}
+        <Button title={askCaptainOffline ? c.bookAndGoOffline : scheduledFor !== null ? c.scheduleRequest : c.request} trailing={routeChosen && !quoting && !quoteFailed && !scopeIncomplete ? money(pay) : undefined}
           onPress={submit} loading={busy} disabled={submitBlocked || scopeIncomplete} />
         {requestReason && <Reason>{requestReason}</Reason>}
         {quoteFailed && <Button title={c.retry} variant="ghost" onPress={requote} />}

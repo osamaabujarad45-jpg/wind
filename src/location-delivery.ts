@@ -1,5 +1,5 @@
 export type ActiveGps = { deviceId: string; sessionId: string; seq: number; assignments: { orderId: number; assignmentEpoch: number }[] };
-export type TrackingContext = { id: string; token: string; actor: number; orderId: number; activeGps?: ActiveGps };
+export type TrackingContext = { id: string; token: string; actor: number; orderId: number; activeGps?: ActiveGps; modeRevision?: number };
 export type DriverFix = { timestamp: number; mocked?: boolean; coords: { latitude: number; longitude: number; heading?: number | null; accuracy?: number | null; speed?: number | null } };
 
 /**
@@ -30,7 +30,7 @@ async function deliverOnce(fix: DriverFix, io: {
   context: () => Promise<TrackingContext | null>;
   token: () => Promise<string | null>;
   receipt: () => Promise<TrackingReceipt | null>;
-  post: (token: string, body: object) => Promise<{ status: number; accepted?: boolean }>;
+  post: (token: string, body: object, modeRevision?: number) => Promise<{ status: number; accepted?: boolean }>;
   acknowledge: (receipt: TrackingReceipt) => Promise<void>;
   stop: (id: string) => Promise<void>;
   monotonic?: () => number;
@@ -66,7 +66,7 @@ async function deliverOnce(fix: DriverFix, io: {
     const response = await io.post(context.token, { latitude, longitude, age: Math.max(0, now - fix.timestamp),
       ...(heading != null && { heading }),
       ...(accuracy != null && accuracy >= 0 && accuracy <= 5000 && { accuracy }),
-      ...(activeGps && { activeGps }) });
+      ...(activeGps && { activeGps }) }, context.modeRevision);
     status = response.status;
     accepted = response.accepted;
   } catch { /* The next fresh fix retries; stale coordinates are never queued. */ }

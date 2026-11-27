@@ -20,7 +20,7 @@ const modules = {
       replace: url => globalThis.__nativePushNavigationTest.nav.push(['replace', url]) };`,
   'react-native': `export const Platform = { OS: 'android' };`,
   './api': `export const apiSessionRevision = () => 1;
-    export const api = async () => { throw new Error('not used'); };
+    export const api = async path => globalThis.__nativePushNavigationTest.api(path);
     export const storage = { get: async key => key === 'token' ? globalThis.__nativePushNavigationTest.storedToken : null, set: async () => {} };`,
   './api-client': `export const apiSessionCredential = () => globalThis.__nativePushNavigationTest.token;
     export const errorCode = error => error?.message ?? 'server_error';`,
@@ -42,7 +42,8 @@ const account = (role = 'customer', status = 'active') => ({ user: { id: 1, role
 const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve)); };
 let sequence = 0;
 async function setup(initial = null) {
-  const fake = { token: 'account-a', storedToken: 'account-a', initial, systemTap: initial, nav: [], listener: null };
+  const fake = { token: 'account-a', storedToken: 'account-a', initial, systemTap: initial, nav: [], listener: null,
+    api: async () => { throw new Error('not used'); } };
   globalThis.__nativePushNavigationTest = fake;
   const navigation = await import(`${sourceUrl.href}?navigation=${++sequence}`);
   return { fake, navigation };
@@ -123,6 +124,26 @@ try {
     await settle();
     assert.deepEqual(fake.nav, [], 'the cold tap belongs to the session captured before the asynchronous response');
   }
+  {
+    const { fake, navigation } = await setup();
+    const me = { user: { ...account().user, accountMode: 'personal', modeRevision: 0 } };
+    const oldest = Promise.withResolvers(), newest = Promise.withResolvers(), loading = Promise.withResolvers();
+    const reads = [oldest, newest, loading];
+    let started = 0;
+    fake.api = path => path === '/me' ? reads[started++].promise : Promise.resolve({});
+    navigation.syncNativePushNavigation(true, me);
+    fake.listener(response('profile-first', '/order/81'));
+    fake.listener(response('profile-next', '/order/82'));
+    fake.listener(response('profile-next', '/order/82'));
+    assert.equal(started, 2, 'duplicate taps share the same in-flight validation');
+    newest.resolve(me); await settle();
+    oldest.resolve(me); await settle();
+    assert.deepEqual(fake.nav, [['replace', '/order/82']], 'a slower older tap cannot replace the newer destination');
+    fake.listener(response('profile-loading', '/order/83'));
+    navigation.syncNativePushNavigation(false, me);
+    loading.resolve(me); await settle();
+    assert.deepEqual(fake.nav, [['replace', '/order/82']], 'the navigator must still be ready after validation');
+  }
   { // A tap can arrive after the same phone was signed in to a different account.
     const { fake, navigation } = await setup(response('different-account', '/support', 2));
     navigation.syncNativePushNavigation(true, account());
@@ -169,7 +190,7 @@ try {
   }
   const layout = readFileSync(new URL('../src/app/_layout.tsx', import.meta.url), 'utf8');
   assert.match(layout, /const rootKey = useRootNavigationState\(\)\?\.key/);
-  assert.match(layout, /const canOpenNotification = ready && !offline && !mustUpdate && !!rootKey/);
+  assert.match(layout, /const canOpenNotification = ready && !offline && !locationCleanupRequired && !mustUpdate && !!rootKey/);
   assert.match(layout, /syncNativePushNavigation\(canOpenNotification, me\)/, 'the root flushes only when the signed-in navigator is ready');
   console.log('Native notification navigation waits for an authorized session and opens each valid tap once');
 } finally {

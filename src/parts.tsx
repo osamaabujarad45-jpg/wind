@@ -4,7 +4,7 @@ import { AccessibilityInfo, Linking, Platform, Share, StyleSheet, View } from 'r
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, apiSessionRevision, errorCode, privacyUrl, SUPPORT_URL, useApi } from './api';
-import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
+import { disablePush, enablePush, pushState, pushSupported, type PushState } from './push';
 import { NativePushRow } from './native-push-row';
 import { city, HISTORY_PAGE, isOpen, isolate, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
@@ -255,7 +255,7 @@ export function PushRow() {
   const [state, setState] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    pushState().then(next => { setState(next); if (next === 'on') void refreshPush(language).catch(() => undefined); }).catch(() => setState('unsupported'));
+    pushState().then(setState).catch(() => setState('unsupported'));
   }, [language]);
   if (!state || state === 'unsupported') return null;
   async function toggle() {
@@ -320,7 +320,7 @@ export function PlanCard() {
   const { date } = useFormat();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  if (!me || me.user.role === 'admin') return null;
+  if (!me || me.user.role === 'admin' || me.accountProfile?.mode === 'shop') return null;
   const s = me.settings;
   const isPlus = me.user.role === 'customer';
   const pitch = isPlus
@@ -531,9 +531,17 @@ export function AccountScreen() {
         </Press>
       </Card>
     </Appear>
+    {me.accountProfile && <ListGroup>
+      <ListRow icon="swap-horizontal-outline" label={c.profiles}
+        value={me.accountProfile.updates?.count ? fill(c.profileUpdatesWaiting, { n: me.accountProfile.updates.count })
+          : me.accountProfile.mode === 'captain' ? c.profileCaptain : me.accountProfile.mode === 'shop' ? c.profileShop : c.profilePersonal}
+        onPress={() => router.push('/profiles')} />
+    </ListGroup>}
     <VerifyEmailNudge allowAdd />
-    <PlanCard />
-    {user.role === 'customer' && <InviteCard />}
+    {me.accountProfile?.mode !== 'shop' && <>
+      <PlanCard />
+      {user.role === 'customer' && <InviteCard />}
+    </>}
     <ListGroup>
       <ListRow icon="mail-outline" label={c.email} value={user.email ? user.emailVerifiedAt ? c.verified : c.unverified : c.emailNotAdded}
         tone="muted" onPress={() => router.push('/profile')} />
@@ -547,7 +555,8 @@ export function AccountScreen() {
         ? <ListRow icon="shield-checkmark-outline" label={c.promoSafe} tone="muted" onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} />
         : <ListRow icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />}
       {/* MER-05: merchant mode is a link inside this account, never a role switch; it appears only while shop delivery is on. */}
-      {me?.user.role === 'customer' && me.capabilities?.enabledServices?.includes('shop') && <ListRow icon="storefront-outline" label={c.merchantMode} tone="olive" onPress={() => router.push('/merchant')} />}
+      {!me.accountProfile && me.user.role === 'customer' && me.capabilities?.enabledServices?.includes('shop') &&
+        <ListRow icon="storefront-outline" label={c.merchantMode} tone="olive" onPress={() => router.push('/merchant')} />}
       <ListRow icon="help-buoy-outline" label={c.help} onPress={() => router.push('/help')} />
       {/* support lives one tap in: Help leads with it, so a second row here only splits the same door */}
       <ListRow icon="shield-checkmark-outline" label={c.privacy} tone="muted" onPress={() => Linking.openURL(privacyUrl(language))} />

@@ -3,10 +3,12 @@
 // audited reset) → handover exception reopens preparing → delivery with seals, code and door cash → money rows →
 // captain cash → payout only after the captain's handover.
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { commissionOn, defaultSettings, goodsCapFor } from '../src/model.ts';
 import { apiCaller } from './support/api.mjs';
 process.env.WIND_PUSH_SUBJECT = 'mailto:wind-push-suite@example.invalid';
@@ -78,8 +80,10 @@ try {
     { itemId: cheese.id, qtyMilli: 1000, policy: 'ask_first' }];
   const estimate = 1000 + 1200 + 2500;
   const placeBody = { service: 'shop', merchantId, lines: basket, dropoffCity: 'tulkarm', dropoffPoint: home, dropoffNote: 'Second floor',
-    contact: '0599510003', expectedGoodsAgorot: estimate };
+    contact: '0599510003', expectedGoodsAgorot: estimate, expectedDeliveryFeeAgorot: 1000, expectedServiceFeeAgorot: 200 };
   await err('/orders', { token: customer.token, body: { ...placeBody, expectedGoodsAgorot: estimate + 1 } }, 409, 'price_changed');
+  await err('/orders', { token: customer.token, body: { ...placeBody, expectedDeliveryFeeAgorot: 999 } }, 409, 'price_changed');
+  await err('/orders', { token: customer.token, body: { ...placeBody, expectedServiceFeeAgorot: 201 } }, 409, 'price_changed');
   await err('/orders', { token: customer.token, body: { ...placeBody, lines: [basket[0]], expectedGoodsAgorot: 1000 } }, 409, 'below_minimum');
   await err('/orders', { token: customer.token, body: { ...placeBody, promoCode: 'WELCOME' } }, 409, 'promo_wrong_service');
   await err('/orders', { token: customer.token, body: { ...placeBody, lines: [{ itemId: hidden.id, qtyMilli: 1000, policy: 'remove' }] } }, 409, 'unavailable_item');
@@ -90,7 +94,11 @@ try {
   const placement = { ...placeBody, requestId, commandExpiresAt };
   let order = await call('/orders', { token: customer.token, body: placement });
   assert.deepEqual(await call(`/orders/commands/${requestId}`, { token: customer.token }), { orderId: order.id }, 'a restarted cart recovers the committed order without posting again');
-  assert.equal((await call('/orders', { token: customer.token, body: placement })).id, order.id, 'a retried place returns the same order');
+  await call(`/admin/merchants/${merchantId}`, { token: admin.token, body: { deliveryFeeAgorot: 1100 } });
+  const replayed = await call('/orders', { token: customer.token, body: placement });
+  assert.equal(replayed.id, order.id, 'a fee change cannot invalidate an exact committed replay');
+  assert.equal(replayed.shop.cashAgorot, estimate + 1200);
+  await call(`/admin/merchants/${merchantId}`, { token: admin.token, body: { deliveryFeeAgorot: 1000 } });
   await err('/orders', { token: customer.token, body: { ...placement, requestId: randomUUID(), commandExpiresAt: Date.now() - 1 } }, 409, 'booking_command_expired');
   assert.equal(order.status, 'requested');
   assert.equal(order.shop.state, null);
@@ -189,6 +197,18 @@ try {
   assert.equal(order.status, 'at_pickup');
   await err(`/orders/${order.id}/advance`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID() } }, 409, 'use_shop_handover');
 
+  const held = await call(`/orders/${order.id}/sos`, { token: customer.token, body: { kind: 'other' } });
+  assert.equal(held.safetyHold, true);
+  const pickup = { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } };
+  await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: pickup }, 409, 'safety_hold');
+  const beforeResolution = await call(`/orders/${order.id}`, { token: captain.token });
+  assert.equal(beforeResolution.shop.state, 'ready');
+  assert.equal(beforeResolution.status, 'at_pickup');
+  assert.equal(Number((await one('SELECT COUNT(*) AS n FROM shop_handover_checks WHERE order_id = ?', order.id)).n), 0);
+  const incident = (await call('/admin/incidents', { token: admin.token })).find(row => row.orderId === order.id);
+  assert.ok(incident);
+  await call(`/admin/incidents/${incident.id}/resolve`, { token: admin.token, body: { resolution: 'Synthetic safety check resolved' } });
+
   // ---- pickup code: five misses lock it, on its own counter; the reset is audited ----
   for (let i = 0; i < 5; i++) await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: '0000', check: { result: 'ok' } } }, 400, 'wrong_code');
   await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } } }, 409, 'proof_locked');
@@ -237,8 +257,17 @@ try {
   assert.equal((await call(`/orders/${order.id}`, { token: owner.token })).shop.handoverOverdue, false, 'only support sees the overdue flag');
   Date.now = realNow;
   assert.equal((await call(`/orders/${order.id}`, { token: customer.token })).status, 'at_pickup');
+  const priorSnapshot = order.shop.readySnapshotId;
   await call(`/merchant/orders/${order.id}/ready`, { token: owner.token, body: { packages: [{ sealed: true }, { sealed: false, lineIds: [labnehLine, breadLine] }] } });
-  order = await call(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } } });
+  order = await call(`/orders/${order.id}`, { token: captain.token });
+  assert.ok(Number.isSafeInteger(order.shop.readySnapshotId));
+  assert.notEqual(order.shop.readySnapshotId, priorSnapshot);
+  const confirmedPacking = { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' },
+    expectedAssignedAt: order.assignedAt, expectedReadySnapshotId: order.shop.readySnapshotId };
+  await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { ...confirmedPacking, requestId: randomUUID(),
+    expectedReadySnapshotId: order.shop.readySnapshotId - 1 } }, 409, 'order_changed');
+  order = await call(`/orders/${order.id}/shop/handover`, { token: captain.token, body: confirmedPacking });
+  assert.equal((await call(`/orders/${order.id}/shop/handover`, { token: captain.token, body: confirmedPacking })).status, 'in_transit');
   assert.equal(order.status, 'in_transit');
   assert.equal(order.shop.state, 'handed_over');
   await err(`/orders/${order.id}/release`, { token: captain.token, body: {} }, 409, 'cannot_release');
@@ -272,8 +301,26 @@ try {
   await err(`/admin/merchants/${merchantId}/payout`, { token: admin.token, body: { amountAgorot: 100, reference: 'BANK-1', requestId: randomUUID() } }, 409, 'insufficient_balance');
   const remit = await call('/admin/cash/remittance', { token: admin.token, body: { driverId: captain.user.id, amountCents: cash.owedCents, requestId: randomUUID() } });
   await call(`/driver/cash/${remit.id}/confirm`, { token: captain.token, body: { decision: 'confirm' } });
+  await err(`/driver/cash/${remit.id}/confirm`, { token: captain.token, body: { decision: 'confirm' } }, 409, 'already_decided');
+  assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_GOODS_CASH_CLEARED'", order.id)).n), 1);
+  if (persistence.backend === 'sqlite') {
+    assert.equal((await call('/driver/cash', { token: captain.token })).owedCents, 0);
+    const copyPath = join(dir, 'legacy-rollback.db');
+    await persistence.run('VACUUM INTO ?', copyPath);
+    const rollback = spawnSync(process.execPath, [fileURLToPath(new URL('../server/main.ts', import.meta.url)), 'rollback-profiles', '--confirm'], {
+      env: { ...process.env, DB_PATH: copyPath, WIND_PROFILE_SWITCHING: '0' }, encoding: 'utf8', timeout: 8000,
+    });
+    assert.equal(rollback.status, 1, rollback.stderr);
+    assert.match(rollback.stderr, /PROFILE_ROLLBACK_LEGACY_PAYOUT/, 'shadow rollback protects cleared shop cash before a later job creates debt');
+  }
+  const parcel = await call('/orders', { token: customer.token, body: { service: 'parcel', pickupCity: 'tulkarm', dropoffCity: 'nablus',
+    pickupNote: 'Shop door', dropoffNote: 'East door', contact: '0599510003', option: 'small', detail: 'Synthetic later parcel' } });
+  await call(`/jobs/${parcel.id}/accept`, { token: captain.token, body: {} });
+  for (const status of ['assigned', 'at_pickup', 'in_transit'])
+    await call(`/orders/${parcel.id}/advance`, { token: captain.token, body: { expectedStatus: status, requestId: randomUUID(), ...(status === 'in_transit' && { code: parcel.handoverCode }) } });
+  assert.ok((await call('/driver/cash', { token: captain.token })).owedCents > 0);
   statement = await call('/merchant/statement', { token: owner.token });
-  assert.equal(statement.payableAgorot, goods - 300);
+  assert.equal(statement.payableAgorot, goods - 300, 'new parcel cash cannot freeze already remitted shop goods');
   const payoutId = randomUUID();
   statement = await call(`/admin/merchants/${merchantId}/payout`, { token: admin.token, body: { amountAgorot: goods - 300, reference: 'BANK-2', requestId: payoutId } });
   assert.equal(statement.balanceAgorot, 0);
@@ -345,13 +392,16 @@ try {
   await persistence.atomic({ purpose: 'test' }, () => persistence.run(
     "INSERT INTO security_events(actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'COURIER_BLOCKED', ?, ?)",
     admin.user.id, officeId, JSON.stringify({ driverId: captain.user.id, from: 'assigned' }), Date.now()));
-  await call(`/orders/${officeId}/exception`, { token: captain.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent',
-    seals: [{ no: 1, intact: true }] } });
   const resolveReturn = `/admin/orders/${officeId}/resolve`;
+  const doorFailure = reason => call(`/orders/${officeId}/exception`, { token: captain.token, body: { expectedStatus: 'in_transit',
+    requestId: randomUUID(), reason, seals: [{ no: 1, intact: true }] } });
+  await doorFailure('rescheduled');
+  await call(resolveReturn, { token: admin.token, body: { action: 'reattempt', reason: 'Customer approved another delivery time' } });
+  await doorFailure('absent');
   await call(resolveReturn, { token: admin.token, body: { action: 'return', reason: 'Recipient absent' } });
   await call(resolveReturn, { token: admin.token, body: { action: 'confirm_office_return', carrier: 'captain', reason: 'Shop closed, brought to office' } });
   const trip = await one("SELECT amount_agorot FROM shop_ledger WHERE business_ref = ?", `shop-trip-${officeId}`);
-  assert.equal(trip.amount_agorot, 3000, 'captain gets the delivery, return and office legs');
+  assert.equal(trip.amount_agorot, 4000, 'captain gets both attempts, the return and the office leg');
   const officePath = `/admin/orders/${officeId}/office`;
   assert.equal((await call(officePath, { token: admin.token })).canReceive, true);
   if (persistence.backend === 'postgres') {

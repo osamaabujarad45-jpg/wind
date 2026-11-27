@@ -60,6 +60,7 @@ export default function Auth() {
   };
   // null while the policy loads; 'failed' when the server could not say, so a dropped request never reads as closed signup.
   const [registration, setRegistration] = useState<'open' | 'closed' | 'failed' | null>(null);
+  const [profileSignup, setProfileSignup] = useState(false);
   const [policyTry, setPolicyTry] = useState(0);
   // Enter moves through the sign-up fields and submits from the password (web keyboard users).
   const emailRef = useRef<TextInput>(null);
@@ -67,8 +68,12 @@ export default function Auth() {
   const passwordRef = useRef<TextInput>(null);
   useEffect(() => {
     let active = true;
-    void api<{ registrationOpen: boolean; emailReset?: boolean; emailResetLinkProof?: boolean }>('/auth/options').then(options => {
-      if (active) { setRegistration(options.registrationOpen ? 'open' : 'closed'); setEmailReset(!!options.emailReset); setEmailResetLink(!!options.emailResetLinkProof); }
+    void api<{ registrationOpen: boolean; profiles?: true; emailReset?: boolean; emailResetLinkProof?: boolean }>('/auth/options').then(options => {
+      if (active) {
+        setRegistration(options.registrationOpen ? 'open' : 'closed'); setProfileSignup(!!options.profiles);
+        if (options.profiles) setRole('customer');
+        setEmailReset(!!options.emailReset); setEmailResetLink(!!options.emailResetLinkProof);
+      }
     }).catch(() => { if (active) setRegistration('failed'); }); // signup stays shut until the server confirms its policy
     return () => { active = false; };
   }, [policyTry]);
@@ -234,9 +239,11 @@ export default function Auth() {
           <Field label={c.password} inputRef={passwordRef} value={password} onChangeText={setPassword} hint={mode === 'up' ? c.passwordMinimum : undefined} secureTextEntry maxLength={100} disabled={busy}
             autoComplete={mode === 'in' ? 'password' : 'new-password'} onSubmitEditing={submit} />
           {mode === 'up' && <Appear>
-            <Txt variant="label" style={{ marginBottom: 7 }}>{c.iAm}</Txt>
-            <Choices items={[{ key: 'customer', label: c.customer }, { key: 'driver', label: c.driver }]} value={role} onChange={setRole} disabled={busy} />
-            {role === 'driver' && <Appear>
+            {!profileSignup && <>
+              <Txt variant="label" style={{ marginBottom: 7 }}>{c.iAm}</Txt>
+              <Choices items={[{ key: 'customer', label: c.customer }, { key: 'driver', label: c.driver }]} value={role} onChange={setRole} disabled={busy} />
+            </>}
+            {!profileSignup && role === 'driver' && <Appear>
               <Txt variant="label" style={{ marginVertical: 7 }}>{c.vehicle}</Txt>
               <Choices items={vehicles.map(v => ({ key: v, label: c[v] }))} value={vehicle} onChange={setVehicle} disabled={busy} />
               {vehicle !== 'bicycle' && <View style={{ marginTop: 12 }}>

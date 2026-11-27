@@ -6,7 +6,7 @@ import { router } from 'expo-router';
 import { View } from 'react-native';
 import { api, useApi } from '../../api';
 import { newRequestId } from '../../booking';
-import { city, minorFromText, orderCode, type Merchant, type Order } from '../../model';
+import { city, licenceExpiryFromText, minorFromText, orderCode, type Merchant, type Order } from '../../model';
 import { Badge, Button, Card, Empty, ErrorText, Field, fill, Header, Loading, Press, Row, Screen, Section, Txt, useCopy } from '../../ui';
 import { useTheme } from '../../theme-context';
 
@@ -63,7 +63,7 @@ function MerchantCard({ merchant: m, onChange }: { merchant: AdminMerchant; onCh
   }
   const terms = () => {
     const values = { minOrderAgorot: minorFromText(min), deliveryFeeAgorot: minorFromText(fee), serviceFeeAgorot: minorFromText(service), commissionBps: Math.round(Number(commission) * 100) };
-    const expiresAt = /^\d{4}-\d{2}-\d{2}$/.test(expiry) ? Date.parse(`${expiry}T00:00:00Z`) : NaN;
+    const expiresAt = licenceExpiryFromText(expiry);
     return Object.values(values).every(v => Number.isSafeInteger(v) && v >= 0) && expiresAt > today ? { ...values, licenceExpiresAt: expiresAt } : null;
   };
   const payoutAgorot = minorFromText(payout);
