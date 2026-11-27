@@ -188,7 +188,7 @@ export default function Auth() {
       </Row>
       <Animated.View entering={still ? undefined : HERO} style={{ alignItems: 'center', marginTop: 8, marginBottom: 20, gap: 8 }}>
         <Logo size={60} />
-        <Txt variant="h1" center style={{ fontSize: 26, lineHeight: 34 }}>{c.brand}</Txt>
+        <Txt variant="h1" center style={{ fontSize: 26, lineHeight: 45 }}>{c.brand}</Txt>
         <Txt center>{c.tagline}</Txt>
       </Animated.View>
       <Animated.View entering={still ? undefined : FORM}>

@@ -34,8 +34,14 @@ const styled = name => {
 };
 for (const name of ['display', 'h1', 'h2', 'title', 'body', 'label', 'caption', 'micro', 'barText', 'listLabel', 'railText']) {
   const [size, line] = styled(name);
-  assert.ok(line >= Math.floor(size * 1.7), `${name}: line height ${line} for size ${size} clips Arabic dots (needs 1.7x)`);
+  assert.ok(line >= Math.ceil(size * 1.7), `${name}: line height ${line} for size ${size} clips Arabic dots (needs 1.7x)`);
 }
+const tight = walk(join(root, 'src')).flatMap(file => readFileSync(file, 'utf8').split('\n').flatMap((text, i) =>
+  [...text.matchAll(/\{[^{}]*\}/g)].filter(([style]) => {
+    const size = /\bfontSize: (\d+)/.exec(style), line = /\blineHeight: (\d+)/.exec(style);
+    return size && line && Number(line[1]) < Math.ceil(Number(size[1]) * 1.7);
+  }).map(() => `${relative(root, file).replace(/\\/g, '/')}:${i + 1}`)));
+assert.deepEqual(tight, [], 'line height is at least 1.7x the size');
 
 // No source sets fontWeight.
 const offenders = walk(join(root, 'src')).flatMap(file => readFileSync(file, 'utf8').split('\n')

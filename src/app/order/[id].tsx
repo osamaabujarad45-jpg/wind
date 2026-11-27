@@ -745,8 +745,7 @@ export default function OrderScreen() {
           <Txt variant="title" numberOfLines={1}>{orderCode(order.id)}</Txt>
           <Txt variant="micro" numberOfLines={1}>{`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`}</Txt>
         </View>
-        {!finding && !activeStatuses.includes(order.status) ? <Badge label={statusText(c, order, mine, now)} status={order.status} /> : null}
-        {helpButton}
+        {helpButton}{/* no state badge here: the sheet header names a booked time, and a badge left the order number no room at 280 */}
       </View>}
     </SafeAreaView>
     <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setPeek} onRefresh={reload}

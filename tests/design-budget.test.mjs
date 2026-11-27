@@ -14,9 +14,17 @@ assert.deepEqual(measure('c.hint c.hint c.title c.err_x <Button reason={why} />'
 
 // The catalogue total holds what the per-file count cannot: errors, computed keys and push texts.
 const before = catalogue(english, arabic, "const w = { en: 'Your order is on its way', ar: 'طلبك في الطريق' };");
-assert.deepEqual(before, { copyWords: 12 + 7, pushWords: 6 + 3 });
+assert.deepEqual(before, { copyWords: 12 + 7, pushWords: 6 + 3, workerWords: 0 });
 const longer = catalogue({ ...english, err_x: `${english.err_x} Then call support and wait.` }, arabic, "en: 'Your order is on its way now'");
 assert.equal(catalogueOver(longer, before).map(o => o.kind).join(), 'copyWords', 'a longer error fails, even though no file references it');
+
+// Either language counts: a short English title whose Arabic grows long is text on screen.
+const scope = { en: { scope: 'Declared load details' }, ar: { scope: 'تفاصيل الحمولة المصرح بها' } };
+const wordy = { scope: `${scope.ar.scope} يجب كتابة كل قطعة ووزنها قبل تأكيد الطلب` };
+assert.deepEqual(catalogueOver(catalogue(scope.en, wordy, ''), catalogue(scope.en, scope.ar, '')).map(o => o.kind), ['copyWords']);
+assert.deepEqual(measure('c.scope', scope.en, wordy).keys, ['scope']);
+// The web worker's own notification words are counted too, whatever their keys are.
+assert.equal(catalogue({}, {}, '', "const x = 1;\nconst words = {\n  en: { title: 'Wind', job: 'A new job' },\n};\nconst y = 'not counted';").workerWords, 4);
 
 // A file over its budget fails, including a longer sentence under the same key; a new file gets one explanation.
 const held = { 'src/a.tsx': { explanations: 2, words: 20, reasons: 0 } };
@@ -36,5 +44,5 @@ const budget = JSON.parse(readFileSync(new URL('../docs/design/text-budget.json'
 const now = await scan(root);
 assert.deepEqual([...overBudget(now.files, budget.files), ...catalogueOver(now.catalogue, budget.catalogue)].map(o => `${o.file}: ${o.now} ${o.kind} (budget ${o.allowed})`), [],
   'on-screen text grew: see .agents/skills/wind-design/SKILL.md §2');
-assert.ok(now.catalogue.pushWords > 0, 'push texts are being read');
+assert.ok(now.catalogue.pushWords > 0 && now.catalogue.workerWords > 0, 'push texts are being read');
 console.log('design text budget ok');

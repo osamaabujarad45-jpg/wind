@@ -99,12 +99,12 @@ export default function Profiles() {
       label={fill(c.profileUpdatesWaiting, { n: profile.updates.count })}
       onPress={() => router.replace({ pathname: '/profiles', params: { notice: profile.updates!.ref! } })} /></ListGroup>}
     <ListGroup>
-      <ListRow icon="person-circle-outline" label={c.profilePersonal} value={rowState('personal')} onPress={() => select('personal')} />
-      {profile.captain && <ListRow icon="car-outline" label={c.profileCaptain} value={rowState('captain', captainState)}
+      <ListRow below icon="person-circle-outline" label={c.profilePersonal} value={rowState('personal')} onPress={() => select('personal')} />
+      {profile.captain && <ListRow below icon="car-outline" label={c.profileCaptain} value={rowState('captain', captainState)}
         onPress={() => { if (profile.captain?.available) void select('captain'); else setStatusOpen(open => !open); }} />}
       {!profile.captain && profile.mode === 'personal' && !applying &&
         <ListRow icon="car-outline" label={c.profileApplyCaptain} onPress={() => { setError(''); setApplying(true); }} />}
-      {profile.shop ? <ListRow icon="storefront-outline" label={profile.shop.name} value={rowState('shop', shopStateLabel(c, profile.shop.state),
+      {profile.shop ? <ListRow below icon="storefront-outline" label={profile.shop.name} value={rowState('shop', shopStateLabel(c, profile.shop.state),
         profile.shopOrdersOpen ? fill(c.profileShopOrders, { n: profile.shopOrdersOpen }) : undefined)} onPress={() => select('shop')} />
         : profile.mode === 'personal' && me?.capabilities?.enabledServices.includes('shop') &&
           <ListRow icon="add-circle-outline" label={c.merchantApplyTitle} onPress={() => router.push('/merchant')} />}

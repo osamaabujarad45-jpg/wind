@@ -1,7 +1,8 @@
 {
   "catalogue": {
-    "copyWords": 15622,
-    "pushWords": 566
+    "copyWords": 15684,
+    "pushWords": 566,
+    "workerWords": 406
   },
   "files": {
     "src/admin-assign.tsx": {
@@ -70,8 +71,8 @@
       "reasons": 4
     },
     "src/app/book.tsx": {
-      "explanations": 42,
-      "words": 917,
+      "explanations": 43,
+      "words": 931,
       "reasons": 3
     },
     "src/app/driver/earnings.tsx": {
@@ -110,8 +111,8 @@
       "reasons": 2
     },
     "src/app/order/[id].tsx": {
-      "explanations": 93,
-      "words": 2118,
+      "explanations": 94,
+      "words": 2133,
       "reasons": 16
     },
     "src/app/profile.tsx": {
@@ -210,8 +211,8 @@
       "reasons": 2
     },
     "src/phone-card.tsx": {
-      "explanations": 13,
-      "words": 207,
+      "explanations": 14,
+      "words": 213,
       "reasons": 5
     },
     "src/phone-recovery.tsx": {

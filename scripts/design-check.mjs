@@ -1,7 +1,8 @@
 // The on-screen text budget (.agents/skills/wind-design/SKILL.md §2). It fails when text grows:
 //   per screen or component file: explanatory sentences referenced from src/copy.ts, their words (English and Arabic,
 //     so lengthening one fails too), and the reason lines under buttons;
-//   across the catalogue: the words of every explanatory string, errors and computed keys included, and of push texts.
+//   across the catalogue: the words of every string that is explanatory in either language, errors and computed keys
+//     included, and of the push texts in server/push.ts and public/sw.js.
 //   node scripts/design-check.mjs            check against docs/design/text-budget.json
 //   node scripts/design-check.mjs --update   lower the budget to today's counts (it never raises one)
 //   node scripts/design-check.mjs --init     write a first budget (only when there is none)
@@ -15,20 +16,24 @@ export const newFileBudget = { explanations: 1, words: 40, reasons: 0 };
 const kinds = ['explanations', 'words', 'reasons'];
 const count = text => String(text ?? '').trim().split(/\s+/).filter(Boolean).length;
 export const isExplanation = text => count(text) >= 8 || (/[.…]$/.test(String(text).trim()) && count(text) >= 4);
+/** A key is explanatory when either language says it at length: a short English title can carry a long Arabic one. */
+const explains = (key, english, arabic) => isExplanation(english[key]) || isExplanation(arabic[key] ?? '');
 const wordsOf = (keys, english, arabic) => keys.reduce((n, key) => n + count(english[key]) + count(arabic[key]), 0);
 
 /** Counts for one file's source. Errors (err_*) stay out of the per-file count; the catalogue total holds them. */
 export function measure(source, english, arabic = {}) {
   const keys = [...new Set([...source.matchAll(/\bc\.([A-Za-z][A-Za-z0-9_]*)/g)].map(m => m[1]))]
-    .filter(key => !key.startsWith('err_') && typeof english[key] === 'string' && isExplanation(english[key])).sort();
+    .filter(key => !key.startsWith('err_') && typeof english[key] === 'string' && explains(key, english, arabic)).sort();
   return { explanations: keys.length, words: wordsOf(keys, english, arabic), reasons: (source.match(/\breason=\{/g) ?? []).length, keys };
 }
 
-/** Whole-catalogue words: every explanatory string in either language, and the push texts' string literals. */
-export function catalogue(english, arabic, pushSource) {
-  const keys = Object.keys(english).filter(key => typeof english[key] === 'string' && isExplanation(english[key]));
-  const push = [...pushSource.matchAll(/\b(?:ar|en): '((?:[^'\\]|\\.)*)'/g)].reduce((n, m) => n + count(m[1]), 0);
-  return { copyWords: wordsOf(keys, english, arabic), pushWords: push };
+/** Whole-catalogue words: every explanatory string in either language, and the push texts of the server and the web worker. */
+export function catalogue(english, arabic, pushSource, workerSource = '') {
+  const keys = Object.keys(english).filter(key => typeof english[key] === 'string' && explains(key, english, arabic));
+  const literals = (source, pattern) => [...source.matchAll(pattern)].reduce((n, m) => n + count(m[1]), 0);
+  const words = /\nconst words = \{\r?\n([\s\S]*?)\r?\n\};/.exec(workerSource)?.[1] ?? '';
+  return { copyWords: wordsOf(keys, english, arabic), pushWords: literals(pushSource, /\b(?:ar|en): '((?:[^'\\]|\\.)*)'/g),
+    workerWords: literals(words, /'((?:[^'\\]|\\.)*)'/g) };
 }
 
 /** Every file over its budget, with what it holds now. */
@@ -57,7 +62,8 @@ export async function scan(root) {
   return {
     files: Object.fromEntries(walk(path.join(root, 'src'))
       .map(file => [path.relative(root, file).replace(/\\/g, '/'), measure(fs.readFileSync(file, 'utf8'), copy.en, copy.ar)])),
-    catalogue: catalogue(copy.en, copy.ar, fs.readFileSync(path.join(root, 'server/push.ts'), 'utf8')),
+    catalogue: catalogue(copy.en, copy.ar, fs.readFileSync(path.join(root, 'server/push.ts'), 'utf8'),
+      fs.readFileSync(path.join(root, 'public/sw.js'), 'utf8')),
   };
 }
 
@@ -71,7 +77,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === self) {
   if (process.argv.includes('--init')) {
     if (fs.existsSync(budgetPath)) throw new Error('A budget exists; use --update (it only lowers).');
     write({ catalogue: now.catalogue, files: ratchet(now.files, Object.fromEntries(Object.keys(now.files).map(f => [f, now.files[f]]))) });
-    console.log(`budget written: ${sum(now.files, 'explanations')} explanations, ${sum(now.files, 'words')} words, ${sum(now.files, 'reasons')} reason lines; catalogue ${now.catalogue.copyWords} + push ${now.catalogue.pushWords} words`);
+    console.log(`budget written: ${sum(now.files, 'explanations')} explanations, ${sum(now.files, 'words')} words, ${sum(now.files, 'reasons')} reason lines; catalogue ${now.catalogue.copyWords} + push ${now.catalogue.pushWords} + web worker ${now.catalogue.workerWords} words`);
   } else {
     const budget = JSON.parse(fs.readFileSync(budgetPath, 'utf8'));
     const over = [...overBudget(now.files, budget.files), ...catalogueOver(now.catalogue, budget.catalogue)];
@@ -84,6 +90,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === self) {
       catalogue: Object.fromEntries(Object.entries(budget.catalogue).map(([k, v]) => [k, Math.min(v, now.catalogue[k])])),
       files: ratchet(now.files, budget.files),
     });
-    console.log(`design text budget ok: ${sum(now.files, 'explanations')} explanations, ${sum(now.files, 'words')} words, ${sum(now.files, 'reasons')} reason lines; catalogue ${now.catalogue.copyWords}/${budget.catalogue.copyWords}, push ${now.catalogue.pushWords}/${budget.catalogue.pushWords} words`);
+    console.log(`design text budget ok: ${sum(now.files, 'explanations')} explanations, ${sum(now.files, 'words')} words, ${sum(now.files, 'reasons')} reason lines; catalogue ${now.catalogue.copyWords}/${budget.catalogue.copyWords}, push ${now.catalogue.pushWords}/${budget.catalogue.pushWords}, web worker ${now.catalogue.workerWords}/${budget.catalogue.workerWords} words`);
   }
 }

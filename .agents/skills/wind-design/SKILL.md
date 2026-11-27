@@ -33,10 +33,10 @@ Visible text that carries any of these stays visible, in full, even over budget.
 | "Cash only" and "the captain may not carry change", before confirm | SRS BOOK-03, PAY-02 |
 | Who pays, when, how much and the breakdown, before confirm | FLOWS S12 |
 | A shop's rejection reason, shown to the customer | SRS DLV-07 |
-| A switched-off capability reads "not available in this stage" | SRS ONE-13 |
+| A switched-off capability inside a live service reads "not available in this stage"; a switched-off service line is not shown at all, never as a dead tile | SRS ONE-13 |
 | A running countdown, what happens when it ends, and the way to extend it | SRS A11Y-08 |
 | Why something cannot be done, when money, custody, proof, access or safety is at stake | FLOWS §6 rule 3 |
-| Money-safety warnings such as "Do not send it again from here" (`err_cash_storage_failed`), seal and handover requirements, locked verification and who unlocks it | custody and cash rules |
+| Money-safety warnings such as "Do not send it again from here" (`err_cash_storage_failed`), seal and handover requirements, locked verification and who unlocks it | SRS PAY-04, SHIP-05, SHIP-17, DLV-13 |
 | Anything required for legal or privacy consent | SRS |
 
 If a requirement and a rule below disagree, the requirement wins.

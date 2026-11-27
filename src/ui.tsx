@@ -582,15 +582,16 @@ export function ListGroup({ children }: { children: React.ReactNode }) {
   </View>;
 }
 
-export function ListRow({ icon, label, value, onPress, danger, action }: {
+export function ListRow({ icon, label, value, onPress, danger, action, below }: {
   icon: IconName; label: string; value?: string; onPress: () => void; tone?: keyof typeof tones; danger?: boolean;
   action?: boolean; // does something here (sign out) instead of opening a page: no chevron
+  below?: boolean; // the value is a state line ("Current · Online · Open orders: 3"): it sits under the label
 }) {
   const { palette } = useTheme();
   const styles = useStyles();
   const { row, rtl, align, language } = useCopy();
   const { fontScale } = useWindowDimensions();
-  const stacked = !!value && fontScale > wrapAbove;
+  const stacked = !!value && (!!below || fontScale > wrapAbove);
   return <Press accessibilityLabel={value ? `${label}: ${value}` : label} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
     {/* no tile behind the icon: tiles mark a service line only (wind-design §3) */}
     <View style={styles.listIcon}><Ionicons name={icon} size={iconSize.lg} color={danger ? palette.error : palette.secondary} /></View>
@@ -686,7 +687,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
       const focused = state.index === index, here = route.key === marked;
       const color = here ? palette.forest : palette.secondary;
       const label = String(options.title ?? route.name);
-      return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={label} aria-selected={here}
+      return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={options.tabBarBadge ? `${label}, ${options.tabBarBadge}` : label} aria-selected={here}
         onPress={() => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) { haptic.tap(); navigation.navigate(route.name, route.params); }
