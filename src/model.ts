@@ -31,6 +31,15 @@ const jerusalemHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusal
 /** Same-day booking closes at 12:00 Jerusalem time. Intl follows daylight saving; a fixed offset would be wrong half the year. */
 export const sameDayBookingOpen = (at: number) => Number.isFinite(at) && Math.abs(at) <= 8.64e15 && Number(jerusalemHour.format(at)) < 12;
 export type Role = 'customer' | 'driver' | 'admin';
+export type AccountMode = 'personal' | 'captain' | 'shop';
+export type CaptainProfileState = 'draft' | 'under_review' | 'action_needed' | 'approved' | 'review' | 'paused' | 'closing' | 'rejected';
+export type ProfilePreview = {
+  mode: AccountMode;
+  revision: number;
+  role: Exclude<Role, 'admin'>;
+  captain: { state: CaptainProfileState; available: boolean } | null;
+  shop: { id: number; name: string; state: 'pending' | 'active' | 'paused' } | null;
+};
 export type Vehicle = 'motorcycle' | 'bicycle' | 'car' | 'van' | 'truck';
 export type UserStatus = 'active' | 'pending' | 'blocked';
 // `requested` is a shop order the merchant has not released to captains yet (SRS ONE-03): open for the customer, off the board.
@@ -76,7 +85,8 @@ export type Road = { id: number; name: string; cities: CityId[]; point: Point | 
 export const roadAlerts = (roads: Road[], ...on: CityId[]) =>
   roads.filter(r => (r.status === 'slow' || r.status === 'closed') && r.cities.some(c => on.includes(c)));
 export type SavedPlace = { id: number; label: 'home' | 'work' | 'other'; city: CityId; note: string; point?: Point; pinSaved?: boolean };
-export type Places = { saved: SavedPlace[]; recent: { city: CityId; note: string; point?: Point }[] };
+export type ShopDeliveryAddress = { id: number; city: CityId; note: string; point: Point };
+export type Places = { saved: SavedPlace[]; recent: { city: CityId; note: string; point?: Point }[]; shopDelivery?: ShopDeliveryAddress | null };
 export type SafetyKind = 'unsafe_driving' | 'harassment' | 'accident' | 'threat' | 'other';
 // "other" leads: it is the preselected chip, and a chip rail's far end starts off-screen (Safety in order/[id].tsx)
 export const safetyKinds: SafetyKind[] = ['other', 'unsafe_driving', 'harassment', 'accident', 'threat'];
@@ -183,6 +193,9 @@ export function invalidSetting(values: Record<string, number>): keyof Settings |
 }
 
 export type User = {
+  captainApproval?: { applicationId: string; revision: number; state: 'under_review' | 'review' };
+  accountMode?: AccountMode;
+  modeRevision?: number;
   id: number; phone: string; name: string; role: Role; status: UserStatus;
   vehicle: Vehicle | null; plate?: string | null; rating: number | null; createdAt: number;
   priceRating?: number | null; trips?: number; // drivers only
@@ -296,11 +309,15 @@ export function parcelFare(s: Settings, o: { option: string; plus?: boolean }): 
 
 /** Parcels a driver may carry at once; private rides, freight and shop orders are exclusive. */
 export const PARCEL_LOAD = 200; // ponytail: the owner said 100+; raise when a van route carries more
-/** RIDE-13 (owner decision 23 Nov 2026): passenger seats a vehicle offers shared riders. A car four, a motorcycle one. */
+/** Passenger seats available for a ride: a car has four and a motorcycle has one. */
 export const seatsFor = (vehicle: Vehicle | null | undefined) => vehicle === 'car' ? 4 : vehicle === 'motorcycle' ? 1 : 0;
 /** Seats a ride holds (its option, 1–4); other work holds none. */
 export const seatsOf = (o: { service: Service; option?: string | null }) =>
   o.service === 'ride' ? Math.min(4, Math.max(1, Math.trunc(Number(o.option)) || 1)) : 0;
+export const rideSeatDemand = (option: string | null | undefined, assessedSeats = 0) =>
+  Math.max(seatsOf({ service: 'ride', option }), assessedSeats);
+export const rideVehiclesFor = (option: string | null | undefined, assessedSeats = 0) =>
+  vehicles.filter(vehicle => seatsFor(vehicle) >= rideSeatDemand(option, assessedSeats));
 /** Work that may share a vehicle with other work: parcels and shared rides. A driver going Tulkarm → Ramallah fills the
  *  empty seats and the boot along the way, the way service taxis do here. Private rides, loads and shop orders stay alone. */
 export const poolable = (o: { service: Service; shared?: boolean | number | null }) => o.service === 'parcel' || (o.service === 'ride' && !!o.shared);
@@ -310,9 +327,12 @@ export type Load = { service: Service; shared?: boolean | number | null; option?
  *  not know it assumes a car and the server still decides. */
 export const canTake = (active: Load[], service: Service, next?: { shared?: boolean | number | null; option?: string | null }, vehicle?: Vehicle | null) => {
   if (service === 'parcel') return active.every(poolable) && active.filter(o => o.service === 'parcel').length < PARCEL_LOAD;
-  if (service === 'ride' && next?.shared) {
+  if (service === 'ride') {
     const seats = vehicle === undefined ? 4 : seatsFor(vehicle);
-    return active.every(poolable) && active.reduce((n, o) => n + seatsOf(o), 0) + seatsOf({ service, option: next.option }) <= seats;
+    const party = seatsOf({ service, option: next?.option });
+    if (party > seats) return false;
+    if (!next?.shared) return active.length === 0;
+    return active.every(poolable) && active.reduce((n, o) => n + seatsOf(o), 0) + party <= seats;
   }
   return active.length === 0;
 };
@@ -377,6 +397,13 @@ export function commissionOn(price: number, rate: number): number {
 /** Arabic-Indic and Persian digits typed on an Arabic keyboard, as ASCII. */
 export const latinDigits = (text: string) =>
   text.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0));
+/** A trade licence date written as YYYY-MM-DD or eight digits. Refuse rolled-over calendar dates. */
+export function licenceExpiryFromText(text: string): number {
+  const date = latinDigits(text.trim()).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NaN;
+  const time = Date.parse(`${date}T00:00:00Z`);
+  return Number.isFinite(time) && new Date(time).toISOString().startsWith(date) ? time : NaN;
+}
 /** A number typed in a form: Arabic-Indic digits and the Arabic decimal separator (٫) or a comma are normal input here. */
 export const typedNumber = (text: string) => Number(latinDigits(text.trim()).replace(/[٫,]/, '.'));
 /** Shekels typed by a person as exact integer agorot, never through a float: "12.5" → 1250, "٠٫٠٥" → 5, "-3" → -300.
@@ -507,6 +534,7 @@ export type ShopView = {
   handoverExceptionAt?: number | null; // admin view: the open exception episode a support decision binds to
   office?: { until: number; closed: null | { action: 'collected' | 'donated' | 'destroyed'; at: number } } | null; // owning shop only
   packages: { no: number; sealed: boolean; lineIds: number[] }[] | null;
+  readySnapshotId?: number;
   pickupCode: string | null; // the merchant and support only (§2.1a)
   returnCode: string | null; // the merchant, while the goods come back (DLV-21)
   merchantRating: number | null;

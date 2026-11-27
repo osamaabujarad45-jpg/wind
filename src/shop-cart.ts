@@ -2,7 +2,7 @@
 // The server prices the basket again at placing; this copy only shows the estimate and remembers the choices.
 import { useSyncExternalStore } from 'react';
 import { storage } from './storage';
-import { isCity, lineAgorot, shopPolicies, type MerchantItem, type ShopPolicy } from './model';
+import { isCity, lineAgorot, shopPolicies, type Merchant, type MerchantItem, type ShopPolicy } from './model';
 
 export type CartLine = { itemId: number; nameAr: string; nameEn: string; unitAgorot: number; byWeight: boolean; qtyMilli: number; policy: ShopPolicy };
 export type Cart = { merchantId: number; merchantName: string; city: string; minOrderAgorot: number; deliveryFeeAgorot: number; serviceFeeAgorot: number;
@@ -82,3 +82,17 @@ export const clearCart = (required = false) => save(null, required);
 /** "Order again" (DLV-18): the server's rebuilt lines replace the cart. */
 export const replaceCart = (next: Cart) => save(next);
 export const qtyOf = (c: Cart | null, itemId: number) => c?.lines.find(l => l.itemId === itemId)?.qtyMilli ?? 0;
+
+export async function refreshCart(merchant: Merchant, items: MerchantItem[], current: () => boolean) {
+  await load();
+  if (!current() || !cart || cart.merchantId !== merchant.id || cart.city !== merchant.city) return false;
+  const catalogue = new Map(items.filter(item => item.available).map(item => [item.id, item]));
+  const lines = cart.lines.flatMap(line => {
+    const item = catalogue.get(line.itemId);
+    if (!item || item.byWeight !== line.byWeight) return [];
+    return [{ ...line, nameAr: item.nameAr, nameEn: item.nameEn, unitAgorot: item.priceAgorot }];
+  });
+  await save({ ...cart, merchantName: merchant.name, minOrderAgorot: merchant.minOrderAgorot,
+    deliveryFeeAgorot: merchant.deliveryFeeAgorot, serviceFeeAgorot: merchant.serviceFeeAgorot, lines }, true);
+  return true;
+}

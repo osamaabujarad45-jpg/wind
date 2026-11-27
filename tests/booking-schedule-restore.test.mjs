@@ -119,7 +119,7 @@ function createScreen({ slotBucketAt, saved = null, params = {} } = {}) {
     isValidPhone: () => true, err: e => String(e), fill: t => t, money: v => `${v}`,
     api: async () => ({}), router: { replace() {}, push() {} },
     storage: { get: async () => saved, set: async () => {} },
-    savedKey: 'booking.1', checkPending: async () => {}, params,
+    accountId: 1, savedKey: 'booking.1', checkPending: async () => {}, params, homeDestination: null,
   };
 
   runInNewContext(transpile(

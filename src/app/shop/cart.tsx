@@ -4,37 +4,58 @@
 import { useCallback, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { api, ApiError, errorCode, storage } from '../../api';
+import { api, ApiError, errorCode, storage, useApi } from '../../api';
 import { apiSessionRevision, serverOffset } from '../../api-client';
 import { pendingOutcome } from '../../booking';
 import { basketIdentity, newShopCheckout, readShopCheckout, readShopDelivery, shopCheckoutBody, shopCheckoutKey, shopCheckoutLimits as limits, type ShopCheckout, type ShopDelivery } from '../../shop-checkout';
-import { city, goodsCapFor, isCity, normalizePhone, shopPolicies, type Order, type Point, type ShopPolicy } from '../../model';
+import { city, crowKm, goodsCapFor, isCity, isolate, normalizePhone, SERVICE_KM, shopPolicies, type CityId, type Merchant, type MerchantItem, type Order, type Places, type Point, type ShopPolicy } from '../../model';
+import { readHomeDestination, shopAddressForOrder } from '../../personal-services';
 import PinSheet from '../../pin-sheet';
 import { recoveryStorage } from '../../recovery-storage';
 import { useSession } from '../../session';
-import { cartGoods, clearCart, setPolicy, setQuantity, storedCart, useCart } from '../../shop-cart';
+import { cartGoods, clearCart, refreshCart, setPolicy, setQuantity, storedCart, useCart } from '../../shop-cart';
 import { QtyControl } from '../../shop-ui';
 import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Row, Screen, Section, Txt, useCopy } from '../../ui';
 import { useTheme } from '../../theme-context';
 
 const deliveryRecoveryMs = 60 * 60_000;
 type CheckoutRecoveryAction = 'retry' | { reenterFor: string };
+type DeliveryAddress = { point: Point | null; note: string };
+type AccountDelivery = { accountId: number | null; address: DeliveryAddress };
 
 export default function ShopCart() {
   const { palette } = useTheme();
-  const { c, language, money } = useCopy();
+  const { c, err, language, money } = useCopy();
   const { me } = useSession();
-  const { changes } = useLocalSearchParams<{ changes?: string }>();
+  const { changes, destinationOrder } = useLocalSearchParams<{ changes?: string; destinationOrder?: string }>();
   const cart = useCart();
+  const accountId = me?.user.role === 'customer' ? me.user.id : null;
+  const [shortcut] = useState(() => {
+    const address = accountId !== null && destinationOrder ? readHomeDestination(accountId, `shop:${destinationOrder}`) : null;
+    return address ? { accountId, destinationOrder, address } : null;
+  });
+  // Freeze the Home selection when this cart opens. Edits and recovered delivery details take precedence.
+  const remembered = shortcut?.accountId === accountId && shortcut.destinationOrder === destinationOrder ? shortcut.address : null;
+  const exactPath = accountId !== null && !remembered && destinationOrder && /^[1-9]\d{0,14}$/.test(destinationOrder)
+    ? `/orders/${destinationOrder}` : null;
+  const { data: selectedOrder, error: selectedError, reload: reloadSelectedOrder } = useApi<Order>(exactPath);
+  const selectedAddress = remembered ?? shopAddressForOrder(selectedOrder, accountId);
+  const preferred = selectedAddress?.point && selectedAddress.city === cart?.city && crowKm(city(selectedAddress.city), selectedAddress.point) <= SERVICE_KM
+    ? selectedAddress : null;
+  const [edit, setEdit] = useState<AccountDelivery | null>(null);
+  const deliveryAddress = edit?.accountId === accountId ? edit.address : null;
+  const setDeliveryAddress = useCallback((address: DeliveryAddress) => setEdit({ accountId, address }), [accountId]);
+  const { point, note } = deliveryAddress ?? preferred ?? { point: null, note: '' };
   const [limit, setLimit] = useState<(typeof limits)[number]>(0.1);
-  const [point, setPoint] = useState<Point | null>(null);
-  const [picking, setPicking] = useState(false);
-  const [note, setNote] = useState('');
+  const [pinSelection, setPinSelection] = useState<AccountDelivery | null>(null);
+  const pinAddress = pinSelection?.accountId === accountId ? pinSelection.address : null;
+  const retrySelection = selectedError && !['not_found', 'forbidden', 'unauthorized', 'session_changed'].includes(selectedError);
   const defaultContact = me?.user.phone ?? '';
   const [contact, setContact] = useState(defaultContact);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const key = me?.user.role === 'customer' ? shopCheckoutKey(me.user.id) : null;
+  const [cartNeedsRefresh, setCartNeedsRefresh] = useState(false);
+  const key = accountId !== null ? shopCheckoutKey(accountId) : null;
   const [pending, setPending] = useState<ShopCheckout | null>(null);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [reenterRequestId, setReenterRequestId] = useState<string | null>(null);
@@ -66,7 +87,10 @@ export default function ShopCart() {
       if (!recovering && e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status)
         && code !== 'idempotency_conflict' && code !== 'booking_command_expired') {
         await clearCheckout(current);
-        if (current()) setPending(null);
+        if (current()) {
+          setPending(null);
+          setCartNeedsRefresh(code === 'price_changed' || code === 'unavailable_item');
+        }
       }
       if (current()) setError(c[`err_${code}` as keyof typeof c] ?? c.err_generic);
       return;
@@ -114,7 +138,7 @@ export default function ShopCart() {
         if (!current()) return;
         setPending(null);
         setReenterRequestId(null);
-        setPoint(restored?.dropoffPoint ?? null); setNote(restored?.dropoffNote ?? '');
+        setDeliveryAddress({ point: restored?.dropoffPoint ?? null, note: restored?.dropoffNote ?? '' });
         setContact(restored?.contact ?? defaultContact); setLimit(restored?.agreeLimit ?? 0.1);
         setError(restored ? '' : c.shopRecoveryReenter);
       } else if (delivery && Date.now() + serverOffset() < command.commandExpiresAt) {
@@ -122,7 +146,7 @@ export default function ShopCart() {
         await send(command, delivery, current, true);
       }
     }, key); } catch { if (current()) setError(c.bookingStorageError); }
-  }, [key, clearCheckout, finish, send, defaultContact, c.bookingStorageError, c.shopRecoveryReenter]);
+  }, [key, clearCheckout, finish, send, defaultContact, setDeliveryAddress, c.bookingStorageError, c.shopRecoveryReenter]);
   useFocusEffect(useCallback(() => {
     let focused = true;
     visible.current = true;
@@ -147,7 +171,9 @@ export default function ShopCart() {
       <Button title={c.shopReenterDelivery} variant="ghost" disabled={busy} onPress={() => recoverCheckout({ reenterFor: pending.requestId })} />}
     {key && <Button title={c.orders} variant="ghost" onPress={() => router.replace('/(customer)/orders')} />}
   </Screen>;
-  if (!cart) return <Screen><Header title={c.shopCart} back /><Empty icon="basket-outline" title={c.shopCartEmpty} action={<Button title={c.shopBrowse} onPress={() => router.replace('/shop')} />} /></Screen>;
+  if (!cart) return <Screen><Header title={c.shopCart} back /><Empty icon="basket-outline" title={c.shopCartEmpty}
+    body={error || undefined}
+    action={<Button title={c.shopBrowse} onPress={() => router.replace({ pathname: '/shop', params: { destinationOrder } })} />} /></Screen>;
   const goods = cartGoods(cart);
   const short = Math.max(0, cart.minOrderAgorot - goods);
   const fees = cart.deliveryFeeAgorot + cart.serviceFeeAgorot;
@@ -158,6 +184,19 @@ export default function ShopCart() {
     : note.trim().length < 3 ? c.shopNoteNeeded : !deliveryContact ? c.err_invalid_phone : '';
   const shopInfo = { merchantId: cart.merchantId, merchantName: cart.merchantName, city: cart.city, minOrderAgorot: cart.minOrderAgorot,
     deliveryFeeAgorot: cart.deliveryFeeAgorot, serviceFeeAgorot: cart.serviceFeeAgorot };
+  async function reviewCart() {
+    if (!cart || placing.current) return;
+    const revision = apiSessionRevision(), current = () => revision === apiSessionRevision();
+    placing.current = true;
+    setBusy(true);
+    try {
+      const latest = await api<{ merchant: Merchant; items: MerchantItem[] }>(`/shop/merchants/${cart.merchantId}`);
+      if (!await refreshCart(latest.merchant, latest.items, current) || !current()) return;
+      setCartNeedsRefresh(false);
+      setError(c.shopCartReviewUpdated);
+    } catch (e) { if (current()) setError(err(e)); }
+    finally { placing.current = false; setBusy(false); }
+  }
   async function place() {
     if (!key || !cart || !point || !deliveryContact || placing.current || reason) return;
     const dropoffCity = cart.city;
@@ -173,6 +212,7 @@ export default function ShopCart() {
         if (saved) { setPending(saved); return; }
         const command = newShopCheckout(cart);
         const delivery: ShopDelivery = { requestId: command.requestId, expectedGoodsAgorot: goods, agreeLimit: limit,
+          expectedDeliveryFeeAgorot: cart.deliveryFeeAgorot, expectedServiceFeeAgorot: cart.serviceFeeAgorot,
           dropoffCity, dropoffPoint: point, dropoffNote: note.trim(), contact: deliveryContact };
         await recoveryStorage.write('shop-checkout', delivery, deliveryRecoveryMs);
         if (!current()) return;
@@ -184,7 +224,9 @@ export default function ShopCart() {
     } catch { if (current()) setError(c.bookingStorageError); }
     finally { placing.current = false; setBusy(false); }
   }
-  const footer = <Button title={fill(c.shopPlace, { r: money((goods + fees) / 100) })} icon="checkmark" loading={busy} disabled={!!reason} reason={reason || undefined} onPress={place} />;
+  const footer = cartNeedsRefresh
+    ? <Button title={c.shopCartReview} loading={busy} onPress={reviewCart} />
+    : <Button title={fill(c.shopPlace, { r: money((goods + fees) / 100) })} icon="checkmark" loading={busy} disabled={!!reason} reason={reason || undefined} onPress={place} />;
   return <Screen footer={footer}>
     <Header title={c.shopCart} back subtitle={cart.merchantName} />
     {!!changes && <Card tone="warn"><Txt variant="label">{c.shopAgainChanged}</Txt><Txt style={{ marginTop: 4 }}>{changes}</Txt></Card>}
@@ -213,8 +255,14 @@ export default function ShopCart() {
     <Card>
       <Section title={c.shopDeliverTo} />
       <Txt variant="caption">{fill(c.shopSameTown, { town: city(cart.city as never)[language] })}</Txt>
-      <Button title={point ? c.shopPinChange : c.shopPinSet} variant={point ? 'outline' : 'soft'} icon="location-outline" onPress={() => setPicking(true)} />
-      <Field label={c.shopLandmark} value={note} onChangeText={setNote} placeholder={c.landmarkHint} maxLength={200} />
+      {!!destinationOrder && !preferred && !deliveryAddress && (retrySelection ? <>
+        <ErrorText>{err(selectedError)}</ErrorText>
+        <Button title={c.retry} variant="ghost" onPress={() => void reloadSelectedOrder()} />
+      </> : (!exactPath || selectedOrder || selectedError) && <Txt variant="caption">{c.placeUnavailable}</Txt>)}
+      {!destinationOrder && !point && !note && isCity(cart.city) && <ShopAddressSuggestion key={key} town={cart.city} onSelect={setDeliveryAddress} />}
+      <Button title={point ? c.shopPinChange : c.shopPinSet} variant={point ? 'outline' : 'soft'} icon="location-outline"
+        onPress={() => setPinSelection({ accountId, address: { point, note } })} />
+      <Field label={c.shopLandmark} value={note} onChangeText={nextNote => setDeliveryAddress({ point, note: nextNote })} placeholder={c.landmarkHint} maxLength={200} />
       <Field label={c.contactPhone} value={contact} onChangeText={setContact} keyboardType="phone-pad" autoComplete="tel" />
     </Card>
     <Card>
@@ -226,7 +274,15 @@ export default function ShopCart() {
       <Txt variant="caption" style={{ marginTop: 6 }}>{c.shopCashOnly}</Txt>
     </Card>
     <ErrorText>{error}</ErrorText>
-    {picking && <PinSheet title={c.shopPinSet} hint={c.shopPinHint} start={point ?? city(cart.city as never)} onClose={() => setPicking(false)}
-      onConfirm={p => { setPoint(p); setPicking(false); }} />}
+    {pinAddress && <PinSheet title={c.shopPinSet} hint={c.shopPinHint} start={pinAddress.point ?? city(cart.city as never)} onClose={() => setPinSelection(null)}
+      onConfirm={p => { setDeliveryAddress({ point: p, note: pinAddress.note }); setPinSelection(null); }} />}
   </Screen>;
+}
+
+function ShopAddressSuggestion({ town, onSelect }: { town: CityId; onSelect: (address: { point: Point; note: string }) => void }) {
+  const { c } = useCopy();
+  const { data } = useApi<Places>(`/me/places?shopDelivery=1&town=${town}`);
+  const address = data?.shopDelivery;
+  return address ? <Button title={fill(c.shopUseLastAddress, { address: isolate(address.note) })} variant="outline"
+    icon="time-outline" onPress={() => onSelect(address)} /> : null;
 }

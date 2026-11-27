@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { Persistence, type Row } from './db/persistence.ts';
 import { initializePostgres, isolatedSchema, MIGRATION_LOCK } from './db/postgres-schema.ts';
+import { backfillPostgresAccountProfiles } from './db/account-profiles.ts';
 
 type Table = { name: string; columns: { name: string; type: string; pk: number; notnull: number }[]; keyColumns: string[];
   foreignKeys: { from: string; table: string; to: string }[] };
@@ -18,12 +19,13 @@ const NATIVE_PUSH_COLUMNS = ['token_hash','user_id','auth_session_hash','device_
 // Optional operator CLI history is outside the delivery-data migration contract.
 // It stays in the source snapshot; the PostgreSQL API keeps this feature gated.
 NON_LEGACY_TABLES.add('opencode_jobs');
+NON_LEGACY_TABLES.add('firebase_email_attempts'); // drain the provider journal before any database cutover
 NON_LEGACY_TABLES.add('firebase_resets'); // a reset in progress lasts an hour; a cutover simply asks the user to request it again
 // SQLite-only columns carried by the live schema but absent from the Postgres
 // snapshot. They stay in the source; the import does not invent a target column.
 // T33: PostgreSQL orders carry the commission-rate snapshot, so the import populates it instead of skipping it.
-const SQLITE_ONLY_COLUMNS = new Set<string>([]);
-const importColumns = (table: Table) => table.columns.filter(c => !SQLITE_ONLY_COLUMNS.has(c.name));
+const sqliteWebPushBinding = (table: Table, column: string) => table.name === 'push_subscriptions' && column === 'auth_session_hash';
+const importColumns = (table: Table) => table.columns.filter(c => !sqliteWebPushBinding(table, c.name));
 const importValue = (table: Table, row: Row, column: string) =>
   table.name === 'courier_block_reviews' && column === 'cleared' && row[column] !== null ? Boolean(row[column]) : row[column];
 // Sorted at every depth: JSONB reorders nested keys too, so preferences holding quiet hours would never reconcile.
@@ -31,8 +33,8 @@ const stable = (value: Row) => JSON.stringify(value, (_key, item) => item && typ
   ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
 // Each engine advances its own recovery revision. Compare all order content except that derived counter;
 // identities and other tables (including financial versions) still compare every imported field.
-const content = (table: Table, row: Row) => stable(table.name === 'orders'
-  ? Object.fromEntries(Object.entries(row).filter(([column]) => column !== 'version')) : row);
+const content = (table: Table, row: Row) => stable(Object.fromEntries(Object.entries(row)
+  .filter(([column]) => !(table.name === 'orders' && column === 'version') && !sqliteWebPushBinding(table, column))));
 const keyOf = (table: Table, row: Row) => hash(table.keyColumns.length
   ? stable(Object.fromEntries(table.keyColumns.map(column => [column,row[column]]))) : stable(row));
 export const minor = (amount: number | null) => {
@@ -207,7 +209,8 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
       // A snapshot taken before A12 has no order_command_rejections; present rows import and reconcile normally (Fable CAND6).
       // Shop delivery tables (migration 33) are absent from a snapshot taken before the shop line; present rows import normally.
       const optionalLegacy = new Set(['order_command_rejections', 'merchants', 'merchant_hours', 'merchant_items', 'shop_orders', 'shop_lines', 'shop_snapshots',
-        'shop_changes', 'shop_handover_checks', 'shop_seals', 'shop_faults', 'shop_ledger', 'courier_block_reviews', 'support_threads', 'support_messages']);
+        'shop_changes', 'shop_handover_checks', 'shop_seals', 'shop_faults', 'shop_ledger', 'courier_block_reviews', 'support_threads', 'support_messages', 'recovery_email_proofs',
+        'captain_profiles']);
       for (const name of new Set(legacyTables)) if (!optionalLegacy.has(name) && !snapshot.tables.some(t => t.name === name)) errors.push({ table: name, reason: 'required legacy table missing from snapshot' });
       if (errors.length) throw new Error('Snapshot preflight failed');
       // Users satisfy assignment guards, and reviews reference the already imported orders.
@@ -245,6 +248,7 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
       }
       if (errors.length) throw new Error('Invalid legacy rows require review');
       await database.run('SET CONSTRAINTS ALL IMMEDIATE');
+      if (!snapshot.rows.captain_profiles) await backfillPostgresAccountProfiles(database);
       await database.run("INSERT INTO driver_run_resources(driver_id) SELECT id FROM users WHERE role='driver' ON CONFLICT DO NOTHING");
       for (const table of snapshot.tables.filter(t => !NON_LEGACY_TABLES.has(t.name) && t.columns.some(c => c.name === 'id' && c.pk)))
         {

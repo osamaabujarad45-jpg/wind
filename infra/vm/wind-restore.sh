@@ -9,6 +9,8 @@ copy=$1
 data=${WIND_DATA:-/srv/wind-data}
 name=${WIND_CONTAINER:-wind-api}
 image=$(docker inspect -f '{{.Config.Image}}' "$name")
+email_links=$(docker inspect -f '{{range .Config.Env}}{{if or (eq . "WIND_FIREBASE_EMAIL_LINKS=1") (eq . "WIND_FIREBASE_RESET_LINKS=1")}}enabled{{end}}{{end}}' "$name")
+[ -z "$email_links" ] || { echo 'recreate the container with both Firebase email link switches off before restoring' >&2; exit 1; }
 kept=$data/wind.db.before-restore-$(date -u +%Y%m%dT%H%M%SZ)
 work=$(mktemp -d "$data/restore.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -20,7 +22,16 @@ docker run --rm --network none --entrypoint node -v "$work:/r" "$image" --disabl
   if (db.prepare('PRAGMA integrity_check').get().integrity_check !== 'ok' || db.prepare('PRAGMA foreign_key_check').all().length) throw Error('copy failed its integrity check');
   const count = table => db.prepare('SELECT COUNT(*) AS n FROM ' + table).get().n;
   const before = { users: count('users'), orders: count('orders'), cash: count('cash_entries') }; // throws on a file that is not a Wind database, which startup would otherwise fill in empty
-  db.exec('BEGIN; DELETE FROM sessions; DELETE FROM push_subscriptions; COMMIT; PRAGMA wal_checkpoint(TRUNCATE)'); // native push tokens go with their sessions
+  db.exec('BEGIN; DELETE FROM sessions; DELETE FROM push_subscriptions'); // native push tokens go with their sessions
+  const hasTable = name => db.prepare('SELECT 1 FROM sqlite_schema WHERE type = ? AND name = ?').get('table', name);
+  if (hasTable('email_codes')) db.exec('DELETE FROM email_codes');
+  if (hasTable('firebase_resets')) db.exec('DELETE FROM firebase_resets');
+  if (hasTable('firebase_email_attempts')) db.prepare(
+    'UPDATE firebase_email_attempts SET state = ?, cleanup_at = CASE WHEN state IN (?, ?) THEN 0 ELSE cleanup_at END, ' +
+    'retry_until = CASE WHEN state = ? THEN 0 ELSE retry_until END WHERE state IN (?, ?, ?)'
+  ).run('retired', 'ready', 'queued', 'queued', 'ready', 'queued', 'sending');
+  db.exec('COMMIT; PRAGMA wal_checkpoint(TRUNCATE)');
+  if (hasTable('email_codes') && count('email_codes') > 0) throw Error('copy retained email codes');
   db.close();
   console.log('copy ok', before);
 "

@@ -27,10 +27,10 @@ export async function fixture(label='eligibility',extraEnv={}) {
   const evidence={reason:'Synthetic operator inspection for isolated test only',evidenceRef:'synthetic:wp05:case'};
   const post=(path,body,expect=200)=>call('/admin/eligibility'+path,{token:admin.token,body:{...body,...evidence},expect});
   const common={state:'approved',services:['parcel','ride','freight'],vehicleClasses:['car'],requiredPermits:[],validFrom:now-1000,validUntil:until};
-  const setupCoverage=async(permits=[])=>{
-    const from=await post('/areas',{...common,key:'synthetic_from',geometry:polygon(35.19,31.89,35.21,31.91)});
-    const to=await post('/areas',{...common,key:'synthetic_to',geometry:polygon(35.25,32.21,35.27,32.23)});
-    const route=await post('/routes',{...common,key:'synthetic_forward',fromAreaId:from.id,toAreaId:to.id,corridor:polygon(35.18,31.88,35.28,32.24),requiredPermits:permits});
+  const setupCoverage=async(permits=[], vehicleClasses=common.vehicleClasses)=>{
+    const from=await post('/areas',{...common,vehicleClasses,key:'synthetic_from',geometry:polygon(35.19,31.89,35.21,31.91)});
+    const to=await post('/areas',{...common,vehicleClasses,key:'synthetic_to',geometry:polygon(35.25,32.21,35.27,32.23)});
+    const route=await post('/routes',{...common,vehicleClasses,key:'synthetic_forward',fromAreaId:from.id,toAreaId:to.id,corridor:polygon(35.18,31.88,35.28,32.24),requiredPermits:permits});
     await activatePolicy(); return {from,to,route};
   };
   const activatePolicy=async()=>{

@@ -19,6 +19,7 @@ export type BookingPayload = {
   recipientName?: string; recipientPhone?: string; // parcels and loads (SPEC-parcel-recipient.md)
   pricing?: 'smart'; // the server's recommended price (SPEC-driver-offers.md); absent = fixed tariff
   priority?: ParcelPriority; // A12: parcels only; absent is standard
+  confirmCaptainOffline?: true;
 };
 export type PendingBooking = {
   requestId: string; payload: BookingPayload;

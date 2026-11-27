@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { BottomTabBarHeightContext, type BottomTabBarProps } from 'expo-router/js-tabs';
-import { linesFor, maxScale } from './text-scale';
+import { linesFor, maxScale, wrapAbove } from './text-scale';
 import { copy, errorText, fill } from './copy';
 import { formatMoney } from './format-money';
 import { ApiError, errorCode } from './api';
@@ -381,7 +381,9 @@ export function Choices<K extends string>({ items, value, onChange, disabled, la
 }
 
 // Plus/minus counter: passengers, quantities.
-export function Stepper({ value, min = 1, max = 99, onChange, label, disabled }: { value: number; min?: number; max?: number; onChange: (n: number) => void; label: string; disabled?: boolean }) {
+export function Stepper({ value, min = 1, max = 99, step = 1, onChange, label, disabled }: {
+  value: number; min?: number; max?: number; step?: number; onChange: (n: number) => void; label: string; disabled?: boolean;
+}) {
   const { palette } = useTheme();
   const styles = useStyles();
   const { row, c } = useCopy();
@@ -390,14 +392,14 @@ export function Stepper({ value, min = 1, max = 99, onChange, label, disabled }:
     if (previous.current !== value && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(`${label}: ${value}`);
     previous.current = value;
   }, [value, label]);
-  const step = (d: number) => { haptic.tap(); onChange(Math.min(max, Math.max(min, value + d))); };
+  const change = (direction: number) => { haptic.tap(); onChange(Math.min(max, Math.max(min, value + direction * step))); };
   return <View style={[styles.stepper, { flexDirection: row }]}>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperDecrease} ${label}`} onPress={() => step(-1)} disabled={disabled || value <= min}
+    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperDecrease} ${label}`} onPress={() => change(-1)} disabled={disabled || value <= min}
       accessibilityState={{ disabled: disabled || value <= min }} style={styles.stepperKey}>
       <Ionicons name="remove" size={18} color={value <= min ? palette.faint : palette.ink} />
     </Pressable>
     <Text maxFontSizeMultiplier={maxScale} accessibilityLabel={label} accessibilityValue={{ min, max, now: value, text: String(value) }} style={styles.stepperValue}>{value}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperIncrease} ${label}`} onPress={() => step(1)} disabled={disabled || value >= max}
+    <Pressable accessibilityRole="button" accessibilityLabel={`${c.stepperIncrease} ${label}`} onPress={() => change(1)} disabled={disabled || value >= max}
       accessibilityState={{ disabled: disabled || value >= max }} style={styles.stepperKey}>
       <Ionicons name="add" size={18} color={value >= max ? palette.faint : palette.ink} />
     </Pressable>
@@ -473,10 +475,10 @@ export function CodeField({ label, value, onChangeText, length = 6, disabled, on
 }
 
 // error: shown under the field it belongs to (SYSTEM.md: error text near fields), with a red edge.
-export function Field({ label, value, onChangeText, onBlur, placeholder, hint, multiline, keyboardType, secureTextEntry, autoComplete, onSubmitEditing, returnKeyType, inputRef, icon, error, disabled, maxLength }: {
+export function Field({ label, value, onChangeText, onBlur, placeholder, hint, multiline, keyboardType, secureTextEntry, autoComplete, autoCorrect, onSubmitEditing, returnKeyType, inputRef, icon, error, disabled, maxLength }: {
   label: string; value: string; onChangeText: (text: string) => void; placeholder?: string; multiline?: boolean;
   hint?: string; // a rule the value must meet, shown under the field while typing (a placeholder vanishes at the first letter)
-  keyboardType?: 'default' | 'phone-pad' | 'decimal-pad' | 'number-pad' | 'email-address'; secureTextEntry?: boolean; autoComplete?: 'tel' | 'password' | 'new-password' | 'name' | 'email' | 'username' | 'one-time-code';
+  keyboardType?: 'default' | 'phone-pad' | 'decimal-pad' | 'number-pad' | 'email-address'; secureTextEntry?: boolean; autoCorrect?: boolean; autoComplete?: 'tel' | 'password' | 'new-password' | 'name' | 'email' | 'username' | 'one-time-code';
   onSubmitEditing?: () => void; onBlur?: () => void; returnKeyType?: 'go' | 'next'; inputRef?: React.RefObject<TextInput | null>; icon?: IconName; error?: string; disabled?: boolean; maxLength?: number;
 }) {
   const { palette } = useTheme();
@@ -505,7 +507,7 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, hint, m
     <View style={[styles.inputWrap, { flexDirection: row }, focused && styles.inputFocused, disabled && styles.inputDisabled, !!error && styles.inputError, multiline && { alignItems: 'flex-start' }]}>
       {icon && <Ionicons name={icon} size={iconSize.md} color={error ? palette.error : palette.faint} style={multiline ? { marginTop: 13 } : undefined} />}
       <TextInput ref={ref} maxFontSizeMultiplier={maxScale} accessibilityLabel={label} accessibilityHint={error || hint} aria-disabled={disabled} editable={!disabled} maxLength={maxLength} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={disabled ? palette.secondary : palette.faint}
-        multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} textAlign={inputAlign}
+        multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} autoCorrect={autoCorrect} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); onBlur?.(); }}
         onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
         autoCapitalize="none" /* measured: onContentSizeChange re-reads the height on every font change, and maxHeight caps it */ style={[styles.input, { textAlign: inputAlign }, disabled && { color: palette.secondary }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
@@ -579,11 +581,16 @@ export function ListRow({ icon, label, value, onPress, tone = 'olive', danger, a
   const { palette, tones } = useTheme();
   const styles = useStyles();
   const { row, rtl, align, language } = useCopy();
+  const { fontScale } = useWindowDimensions();
+  const stacked = !!value && fontScale > wrapAbove;
   const t = danger ? tones.error : tones[tone];
   return <Press accessibilityLabel={value ? `${label}: ${value}` : label} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
     <View style={[styles.listIcon, { backgroundColor: t.bg }]}><Ionicons name={icon} size={iconSize.md} color={t.fg} /></View>
-    <Text key={language} maxFontSizeMultiplier={maxScale} numberOfLines={useLines(1)} style={[styles.listLabel, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
-    {!!value && <Text maxFontSizeMultiplier={maxScale} style={styles.listValue}>{value}</Text>}
+    <View style={[styles.listCopy, stacked ? { gap: 2 } : { flexDirection: row, alignItems: 'center', gap: 12 }]}>
+      <Text key={language} maxFontSizeMultiplier={maxScale} numberOfLines={linesFor(1, fontScale)}
+        style={[styles.listLabel, !stacked && { flex: 1 }, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
+      {!!value && <Text maxFontSizeMultiplier={maxScale} style={[styles.listValue, stacked && { textAlign: align }]}>{value}</Text>}
+    </View>
     {!danger && !action && <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={16} color={palette.faint} />}
   </Press>;
 }
@@ -787,7 +794,8 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   groupDivider: { borderTopWidth: 1, borderTopColor: palette.hair },
   listRow: { alignItems: 'center', gap: 12, minHeight: size.row, paddingHorizontal: 14, paddingVertical: 6 },
   listIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  listLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: palette.ink },
+  listCopy: { flex: 1, minWidth: 0 },
+  listLabel: { fontSize: 15, fontWeight: '600', color: palette.ink },
   listValue: { fontSize: 13, color: palette.secondary },
   empty: { alignItems: 'center', gap: 8, paddingVertical: 32, paddingHorizontal: 10 },
   emptyIcon: { width: 56, height: 56, borderRadius: 18, backgroundColor: palette.olivePale, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },

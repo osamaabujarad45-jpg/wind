@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import {
@@ -115,14 +116,14 @@ for (const [input, expected] of [
 // Exercise the real email-code callbacks and their request bodies, not just the helper in isolation.
 {
   let slots = [], cursor = 0, first = true;
-  const calls = []; let c = copy.en, language = 'en', linkMode = false;
+  const calls = []; let c = copy.en, language = 'en', linkMode = false, profileLinkMode = false, inboxConfirmed = false;
   const react = {
     useState(value) { const slot = slots[cursor++] ??= { value: typeof value === 'function' ? value() : value };
       return [slot.value, next => { slot.value = typeof next === 'function' ? next(slot.value) : next; }]; },
     useRef(value) { return slots[cursor++] ??= { current: value }; },
     useEffect(fn) { if (first) fn(); },
   };
-  const ui = Object.fromEntries(['Appear', 'Avatar', 'Badge', 'Button', 'Card', 'Choices', 'ErrorText', 'Field', 'Header', 'Loading', 'Logo', 'Press', 'Row', 'Screen', 'Txt'].map(name => [name, name]));
+  const ui = Object.fromEntries(['Appear', 'Avatar', 'Badge', 'Button', 'Card', 'Check', 'Choices', 'ErrorText', 'Field', 'Header', 'Loading', 'Logo', 'Press', 'Row', 'Screen', 'Txt'].map(name => [name, name]));
   const user = { id: 1, name: 'Test', email: 'test@example.com', emailVerifiedAt: null, createdAt: 0 };
   const fade = { duration: () => ({ delay: () => ({}) }) };
   const modules = {
@@ -130,10 +131,16 @@ for (const [input, expected] of [
     'react-native': { KeyboardAvoidingView: 'KeyboardAvoidingView', Linking: {}, Platform: { OS: 'web' }, StyleSheet: { create: value => value }, View: 'View' },
     '@expo/vector-icons': { Ionicons: 'Ionicons' }, 'expo-router': { router: {} },
     '../motion': { default: { View: 'Animated.View' }, FadeInDown: fade, FadeInUp: fade, useReducedMotion: () => false },
-    '../api': { api: async (path, body) => { calls.push({ path, body }); return path === '/auth/options' ? { registrationOpen: true, emailReset: !linkMode, ...(linkMode && { emailResetLink: true }) } : {}; } },
-    '../model': model, '../parts': { HelpLinks: 'HelpLinks', useFormat: () => ({ date: () => '' }) },
+    '../api': { apiSessionRevision: () => 0, api: async (path, body) => {
+      calls.push({ path, body });
+      if (path === '/auth/options') return { registrationOpen: true, emailReset: !linkMode, ...(linkMode && { emailResetLinkProof: true }) };
+      if (path === '/me/email/link/confirm') return { user: { ...user, emailVerifiedAt: inboxConfirmed ? 1 : null } };
+      return {};
+    } },
+    '../model': model, '../parts': { HelpLinks: 'HelpLinks', useFormat: () => ({ date: () => '' }), useEntraReauth: () => ({}) },
     '../install-link': { InstallLink: 'InstallLink' }, '../phone-recovery': { PhoneRecovery: 'PhoneRecovery' }, '../phone-card': { PhoneCard: 'PhoneCard' },
-    '../session': { useSession: () => ({ me: { user, capabilities: { emailVerification: true } }, refresh: async () => {}, signIn: async () => {}, language }) },
+    '../session': { useSession: () => ({ me: { user, capabilities: { emailVerification: !profileLinkMode, emailVerificationLink: profileLinkMode } },
+      refresh: async () => { if (inboxConfirmed) user.emailVerifiedAt = 1; }, signIn: async () => {}, language }) },
     '../entra-auth': { entraConfigured: false }, '../phone/client': { phoneApi: { capabilities: async () => ({ available: false, enabled: false }) } },
     '../phone/flow': { codeInput, gateOf }, '../phone/notice': { takeAuthNotice: () => null },
     '../ui': { ...ui, fill, haptic: { success() {}, error() {} }, useCopy: () => ({ c, err: error => String(error) }) },
@@ -179,10 +186,15 @@ for (const [input, expected] of [
     find(renderAuth(), node => node.type === 'Field' && node.props.label === c.identifier).props.onChangeText('test@example.com');
     assert.equal(field(renderAuth()), undefined, 'link mode never asks for a code');
     await button(renderAuth(), c.resetSend).onPress();
-    const request = calls.find(call => call.path === '/auth/reset/code');
+    const request = calls.find(call => call.path === '/auth/reset/link/code');
     assert.equal(request.body.identifier, 'test@example.com');
     assert.equal(request.body.lang, language);
     assert.ok(find(renderAuth(), node => node.type === 'Txt' && node.props.children === c.resetLinkSent));
+    const mailbox = find(renderAuth(), node => node.type === 'Field' && node.props.label === c.emailLinkProof);
+    mailbox.props.onChangeText('A'.repeat(32));
+    find(renderAuth(), node => node.type === 'Field' && node.props.label === c.newPassword).props.onChangeText('Synthetic-password-123');
+    await button(renderAuth(), c.resetSave).onPress();
+    assert.equal(calls.find(call => call.path === '/auth/reset/link').body.mailboxProof, 'A'.repeat(32));
     assert.ok(!calls.some(call => call.path === '/auth/reset'));
   }
   c = copy.en;
@@ -193,8 +205,50 @@ for (const [input, expected] of [
   slots = [];
   const renderEmail = () => { cursor = 0; return emailCard(); };
   exercise(renderEmail);
-  await button(renderEmail(), c.emailConfirm).onPress();
+  const prove = async () => {
+    find(renderEmail(), node => node.type === 'Field' && node.props.label === c.currentPassword).props.onChangeText('Synthetic-password-123');
+    await button(renderEmail(), c.continue).onPress();
+  };
+  button(renderEmail(), c.emailConfirm).onPress();
+  await prove();
   assert.equal(calls.find(call => call.path === '/me/email/verify').body.code, '123456');
+
+  await test('English and Arabic sign-up allow an empty email but reject a malformed one', async () => {
+    for (language of ['en', 'ar']) {
+      c = copy[language]; slots = []; first = true; calls.length = 0;
+      renderAuth(); await Promise.resolve();
+      const getField = label => find(renderAuth(), node => node.type === 'Field' && node.props.label === label)?.props;
+      find(renderAuth(), node => node.type === 'Choices' && node.props.label === c.authMode).props.onChange('up');
+      for (const [label, value] of [[c.name, 'Wind test'], [c.phone, '0599991234'], [c.password, 'Synthetic-password-123']]) getField(label).onChangeText(value);
+      find(renderAuth(), node => node.type === 'Check').props.onChange(true);
+      const recovery = getField(c.recoveryEmailOptional);
+      assert.ok(recovery, 'sign-up labels the optional recovery email');
+      recovery.onChangeText('bad email');
+      assert.equal(button(renderAuth(), c.createAccount).disabled, true);
+      getField(c.recoveryEmailOptional).onChangeText('');
+      assert.equal(button(renderAuth(), c.createAccount).disabled, false);
+      await button(renderAuth(), c.createAccount).onPress();
+      assert.ok(calls.find(call => call.path === '/auth/register' && !('email' in call.body)));
+    }
+  });
+  await test('English and Arabic Profile can send and check Firebase verification links', async () => {
+    for (language of ['en', 'ar']) {
+      c = copy[language]; slots = []; profileLinkMode = true; inboxConfirmed = false; user.emailVerifiedAt = null; calls.length = 0;
+      assert.equal(field(renderEmail()), undefined);
+      button(renderEmail(), c.emailSendLink).onPress();
+      await prove();
+      assert.equal(calls.find(call => call.path === '/me/email/link').body.lang, language);
+      assert.equal(button(renderEmail(), c.emailConfirm).disabled, true);
+      find(renderEmail(), node => node.type === 'Field' && node.props.label === c.emailLinkProof).props.onChangeText('A'.repeat(32));
+      inboxConfirmed = true;
+      button(renderEmail(), c.emailConfirm).onPress();
+      await prove();
+      const confirmation = calls.find(call => call.path === '/me/email/link/confirm');
+      assert.equal(confirmation.body.mailboxProof, 'A'.repeat(32));
+      assert.equal(confirmation.body.current, 'Synthetic-password-123');
+      assert.ok(find(renderEmail(), node => node.type === 'Badge' && node.props.label === c.verified));
+    }
+  });
 }
 
 // Gates: the module can be absent (SQLite), switched off (no provider), or ready; a failed check is never "closed".
@@ -506,10 +560,6 @@ console.log('Phone UI rules passed');
   assert.ok(!sheet.includes('c.pinHint') && !sheet.includes('c.pinUnavailable'), 'PinSheet uses its own copy');
   assert.ok(sheet.includes('c.pinSheetHint') && sheet.includes('c.pinSheetUnavailable'));
   assert.ok(readFileSync(new URL('../src/app/roads.tsx', import.meta.url), 'utf8').includes('unavailable={c.roadPinUnavailable}'), 'roads has no landmark field: its own failure text');
-}
-{ // Home's "current order": a live trip, then a search running now, then a booking for later (A53, 8 and 12 Nov).
-  const home = readFileSync(new URL('../src/app/(customer)/index.tsx', import.meta.url), 'utf8');
-  assert.ok(home.includes('.sort((a, b) => currentRank(b) - currentRank(a))'), 'live trips sort first (currentRank, tested in presentation.test.mjs)');
 }
 { // A live trip named the customer twice for the driver: sheet header and body card (A53, 8 Nov).
   const order = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');

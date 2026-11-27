@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { api, useApi } from '../../../api';
-import { isolate, merchantRejects, type MerchantItem, type Order, type ShopLine } from '../../../model';
+import { isolate, latinDigits, merchantRejects, type MerchantItem, type Order, type ShopLine } from '../../../model';
 import { useFormat } from '../../../parts';
 import { qtyLabel, ShopLines, useCountdown } from '../../../shop-ui';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, Header, Loading, Row, Screen, Section, Stepper, Txt, useCopy } from '../../../ui';
@@ -58,7 +58,7 @@ export default function MerchantOrder() {
       {/* Time up: nothing here can act until the order is settled, so the card says it once instead of under every control (UI review 23 Nov) */}
       {clock.left > 0 && <>
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantPrepMinutes}</Txt>
-      <Stepper value={prep} min={5} max={120} label={c.merchantPrepMinutes} onChange={n => setPrep(Math.round(n / 5) * 5 || 5)} />
+      <Stepper value={prep} min={5} max={120} step={5} label={c.merchantPrepMinutes} onChange={setPrep} />
       <Button title={c.merchantAccept} icon="checkmark" loading={busy === 'accept'} onPress={() => act('accept', `/merchant/orders/${order.id}/accept`, { prepMinutes: prep })} />
       {!s.acceptExtended && clock.left > 0 && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/merchant/orders/${order.id}/extend`)} />}
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantRejectWhy}</Txt>
@@ -80,7 +80,7 @@ export default function MerchantOrder() {
         {s.state === 'preparing' && !s.change && editing !== l.id && <Button title={c.merchantEditLine} size="sm" variant="ghost" label={fill(c.merchantEditLineOf, { item: name(l) })} onPress={() => setEditing(l.id)} />}
         {editing === l.id && <View style={{ marginTop: 6 }}>
           {l.byWeight && <>
-            <Field label={fill(c.merchantActualWeight, { item: name(l) })} value={grams} onChangeText={t => setGrams(t.replace(/\D/g, '').slice(0, 5))} keyboardType="number-pad" />
+            <Field label={fill(c.merchantActualWeight, { item: name(l) })} value={grams} onChangeText={t => setGrams(latinDigits(t).replace(/\D/g, '').slice(0, 5))} keyboardType="number-pad" />
             <Button title={c.merchantSaveWeight} size="sm" disabled={!grams} loading={busy === `w${l.id}`} onPress={() => act(`w${l.id}`, `/merchant/orders/${order.id}/lines/${l.id}`, { weightGrams: Number(grams) })} />
           </>}
           {l.policy !== 'remove' && <>

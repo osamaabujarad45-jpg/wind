@@ -4,7 +4,7 @@ import { AccessibilityInfo, Linking, Platform, Share, StyleSheet, View } from 'r
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api, apiSessionRevision, errorCode, privacyUrl, SUPPORT_URL, useApi } from './api';
-import { disablePush, enablePush, pushState, pushSupported, refreshPush, type PushState } from './push';
+import { disablePush, enablePush, pushState, pushSupported, type PushState } from './push';
 import { NativePushRow } from './native-push-row';
 import { city, HISTORY_PAGE, isOpen, isolate, keepOlder, orderCode, withOlder, type Order, type Referral, type Service } from './model';
 import { dayKey, HEBRON } from './booking';
@@ -187,7 +187,7 @@ export function tripTitle(order: Pick<Order, 'pickupCity' | 'dropoffCity' | 'pic
   return `${rtl ? '\u200f' : '\u200e'}${place(here ? order.pickupNote! : city(order.pickupCity)[language])} ${rtl ? '←' : '→'} ${place(here ? order.dropoffNote! : city(order.dropoffCity)[language])}`;
 }
 
-export function OrderRow({ order, index = 0, status = true }: { order: Order; index?: number; status?: boolean }) {
+export function OrderRow({ order, index = 0, status = true, compact = false }: { order: Order; index?: number; status?: boolean; compact?: boolean }) {
   const { palette, statusTone } = useTheme();
   const { c, language, money, rtl } = useCopy();
   const { time } = useFormat();
@@ -197,17 +197,35 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
   const total = order.shop && !mine ? order.shop.cashAgorot / 100 : order.price;
   // The shop asked the customer about a change: the order waits on them, so the row asks for attention, not patience (UI review 23 Nov).
   const yourTurn = !mine && order.shop?.state === 'awaiting_approval';
+  const route = tripTitle(order, language, rtl);
+  const state = statusText(c, order, mine);
+  const scheduled = order.scheduledFor && ['searching', 'assigned'].includes(order.status)
+    ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : undefined;
+  const label = [orderCode(order.id), c[order.service], route, money(total), state, scheduled].filter(Boolean).join(', ');
+  const open = () => router.push(`/order/${order.id}`);
+  if (compact) return <Card style={{ padding: 0, marginBottom: 8 }}>
+    <Press accessibilityLabel={label} onPress={open} style={{ minHeight: 44, justifyContent: 'center', padding: 10 }}>
+      <Row gap={8}>
+        <ServiceIcon service={order.service} size={28} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Txt variant="label">{route}</Txt>
+          <Txt variant="caption">{`${c[order.service]} · ${state} · ${money(total)}`}</Txt>
+          {scheduled && <Txt variant="caption">{scheduled}</Txt>}
+        </View>
+      </Row>
+    </Press>
+  </Card>;
   return <Appear index={index}>
     <Card style={{ padding: 12 }}>
       {/* Announce every fact the row shows; a container label replaces the children for screen readers. */}
-      <Press accessibilityLabel={`${orderCode(order.id)}, ${c[order.service]}, ${tripTitle(order, language, rtl)}, ${money(total)}, ${statusText(c, order, mine)}`} onPress={() => router.push(`/order/${order.id}`)}>
+      <Press accessibilityLabel={label} onPress={open}>
         <Row gap={12} style={{ alignItems: 'flex-start' }}>
           <ServiceIcon service={order.service} />
           <View style={{ flex: 1, gap: 2 }}>
             <Row style={{ justifyContent: 'space-between' }}>
               {/* two lines: one cut a shop order's destination off entirely ("حلويات السلطان → الطابق الثالث …", 21 Nov) */}
               <Txt variant="title" numberOfLines={2} style={{ flexShrink: 1 }}>
-                {tripTitle(order, language, rtl)}
+                {route}
               </Txt>
               {/* a cancelled order was never charged and pays the driver nothing */}
               <Txt variant="title" style={order.status === 'cancelled' && { color: palette.faint, textDecorationLine: 'line-through' }}>{money(total)}</Txt>
@@ -215,11 +233,11 @@ export function OrderRow({ order, index = 0, status = true }: { order: Order; in
             {/* private is the default and sat on every row; only shared, the exception, is marked */}
             <Txt variant="caption" numberOfLines={1}>{c[order.service]}{order.shared ? `, ${c.shared}` : ''}</Txt>
             <Row style={{ justifyContent: 'space-between', marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
-              {status ? <Badge label={statusText(c, order, mine)} status={order.status} {...yourTurn && { tone: statusTone.on_hold, icon: 'alert-circle-outline' as const }} /> : <View />}
+              {status ? <Badge label={state} status={order.status} {...yourTurn && { tone: statusTone.on_hold, icon: 'alert-circle-outline' as const }} /> : <View />}
               {/* time and code are separate facts: two plain labels, no separator glyph */}
               {/* wraps at large text: on one line the code ran off the card's edge (A53, 200%) */}
               <Row gap={8} style={{ flexWrap: 'wrap', flexShrink: 1 }}>
-                <Txt variant="micro">{order.scheduledFor && ['searching', 'assigned'].includes(order.status) ? fill(c.scheduledFor, { t: time(order.scheduledFor) }) : time(order.createdAt)}</Txt>
+                <Txt variant="micro">{scheduled ?? time(order.createdAt)}</Txt>
                 <Txt variant="micro">{orderCode(order.id)}</Txt>
               </Row>
             </Row>
@@ -237,7 +255,7 @@ export function PushRow() {
   const [state, setState] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    pushState().then(next => { setState(next); if (next === 'on') void refreshPush(language).catch(() => undefined); }).catch(() => setState('unsupported'));
+    pushState().then(setState).catch(() => setState('unsupported'));
   }, [language]);
   if (!state || state === 'unsupported') return null;
   async function toggle() {
@@ -302,7 +320,7 @@ export function PlanCard() {
   const { date } = useFormat();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  if (!me || me.user.role === 'admin') return null;
+  if (!me || me.user.role === 'admin' || me.accountProfile?.mode === 'shop') return null;
   const s = me.settings;
   const isPlus = me.user.role === 'customer';
   const pitch = isPlus
@@ -339,7 +357,7 @@ export function PlanCard() {
 }
 
 /** A Microsoft sign-in ready to prove the account for one sensitive action. Stays null for an account not linked to Microsoft. */
-function useEntraReauth(challengePath: string, open: boolean) {
+export function useEntraReauth(challengePath: string, open: boolean) {
   const [request, setRequest] = useState<EntraRequest | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -410,19 +428,22 @@ export function PasswordCard() {
   </Appear>;
 }
 
-/** Unverified email while the server can send codes: one row that opens the profile, where the code goes in. */
-export function VerifyEmailNudge() {
+export function VerifyEmailNudge({ allowAdd = false }: { allowAdd?: boolean }) {
   const { palette } = useTheme();
   const { me } = useSession();
   const { c } = useCopy();
-  if (!me?.capabilities?.emailVerification || !me.user.email || me.user.emailVerifiedAt) return null;
-  return <Press accessibilityLabel={c.emailVerifyTitle} onPress={() => router.push('/profile')} style={{ marginBottom: 12 }}>
+  const offerAdd = allowAdd && !!me?.capabilities?.offerRecoveryEmail;
+  const offerVerify = me?.user.email && !me.user.emailVerifiedAt
+    && (me.capabilities?.emailVerification || me.capabilities?.emailResetLinkProof);
+  if (!offerAdd && !offerVerify) return null;
+  const title = offerAdd ? c.emailAdd : c.emailVerifyTitle;
+  return <Press accessibilityLabel={title} onPress={() => router.push('/profile')} style={{ marginBottom: 12 }}>
     <Card tone="warn" style={{ marginBottom: 0 }}>
       <Row gap={10}>
         <Ionicons name="mail-unread-outline" size={22} color={palette.warn} />
         <View style={{ flex: 1 }}>
-          <Txt variant="title">{c.emailVerifyTitle}</Txt>
-          <Txt variant="caption">{c.emailVerifyNudge}</Txt>
+          <Txt variant="title">{title}</Txt>
+          <Txt variant="caption">{offerAdd ? c.emailRecoveryNudge : c.emailVerifyForRecovery}</Txt>
         </View>
       </Row>
     </Card>
@@ -510,19 +531,32 @@ export function AccountScreen() {
         </Press>
       </Card>
     </Appear>
-    <VerifyEmailNudge />
-    <PlanCard />
-    {user.role === 'customer' && <InviteCard />}
+    {me.accountProfile && <ListGroup>
+      <ListRow icon="swap-horizontal-outline" label={c.profiles}
+        value={me.accountProfile.updates?.count ? fill(c.profileUpdatesWaiting, { n: me.accountProfile.updates.count })
+          : me.accountProfile.mode === 'captain' ? c.profileCaptain : me.accountProfile.mode === 'shop' ? c.profileShop : c.profilePersonal}
+        onPress={() => router.push('/profiles')} />
+    </ListGroup>}
+    <VerifyEmailNudge allowAdd />
+    {me.accountProfile?.mode !== 'shop' && <>
+      <PlanCard />
+      {user.role === 'customer' && <InviteCard />}
+    </>}
     <ListGroup>
+      <ListRow icon="mail-outline" label={c.email} value={user.email ? user.emailVerifiedAt ? c.verified : c.unverified : c.emailNotAdded}
+        tone="muted" onPress={() => router.push('/profile')} />
       <ListRow icon="language-outline" label={c.languageTitle} value={c.language} tone="muted" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
       <PasswordCard />
       {pushSupported() ? <PushRow /> : Platform.OS !== 'web' && <NativePushRow />}
     </ListGroup>
     <ThemeCard captain={user.role === 'driver'} />
     <ListGroup>
-      <ListRow icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />
+      {user.role === 'customer'
+        ? <ListRow icon="shield-checkmark-outline" label={c.promoSafe} tone="muted" onPress={() => router.push({ pathname: '/help', params: { topic: 'code' } })} />
+        : <ListRow icon="trail-sign-outline" label={c.roads} tone="muted" onPress={() => router.push('/roads')} />}
       {/* MER-05: merchant mode is a link inside this account, never a role switch; it appears only while shop delivery is on. */}
-      {me?.user.role === 'customer' && me.capabilities?.enabledServices?.includes('shop') && <ListRow icon="storefront-outline" label={c.merchantMode} tone="olive" onPress={() => router.push('/merchant')} />}
+      {!me.accountProfile && me.user.role === 'customer' && me.capabilities?.enabledServices?.includes('shop') &&
+        <ListRow icon="storefront-outline" label={c.merchantMode} tone="olive" onPress={() => router.push('/merchant')} />}
       <ListRow icon="help-buoy-outline" label={c.help} onPress={() => router.push('/help')} />
       {/* support lives one tap in: Help leads with it, so a second row here only splits the same door */}
       <ListRow icon="shield-checkmark-outline" label={c.privacy} tone="muted" onPress={() => Linking.openURL(privacyUrl(language))} />

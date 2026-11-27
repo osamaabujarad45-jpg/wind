@@ -112,6 +112,10 @@ EnvironmentFile=/etc/wind-api.env
 # A host that has had a database never starts on a fresh empty one: after a crash between renames the API stays down until the
 # database is put back (install-release.sh and restore.sh write the marker; Sol recheck 3 of PR #101).
 ExecStartPre=/bin/sh -c 'if [ -e /data/.wind-db-expected ] && [ ! -s /data/wind.db ]; then echo "Wind: /data/wind.db is missing; restore it (docs/operations/deploy.md)" >&2; exit 1; fi'
+# The main file may be in place before its matching sidecars. An interrupted restore keeps both units off.
+ExecStartPre=/usr/bin/test ! -e /etc/wind-db-swap
+# Check the effective service environment before starting on restored data, including after a reboot.
+ExecStartPre=:/bin/sh -c 'if [ -e /etc/wind-ingress-hold ] && { [ "${WIND_FIREBASE_EMAIL_LINKS:-}" = 1 ] || [ "${WIND_FIREBASE_RESET_LINKS:-}" = 1 ]; } && { /usr/bin/grep -qE "^restored? " /etc/wind-ingress-hold || [ "$?" -ne 1 ]; }; then echo "Wind restore: Firebase email links must be off" >&2; exit 1; fi'
 ExecStart=/opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts
 Restart=always
 RestartSec=3
@@ -139,6 +143,7 @@ Type=oneshot
 User=wind
 Group=wind
 EnvironmentFile=-/etc/wind-backup.env
+ExecStartPre=/usr/bin/test ! -e /etc/wind-db-swap
 ExecStart=/opt/windapi/backup.sh
 # The API's confinement: the job's only persistent writes are under /data (Sol ops review 21 Nov).
 NoNewPrivileges=true

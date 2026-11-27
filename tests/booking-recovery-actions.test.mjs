@@ -39,17 +39,20 @@ const pending = newBooking({ service: 'parcel', option: 'small', pickupCity: 'ra
   pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599123456', detail: 'Box', loadingHelp: false, shared: false, quotedPrice: 20 });
 const settle = async () => { for (let n = 0; n < 8; n++) await Promise.resolve(); };
 
-function screen(saved = null) {
-  const state = { ready: false, copyFailed: false, error: '', refreshingAvailability: false, attempts: 0, copies: 0, checks: 0, quotes: 0 };
+function screen(saved = null, params = { again: '42' }, homeDestination = null) {
+  const state = { ready: false, copyFailed: false, error: '', refreshingAvailability: false, attempts: 0, copies: 0, checks: 0, quotes: 0, applied: [] };
   let effect, held, heldStorage, failCopy = true, failRefresh = false;
   const context = {
-    readBooking, savedKey: 'booking.1', params: { again: '42' }, copied: { current: null }, latest: { current: null }, pickupTouched: { current: false },
+    readBooking, readHomeDestination: () => null, accountId: 1, savedKey: 'booking.1', params, homeDestination,
+    copied: { current: null }, latest: { current: null }, pickupTouched: { current: false },
+    placesRequest: { current: Promise.resolve({ saved: [{ id: 3, city: 'nablus', note: 'Saved gate' }] }) },
+    applyHomeDestination: place => { state.applied.push(place.note); },
     useEffect: fn => { effect = fn; },
     storage: { get: async () => { if (heldStorage) await heldStorage; return saved; }, set: async () => {} },
     api: async () => { state.copies++; if (failCopy) throw new Error('network'); return { id: 42 }; },
     againForm: () => ({ contact: '' }), pickupForm: () => ({}), freightDraftFromScope: () => ({}),
     checkPending: async () => { state.checks++; },
-    c: { orderAgainFailed: 'copy failed', bookingStorageError: 'storage failed' }, err: error => error.message,
+    c: { orderAgainFailed: 'copy failed', bookingStorageError: 'storage failed', placeUnavailable: 'place unavailable' }, err: error => error.message,
     get pending() { return saved ? pending : null; },
     busy: false, sending: { current: false }, alive: { current: true },
     get refreshingAvailability() { return state.refreshingAvailability; },
@@ -61,7 +64,7 @@ function screen(saved = null) {
   for (const name of ['Pending', 'Service', 'PickupCity', 'DropoffCity', 'PickupChosen', 'DropoffChosen', 'Step', 'PickupPoint', 'DropoffPoint',
     'PickupNote', 'DropoffNote', 'Contact', 'Detail', 'Option', 'LoadingHelp', 'Freight', 'LoadingHours', 'RecipientName', 'RecipientPhone', 'When', 'Slot', 'SameFrom', 'CopiedFrom']) context[`set${name}`] = () => {};
   runInNewContext(compile(`${retry}\n${availability}\nglobalThis.retry = retryStorage; globalThis.availability = retryAvailability;\n${restore}`), context);
-  return { state, context, mount: () => effect(), allowCopy: () => { failCopy = false; }, failRefresh: () => { failRefresh = true; }, hold: promise => { held = promise; }, holdStorage: promise => { heldStorage = promise; } };
+  return { state, context, mount: () => effect(), allowCopy: () => { failCopy = false; }, failRefresh: () => { failRefresh = true; }, hold: promise => { held = promise; }, holdStorage: promise => { heldStorage = promise; }, discardStorage: () => { saved = null; } };
 }
 
 let releaseStorage;
@@ -88,6 +91,25 @@ assert.equal(recovery.state.copies, 0, 'stored commands take precedence over ord
 assert.equal(recovery.state.checks, 1);
 await recovery.context.availability();
 assert.equal(recovery.state.quotes, 0, 'availability Retry cannot re-quote a frozen command');
+
+const shortcut = screen(JSON.stringify(pending), { saved: '3' }, 'saved:3');
+shortcut.mount(); await settle();
+assert.equal(shortcut.state.checks, 1);
+assert.deepEqual(shortcut.state.applied, [], 'the pending command wins over the Home shortcut');
+shortcut.discardStorage(); // Edit released the pending command, then changing language restarts hydration.
+shortcut.mount(); await settle();
+assert.deepEqual(shortcut.state.applied, [], 'changing language cannot apply a shortcut after Edit');
+
+const missing = screen(null, { saved: '4' }, 'saved:4');
+missing.mount(); await settle();
+missing.context.placesRequest.current = Promise.resolve({ saved: [{ id: 4, city: 'nablus', note: 'Late gate' }] });
+missing.mount(); await settle();
+assert.deepEqual(missing.state.applied, [], 'a missing shortcut cannot apply later, after the search becomes editable');
+
+const recent = screen(null, { again: '42', keep: 'dropoff' }, '42:dropoff');
+recent.mount(); await settle();
+assert.equal(recent.state.error, 'place unavailable');
+assert.equal(recent.state.copyFailed, false, 'a missing recent destination offers manual entry instead of a useless retry');
 
 const unavailable = screen(); unavailable.failRefresh(); await unavailable.context.availability();
 assert.equal(unavailable.state.error, 'offline', 'explicit Retry makes network failure visible');

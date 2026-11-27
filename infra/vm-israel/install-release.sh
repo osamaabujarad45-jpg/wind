@@ -9,6 +9,7 @@
 #    PR #101, HIGH 2). An uncertain stop changes nothing: the old release is kept.
 #    The freeze also writes the ingress hold /etc/wind-ingress-hold: Caddy refuses to start while it exists (provision.sh adds
 #    that check to the Caddy unit), so a power loss or kill at any later point reboots closed, not into a half-done install.
+#    Before switching, the hold records both release paths and the verified checkpoint.
 #    An install refuses to start while a hold from elsewhere (a restore awaiting reconciliation) is in place.
 # 5. Switch: /opt/windapi is a symlink to the active release, replaced in one rename. (A host from before this script still
 #    has a real /opt/windapi directory: the first run moves it to the releases folder, under the hold.)
@@ -60,6 +61,12 @@ PHASE=prepare # prepare -> frozen -> switched -> started -> live (committed)
 # could be steered by a symlink or a swapped directory; as wind it can only reach what wind already can (Haiku H1, N1, N5).
 as_wind() { sudo -u wind "$@" 8<&-; }
 say() { echo "install-release: $*" >&2; }
+write_install_hold() {
+  {
+    printf 'install %s %s (%s)\n' "$STAMP" "$1" "$(date -u +%FT%TZ)"
+    printf 'previous release: %s\ncandidate release: %s\ncheckpoint: %s\n' "${PREV:-none}" "$REL" "${CHECKPOINT:-none}"
+  } > "$HOLD.new" && mv -f -- "$HOLD.new" "$HOLD" && sync
+}
 sqlite_response() {
   /opt/node/bin/node -e 'try {const body = JSON.parse(require("node:fs").readFileSync(0, "utf8")); process.exit(body.ok === true && body.schema === 3 && body.backend !== "postgres" ? 0 : 1)} catch {process.exit(1)}'
 }
@@ -203,6 +210,7 @@ sudo -u wind env -i PATH=/opt/node/bin:/usr/bin:/bin \
   NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DRY/wind.db" TZ=Asia/Hebron WEB_ROOT="$REL/web" \
   SUPPORT_CONTACT="${SUPPORT_CONTACT:-}" WIND_PUSH_SUBJECT="${WIND_PUSH_SUBJECT:-}" \
   WIND_TRUST_PROXY="${WIND_TRUST_PROXY:-}" WIND_IDENTITY_MODE="${WIND_IDENTITY_MODE:-}" \
+  WIND_PROFILE_SWITCHING="${WIND_PROFILE_SWITCHING:-0}" WIND_MIN_CLIENT_BUILD="${WIND_MIN_CLIENT_BUILD:-}" \
   WIND_ENABLED_SERVICES="${WIND_ENABLED_SERVICES-parcel}" "${backup_age[@]}" \
   /opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts > "$WORK/dry.log" 2>&1 8<&- &
 PID=$! # sudo relays the kill to node
@@ -226,8 +234,7 @@ fi
 # checkpoint changes nothing, and the previous release is reopened only once it answers /api/ready.
 PHASE=frozen # from the Caddy stop on, any exit reopens what was there (Sonnet L1)
 stopped caddy || { say "Caddy did not stop; nothing was changed"; exit 1; }
-printf 'install %s in progress (%s)\n' "$STAMP" "$(date -u +%FT%TZ)" > "$HOLD"
-sync # the hold is on disk before anything moves, so a power loss reboots closed
+write_install_hold freezing
 drain_backup || { say "a backup is still running or queued; nothing was changed"; exit 1; }
 { stopped wind-api && port_free 4000; } || { say "the API did not stop for certain; nothing was changed"; exit 1; }
 if [ -s "$DB" ]; then
@@ -236,6 +243,7 @@ if [ -s "$DB" ]; then
   # From now on the API refuses to start without a database instead of creating an empty one (provision.sh unit check).
   as_wind touch -- "$DATA/.wind-db-expected"
 fi
+write_install_hold switching # persist the verified checkpoint and both release paths before the first rename
 
 # Switch (a one-time move of a legacy directory first; its window is only while the API is stopped).
 PHASE=switched

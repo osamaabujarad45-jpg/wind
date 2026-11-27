@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, typedNumber, minorFromText, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, varianceAllowed, varianceReasons, vehicleServices, vehicles, exceptionReasons, exceptionNextAction, suggestedNextAction, isolate } from '../src/model.ts';
+import { defaultSettings as s, distanceKm, canTake, city, isNight, latinDigits, licenceExpiryFromText, typedNumber, minorFromText, PARCEL_LOAD, nearestCity, nextStatus, normalizePhone, offerRange, quote, roadAlerts, runSheet, servedCity, smartPrice, statusFlow, varianceAllowed, varianceReasons, vehicleServices, vehicles, exceptionReasons, exceptionNextAction, suggestedNextAction, isolate } from '../src/model.ts';
 // Free text is isolated and cannot carry its own marks: a stray PDI or override would close or flip the line around it.
 assert.equal(isolate('سائق'), '\u2068سائق\u2069');
 assert.equal(isolate('a\u2069\u202eb\u200f'), '\u2068ab\u2069');
@@ -39,6 +39,9 @@ assert.equal(servedCity({ latitude: 31.9038, longitude: 35.0234 }), 'ramallah');
 assert.equal(servedCity({ latitude: 30.5, longitude: 34.4 }), null); // Sinai: nearest is Rafah, but 90 km out
 // Arabic keyboards type Arabic-Indic or Persian digits.
 assert.equal(latinDigits('٧١ ۴۵'), '71 45');
+assert.equal(licenceExpiryFromText('٢٠٢٨٠٢٢٩'), Date.UTC(2028, 1, 29));
+assert.equal(licenceExpiryFromText('۲۰۲۷-۱۲-۳۱'), Date.UTC(2027, 11, 31));
+assert.ok(Number.isNaN(licenceExpiryFromText('2027-02-29')));
 assert.deepEqual([typedNumber(' ٢٠ '), typedNumber('٠٫٥'), typedNumber('1,5'), typedNumber('12')], [20, 0.5, 1.5, 12]);
 // Money typed by a cashier is exact agorot: 1.15 and 4.35 are the classic float traps (1.15*100 = 114.99999999999999).
 assert.deepEqual(['12', '12.5', '12.05', '1.15', '4.35', ' ٢٠٫٥٠ ', '0,07', '-3', '-0.5', '٠', '.5', '5.', '۱۲٫۵', '\u200f12\u060c5', '\u22123'].map(minorFromText),

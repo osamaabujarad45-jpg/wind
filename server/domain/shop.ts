@@ -23,6 +23,7 @@ type Register = (method: string, path: string, handler: (ctx: { user: User; para
 export type ShopPushKind = 'merchant_order' | 'shop_consent' | 'shop_update' | 'cancelled' | 'in_transit' | 'attention' | 'cash' | 'approved';
 
 export type ShopDeps = {
+  profileModes: boolean;
   db: Persistence;
   need: (user: User, ...roles: Role[]) => void;
   needActive: (user: User) => void;
@@ -32,7 +33,7 @@ export type ShopDeps = {
   normalizePhone: (value: string) => string | null;
   settings: () => Promise<Settings>;
   enabled: () => boolean;
-  queuePush: (userIds: (number | null)[], kind: never, order: number, path?: string) => Promise<unknown>;
+  queuePush: (userIds: (number | null)[], kind: ShopPushKind, order: number, path?: string, changeId?: number) => Promise<unknown>;
   getOrder: (id: number, viewer: User) => Promise<Order>;
   adminIds: () => Promise<number[]>;
   /** Releases a shop order to captains: the same broadcast a parcel uses. */
@@ -46,6 +47,7 @@ export type ShopDeps = {
   journal: (orderId: number, driverId: number, kind: 'collection' | 'trip', amounts: { goods?: number; service?: number; over?: number; trip?: number }) => Promise<unknown>;
   /** main.ts's replayable driver command envelope: a lost acknowledgement replays the stored outcome. */
   driverCommand: (user: User, id: number, body: Row, apply: (user: User, id: number, input: Row) => Promise<Order>) => Promise<unknown>;
+  safetyFree: (orderId: number) => Promise<void>;
 };
 
 const MINUTE = 60_000, DAY = 86_400_000;
@@ -94,11 +96,10 @@ export const goodsOf = (lines: Pick<ShopLine, 'removed' | 'finalAgorot' | 'estim
   lines.filter(l => !l.removed).reduce((sum, l) => sum + (l.finalAgorot ?? l.estimateAgorot), 0);
 
 export function registerShop(route: Register, deps: ShopDeps) {
-  const { db, need, needActive, fail, text, bookedPoint, normalizePhone, settings, queuePush, getOrder, adminIds } = deps;
-  const push = (ids: (number | null)[], kind: ShopPushKind, order: number, path?: string) => queuePush(ids, kind as never, order, path);
+  const { db, need, needActive, fail, text, bookedPoint, normalizePhone, settings, queuePush: push, getOrder, adminIds } = deps;
   const available = async () => { if (!deps.enabled() || !(await shopTables(db))) fail(409, 'service_unavailable'); };
   const inTx = async <T>(work: () => Promise<T>): Promise<T> => {
-    if (db.inTransaction) return work();
+    if (db.inTransaction) return db.backend === 'sqlite' ? db.savepoint(work) : work();
     await db.exec('BEGIN IMMEDIATE');
     try { const value = await work(); await db.exec('COMMIT'); return value; }
     catch (error) { try { if (db.inTransaction) await db.exec('ROLLBACK'); } catch { /* the owner rolls back */ } throw error; }
@@ -123,18 +124,21 @@ export function registerShop(route: Register, deps: ShopDeps) {
 
   // ---------- merchants ----------
   const merchantOf = async (userId: number) => db.one('SELECT * FROM merchants WHERE owner_user_id = ?', userId);
-  const needMerchant = async (user: User) => {
-    need(user, 'customer'); needActive(user); await available();
+  const needMerchant = async (user: User, setup = false) => {
+    if (user.accountMode !== 'shop') need(user, 'customer');
+    if (user.accountMode && user.accountMode !== 'shop') fail(403, 'forbidden');
+    needActive(user); await available();
     const m = await merchantOf(user.id);
-    if (!m || m.status === 'pending') fail(403, 'not_merchant');
+    if (!m || (m.status === 'pending' && !(setup && user.accountMode === 'shop'))) fail(403, 'not_merchant');
     return m!;
   };
   const hoursOf = (merchantId: number) => db.all('SELECT weekday, open_min, close_min FROM merchant_hours WHERE merchant_id = ? ORDER BY weekday, open_min', merchantId);
   const licenceValid = (m: Row, now = Date.now()) => Number(m.licence_expires_at) > now;
   async function merchantView(m: Row, operator = false, owner = false): Promise<Merchant> {
     const hours = await hoursOf(m.id);
+    const stocked = !deps.profileModes || !!await db.one('SELECT 1 FROM merchant_items WHERE merchant_id = ? AND available = 1 LIMIT 1', m.id);
     return { id: Number(m.id), name: m.name, category: m.category, city: m.city, point: { latitude: m.lat, longitude: m.lng }, phone: m.phone ?? null,
-      status: m.status, pausedNew: !!m.paused_new, open: m.status === 'active' && !m.paused_new && licenceValid(m) && openAt(hours as never, Date.now()),
+      status: m.status, pausedNew: !!m.paused_new, open: stocked && m.status === 'active' && !m.paused_new && licenceValid(m) && openAt(hours as never, Date.now()),
       minOrderAgorot: Number(m.min_order_agorot), deliveryFeeAgorot: Number(m.delivery_fee_agorot), serviceFeeAgorot: Number(m.service_fee_agorot),
       prepMinutes: Number(m.prep_minutes),
       hours: hours.map(h => ({ weekday: Number(h.weekday), openMinute: Number(h.open_min), closeMinute: Number(h.close_min) })),
@@ -177,8 +181,8 @@ export function registerShop(route: Register, deps: ShopDeps) {
     return inTx(async () => {
       const id = Number((await db.run(`INSERT INTO merchants (owner_user_id, name, category, city, lat, lng, phone, status, paused_new, min_order_agorot,
         delivery_fee_agorot, service_fee_agorot, commission_bps, prep_minutes, licence_no, licence_expires_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, user.id, text(body.name, 80), category, body.city, point.latitude, point.longitude,
-        phone, 3000, 1000, 200, 1000, 20, licenceNo, expires, now, now)).lastInsertRowid);
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, user.id, text(body.name, 80), category, body.city, point.latitude, point.longitude,
+        phone, deps.profileModes ? 1 : 0, 3000, 1000, 200, 1000, 20, licenceNo, expires, now, now)).lastInsertRowid);
       const hours = hoursInput(body.hours);
       if (hours) await saveHours(id, hours);
       await push(await adminIds(), 'attention', 0, '/admin/merchants');
@@ -186,29 +190,36 @@ export function registerShop(route: Register, deps: ShopDeps) {
     });
   });
   route('GET', '/api/merchant', async ({ user }) => {
-    need(user, 'customer');
+    if (user.accountMode !== 'shop') need(user, 'customer');
     if (!(await shopTables(db))) return { merchant: null };
     const m = await merchantOf(user.id);
+    if (m && user.accountMode === 'personal') fail(403, 'forbidden');
     return { merchant: m ? await merchantView(m, false, true) : null };
   });
   // MER-02: the shop edits its catalogue, hours and the pause; prices are integer agorot (PAY-01).
   route('GET', '/api/merchant/catalogue', async ({ user }) => {
-    const m = await needMerchant(user);
+    const m = await needMerchant(user, true);
     return { items: (await db.all('SELECT * FROM merchant_items WHERE merchant_id = ? ORDER BY section, sort, id', m.id)).map(itemView) };
   });
   const itemInput = (body: Row) => ({ section: text(body.section, 40), nameAr: text(body.nameAr, 80), nameEn: text(body.nameEn, 80),
     price: agorot(body.priceAgorot, 1_000_000), byWeight: !!body.byWeight, available: body.available !== false });
   route('POST', '/api/merchant/items', async ({ user, body }) => {
-    const m = await needMerchant(user);
+    const m = await needMerchant(user, true);
     const i = itemInput(body);
     if (i.price < 1) fail(400, 'invalid_input');
+    const requestId = deps.profileModes ? text(body.requestId, 64) : null;
+    if (requestId) {
+      const item = await db.one('SELECT * FROM merchant_items WHERE merchant_id = ? AND client_request_id = ?', m.id, requestId);
+      if (item) return itemView(item);
+    }
     if (Number((await db.one('SELECT COUNT(*) AS n FROM merchant_items WHERE merchant_id = ?', m.id))!.n) >= 500) fail(409, 'too_many_items');
-    const id = Number((await db.run(`INSERT INTO merchant_items (merchant_id, section, name_ar, name_en, price_agorot, by_weight, available, sort, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`, m.id, i.section, i.nameAr, i.nameEn, i.price, i.byWeight ? 1 : 0, i.available ? 1 : 0, Date.now())).lastInsertRowid);
+    const id = Number((await db.run(`INSERT INTO merchant_items (merchant_id, section, name_ar, name_en, price_agorot, by_weight, available, sort, updated_at${deps.profileModes ? ', client_request_id' : ''})
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?${deps.profileModes ? ', ?' : ''})`, m.id, i.section, i.nameAr, i.nameEn, i.price, i.byWeight ? 1 : 0, i.available ? 1 : 0, Date.now(),
+      ...(deps.profileModes ? [requestId] : []))).lastInsertRowid);
     return itemView((await db.one('SELECT * FROM merchant_items WHERE id = ?', id))!);
   });
   route('POST', '/api/merchant/items/:id', async ({ user, params, body }) => {
-    const m = await needMerchant(user);
+    const m = await needMerchant(user, true);
     const item = await db.one('SELECT * FROM merchant_items WHERE id = ? AND merchant_id = ?', Number(params[0]), m.id) ?? fail(404, 'not_found');
     // Availability alone is the common edit (the HAAT/Souq "out of stock" toggle); a full edit sends every field.
     if (Object.keys(body).length === 1 && typeof body.available === 'boolean') {
@@ -222,16 +233,26 @@ export function registerShop(route: Register, deps: ShopDeps) {
     return itemView((await db.one('SELECT * FROM merchant_items WHERE id = ?', item.id))!);
   });
   route('POST', '/api/merchant/settings', async ({ user, body }) => {
-    const m = await needMerchant(user);
+    const m = await needMerchant(user, true);
     return inTx(async () => {
-      // Pausing never cancels accepted orders (MER-02): it only stops new ones.
-      if (body.paused !== undefined) await db.run('UPDATE merchants SET paused_new = ?, updated_at = ? WHERE id = ?', body.paused ? 1 : 0, Date.now(), m.id);
       if (body.prepMinutes !== undefined) {
         if (!Number.isInteger(body.prepMinutes) || body.prepMinutes < 1 || body.prepMinutes > 180) fail(400, 'invalid_input');
         await db.run('UPDATE merchants SET prep_minutes = ?, updated_at = ? WHERE id = ?', body.prepMinutes, Date.now(), m.id);
       }
       const hours = hoursInput(body.hours);
+      if (deps.profileModes && hours?.length === 0) fail(409, 'shop_hours_required');
       if (hours) await saveHours(Number(m.id), hours);
+      if (body.paused !== undefined) {
+        if (deps.profileModes && typeof body.paused !== 'boolean') fail(400, 'invalid_input');
+        if (deps.profileModes && !body.paused) {
+          if (m.status !== 'active') fail(409, 'shop_approval_required');
+          if (!licenceValid(m)) fail(409, 'licence_expired');
+          if (!(await hoursOf(m.id)).length) fail(409, 'shop_hours_required');
+          if (!await db.one('SELECT 1 FROM merchant_items WHERE merchant_id = ? AND available = 1 LIMIT 1', m.id)) fail(409, 'shop_stock_required');
+          await db.run('UPDATE merchants SET published_at = COALESCE(published_at, ?) WHERE id = ?', Date.now(), m.id);
+        }
+        await db.run('UPDATE merchants SET paused_new = ?, updated_at = ? WHERE id = ?', body.paused ? 1 : 0, Date.now(), m.id);
+      }
       return { merchant: await merchantView((await db.one('SELECT * FROM merchants WHERE id = ?', m.id))!, false, true) };
     });
   });
@@ -241,19 +262,22 @@ export function registerShop(route: Register, deps: ShopDeps) {
     need(user, 'customer', 'admin'); await available();
     const city = query.get('city');
     if (city !== null && !isCity(city)) fail(400, 'invalid_city');
-    const rows = await db.all(`SELECT * FROM merchants WHERE status IN ('active','paused') ${city ? 'AND city = ?' : ''} ORDER BY name LIMIT 200`, ...(city ? [city] : []));
+    const rows = await db.all(`SELECT * FROM merchants WHERE status IN ('active','paused') ${deps.profileModes ? 'AND published_at IS NOT NULL' : ''}
+      ${city ? 'AND city = ?' : ''} ORDER BY name LIMIT 200`, ...(city ? [city] : []));
     const pilot = town();
-    return { town: pilot, merchants: await Promise.all(rows.filter(m => !pilot || m.city === pilot).map(m => merchantView(m))) };
+    const merchants = await Promise.all(rows.filter(m => !pilot || m.city === pilot).map(m => merchantView(m)));
+    return { town: pilot, merchants: deps.profileModes ? merchants.sort((a, b) => Number(b.open) - Number(a.open)) : merchants };
   });
   route('GET', '/api/shop/merchants/:id', async ({ user, params }) => {
     need(user, 'customer', 'admin'); await available();
-    const m = await db.one("SELECT * FROM merchants WHERE id = ? AND status IN ('active','paused')", Number(params[0])) ?? fail(404, 'not_found');
+    const m = await db.one(`SELECT * FROM merchants WHERE id = ? AND status IN ('active','paused') ${deps.profileModes ? 'AND published_at IS NOT NULL' : ''}`, Number(params[0])) ?? fail(404, 'not_found');
     const items = await db.all('SELECT * FROM merchant_items WHERE merchant_id = ? AND available = 1 ORDER BY section, sort, id', m.id);
     return { merchant: await merchantView(m), items: items.map(itemView) };
   });
 
   // ---------- order reads ----------
-  const shopRow = (orderId: number) => db.one('SELECT * FROM shop_orders WHERE order_id = ?', orderId);
+  const shopRow = (orderId: number) => db.one(`SELECT s.*, (SELECT id FROM shop_snapshots WHERE order_id = s.order_id AND reason = 'ready'
+    ORDER BY id DESC LIMIT 1) AS ready_snapshot_id FROM shop_orders s WHERE s.order_id = ?`, orderId);
   const linesOf = async (orderId: number) => (await db.all('SELECT * FROM shop_lines WHERE order_id = ? ORDER BY id', orderId)).map(lineView);
   const snapshot = async (orderId: number, reason: string, s?: Row) => {
     const lines = await linesOf(orderId);
@@ -263,11 +287,12 @@ export function registerShop(route: Register, deps: ShopDeps) {
   /** Who this viewer is on the order; null when they may not see it. */
   async function roleOn(r: Row, viewer: User): Promise<ShopView['role'] | null> {
     if (viewer.role === 'admin') return 'admin';
-    if (viewer.id === r.customer_id) return 'customer';
-    if (viewer.id === r.driver_id) return 'driver';
+    if (viewer.id === r.customer_id && (!viewer.accountMode || viewer.accountMode === 'personal')) return 'customer';
+    if (viewer.id === r.driver_id && (!viewer.accountMode || viewer.accountMode === 'captain')) return 'driver';
     if (viewer.role === 'driver' && r.status === 'searching') return 'driver'; // a job card: getOrder already decided they may see it
     const s = await shopRow(r.id);
-    if (s && (await db.one('SELECT 1 FROM merchants WHERE id = ? AND owner_user_id = ?', s.merchant_id, viewer.id))) return 'merchant';
+    if ((!viewer.accountMode || viewer.accountMode === 'shop') && s &&
+      await db.one('SELECT 1 FROM merchants WHERE id = ? AND owner_user_id = ?', s.merchant_id, viewer.id)) return 'merchant';
     return null;
   }
   /** The shop part of an order for this viewer: codes only for who may hold them (§2.1a), never for the captain. */
@@ -304,6 +329,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
       ...(role === 'admin' && s.handover_exception ? { handoverExceptionAt: await openExceptionAt(r.id) } : {}), // the episode a decision binds to
       ...(role === 'merchant' && r.status === 'returned' ? { office: await officeState(db, r.id) } : {}),
       packages: s.packing ? JSON.parse(s.packing) : null,
+      ...(role === 'driver' && s.merchant_state === 'ready' && { readySnapshotId: Number(s.ready_snapshot_id ?? 0) }),
       pickupCode: role === 'merchant' || role === 'admin' ? s.pickup_code : null,
       returnCode: (role === 'merchant' || role === 'admin') && r.status === 'returning' ? r.return_code ?? null : null,
       merchantRating: s.merchant_rating ?? null,
@@ -317,6 +343,11 @@ export function registerShop(route: Register, deps: ShopDeps) {
   async function merchantSees(r: Row, viewer: User) {
     if (r.service !== 'shop' || viewer.role !== 'customer' || !(await shopTables(db))) return false;
     return (await roleOn(r, viewer)) === 'merchant';
+  }
+
+  async function driverExcluded(orderId: number, driverId: number) {
+    return !!await db.one(`SELECT 1 FROM shop_orders s JOIN merchants m ON m.id = s.merchant_id WHERE s.order_id = ?
+      AND (m.owner_user_id = ? OR s.paused_at IS NOT NULL OR s.merchant_state = 'awaiting_approval')`, orderId, driverId);
   }
 
   // ---------- place (called by createOrder inside the booking transaction) ----------
@@ -355,6 +386,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     if (m.status !== 'active' && m.status !== 'paused') fail(404, 'not_found');
     if (town() && m.city !== town()) fail(409, 'shop_town_closed'); // ONE-14 for the pilot: one town (D-2)
     if (m.status === 'paused' || m.paused_new || !licenceValid(m, now)) fail(409, 'shop_paused');
+    if (deps.profileModes && m.published_at == null) fail(409, 'shop_paused');
     if (!openAt(await hoursOf(m.id) as never, now)) fail(409, 'shop_closed');
     // One town per order: the captain drives inside it, which also keeps bicycles in their town (§2.3).
     if (body.dropoffCity !== m.city) fail(409, 'shop_town_closed');
@@ -365,6 +397,8 @@ export function registerShop(route: Register, deps: ShopDeps) {
     const lines = await pricedLines(m.id, lineInputs(body.lines));
     const estimate = lines.reduce((sum, l) => sum + l.estimate, 0);
     if (body.expectedGoodsAgorot != null && body.expectedGoodsAgorot !== estimate) fail(409, 'price_changed'); // prices moved since the cart
+    if ((body.expectedDeliveryFeeAgorot !== undefined && body.expectedDeliveryFeeAgorot !== Number(m.delivery_fee_agorot))
+      || (body.expectedServiceFeeAgorot !== undefined && body.expectedServiceFeeAgorot !== Number(m.service_fee_agorot))) fail(409, 'price_changed');
     if (estimate < Number(m.min_order_agorot)) fail(409, 'below_minimum');
     const s = await settings();
     const agree = body.agreeLimit == null ? s.shopAgreeLimit : Number(body.agreeLimit);
@@ -558,6 +592,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     if (s.merchant_state === 'accepted' && r.status === 'requested') return getOrder(r.id, user); // a lost reply
     const now = Date.now();
     if (r.status !== 'requested' || s.merchant_state) fail(409, 'shop_state');
+    if (deps.profileModes && (m.status !== 'active' || m.paused_new || !licenceValid(m, now))) fail(409, 'shop_paused');
     if (Number(s.accept_deadline) <= now) fail(409, 'accept_expired');
     const prep = body.prepMinutes == null ? Number(m.prep_minutes) : body.prepMinutes;
     if (!Number.isInteger(prep) || prep < 1 || prep > 180) fail(400, 'invalid_input');
@@ -650,11 +685,11 @@ export function registerShop(route: Register, deps: ShopDeps) {
     if (outcome === 'refuse_ceiling') fail(409, 'over_cash_ceiling'); // the order does not pause: remove or substitute within the ceiling
     if (outcome === 'pause') {
       const consentMs = (await settings()).shopConsentMinutes * MINUTE;
-      await db.run(`INSERT INTO shop_changes (order_id, line_id, kind, payload, status, expires_at, extended, created_at) VALUES (?, ?, ?, ?, 'pending', ?, 0, ?)`,
+      const change = await db.run(`INSERT INTO shop_changes (order_id, line_id, kind, payload, status, expires_at, extended, created_at) VALUES (?, ?, ?, ?, 'pending', ?, 0, ?)`,
         r.id, line.id, p!.kind === 'removal' ? 'substitution' : p!.kind, JSON.stringify(p!), now + consentMs, now);
       await db.run("UPDATE shop_orders SET merchant_state = 'awaiting_approval', paused_at = ? WHERE order_id = ?", now, r.id);
       await db.run('UPDATE orders SET updated_at = ? WHERE id = ?', now, r.id);
-      await push([r.customer_id], 'shop_consent', r.id);
+      await push([r.customer_id], 'shop_consent', r.id, undefined, Number(change.lastInsertRowid));
       return getOrder(r.id, user);
     }
     await applyChange(r.id, line.id, p!);
@@ -703,16 +738,36 @@ export function registerShop(route: Register, deps: ShopDeps) {
       entries: entries.map(e => ({ id: Number(e.id), orderId: e.order_id == null ? null : Number(e.order_id), kind: e.kind, amountAgorot: Number(e.amount_agorot),
         note: e.note, reference: e.reference ?? null, createdAt: Number(e.created_at) })) };
   }
-  /** Goods of completed orders whose captain still owes Wind cash: Wind may not pay the shop money it has not received. */
-  // ponytail: per captain, not per order. A captain owing anything holds back all their goods for this shop until cleared; FIFO matching of
-  // handovers to orders would release some earlier, if payouts wait too long in the pilot. Failed-trip pay (DRV-17) is Wind's own debt to
-  // the captain and is settled by netting against the cash he holds, so a captain at zero has handed over every agora he owes, goods included.
+  /** Release this batch when a confirmed handover clears the captain's balance. Later work cannot re-hold the goods. */
+  async function releaseSettledGoods(entry: Row) {
+    if (entry.kind !== 'remittance' || entry.status !== 'confirmed' || !await shopTables(db) || await deps.owedCents(entry.driver_id) > 0) return;
+    await db.run(`INSERT INTO security_events(actor_id, order_id, action, detail, created_at)
+      SELECT ?, o.id, 'SHOP_GOODS_CASH_CLEARED', ?, ?
+      FROM orders o JOIN shop_orders s ON s.order_id = o.id
+      WHERE o.driver_id = ? AND o.status = 'completed'
+        AND NOT EXISTS (SELECT 1 FROM security_events e WHERE e.order_id = o.id AND e.action = 'SHOP_GOODS_CASH_CLEARED')`,
+    entry.resolved_by ?? entry.driver_id, JSON.stringify({ remittanceId: entry.id }), Date.now(), entry.driver_id);
+  }
+
+  /** Historical orders without a recorded settlement use the current balance until the next confirmed handover. */
   async function unsettledGoods(merchantId: number) {
     let held = 0;
     for (const row of await db.all(`SELECT o.driver_id, SUM(s.goods_agorot) AS goods FROM shop_orders s JOIN orders o ON o.id = s.order_id
-      WHERE s.merchant_id = ? AND o.status = 'completed' AND o.driver_id IS NOT NULL GROUP BY o.driver_id`, merchantId))
+      WHERE s.merchant_id = ? AND o.status = 'completed' AND o.driver_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM security_events e WHERE e.order_id = o.id AND e.action = 'SHOP_GOODS_CASH_CLEARED')
+      GROUP BY o.driver_id`, merchantId))
       if (await deps.owedCents(Number(row.driver_id)) > 0) held += Number(row.goods);
     return held;
+  }
+
+  async function legacyPayoutChanges() {
+    if (!await shopTables(db)) return false;
+    // A later job can make the legacy API hold completed goods again, even when the captain owes nothing now.
+    return !!await db.one(`SELECT 1 FROM shop_ledger l WHERE l.book = 'merchant'
+      AND l.merchant_id IN (SELECT s.merchant_id FROM shop_orders s JOIN orders o ON o.id = s.order_id
+        JOIN security_events e ON e.order_id = s.order_id AND e.action = 'SHOP_GOODS_CASH_CLEARED'
+        WHERE o.status = 'completed' AND o.driver_id IS NOT NULL AND s.goods_agorot > 0)
+      GROUP BY l.merchant_id HAVING SUM(l.amount_agorot) > 0 LIMIT 1`);
   }
 
   // ---------- dispatch and sweeps ----------
@@ -800,8 +855,12 @@ export function registerShop(route: Register, deps: ShopDeps) {
     const s = await shopRow(id);
     if (r.service !== 'shop' || !s || r.driver_id !== user.id) fail(409, 'cannot_advance');
     if (body.expectedStatus !== r.status || r.status !== 'at_pickup') fail(409, 'order_changed');
+    await deps.safetyFree(id);
     if (s!.handover_exception && s!.merchant_state !== 'ready') fail(409, 'exception_open');
     if (s!.merchant_state !== 'ready') fail(409, 'not_ready');
+    if ((deps.profileModes || body.expectedReadySnapshotId !== undefined) &&
+        (body.expectedReadySnapshotId !== Number(s!.ready_snapshot_id ?? 0) || body.expectedAssignedAt !== (r.assigned_at ?? null)))
+      fail(409, 'order_changed');
     const check = body.check ?? {};
     const now = Date.now();
     if (check.result === 'exception') {
@@ -869,6 +928,8 @@ export function registerShop(route: Register, deps: ShopDeps) {
     if (next === 'completed') await recordSeals(r, body, 'deliver', actor);
     const s = (await shopRow(r.id))!;
     const goods = goodsOf(await linesOf(r.id));
+    const fee = Number(s.delivery_fee_agorot);
+    const retry = (await shopReattempted(r.id, r.assigned_at)) ? 1 : 0;
     if (next === 'completed') {
       await db.run('UPDATE shop_orders SET goods_agorot = ? WHERE order_id = ?', goods, r.id);
       const m = (await db.one('SELECT id, commission_bps FROM merchants WHERE id = ?', s.merchant_id))!;
@@ -886,6 +947,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
       // An over-collection is the customer's money: the captain owes all of it, and Wind holds the excess to give back.
       if (atDoor > due) await ledger('wind', { order: r.id, driver: r.driver_id }, 'door_over', atDoor - due, 'Collected more than due at the door, owed back to the customer', actor, `shop-over-${r.id}`);
       await deps.journal(r.id, Number(r.driver_id), 'collection', { goods: Math.min(goods, held), service: held - Math.min(goods, held), over: atDoor - held });
+      if (retry) await payTrip(r.id, r.driver_id, fee, actor, 'Approved shop delivery reattempt', 'retry');
       return;
     }
     // A returned shop order earns no commission; the captain is paid the trip and the return leg from operating expenses.
@@ -895,13 +957,15 @@ export function registerShop(route: Register, deps: ShopDeps) {
     const { supportHasGoods, custodyBlocked } = await returnCustody(db, r);
     if (custodyBlocked) return;
     // Support recovered the goods from the captain: the trip so far (one fee), no return leg.
-    const pay = (supportHasGoods ? 1 : deliveredToOffice ? 3 : 2) * Number(s.delivery_fee_agorot);
-    if (pay && r.driver_id) {
-      await ledger('captain', { driver: Number(r.driver_id), order: r.id }, 'trip_pay', pay,
-        supportHasGoods ? 'Trip so far, support recovered the goods' : deliveredToOffice ? 'Trip, return and office delivery' : 'Trip and return leg of a failed delivery', actor, `shop-trip-${r.id}`);
-      await ledger('wind', { driver: Number(r.driver_id), order: r.id }, 'opex_trip', -pay, 'Captain pay for a failed delivery', actor, `shop-trip-opex-${r.id}`);
-      await deps.journal(r.id, Number(r.driver_id), 'trip', { trip: pay });
-    }
+    const pay = ((supportHasGoods ? 1 : deliveredToOffice ? 3 : 2) + retry) * fee;
+    if (pay && r.driver_id) await payTrip(r.id, r.driver_id, pay, actor,
+      supportHasGoods ? 'Trip so far, support recovered the goods' : deliveredToOffice ? 'Trip, return and office delivery' : 'Trip and return leg of a failed delivery', 'return');
+  }
+
+  async function payTrip(orderId: number, driverId: number, pay: number, actor: number, note: string, kind: 'return' | 'retry') {
+    await ledger('captain', { driver: driverId, order: orderId }, 'trip_pay', pay, note, actor, kind === 'return' ? `shop-trip-${orderId}` : `shop-reattempt-${orderId}`);
+    await ledger('wind', { driver: driverId, order: orderId }, 'opex_trip', -pay, note, actor, kind === 'return' ? `shop-trip-opex-${orderId}` : `shop-reattempt-opex-${orderId}`);
+    await deps.journal(orderId, driverId, 'trip', { trip: pay });
   }
   /** DRV-17: a cleared block review pays the trip so far from operating expenses, once. */
   async function blockTripPay(orderId: number, driverId: number, pay: number, actor: number) {
@@ -944,8 +1008,12 @@ export function registerShop(route: Register, deps: ShopDeps) {
     const r = await db.one('SELECT service, exception_reason FROM orders WHERE id = ?', id);
     if (r?.service !== 'shop' || action !== 'reattempt') return;
     if (r.exception_reason !== 'rescheduled') fail(409, 'cannot_resolve');
-    const done = await db.all("SELECT detail FROM security_events WHERE order_id = ? AND action = 'EXCEPTION_RESOLVED'", id);
-    if (done.some(e => { try { return JSON.parse(e.detail).action === 'reattempt'; } catch { return false; } })) fail(409, 'cannot_resolve');
+    if (await shopReattempted(id)) fail(409, 'cannot_resolve');
+  }
+
+  async function shopReattempted(orderId: number, assignedAt?: number | null) {
+    const events = await db.all("SELECT detail FROM security_events WHERE order_id = ? AND action = 'EXCEPTION_RESOLVED' AND created_at >= ?", orderId, assignedAt ?? 0);
+    return events.some(e => { try { return JSON.parse(e.detail).action === 'reattempt'; } catch { return false; } });
   }
 
   // ---------- admin ----------
@@ -1109,7 +1177,10 @@ export function registerShop(route: Register, deps: ShopDeps) {
     const note = text(body.note, 500);
     if (note.length < 5) fail(400, 'invalid_input');
     const id = Number(params[0]);
-    if (!(await db.one("SELECT 1 FROM users WHERE id = ? AND role = 'customer'", id))) fail(404, 'not_found');
+    const buyer = deps.profileModes
+      ? await db.one("SELECT 1 FROM orders WHERE customer_id = ? AND service = 'shop' LIMIT 1", id)
+      : await db.one("SELECT 1 FROM users WHERE id = ? AND role = 'customer'", id);
+    if (!buyer) fail(404, 'not_found');
     await db.run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SHOP_CASH_REVIEWED', ?, ?)", user.id, JSON.stringify({ customerId: id }), Date.now());
     return { ok: true };
   });
@@ -1128,6 +1199,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     return { orders };
   });
 
-  return { place, view, merchantSees, customerCancel, sweep, holdCents, handover, beforeAdvance, doorCash, afterFinish, guardCaptainExit, guardResolve, blockTripPay,
+  return { place, view, merchantSees, driverExcluded, customerCancel, sweep, holdCents, handover, beforeAdvance, doorCash, afterFinish, guardCaptainExit, guardResolve, blockTripPay,
+    releaseSettledGoods, legacyPayoutChanges, shopReattempted,
     recordSeals, exceptionReasons: shopExceptionReasons as readonly string[] };
 }

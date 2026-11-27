@@ -340,7 +340,7 @@ try {
       if (ex.id === 'customer-session' && persistence.backend === 'postgres') delete ex.response.capabilities.declaredScope;
       // Assert the selected backend and the real PG migration version before comparing the frozen SQLite contract.
       if (persistence.backend === 'postgres' && ex.id === 'boundary:GET:/api/ready' && ex.response && typeof ex.response === 'object') {
-        assert.equal(ex.response.schema, 43, 'readiness reports the restaurant category migration');
+        assert.equal(ex.response.schema, 45, 'readiness reports the account profiles migration');
         assert.equal(ex.response.backend, 'postgres', 'readiness exposes the selected persistence backend');
         ex.response.schema = 3;
         delete ex.response.backend;

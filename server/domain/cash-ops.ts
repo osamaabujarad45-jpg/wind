@@ -22,6 +22,7 @@ type Deps = {
   // T30: a resolution that confirms the handover settles it in the same envelope transaction.
   postCashJournal: (entryId: number) => Promise<void>;
   lockCashDriver: (driverId: number) => Promise<void>;
+  settle: <T>(work: () => Promise<T>) => Promise<T>;
   needCashFinance: (user: User) => Promise<void>;
   queuePush: (ids: number[], kind: 'cash', order: number, path?: string) => Promise<void>;
 };
@@ -34,7 +35,7 @@ export function registerCashOpsRoutes(route: Register, deps: Deps): void {
       .map(r => ({ ...deps.cashEntry(r), userName: r.user_name, userPhone: r.user_phone, userStatus: r.user_status }));
   });
 
-  route('POST', '/api/admin/cash/:id/resolve', async ({ user, params, body }) => {
+  route('POST', '/api/admin/cash/:id/resolve', async ({ user, params, body }) => deps.settle(async () => {
     deps.need(user, 'admin');
     await deps.needCashFinance(user);
     if (!['confirm', 'dispute'].includes(body.decision)) deps.fail(400, 'invalid_input');
@@ -50,5 +51,5 @@ export function registerCashOpsRoutes(route: Register, deps: Deps): void {
     await deps.queuePush([entry.driver_id as number], 'cash', 0, '/driver/earnings');
     if (body.decision === 'confirm') await deps.postCashJournal(entry.id as number);
     return deps.cashEntry((await deps.one('SELECT * FROM cash_entries WHERE id = ?', entry.id))!);
-  });
+  }));
 }

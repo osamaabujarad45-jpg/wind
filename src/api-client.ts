@@ -15,28 +15,36 @@ export class ApiError extends Error {
 }
 
 /** app.json version as major·10000 + minor·100 + patch; tests keep the two equal. The server gates on it (426). */
-export const CLIENT_BUILD = 10106;
+export const CLIENT_BUILD = 10107;
 let updateRequired = false;
 const updateListeners = new Set<() => void>();
 export const clientUpdateRequired = () => updateRequired;
 export function subscribeClientUpdate(listener: () => void) { updateListeners.add(listener); return () => { updateListeners.delete(listener); }; }
 
 let token: string | null = null;
+let modeRevision: number | undefined;
 /** Internal protected-storage scope; never serialize or log this credential. */
 export const apiSessionCredential = () => token;
 let sessionRevision = 0;
 // A pending UI action must not resume under a different account, or after sign-out starts.
 export const apiSessionRevision = () => sessionRevision;
 export function invalidateApiSessionActions() { sessionRevision++; }
+export const apiModeRevision = () => modeRevision;
+export function configureApiModeRevision(revision: number | undefined) {
+  if (revision !== modeRevision) invalidateApiSessionActions();
+  modeRevision = revision;
+}
 let onUnauthorized = () => {};
 export function configureApi(nextToken: string | null, unauthorized: () => void) {
-  if (nextToken !== token) invalidateApiSessionActions();
+  if (nextToken !== token) { modeRevision = undefined; invalidateApiSessionActions(); }
   token = nextToken;
   onUnauthorized = unauthorized;
 }
 
 export async function request<T>(url: string, body?: object, method?: 'GET' | 'POST' | 'PATCH' | 'DELETE', signal?: AbortSignal): Promise<T> {
   const requestToken = token, requestRevision = sessionRevision, unauthorized = onUnauthorized;
+  const requestMode = modeRevision;
+  const verb = method ?? (body ? 'POST' : 'GET');
   const startedAt = Date.now(), startedMonotonic = performance.now();
   let responseStatus: number | undefined, succeeded = false;
   const controller = new AbortController();
@@ -48,8 +56,9 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
   try {
     let res: Response;
     const send = () => fetch(url, {
-      method: method ?? (body ? 'POST' : 'GET'), signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', 'X-Wind-Client': String(CLIENT_BUILD), ...(requestToken && { Authorization: `Bearer ${requestToken}` }) },
+      method: verb, signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'X-Wind-Client': String(CLIENT_BUILD), ...(requestToken && { Authorization: `Bearer ${requestToken}` }),
+        ...(requestToken && verb !== 'GET' && requestMode !== undefined && { 'X-Wind-Mode-Revision': String(requestMode) }) },
       body: body && JSON.stringify(body),
     });
     try { res = await send(); }
@@ -90,7 +99,7 @@ export async function request<T>(url: string, body?: object, method?: 'GET' | 'P
         && ['review','sign_in','stop','refresh','reconcile'].includes(failure.recovery);
       throw new ApiError(typeof data?.error === 'string' ? data.error : 'server_error', res.status, valid ? failure : undefined, data?.reference);
     }
-    try { validateApiResponse(url, data, method ?? (body ? 'POST' : 'GET'), receivedAt + serverOffset()); }
+    try { validateApiResponse(url, data, verb, receivedAt + serverOffset()); }
     catch { throw new ApiError('invalid_response', 502); }
     noteResponseClock(data, Math.max(0, performance.now() - startedMonotonic));
     succeeded = true;

@@ -32,8 +32,8 @@ const Context = createContext<Work | null>(null);
 
 // One assignment source for offer availability and foreground tracking, including the order screen.
 export function DriverWorkProvider({ children }: { children: ReactNode }) {
-  const { me, ready } = useSession();
-  const actor = me?.user.role === 'driver' && me.user.status === 'active' ? me.user.id : null;
+  const { me, ready, locationCleanupRequired } = useSession();
+  const actor = !locationCleanupRequired && me?.user.role === 'driver' && me.user.status === 'active' ? me.user.id : null;
   const actorRef = useRef(actor);
   useLayoutEffect(() => { actorRef.current = actor; }, [actor]);
   const mounted = useRef(true);

@@ -60,6 +60,7 @@ export default function Auth() {
   };
   // null while the policy loads; 'failed' when the server could not say, so a dropped request never reads as closed signup.
   const [registration, setRegistration] = useState<'open' | 'closed' | 'failed' | null>(null);
+  const [profileSignup, setProfileSignup] = useState(false);
   const [policyTry, setPolicyTry] = useState(0);
   // Enter moves through the sign-up fields and submits from the password (web keyboard users).
   const emailRef = useRef<TextInput>(null);
@@ -67,8 +68,12 @@ export default function Auth() {
   const passwordRef = useRef<TextInput>(null);
   useEffect(() => {
     let active = true;
-    void api<{ registrationOpen: boolean; emailReset?: boolean; emailResetLink?: boolean }>('/auth/options').then(options => {
-      if (active) { setRegistration(options.registrationOpen ? 'open' : 'closed'); setEmailReset(!!options.emailReset); setEmailResetLink(!!options.emailResetLink); }
+    void api<{ registrationOpen: boolean; profiles?: true; emailReset?: boolean; emailResetLinkProof?: boolean }>('/auth/options').then(options => {
+      if (active) {
+        setRegistration(options.registrationOpen ? 'open' : 'closed'); setProfileSignup(!!options.profiles);
+        if (options.profiles) setRole('customer');
+        setEmailReset(!!options.emailReset); setEmailResetLink(!!options.emailResetLinkProof);
+      }
     }).catch(() => { if (active) setRegistration('failed'); }); // signup stays shut until the server confirms its policy
     return () => { active = false; };
   }, [policyTry]);
@@ -89,19 +94,19 @@ export default function Auth() {
   async function reset() {
     if (busy) return;
     if (!phone.trim()) return setError(err('invalid_input'));
-    if (resetSent && code.length !== 6) return setError(err('wrong_email_code'));
+    if (resetSent && !(emailResetLink ? /^[A-Za-z0-9_-]{32}$/.test(code.trim()) : code.length === 6)) return setError(err('wrong_email_code'));
     if (resetSent && (password.length < 12 || password.length > 100)) return setError(err('weak_password'));
     setBusy(true);
     setError('');
     try {
       if (!resetSent) {
-        await api('/auth/reset/code', emailResetLink ? { identifier: phone, lang: language } : { identifier: phone });
-        if (emailResetLink) { setMode('in'); setPassword(''); setNotice(c.resetLinkSent); setBusy(false); return; }
+        await api(emailResetLink ? '/auth/reset/link/code' : '/auth/reset/code', emailResetLink ? { identifier: phone, lang: language } : { identifier: phone });
         setResetSent(true);
         setBusy(false);
         return;
       }
-      await api('/auth/reset', { identifier: phone, code, password });
+      if (emailResetLink) await api('/auth/reset/link', { identifier: phone, mailboxProof: code.trim(), password });
+      else await api('/auth/reset', { identifier: phone, code, password });
       // Then a normal sign-in, through every login gate. The code is spent either way: if this fails, say so on sign-in.
       const data = await api<Me & { token: string }>('/auth/login', { identifier: phone, password }).catch(() => null);
       haptic.success();
@@ -115,7 +120,9 @@ export default function Auth() {
   }
 
   // Create account waits with the first missing field as its reason (design review D-05); submit still checks on tap.
-  const upMissing = mode !== 'up' ? null : !name.trim() ? 'invalid_input' : !normalizeEmail(email) ? 'invalid_email' : !isValidPhone(phone) ? 'invalid_phone'
+  const registrationEmail = normalizeEmail(email);
+  const invalidEmail = !!email.trim() && !registrationEmail;
+  const upMissing = mode !== 'up' ? null : !name.trim() ? 'invalid_input' : invalidEmail ? 'invalid_email' : !isValidPhone(phone) ? 'invalid_phone'
     : role === 'driver' && vehicle !== 'bicycle' && plate.trim().length < 2 ? 'invalid_plate' : password.length < 12 || password.length > 100 ? 'weak_password' : !consent ? 'consent_required' : null;
   async function submit() {
     if (busy) return;
@@ -123,7 +130,7 @@ export default function Auth() {
     if (mode === 'in' && (!phone.trim() || !password)) return setError(err('invalid_input'));
     if (mode === 'up') {
       if (!name.trim()) return setError(err('invalid_input'));
-      if (!normalizeEmail(email)) return setError(err('invalid_email'));
+      if (invalidEmail) return setError(err('invalid_email'));
       if (!isValidPhone(phone)) return setError(err('invalid_phone'));
       if (role === 'driver' && vehicle !== 'bicycle' && plate.trim().length < 2) return setError(err('invalid_plate'));
       if (password.length < 12 || password.length > 100) return setError(err('weak_password'));
@@ -133,7 +140,7 @@ export default function Auth() {
     setError('');
     try {
       const data = await api<Me & { token: string }>(mode === 'in' ? '/auth/login' : '/auth/register',
-        mode === 'in' ? { identifier: phone, password } : { phone, password, name, email, consent, registrationRole: role, vehicle, plate: plate.trim() || null });
+        mode === 'in' ? { identifier: phone, password } : { phone, password, name, ...(registrationEmail && { email: registrationEmail }), consent, registrationRole: role, vehicle, plate: plate.trim() || null });
       haptic.success();
       await signIn(data);
     } catch (e) {
@@ -145,8 +152,8 @@ export default function Auth() {
 
   async function entraSignIn() {
     if (busy || !entraRequest) return;
-    if (mode === 'up' && (!consent || !name.trim() || !normalizeEmail(email) || !isValidPhone(phone) || (role === 'driver' && vehicle !== 'bicycle' && plate.trim().length < 2))) {
-      return setError(err(!consent ? 'consent_required' : !name.trim() ? 'invalid_input' : !normalizeEmail(email) ? 'invalid_email' : !isValidPhone(phone) ? 'invalid_phone' : 'invalid_plate'));
+    if (mode === 'up' && (!consent || !name.trim() || invalidEmail || !isValidPhone(phone) || (role === 'driver' && vehicle !== 'bicycle' && plate.trim().length < 2))) {
+      return setError(err(!consent ? 'consent_required' : !name.trim() ? 'invalid_input' : invalidEmail ? 'invalid_email' : !isValidPhone(phone) ? 'invalid_phone' : 'invalid_plate'));
     }
     setBusy(true);
     setError('');
@@ -158,7 +165,7 @@ export default function Auth() {
       const data = await api<Me & { token: string }>('/auth/entra', {
         idToken: tokens.idToken, nonce: tokens.nonce,
         consent: mode === 'up' ? consent : false,
-        ...(mode === 'up' ? { registrationRole: role, vehicle, plate: plate.trim() || null, phone, name, email } : {}),
+        ...(mode === 'up' ? { registrationRole: role, vehicle, plate: plate.trim() || null, phone, name, ...(registrationEmail && { email: registrationEmail }) } : {}),
       });
       haptic.success();
       await signIn(data);
@@ -188,12 +195,13 @@ export default function Auth() {
           {mode === 'phone' ? <PhoneRecovery gate={phoneGate} onBack={() => { setMode('in'); setError(''); }}
             onDone={text => { setMode('in'); setPassword(''); setError(''); setNotice(text); }} /> : mode === 'reset' ? <>
             <Txt variant="h2" style={{ marginBottom: 4 }}>{c.resetTitle}</Txt>
-            <Txt variant="caption" style={{ marginBottom: 12 }}>{resetSent ? c.resetSent : emailResetLink ? c.resetLinkBody : c.resetBody}</Txt>
-            <Field label={c.identifier} value={phone} onChangeText={next => { setPhone(next); setResetSent(false); }} autoComplete="username"
+            <Txt variant="caption" style={{ marginBottom: 12 }}>{emailResetLink ? (resetSent ? c.resetLinkSent : c.resetLinkBody) : resetSent ? c.resetSent : c.resetBody}</Txt>
+            <Field label={c.identifier} value={phone} onChangeText={next => { setPhone(next); setResetSent(false); setCode(''); }} autoComplete="username"
               maxLength={254} disabled={busy} onSubmitEditing={resetSent ? undefined : submit} />
             {resetSent && <Appear>
-              <Field label={c.emailCodeLabel} value={code} onChangeText={next => setCode(codeInput(next))} keyboardType="number-pad"
-                autoComplete="one-time-code" maxLength={6} disabled={busy} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
+              <Field label={emailResetLink ? c.emailLinkProof : c.emailCodeLabel} value={code}
+                onChangeText={next => setCode(emailResetLink ? next.trim() : codeInput(next))} keyboardType={emailResetLink ? "default" : "number-pad"}
+                autoCorrect={false} autoComplete={emailResetLink ? undefined : "one-time-code"} maxLength={emailResetLink ? 32 : 6} disabled={busy} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
               <Field label={c.newPassword} inputRef={passwordRef} value={password} onChangeText={setPassword} hint={c.passwordMinimum} secureTextEntry
                 maxLength={100} disabled={busy} autoComplete="new-password" onSubmitEditing={submit} />
             </Appear>}
@@ -221,7 +229,7 @@ export default function Auth() {
           {mode === 'up' && <Appear>
             <Field label={c.name} value={name} onChangeText={setName} autoComplete="name" maxLength={60} disabled={busy}
               returnKeyType="next" onSubmitEditing={() => emailRef.current?.focus()} />
-            <Field label={c.email} inputRef={emailRef} value={email} onChangeText={setEmail} keyboardType="email-address" autoComplete="email" maxLength={254} disabled={busy}
+            <Field label={c.recoveryEmailOptional} inputRef={emailRef} value={email} onChangeText={setEmail} keyboardType="email-address" autoComplete="email" maxLength={254} disabled={busy}
               returnKeyType="next" onSubmitEditing={() => phoneRef.current?.focus()} />
           </Appear>}
           <Field label={mode === 'in' ? c.identifier : c.phone} inputRef={phoneRef} value={phone} onChangeText={setPhone}
@@ -231,9 +239,11 @@ export default function Auth() {
           <Field label={c.password} inputRef={passwordRef} value={password} onChangeText={setPassword} hint={mode === 'up' ? c.passwordMinimum : undefined} secureTextEntry maxLength={100} disabled={busy}
             autoComplete={mode === 'in' ? 'password' : 'new-password'} onSubmitEditing={submit} />
           {mode === 'up' && <Appear>
-            <Txt variant="label" style={{ marginBottom: 7 }}>{c.iAm}</Txt>
-            <Choices items={[{ key: 'customer', label: c.customer }, { key: 'driver', label: c.driver }]} value={role} onChange={setRole} disabled={busy} />
-            {role === 'driver' && <Appear>
+            {!profileSignup && <>
+              <Txt variant="label" style={{ marginBottom: 7 }}>{c.iAm}</Txt>
+              <Choices items={[{ key: 'customer', label: c.customer }, { key: 'driver', label: c.driver }]} value={role} onChange={setRole} disabled={busy} />
+            </>}
+            {!profileSignup && role === 'driver' && <Appear>
               <Txt variant="label" style={{ marginVertical: 7 }}>{c.vehicle}</Txt>
               <Choices items={vehicles.map(v => ({ key: v, label: c[v] }))} value={vehicle} onChange={setVehicle} disabled={busy} />
               {vehicle !== 'bicycle' && <View style={{ marginTop: 12 }}>

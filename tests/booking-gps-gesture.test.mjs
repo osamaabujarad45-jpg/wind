@@ -38,6 +38,7 @@ for (const enter of ['openPin', 'town']) {
   let reply, requestSignal, loading = false, adopted = 0;
   const steps = [];
   const pin = {
+    useEffectEvent: callback => callback,
     AbortController, locationRequest: { current: null }, pickupTouched: { current: false }, step: 'search', pinFor: 'pickup',
     pickupLocation: next => { requestSignal = next; return new Promise(resolve => { reply = resolve; }); },
     pickupChosen: true, dropoffChosen: true, pickupPoint: null, dropoffPoint: null, here: null,

@@ -40,14 +40,16 @@ export function registerAdminAssignRoutes(route: Register, deps: Deps): void {
     deps.need(user, 'admin');
     const order = (await one('SELECT * FROM orders WHERE id = ?', Number(params[0]))) ?? fail(404, 'not_found');
     if (!ASSIGNABLE.includes(order.status as string)) fail(409, 'cannot_assign');
-    // ponytail: LIMIT 100 is the pilot fleet; page it and filter service and vehicle in SQL once the active fleet passes it.
+    // In the profile pilot, apply mode eligibility before capping the list of captains.
     const drivers = await all(`SELECT id, name, phone, vehicle, plate, role, status, approved_at FROM users
-      WHERE role = 'driver' AND status = 'active' AND id <> ? ORDER BY name, id LIMIT 100`, order.driver_id ?? 0);
+      WHERE role = 'driver' AND status = 'active' AND id <> ? ORDER BY name, id ${deps.modeRefusal ? '' : 'LIMIT 100'}`, order.driver_id ?? 0);
     const rows = [];
     for (const driver of drivers) {
+      if (deps.modeRefusal && await deps.modeRefusal(refusalOrder(order), Number(driver.id))) continue;
       // Advisory: the legacy checks only. The measured guard writes reservations, so it runs on assign, not in this read.
       const reason = await driverRefusal(deps, refusalOrder(order), driver, await deps.driverRate(Number(driver.id)));
       rows.push({ id: driver.id, name: driver.name, phone: driver.phone, vehicle: driver.vehicle, plate: driver.plate ?? null, eligible: reason === null, reason, advisory: true });
+      if (rows.length === 100) break;
     }
     return rows;
   });

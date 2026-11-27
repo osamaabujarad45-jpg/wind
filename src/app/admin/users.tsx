@@ -132,15 +132,16 @@ export default function Users() {
                   loading={busy === user.id} disabled={busy !== null || (identity?.id === user.id && identity.code.length !== 6)} reason={busy !== null ? c.wait_busy : c.code_six_digits} onPress={() => identityStep(user)} />
               </>}
           </View>}
-          {user.role !== 'admin' && (openId === user.id || user.role === 'driver' && !user.permanentlyApprovedAt) && <View style={{ marginTop: 12, gap: 8 }}>
+          {user.role !== 'admin' && (openId === user.id || !!user.captainApproval || user.role === 'driver' && !user.permanentlyApprovedAt) && <View style={{ marginTop: 12, gap: 8 }}>
             {/* only drivers wait on approval (server needActive); on a customer it was the loudest button doing nothing */}
-            {user.role === 'driver' && !user.permanentlyApprovedAt && <Button title={c.permanentlyApprove} icon="checkmark-circle-outline" loading={busy === user.id} disabled={busy !== null} reason={c.wait_busy}
-              onPress={() => confirm(fill(c.approvalConfirm, { name: user.name }), () => action(user, '/approve', {}), c.approve, c.cancel)} />}
+            {(user.captainApproval || !me?.capabilities?.accountProfiles && user.role === 'driver' && !user.permanentlyApprovedAt) && <Button title={c.permanentlyApprove} icon="checkmark-circle-outline" loading={busy === user.id} disabled={busy !== null} reason={c.wait_busy}
+              onPress={() => confirm(fill(c.approvalConfirm, { name: user.name }), () => action(user, '/approve', user.captainApproval
+                ? { expectedApplicationId: user.captainApproval.applicationId, expectedRevision: user.captainApproval.revision, expectedState: user.captainApproval.state } : {}), c.approve, c.cancel)} />}
             {openId === user.id && <><Row gap={8}>{/* a pending driver's Approve stays on the closed row; the rest opens with it */}
               <View style={{ flex: 1 }}><Button title={c.editUser} variant="soft" disabled={busy !== null} reason={c.wait_busy} onPress={() => setEditing({ id: user.id, name: user.name, email: user.email ?? '', phone: user.phone, role: user.role as 'customer' | 'driver', vehicle: user.vehicle ?? 'car', plate: user.plate ?? '' })} /></View>
               <View style={{ flex: 1 }}><Button title={user.status === 'blocked' ? c.unblock : c.block} variant={user.status === 'blocked' ? 'soft' : 'danger'} disabled={busy !== null} reason={c.wait_busy}
                 onPress={() => user.status === 'blocked'
-                  ? action(user, '', { status: user.role === 'driver' && !user.permanentlyApprovedAt ? 'pending' : 'active' }, 'PATCH')
+                  ? action(user, '', { status: !me?.capabilities?.accountProfiles && user.role === 'driver' && !user.permanentlyApprovedAt ? 'pending' : 'active' }, 'PATCH')
                   : confirm(fill(c.blockConfirm, { name: user.name }), () => action(user, '', { status: 'blocked' }, 'PATCH'), c.block, c.cancel)} /></View>
             </Row>
             {editing?.id === user.id && <View>

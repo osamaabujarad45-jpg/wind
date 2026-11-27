@@ -72,7 +72,7 @@ try {
   assert.equal(unpushed.destinationChange.price, 34);
   await post(order.id, 'withdraw', customer.token, { id: proposal.id });
   await call('/push/subscribe', { token: driver.token, body: { endpoint: 'https://fcm.googleapis.com/fcm/send/destination-test',
-    p256dh: ecdh.getPublicKey().toString('base64url'), auth: auth.toString('base64url'), lang: 'en' } });
+    p256dh: ecdh.getPublicKey().toString('base64url'), auth: auth.toString('base64url'), lang: 'en', bindSession: true } });
   sends.length = 0;
   const requoted = await post(order.id, 'quote', customer.token, request);
   const pending = await post(order.id, 'propose', customer.token, { id: requoted.id });
@@ -86,7 +86,7 @@ try {
   // A9: the customer hears the driver's decision; a replayed decision does not push twice.
   const customerEndpoint = 'https://fcm.googleapis.com/fcm/send/destination-customer';
   await call('/push/subscribe', { token: customer.token, body: { endpoint: customerEndpoint,
-    p256dh: ecdh.getPublicKey().toString('base64url'), auth: auth.toString('base64url'), lang: 'en' } });
+    p256dh: ecdh.getPublicKey().toString('base64url'), auth: auth.toString('base64url'), lang: 'en', bindSession: true } });
   const customerPushes = () => sends.filter(s => s.url === customerEndpoint).map(s => readPush(s.body).kind);
   sends.length = 0;
   const accepted = await post(order.id, 'decision', driver.token, { id: requoted.id, decision: 'accept' });

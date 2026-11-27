@@ -1,10 +1,12 @@
-import { activeStatuses, exceptionReasons, pickupRefusal, pickupRefusalDetails, varianceReasons, type Order, type OrderStatus, type PickupRefusalDetail, type VarianceReason } from './model.ts';
+import { activeStatuses, exceptionReasons, handoverExceptions, pickupRefusal, pickupRefusalDetails, varianceReasons, type HandoverException, type Order, type OrderStatus, type PickupRefusalDetail, type VarianceReason } from './model.ts';
 import { newRequestId } from './booking.ts';
 
-export type DriverAction = 'advance' | 'exception';
+export type DriverAction = 'advance' | 'exception' | 'shop/handover';
+type HandoverCheck = { result: 'ok' } | { result: 'exception'; exception: HandoverException };
 export type DriverCommand = { schemaVersion: 1; actorId: number; orderId: number; action: DriverAction; requestId: string;
   createdAt: number; expiresAt: number; expectedStatus: OrderStatus; expectedAssignedAt: number | null;
-  expectedVersion?: number; expectedAssignmentEpoch?: number; expectedPinRevision?: number; payload: { code?: string; noCode?: true; reason?: string; detail?: PickupRefusalDetail; note?: string; collectedCents?: number; varianceReason?: VarianceReason; seals?: { no: number; intact: boolean }[] } };
+  expectedVersion?: number; expectedAssignmentEpoch?: number; expectedPinRevision?: number; payload: { code?: string; noCode?: true; reason?: string; detail?: PickupRefusalDetail; note?: string; collectedCents?: number; varianceReason?: VarianceReason; seals?: { no: number; intact: boolean }[];
+    check?: HandoverCheck; expectedReadySnapshotId?: number } };
 export type DriverReceipt = { schemaVersion: 1; orderId: number; requestId: string; state: 'unknown' | 'applied' | 'rejected'; error?: string; httpStatus?: number };
 export type CommandIO = { read: () => Promise<unknown>; write: (command: DriverCommand | null) => Promise<void>;
   valid: () => boolean; receipt: (command: DriverCommand) => Promise<DriverReceipt>; send: (command: DriverCommand) => Promise<Order> };
@@ -15,14 +17,17 @@ export function readDriverCommand(raw: unknown): DriverCommand | null {
   if (raw === null) return null;
   const c = raw as DriverCommand;
   if (!c || c.schemaVersion !== 1 || !integer(c.actorId) || c.actorId < 1 || !integer(c.orderId) || c.orderId < 1
-    || !['advance', 'exception'].includes(c.action) || typeof c.requestId !== 'string' || !uuid.test(c.requestId)
+    || !['advance', 'exception', 'shop/handover'].includes(c.action) || typeof c.requestId !== 'string' || !uuid.test(c.requestId)
     || !integer(c.createdAt) || !integer(c.expiresAt) || c.expiresAt <= c.createdAt || c.expiresAt - c.createdAt > 60 * 60_000
     || !activeStatuses.includes(c.expectedStatus) || !(c.expectedAssignedAt === null || integer(c.expectedAssignedAt))
     || (c.expectedVersion !== undefined && (!integer(c.expectedVersion) || c.expectedVersion < 1))
     || (c.expectedAssignmentEpoch !== undefined && !integer(c.expectedAssignmentEpoch))
     || (c.expectedPinRevision !== undefined && !integer(c.expectedPinRevision))
     || !c.payload || typeof c.payload !== 'object' || Array.isArray(c.payload)
-    || Object.keys(c.payload).some(key => !['code', 'noCode', 'reason', 'detail', 'note', 'collectedCents', 'varianceReason', 'seals'].includes(key))
+    || Object.keys(c.payload).some(key => !['code', 'noCode', 'reason', 'detail', 'note', 'collectedCents', 'varianceReason', 'seals', 'check', 'expectedReadySnapshotId'].includes(key))
+    || (c.action === 'shop/handover' ? c.expectedStatus !== 'at_pickup' || !integer(c.payload.expectedReadySnapshotId)
+      || !(c.payload.check?.result === 'ok' ? !!c.payload.code : c.payload.check?.result === 'exception' && handoverExceptions.includes(c.payload.check.exception))
+      : c.payload.check !== undefined || c.payload.expectedReadySnapshotId !== undefined)
     || (c.payload.noCode !== undefined && (c.payload.noCode !== true || c.action !== 'advance' || c.payload.code !== undefined)) // D-7: a ride ended without the rider's code
     || (c.payload.seals !== undefined && (!Array.isArray(c.payload.seals) || c.payload.seals.some(x => !x || !integer(x.no) || typeof x.intact !== 'boolean')))
     || (c.payload.code !== undefined && (typeof c.payload.code !== 'string' || !/^\d{4}$/.test(c.payload.code)))
@@ -60,6 +65,7 @@ export const commandMatches = (c: DriverCommand, actorId: number, order: Order) 
   && c.expectedStatus === order.status && c.expectedAssignedAt === (order.assignedAt ?? null)
   && (c.expectedVersion === undefined || c.expectedVersion === order.recovery?.version)
   && (c.expectedAssignmentEpoch === undefined || c.expectedAssignmentEpoch === order.recovery?.assignmentEpoch)
+  && (c.payload.expectedReadySnapshotId === undefined || c.payload.expectedReadySnapshotId === order.shop?.readySnapshotId)
   && (c.expectedPinRevision === undefined || c.expectedPinRevision === order.journey?.boarding?.pinRevision);
 
 /** A saved earlier command went first and was reconciled: it is not the action just requested, so its outcome is reported

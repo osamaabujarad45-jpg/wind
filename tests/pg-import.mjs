@@ -50,8 +50,15 @@ sqlite.prepare("INSERT INTO native_push_tokens(token_hash,user_id,auth_session_h
 sqlite.prepare('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?)').run(createHash('sha256').update('synthetic-entra-replay').digest('hex'), now + 300_000);
 // Synthetic Arabic, timezone and REAL rounding data. Existing installed tariff/settings stay unchanged.
 sqlite.prepare("UPDATE users SET name=?,status='active',approved_at=? WHERE id=?").run('سائق تجريبي — القدس', now, driver);
+sqlite.prepare("UPDATE users SET captain_state='active' WHERE id=?").run(driver);
+sqlite.prepare(`INSERT INTO captain_profiles(user_id,state,vehicle,plate,approved_at,legacy_role,legacy_status)
+  SELECT id,'approved',vehicle,plate,approved_at,role,status FROM users WHERE id=?`).run(driver);
+sqlite.prepare("UPDATE sessions SET active_mode='captain',mode_revision=1 WHERE token_hash=?").run(sessionHash);
 sqlite.prepare("INSERT INTO subscriptions(user_id,plan,status,price,activated_at,ends_at,created_at) VALUES(?,'pro','active',10,?,?,?)").run(driver, now, Date.parse('2026-10-30T23:30:00+02:00'), now);
 sqlite.prepare("INSERT INTO email_codes(user_id,purpose,code_hash,sent_at,expires_at) VALUES(?,'support',?,?,?)").run(user,'synthetic-hash',now,now+300000);
+const provenAddress = 'recovery-import@example.test';
+sqlite.prepare('UPDATE users SET email=?,email_verified_at=? WHERE id=?').run(provenAddress,now,user);
+sqlite.prepare("INSERT INTO recovery_email_proofs(user_id,email,verified_at,method) VALUES(?,?,?,'cloudflare-code')").run(user,provenAddress,now);
 sqlite.prepare("INSERT INTO driver_locations(driver_id,lat,lng,updated_at) VALUES(?,31.9038,35.2034,?) ON CONFLICT(driver_id) DO UPDATE SET lat=excluded.lat,lng=excluded.lng,updated_at=excluded.updated_at").run(driver,now);
 sqlite.prepare("INSERT INTO checkpoints(name,cities,created_by,created_at,lat,lng) VALUES('حاجز تجريبي','[\"ramallah\"]',?,?,31.9,35.2)").run(admin,now);
 const checkpoint=sqlite.prepare('SELECT max(id) id FROM checkpoints').get().id;
@@ -87,7 +94,7 @@ sqlite.prepare("INSERT INTO shop_ledger(book,merchant_id,driver_id,order_id,kind
 sqlite.prepare('INSERT OR IGNORE INTO referral_codes(user_id,code) VALUES(?,?)').run(user,'WTEST3');
 sqlite.prepare('INSERT OR IGNORE INTO referrals(referee_id,referrer_id,order_id,reward_promo_id,created_at) VALUES(?,?,?,?,?)').run(driver,user,order,promo,now);
 sqlite.prepare("INSERT INTO push_keys(id,private_jwk) VALUES(1,'{\"synthetic\":true}') ON CONFLICT(id) DO NOTHING").run();
-sqlite.prepare("INSERT INTO push_subscriptions(endpoint,user_id,p256dh,auth,created_at) VALUES('https://push.invalid/wp03',?,'synthetic','synthetic',?)").run(user,now);
+sqlite.prepare("INSERT INTO push_subscriptions(endpoint,user_id,p256dh,auth,created_at,auth_session_hash) VALUES('https://push.invalid/wp03',?,'synthetic','synthetic',?,?)").run(driver,now,sessionHash);
 sqlite.prepare('INSERT OR IGNORE INTO order_offers(order_id,driver_id,price,created_at) VALUES(?,?,20,?)').run(order,driver,now);
 // Ensure a non-cent REAL exception is retained/reported rather than silently overwritten.
 sqlite.prepare('UPDATE orders SET price=20.005,commission=1.005 WHERE id=?').run(order);
@@ -153,11 +160,18 @@ try {
   assert.equal((await database.one('SELECT priority FROM orders WHERE id=?',priorityOrder)).priority,'same_day','current snapshot retains parcel priority');
   assert.equal((await database.one("SELECT error FROM order_command_rejections WHERE request_id='00000000-0000-4000-8000-000000000001'")).error,'priority_cutoff','terminal refusal survives import');
   assert.ok(report.reconciliation.tables.every(t=>t.sourceRows>0),'every legacy table has nonempty import evidence');
+  assert.deepEqual(await database.one('SELECT state,approved_at FROM captain_profiles WHERE user_id=?', driver),
+    { state: 'approved', approved_at: now });
+  assert.deepEqual(await database.one('SELECT active_mode,mode_revision FROM sessions WHERE token_hash=?', sessionHash),
+    { active_mode: 'captain', mode_revision: 1 });
+  const recovery = await database.one('SELECT email,verified_at,method FROM recovery_email_proofs WHERE user_id=?',user);
+  assert.deepEqual([recovery.email,recovery.verified_at,recovery.method],[provenAddress,now,'cloudflare-code'],'the mailbox proof survives the database import');
   const redemptions=report.reconciliation.tables.find(t=>t.table==='promo_redemptions');
   assert.deepEqual(redemptions.keyColumns,['order_id'],'PK-less table uses its non-null unique natural key');
   assert.equal(redemptions.sourceRows,2);assert.equal(redemptions.targetRows,2);
   assert.ok(report.reconciliation.openCustodyCount>0,'open custody is rehearsed');
   const pushRow=await database.one('SELECT * FROM native_push_tokens WHERE token_hash=?',pushHash);
+  assert.equal((await database.one("SELECT user_id FROM push_subscriptions WHERE endpoint='https://push.invalid/wp03'")).user_id, driver);
   assert.deepEqual([pushRow.user_id,pushRow.auth_session_hash,pushRow.lang,pushRow.prefs_json,pushRow.disabled_at],[driver,sessionHash,'en',{alpha:false,zeta:true,quietHours:{startMinute:1320,endMinute:360,utcOffsetMinutes:120}},now],'the token, its session and its preferences move exactly');
   const pushReport=report.reconciliation.tables.find(t=>t.table==='native_push_tokens');
   assert.deepEqual([pushReport.sourceRows,pushReport.targetRows],[1,1]);

@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform, Pressable, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { api } from './api';
+import { api, ApiError, apiSessionRevision } from './api';
 import { handoverExceptions, hhmm, isolate, latinDigits, ltr, minorFromText, type Merchant, type MerchantItem, type Order, type ShopLine, type ShopPolicy } from './model';
 import { currentCart, replaceCart } from './shop-cart';
 import { newRequestId } from './booking';
+import { recoverDriverAction } from './driver-recovery';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScale, Row, Section, Txt, useCopy } from './ui';
 import { useTheme } from './theme-context';
 
@@ -169,26 +170,41 @@ function AcceptClock({ until }: { until: number }) {
 }
 
 /** The captain at the shop (DLV-13): check the packages and bags, then enter the shop's code, or report what is wrong. */
-export function ShopHandover({ order, onChange }: { order: Order; onChange: (o: Order) => void }) {
+export function ShopHandover({ order, onChange, onReload }: { order: Order; onChange: (o: Order) => void; onReload: () => Promise<unknown> }) {
   const { c, language, err } = useCopy();
   const s = order.shop!;
   const [code, setCode] = useState('');
   const [problem, setProblem] = useState<(typeof handoverExceptions)[number]>('missing_item');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [reporting, setReporting] = useState(false);
   // One request id per distinct attempt: a lost acknowledgement replays it instead of applying the handover twice.
   const attempt = useRef<{ key: string; id: string } | null>(null);
-  async function send(check: { result: 'ok' } | { result: 'exception'; exception: string }) {
+  async function send(check: { result: 'ok' } | { result: 'exception'; exception: (typeof handoverExceptions)[number] }) {
     if (busy) return;
     setBusy(check.result); setError('');
     try {
-      const key = JSON.stringify([order.id, check, check.result === 'ok' ? latinDigits(code) : '']);
-      if (attempt.current?.key !== key) attempt.current = { key, id: newRequestId() };
-      onChange(await api<Order>(`/orders/${order.id}/shop/handover`, { expectedStatus: 'at_pickup', requestId: attempt.current.id, check,
-        ...(check.result === 'ok' && { code: latinDigits(code) }) }));
+      const input = { check, ...(check.result === 'ok' && { code: latinDigits(code) }),
+        ...(s.readySnapshotId !== undefined && { expectedReadySnapshotId: s.readySnapshotId }) };
+      if (order.recovery && order.driverId && s.readySnapshotId !== undefined) {
+        const revision = apiSessionRevision();
+        const result = await recoverDriverAction(order.driverId, order, 'shop/handover', input, () => apiSessionRevision() === revision);
+        if (result.state === 'other_order') throw new ApiError('driver_command_other_order', 409);
+        if (result.state === 'other_settled') throw new ApiError(result.notice, 409);
+        if (result.state === 'previous') throw new ApiError('driver_command_previous', 409);
+        if (result.state === 'conflict') throw new ApiError('order_changed', 409);
+        if (result.state === 'rejected') throw new ApiError(result.error ?? 'server_error', result.httpStatus ?? 400);
+        if (result.state !== 'applied') throw new ApiError('driver_command_pending', 409);
+        if ('order' in result && result.order) onChange(result.order); else await onReload();
+      } else {
+        const key = JSON.stringify([order.id, order.assignedAt, input]);
+        if (attempt.current?.key !== key) attempt.current = { key, id: newRequestId() };
+        onChange(await api<Order>(`/orders/${order.id}/shop/handover`, { expectedStatus: 'at_pickup', requestId: attempt.current.id,
+          ...(s.readySnapshotId !== undefined && { expectedAssignedAt: order.assignedAt ?? null }), ...input }));
+      }
       attempt.current = null;
       haptic.success();
-    } catch (e) { setError(err(e)); }
+    } catch (e) { setError(err(e)); if (e instanceof ApiError && e.status === 409) await onReload(); }
     finally { setBusy(''); }
   }
   if (s.state !== 'ready') return <Card tone="muted"><Txt>{s.handoverException ? fill(c.shopWaitFix, { problem: c[`handover_${s.handoverException}`] }) : c.shopWaitReady}</Txt></Card>;
@@ -197,13 +213,15 @@ export function ShopHandover({ order, onChange }: { order: Order; onChange: (o: 
     <Section title={c.shopCollectTitle} />
     <Txt>{fill(c.shopPackages, { n: packages.length, sealed: packages.filter(p => p.sealed).length })}</Txt>
     {packages.filter(p => !p.sealed).map(p => <Txt key={p.no} variant="caption" style={{ marginTop: 2 }}>{fill(c.shopOpenBag, { n: p.no,
-      items: s.lines.filter(l => p.lineIds.includes(l.id)).map(l => lineName(l, language)).join('، ') })}</Txt>)}
+      items: s.lines.filter(l => p.lineIds.includes(l.id)).map(l => `${lineName(l, language)} ${qtyLabel(l.qtyMilli, l.byWeight, c)}`).join('، ') })}</Txt>)}
     <Field label={c.shopPickupCode} value={code} onChangeText={t => setCode(latinDigits(t).replace(/\D/g, '').slice(0, 4))} keyboardType="number-pad" maxLength={4} />
     <Button title={c.shopCollected} icon="checkmark" loading={busy === 'ok'} disabled={code.length !== 4} reason={code.length !== 4 ? c.shopCodeNeeded : undefined}
       onPress={() => send({ result: 'ok' })} />
-    <Txt variant="label" style={{ marginTop: 12 }}>{c.shopProblem}</Txt>
-    <Choices label={c.shopProblem} value={problem} onChange={setProblem} items={handoverExceptions.map(k => ({ key: k, label: c[`handover_${k}`] }))} />
-    <Button title={c.shopReportProblem} variant="outline" loading={busy === 'exception'} onPress={() => send({ result: 'exception', exception: problem })} />
+    {reporting ? <>
+      <Choices label={c.shopProblem} value={problem} onChange={setProblem} items={handoverExceptions.map(k => ({ key: k, label: c[`handover_${k}`] }))} />
+      <Button title={c.shopReportProblem} variant="outline" loading={busy === 'exception'} onPress={() => send({ result: 'exception', exception: problem })} />
+      <Button title={c.cancel} variant="ghost" disabled={!!busy} onPress={() => setReporting(false)} />
+    </> : <Button title={c.shopReportProblem} variant="ghost" onPress={() => setReporting(true)} />}
     <ErrorText>{error}</ErrorText>
   </Card>;
 }

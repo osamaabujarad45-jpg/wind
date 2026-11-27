@@ -3,6 +3,18 @@
   "scope": "Additive protocols after the frozen WP01 installed-client inventory; each anonymous boundary executes on SQLite and PostgreSQL.",
   "modules": [
     {
+      "packet": "verified-email-reset",
+      "source": "server/domain/firebase-email.ts",
+      "registrar": "registerRecoveryEmailRoutes",
+      "endpoints": [
+        { "method": "POST", "path": "/api/me/email/challenge", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/me/email/link", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/me/email/link/confirm", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/auth/reset/link/code", "anonymousStatus": 503 },
+        { "method": "POST", "path": "/api/auth/reset/link", "anonymousStatus": 503 }
+      ]
+    },
+    {
       "packet": "ship-custody-chain",
       "source": "server/domain/custody.ts",
       "registrar": "registerCustodyRoutes",
@@ -748,6 +760,18 @@
       "registrar": "registerNearbyRoutes",
       "endpoints": [
         { "method": "GET", "path": "/api/drivers/nearby", "anonymousStatus": 401 }
+      ]
+    },
+    {
+      "packet": "F4-account-modes",
+      "source": "server/domain/session-mode.ts",
+      "registrar": "registerModeRoutes",
+      "endpoints": [
+        { "method": "POST", "path": "/api/session/mode", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/session/captain/availability", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/session/other-phones", "anonymousStatus": 401 },
+        { "method": "POST", "path": "/api/captain/application", "anonymousStatus": 401 },
+        { "method": "GET", "path": "/api/session/notifications", "anonymousStatus": 401 }
       ]
     }
   ]

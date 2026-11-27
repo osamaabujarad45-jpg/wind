@@ -1,20 +1,24 @@
 // The shop's catalogue (DLV-01, MER-02): sections, items, prices in shekels (stored as agorot), sold by weight, and the
 // out-of-stock switch, which is the edit a busy shop makes most often.
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, Switch, View } from 'react-native';
 import { api, useApi } from '../../api';
 import { minorFromText, type MerchantItem } from '../../model';
+import { newRequestId } from '../../command-id';
+import { useSession } from '../../session';
 import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Loading, Row, Screen, Section, Txt, useCopy } from '../../ui';
 import { useTheme } from '../../theme-context';
 
 export default function MerchantCatalogue() {
   const { palette } = useTheme();
   const { c, language, money, err } = useCopy();
+  const { me } = useSession();
+  const back = me?.accountProfile?.mode !== 'shop';
   const { data, error, reload } = useApi<{ items: MerchantItem[] }>('/merchant/catalogue');
   const [editing, setEditing] = useState<MerchantItem | 'new' | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [actionError, setActionError] = useState('');
-  if (!data) return <Screen><Header title={c.merchantCatalogue} back /><Loading failed={!!error} onRetry={reload} /></Screen>;
+  if (!data) return <Screen><Header title={c.merchantCatalogue} back={back} /><Loading failed={!!error} onRetry={reload} /></Screen>;
   async function toggle(item: MerchantItem) {
     setBusy(item.id); setActionError('');
     try { await api(`/merchant/items/${item.id}`, { available: !item.available }); await reload(); }
@@ -23,7 +27,7 @@ export default function MerchantCatalogue() {
   }
   const sections = [...new Set(data.items.map(i => i.section))];
   return <Screen onRefresh={reload} footer={!editing ? <Button title={c.merchantAddItem} icon="add" onPress={() => setEditing('new')} /> : undefined}>
-    <Header title={c.merchantCatalogue} back />
+    <Header title={c.merchantCatalogue} back={back} />
     {editing && <ItemForm item={editing === 'new' ? null : editing} onDone={async () => { setEditing(null); await reload(); }} />}
     {!data.items.length && !editing && <Empty icon="pricetags-outline" title={c.merchantNoItems} body={c.merchantNoItemsBody} />}
     <ErrorText>{actionError}</ErrorText>
@@ -60,13 +64,16 @@ function ItemForm({ item, onDone }: { item: MerchantItem | null; onDone: () => v
   const [byWeight, setByWeight] = useState(item?.byWeight ?? false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const requestId = useRef<string | null>(null);
   const priceAgorot = minorFromText(price);
   const reason = !section.trim() ? c.merchantSectionNeeded : !nameAr.trim() || !nameEn.trim() ? c.merchantNamesNeeded
     : !(Number.isSafeInteger(priceAgorot) && priceAgorot >= 1) ? c.merchantPriceNeeded : '';
   async function save() {
     setBusy(true); setError('');
     try {
-      await api(item ? `/merchant/items/${item.id}` : '/merchant/items', { section: section.trim(), nameAr: nameAr.trim(), nameEn: nameEn.trim(), priceAgorot, byWeight, available: item?.available ?? true });
+      if (!item) requestId.current ??= newRequestId();
+      await api(item ? `/merchant/items/${item.id}` : '/merchant/items', { section: section.trim(), nameAr: nameAr.trim(), nameEn: nameEn.trim(),
+        priceAgorot, byWeight, available: item?.available ?? true, ...(!item && { requestId: requestId.current }) });
       onDone();
     } catch (e) { setError(err(e)); }
     finally { setBusy(false); }

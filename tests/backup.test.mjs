@@ -1,9 +1,10 @@
 // T46: a missed backup reaches an admin, and a backup copy restores to a working service.
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { defaultSettings, quote } from '../src/model.ts';
@@ -12,20 +13,35 @@ import { startApiProcess } from './support/api-process.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'wind-backup-'));
 const marker = join(dir, 'last-ok');
+const mailBase = 'https://backup-mail.example.invalid/client/v4';
+const customerEmail = 'backup-customer@example.invalid';
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_BACKUP_MARKER = marker;
 process.env.WIND_ENABLED_SERVICES = 'parcel';
 process.env.WIND_PUSH_SUBJECT = 'mailto:wind-backup-suite@example.invalid';
 process.env.WIND_EXPO_PUSH_ENABLED = '1';
+Object.assign(process.env, { WIND_EMAIL_FROM: 'backup-sender@example.invalid', CLOUDFLARE_ACCOUNT_ID: 'backup-test',
+  CLOUDFLARE_EMAIL_TOKEN: 'backup-test-token', CLOUDFLARE_API_BASE: mailBase });
 delete process.env.OSRM_URL; delete process.env.WIND_DATABASE_URL; delete process.env.WIND_BACKUP_MAX_AGE_HOURS; // the 26 hour default
 const { alertMissedBackup, db, persistence, promote, server, shutdown } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 const realFetch = globalThis.fetch;
 const sent = [];
-globalThis.fetch = (url, init) => String(url).startsWith('https://exp.host/')
-  ? (sent.push(JSON.parse(init.body)[0]), Promise.resolve(Response.json({ data: [{ status: 'ok', id: 't' }] })))
-  : realFetch(url, init);
+const mailCodes = [];
+globalThis.fetch = async (url, init) => {
+  if (String(url).startsWith('https://exp.host/')) {
+    sent.push(JSON.parse(init.body)[0]);
+    return Response.json({ data: [{ status: 'ok', id: 't' }] });
+  }
+  if (String(url).startsWith(mailBase + '/')) {
+    const mail = JSON.parse(init.body);
+    assert.equal(mail.to, customerEmail);
+    mailCodes.push(/: (\d{6})/.exec(mail.text)?.[1]);
+    return Response.json({ success: true });
+  }
+  return realFetch(url, init);
+};
 const inFlight = new Set();
 const detached = persistence.detached.bind(persistence);
 persistence.detached = work => { const running = detached(work); inFlight.add(running); void running.finally(() => inFlight.delete(running)).catch(() => {}); return running; };
@@ -98,34 +114,93 @@ try {
   assert.ok(script.indexOf('trap ') > 0 && script.indexOf('trap ') < script.indexOf('VACUUM INTO'), 'a failed run leaves no uncompressed copy');
 
   // Restore: the backup copy, unzipped into place, runs the service with its accounts and orders.
+  await call('/me/email', { token: customer.token, body: { current: 'secret1', email: customerEmail } });
+  await call('/me/email/code', { token: customer.token, body: { current: 'secret1' } });
+  assert.equal(mailCodes.length, 1);
+  assert.match(mailCodes[0], /^\d{6}$/);
+  const verified = await call('/me/email/verify', { token: customer.token, body: { current: 'secret1', code: mailCodes[0] } });
+  assert.ok(verified.user.emailVerifiedAt, 'the snapshot customer has proven mailbox ownership');
   const input = { service: 'parcel', pickupCity: 'ramallah', dropoffCity: 'nablus', option: 'small', shared: false,
     pickupNote: 'Gate', dropoffNote: 'Door', contact: '0599170002', detail: 'Box' };
   const order = await call('/orders', { token: customer.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });
+  const attemptExpiry = Date.now() + 600_000;
+  db.prepare(`INSERT INTO firebase_email_attempts (uid, project_id, owner_marker, user_id, purpose, recipient_key,
+    credential_hash, nonce_hash, state, expires_at, cleanup_at, retry_until)
+    VALUES ('restore-fixture', 'test-project', 'test-claim', ?, 'reset', 'test-recipient', 'test-credential', 'test-nonce', 'ready', ?, ?, 0)`)
+    .run(customer.user.id, attemptExpiry, attemptExpiry);
+  db.prepare(`INSERT INTO firebase_email_attempts (uid, project_id, owner_marker, user_id, purpose, recipient_key,
+    credential_hash, nonce_hash, state, expires_at, cleanup_at, retry_until)
+    VALUES ('restore-review', 'test-project', 'other-claim', ?, 'reset', 'test-recipient', 'test-credential', 'other-nonce', 'reconcile', ?, ?, 0)`)
+    .run(customer.user.id, attemptExpiry, attemptExpiry);
+  await call('/auth/reset/code', { body: { identifier: customerEmail } });
+  await settle();
+  assert.equal(mailCodes.length, 2);
+  assert.match(mailCodes[1], /^\d{6}$/);
+  const reset = { identifier: customerEmail, code: mailCodes[1], password: 'Backup-test-reset-12' };
   const copy = join(dir, 'copy.db');
   db.exec(`VACUUM INTO '${copy.replaceAll("'", "''")}'`); // the same statement as infra/vm/wind-backup.sh
   const check = new DatabaseSync(copy, { readOnly: true });
   assert.equal(check.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+  assert.equal(check.prepare("SELECT COUNT(*) AS n FROM email_codes WHERE purpose = 'reset'").get().n, 1, 'the snapshot has the live code');
   check.close();
+  await call('/auth/reset', { body: reset });
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM email_codes WHERE purpose = 'reset'").get().n, 0, 'the source spent it after the snapshot');
   const restored = join(dir, 'restored.db');
   writeFileSync(restored, gunzipSync(gzipSync(readFileSync(copy))));
   assert.ok(!existsSync(`${restored}-wal`), 'no journal to replay');
   // An interrupt between stop and swap must not leave the service down with the old database parked aside.
-  { const restore = readFileSync(new URL('../infra/vm/wind-restore.sh', import.meta.url), 'utf8');
+  const restorePath = fileURLToPath(new URL('../infra/vm/wind-restore.sh', import.meta.url));
+  const restore = readFileSync(restorePath, 'utf8');
+  {
     const trap = restore.indexOf(`trap 'docker stop "$name" >/dev/null 2>&1 || true; put_back' INT TERM HUP`);
     assert.ok(trap >= 0 && trap < restore.indexOf('docker stop "$name" >/dev/null\nswap'), 'signals put back the old database');
     assert.ok(restore.indexOf('swap || put_back\ntrap - INT TERM HUP') > trap, 'and the trap is disarmed once the restored copy is live');
   }
-  // The same statement as infra/vm/wind-restore.sh: nobody's session from before the copy survives it.
-  const wipe = readFileSync(new URL('../infra/vm/wind-restore.sh', import.meta.url), 'utf8').match(/db\.exec\('(BEGIN;[^']*)'\)/)[1];
-  const cleaning = new DatabaseSync(restored);
-  assert.equal(cleaning.prepare('SELECT COUNT(*) AS n FROM native_push_tokens').get().n, 1, 'the copy holds the admin device');
-  cleaning.exec(wipe);
-  assert.equal(cleaning.prepare('SELECT COUNT(*) AS n FROM native_push_tokens').get().n, 0, 'native push tokens go with their sessions');
-  cleaning.close();
+  if (process.platform !== 'win32') {
+    const bin = mkdtempSync(join(dir, 'restore-bin-'));
+    const docker = join(bin, 'docker');
+    writeFileSync(docker, `#!/bin/sh
+printf '%s\\n' "$1" >> "$WIND_DOCKER_CALLS"
+[ "$1" = inspect ] || exit 19
+case "$3" in
+  *'.Config.Image'*) echo fixture-image ;;
+  *'WIND_FIREBASE_RESET_LINKS=1'*) echo enabled ;;
+esac
+`);
+    chmodSync(docker, 0o755);
+    const calls = join(dir, 'restore-docker-calls');
+    const untouchedData = join(dir, 'restore-must-not-stage');
+    const blocked = spawnSync('sh', [restorePath, copy], { encoding: 'utf8', env: {
+      ...process.env, PATH: `${bin}:${process.env.PATH}`, WIND_DOCKER_CALLS: calls, WIND_DATA: untouchedData,
+    } });
+    assert.equal(blocked.status, 1, blocked.stderr);
+    assert.match(blocked.stderr, /recreate the container with both Firebase email link switches off/);
+    assert.deepEqual(readFileSync(calls, 'utf8').trim().split('\n'), ['inspect', 'inspect']);
+    assert.ok(!existsSync(untouchedData), 'the rejection comes before staging or changing the data');
+  }
+  // Execute the restore script's staged-copy logic on the disposable fixture.
+  const stagedCopy = /--disable-warning=ExperimentalWarning -e "([\s\S]*?)^"/m.exec(restore)?.[1];
+  assert.ok(stagedCopy?.includes("'/r/wind.db'"));
+  const beforeCleanup = new DatabaseSync(restored, { readOnly: true });
+  assert.equal(beforeCleanup.prepare('SELECT COUNT(*) AS n FROM native_push_tokens').get().n, 1, 'the copy holds the admin device');
+  beforeCleanup.close();
+  const cleanup = spawnSync(process.execPath, ['-e', stagedCopy.replace("'/r/wind.db'", 'process.env.WIND_RESTORE_FIXTURE_DB')], {
+    env: { ...process.env, WIND_RESTORE_FIXTURE_DB: restored }, encoding: 'utf8',
+  });
+  assert.equal(cleanup.status, 0, cleanup.stderr);
+  const cleaned = new DatabaseSync(restored, { readOnly: true });
+  assert.equal(cleaned.prepare('SELECT COUNT(*) AS n FROM native_push_tokens').get().n, 0, 'native push tokens go with their sessions');
+  assert.equal(cleaned.prepare('SELECT COUNT(*) AS n FROM email_codes').get().n, 0, 'the staged copy discards pending email codes');
+  const attempt = cleaned.prepare("SELECT state, cleanup_at FROM firebase_email_attempts WHERE uid = 'restore-fixture'").get();
+  assert.deepEqual([attempt.state, attempt.cleanup_at], ['retired', 0], 'restore invalidates the link while keeping UID cleanup evidence');
+  const reconciling = cleaned.prepare("SELECT state, cleanup_at FROM firebase_email_attempts WHERE uid = 'restore-review'").get();
+  assert.deepEqual([reconciling.state, reconciling.cleanup_at], ['reconcile', attemptExpiry], 'existing reconciliation keeps its schedule');
+  cleaned.close();
   const api = await startApiProcess({ DB_PATH: restored });
   try {
     const remote = apiCaller(() => api.base, realFetch);
     await remote('/me', { token: customer.token, expect: 401 });
+    assert.equal((await remote('/auth/reset', { body: reset, expect: 400 })).error, 'wrong_email_code', 'the spent code stays unusable');
     const signedIn = await remote('/auth/login', { body: { phone: '0599170002', password: 'secret1' } });
     assert.equal((await remote(`/orders/${order.id}`, { token: signedIn.token })).id, order.id, 'the order is there');
     const added = await remote('/orders', { token: signedIn.token, body: { ...input, quotedPrice: quote(defaultSettings, input) } });

@@ -1,5 +1,12 @@
 # CURRENT WORK — read me first
 
+**27 November · Personal flow and pilot readiness.** Continue in the main checkout on `feature/pilot-personal-flow`, based on PR #122 at `c5951427`. The F0 launch record is `2e78bad7`. The approved ride-capacity fix is `fa66dfdb`. [Continuation plan](PLAN-2026-11-26-CONTINUE.md#27-november-pilot-checkpoint)
+
+1. Complete the F1 release performance comparison on the A53. The reviewed candidate passed the Arabic and English Ride, Send and Shop journeys on the signed QA APK at 200% with TalkBack enabled. Docker verified exact Shop address recovery after reload, visibility of expanded cards, focus exclusion for collapsed cards, and PostgreSQL persistence. [Measurement protocol](design/FLOWS-2026-11-26-one-app-profiles.md#7-speed-plan) · [Screen gallery](screens/README.md)
+2. Validate the Birzeit University pickup, Sinjil route and participating vehicles. The current booking limit is four passengers. Confirm two separate bookings for five riders while single-booking support remains open. [Five-rider field gates](design/PILOT-JOURNEYS-PALESTINE.md#five-riders-in-one-vehicle)
+3. Integrate the v5 verified-email checkpoint after F1. Resolve the two preflight conflicts, rerun its gated suites, obtain two independent approvals, and check the hosted Firebase templates on the intended build before proposing activation. [Continuation plan](PLAN-2026-11-26-CONTINUE.md#27-november-pilot-checkpoint) · [Provider runbook](operations/deploy.md)
+4. Start F2 with one map host, then F3 session authority and F4–F5 profile switching. [Implementation slices](design/FLOWS-2026-11-26-one-app-profiles.md#9-implementation-slices)
+
 **26 November, late · Android push live and accepted on the A53.**
 - PR #120, the other session's recovery, tracking and runtime-security work, was deployed as release `20261126200823`.
 - PR #121, which keeps local alerts until the server really sends push, was deployed as release `20261126212854`, from master `816d3e17`. Claude Opus 5.5 led; GPT 6.2 Sol ran the deployment.
@@ -7,14 +14,11 @@
 - APK 1.1.6 versionCode 44 (EAS `fa71b101`) carries Firebase and is published on the install page.
 - On the physical A53 with Wind fully closed, a real order's four status pushes and a captain's new-job push arrived (runbook step 6 passed). The QA test accounts were blocked right after the trip; the `Wind QA operator` admin is the working admin login.
 
-Details, rollback and limits are in [the runbook](operations/deploy.md) (Firebase, "State on 26 November"). Next:
-1. Verify email, then turn on Firebase password reset (delegated to GPT 6.2 Sol on 27 November).
-2. Slices F0 (baseline measurements on the A53) and F1. On 27 November the owner told the lead to proceed without waiting, so F1 (client-only) is being built by GPT 6.2 Sol while F0 runs. This overrides the F0-then-F1 order in plan §8, and ticket 02 no longer depends on ticket 01. F0's "before" numbers are taken on the current release (APK 1.1.6 vc44) before F1 reaches the phone, so F1 still gets before/after evidence.
-3. The remaining push states in continuation plan §4. The design slices are §8 of [the continuation plan](PLAN-2026-11-26-CONTINUE.md).
+The runbook retains the November 26 push evidence and rollback. On November 27 the owner allowed F1 to start alongside F0 and removed the dependency between tickets 02 and 01. Use the pilot checkpoint above for the v5 email integration, provider rehearsal and activation gate, and continuation plan §4 for remaining push checks. [Runbook](operations/deploy.md) · [Continuation plan](PLAN-2026-11-26-CONTINUE.md)
 
 **26 November · Product flows.** The owner asked for one simple app across rides, sending and shop orders, with Facebook-style profile switching. The design, combining two independent studies, is [one-app flows and profiles](design/FLOWS-2026-11-26-one-app-profiles.md): one sign-in with Personal, Captain and Shop profiles; server-enforced switch rules; Ride · Send · Shop above one input; one map host for speed. Slices F0–F11 are tickets in `.scratch/one-app-profiles/issues/` and are placed in [the continuation plan](PLAN-2026-11-26-CONTINUE.md) §8. Design only; no application code changed.
 
-**26 November · Session consolidation.** Active work is on `feature/session-consolidation-20261126`, based on remote `master` `941d5cac` (PR #119 merged). The older root snapshot and other agents' work are preserved. Read [the current review and verification](reviews/2026-11-26-session-consolidation.md), [all worktree dispositions](reviews/2026-11-26-worktree-inventory.md), then [the ordered continuation plan](PLAN-2026-11-26-CONTINUE.md). No production change is implied by this source review. Entries below are historical context and require current-state verification before operating a host.
+**26 November · Session consolidation.** The consolidation used `feature/session-consolidation-20261126` after PR #119 merged at `941d5cac`. Its review records the branch and verification from that day. The earlier root snapshot and other agents' work are preserved. Use the 27 November checkpoint for the active branch and verify the current state before operating a host. [Consolidation review](reviews/2026-11-26-session-consolidation.md) · [Worktree inventory](reviews/2026-11-26-worktree-inventory.md) · [Current checkpoint](PLAN-2026-11-26-CONTINUE.md#27-november-pilot-checkpoint)
 
 **23 November, evening · Pilot-ready 1.1.6 (start here).** Lead: Claude Opus 5.5. The owner asked for real users with rides (in town and between towns), shared seats, parcels and meals from shops, decided from the competitor study without questions. [PR #117](https://github.com/osamaabujarad45-jpg/wind/pull/117) builds what was missing; decisions are SRS §16b (D-6..D-12), requirements RIDE-13..15.
 

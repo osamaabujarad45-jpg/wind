@@ -19,6 +19,8 @@ const parcel = { service: 'parcel' }, privateRide = { service: 'ride', shared: f
 assert.equal(seatsFor('car'), 4); assert.equal(seatsFor('motorcycle'), 1); assert.equal(seatsFor('van'), 0); assert.equal(seatsFor(null), 0);
 assert.ok(canTake([], 'ride', shared(4), 'car'), 'an empty car takes four shared seats');
 assert.ok(!canTake([], 'ride', shared(2), 'motorcycle'), 'a motorcycle has one seat');
+assert.ok(canTake([], 'ride', privateRide, 'motorcycle'), 'a single private rider fits a motorcycle');
+assert.ok(!canTake([], 'ride', { ...privateRide, option: '2' }, 'motorcycle'), 'two private riders cannot take a motorcycle');
 assert.ok(canTake([shared(2), parcel], 'ride', shared(2), 'car'), 'shared riders and parcels fill a car together');
 assert.ok(!canTake([shared(3)], 'ride', shared(2), 'car'), 'never more riders than seats');
 assert.ok(canTake([shared(3)], 'parcel', undefined, 'car'), 'a parcel fits beside shared riders');
@@ -47,7 +49,7 @@ process.env.DB_PATH = join(dir, 'test.db');
 process.env.WIND_ENABLED_SERVICES = 'parcel,ride,shop';
 process.env.WIND_SHOP_TOWN = 'tulkarm';
 delete process.env.OSRM_URL;
-const { shutdown, server, promote } = await import('../server/main.ts');
+const { shutdown, server, promote, db } = await import('../server/main.ts');
 const { clearNearby } = await import('../server/domain/nearby.ts');
 await new Promise(resolve => server.listen(0, resolve));
 const call = apiCaller(() => `http://127.0.0.1:${server.address().port}/api`);
@@ -82,12 +84,40 @@ try {
   assert.equal((await call('/price', { token: lina.token, body: { ...ride(T, R), service: 'parcel', option: 'small' }, expect: 409 })).error, 'pooling_unavailable', 'only a ride is shared');
 
   const book = (who, body) => call('/orders', { token: who.token, body: { ...body, contact: who.user.phone } });
+  const tooMany = { ...ride(T, R), shared: false, option: '5', contact: sara.user.phone };
+  for (const path of ['/price', '/orders']) {
+    assert.equal((await call(path, { token: sara.token, body: tooMany, expect: 400 })).error, 'invalid_option');
+  }
   const first = await book(lina, ride(T, R, { option: '2' }));
   assert.equal(first.shared, true); assert.equal(first.option, '2');
   assert.match(first.handoverCode, /^\d{4}$/, 'a ride carries the trip code for its rider');
   const second = await book(omar, ride(A, N));
   const third = await book(huda, ride(T, R, { option: '2' }));
-  const lone = await book(sara, { ...ride(T, R), shared: false });
+  const lone = await book(sara, { ...ride(T, R), shared: false, option: '4' });
+
+  assert.ok(!(await call('/jobs', { token: moto.token })).some(job => job.id === lone.id), 'oversized rides stay off the motorcycle board');
+  db.prepare("INSERT INTO settings (key, value) VALUES ('driverCashCap', 1)").run();
+  assert.equal((await call(`/jobs/${lone.id}/accept`, { token: moto.token, body: {}, expect: 409 })).error, 'wrong_vehicle', 'an incompatible vehicle gets the capacity refusal before the cash-cap check');
+  db.prepare("DELETE FROM settings WHERE key = 'driverCashCap'").run();
+  for (const action of ['accept', 'offer']) {
+    const body = action === 'offer' ? { price: lone.recommendedPrice } : {};
+    assert.equal((await call(`/jobs/${lone.id}/${action}`, { token: moto.token, body, expect: 409 })).error, 'wrong_vehicle');
+  }
+  const assignable = await call(`/admin/orders/${lone.id}/assignable-drivers`, { token: admin.token });
+  assert.equal(assignable.find(driver => driver.id === moto.user.id).reason, 'wrong_vehicle');
+  assert.equal((await call(`/admin/orders/${lone.id}/assign`, { token: admin.token, body: { driverId: moto.user.id, reason: 'Test capacity' }, expect: 409 })).error, 'wrong_vehicle');
+  db.prepare('INSERT INTO order_offers (order_id, driver_id, price, created_at) VALUES (?, ?, ?, ?)').run(lone.id, moto.user.id, lone.recommendedPrice, Date.now());
+  assert.ok(!(await call(`/orders/${lone.id}`, { token: sara.token })).offers.some(offer => offer.driverId === moto.user.id));
+  assert.equal((await call(`/orders/${lone.id}/offers/${moto.user.id}/accept`, { token: sara.token, body: {}, expect: 409 })).error, 'offer_expired');
+  const oldMotorcycle = db.prepare(`INSERT INTO users (phone, name, password, role, status, vehicle, created_at, approved_at)
+    SELECT ?, name, password, role, status, vehicle, created_at, approved_at FROM users WHERE id = ?`);
+  const oldOffer = db.prepare('INSERT INTO order_offers (order_id, driver_id, price, created_at) VALUES (?, ?, ?, ?)');
+  for (let i = 0; i < 19; i++) {
+    const result = oldMotorcycle.run(`05993100${String(i).padStart(2, '0')}`, moto.user.id);
+    oldOffer.run(lone.id, result.lastInsertRowid, lone.recommendedPrice - 2, Date.now());
+  }
+  await call(`/jobs/${lone.id}/offer`, { token: ahmad.token, body: { price: lone.recommendedPrice + 1 } });
+  assert.deepEqual((await call(`/orders/${lone.id}`, { token: sara.token })).offers.map(offer => offer.driverId), [ahmad.user.id], 'old incompatible offers cannot fill the quote-list limit');
 
   // Along the way: heading to Ramallah from Tulkarm shows the Anabta → Nablus rider; a Nablus → Tulkarm job is backwards.
   const back = await call('/orders', { token: (await customer('0599300006', 'Back')).token, body: { ...ride(N, T), contact: '0599300006' } });
@@ -127,6 +157,8 @@ try {
   await call(`/jobs/${parcelOrder.id}/accept`, { token: ahmad.token, body: {} });
   assert.equal((await call(`/jobs/${third.id}/accept`, { token: ahmad.token, body: {}, expect: 409 })).error, 'vehicle_busy', 'three seats taken, two asked');
   assert.equal((await call(`/jobs/${lone.id}/accept`, { token: ahmad.token, body: {}, expect: 409 })).error, 'vehicle_busy', 'a private ride needs an empty car');
+  const spare = await driver('0599300012', 'Spare', 'car');
+  assert.equal((await call(`/jobs/${lone.id}/accept`, { token: spare.token, body: {} })).status, 'assigned', 'an empty car can take the whole party');
   // The shared riders see that the car carries others.
   assert.equal((await call(`/orders/${first.id}`, { token: lina.token })).sharedRun, true);
   // With one seat left the car still shows to riders; full, it would not.
