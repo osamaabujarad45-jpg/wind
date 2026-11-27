@@ -202,17 +202,19 @@ export function Row({ children, style, gap = 10 }: { children: React.ReactNode; 
 
 // Headings are Readex Pro (Arabic and Latin drawn together; the Arabic extension of Lexend, made for quick reading).
 // Every role names a Readex Pro file (theme.ts `face`); weights follow the Wind design system (600 is the strongest in text).
+// Line heights are about 1.75x the size: Readex draws the dots under a final ي half an em below the baseline, so a tighter
+// line cut them off wherever a label is line-limited, and "حسابي" read "حسابى" (render check, 27 Nov).
 export const headingFont = { bold: face.bold, semibold: face.semibold } as const;
 const useTextVariants = themedStyles(palette => ({
   // Design review 17 Nov: the floor was 11 px and nothing was bigger than 21, so ETA, prices and shares had no weight.
-  display: { fontSize: 28, lineHeight: 38, fontFamily: face.semibold, color: palette.ink, fontVariant: ['tabular-nums'] }, // ETA, amounts, earnings
-  h1: { fontSize: 22, lineHeight: 32, fontFamily: face.semibold, color: palette.ink },
-  h2: { fontSize: 18, lineHeight: 25, fontFamily: headingFont.semibold, color: palette.ink },
-  title: { fontSize: 16, lineHeight: 24, fontFamily: face.semibold, color: palette.ink },
-  body: { fontSize: 15, lineHeight: 23, fontFamily: face.regular, color: palette.secondary },
-  label: { fontSize: 14, lineHeight: 21, fontFamily: face.medium, color: palette.ink },
-  caption: { fontSize: 13, lineHeight: 20, fontFamily: face.regular, color: palette.secondary },
-  micro: { fontSize: 12, lineHeight: 18, fontFamily: face.medium, color: palette.secondary }, // faint fell to 4.1–4.3:1 on muted and pale cards
+  display: { fontSize: 28, lineHeight: 48, fontFamily: face.semibold, color: palette.ink, fontVariant: ['tabular-nums'] }, // ETA, amounts, earnings
+  h1: { fontSize: 22, lineHeight: 38, fontFamily: face.semibold, color: palette.ink },
+  h2: { fontSize: 18, lineHeight: 31, fontFamily: headingFont.semibold, color: palette.ink },
+  title: { fontSize: 16, lineHeight: 28, fontFamily: face.semibold, color: palette.ink },
+  body: { fontSize: 15, lineHeight: 26, fontFamily: face.regular, color: palette.secondary },
+  label: { fontSize: 14, lineHeight: 24, fontFamily: face.medium, color: palette.ink },
+  caption: { fontSize: 13, lineHeight: 23, fontFamily: face.regular, color: palette.secondary },
+  micro: { fontSize: 12, lineHeight: 22, fontFamily: face.medium, color: palette.secondary }, // faint fell to 4.1–4.3:1 on muted and pale cards
 } satisfies Record<string, TextStyle>));
 type TextVariant = 'display' | 'h1' | 'h2' | 'title' | 'body' | 'label' | 'caption' | 'micro';
 
@@ -674,26 +676,27 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { row, language } = useCopy();
   // expo-router gives `href: null` screens (and its internal routes) this style; the default bar hides them, so this one must too.
   const hidden = (key: string) => StyleSheet.flatten(descriptors[key].options.tabBarItemStyle)?.display === 'none';
-  // Seven tabs (admin with the shop line on) leave ~55 pt each: one Arabic word (مستخدمون) split mid-word at 12 pt. 11 pt is the floor.
-  const dense = state.routes.filter(route => !hidden(route.key)).length >= 7;
+  // A page reached from More has no tab of its own on a phone: More stays marked as the place you are in.
+  const current = state.routes[state.index];
+  const marked = hidden(current.key) ? state.routes.find(route => route.name === 'more')?.key : current.key;
   return <SafeAreaView edges={['bottom']} style={styles.bar}><View style={[styles.barRow, { flexDirection: row }]}>
     {state.routes.map((route, index) => {
       const { options } = descriptors[route.key];
       if (hidden(route.key)) return null;
-      const focused = state.index === index;
-      const color = focused ? palette.forest : palette.secondary;
+      const focused = state.index === index, here = route.key === marked;
+      const color = here ? palette.forest : palette.secondary;
       const label = String(options.title ?? route.name);
-      return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={label} aria-selected={focused}
+      return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={label} aria-selected={here}
         onPress={() => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) { haptic.tap(); navigation.navigate(route.name, route.params); }
         }} style={styles.barItem}>
         {/* remount on focus: Fabric on Android drops borderRadius when only backgroundColor changes on a borderless view (A53, RN 0.86) */}
-        <View key={focused ? 'on' : 'off'} style={[styles.barPill, focused && { backgroundColor: palette.lime, borderColor: palette.forest }]}>{/* lime alone is 1.1:1 on white: the forest edge carries it in sun */}
+        <View key={here ? 'on' : 'off'} style={[styles.barPill, here && { backgroundColor: palette.lime, borderColor: palette.forest }]}>{/* lime alone is 1.1:1 on white: the forest edge carries it in sun */}
           {options.tabBarIcon?.({ focused, color, size: 21 })}
           {!!options.tabBarBadge && <View style={styles.barBadge}><Text maxFontSizeMultiplier={maxScale} /* A11Y-03: 200%; the badge's minWidth grows with it */ style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
         </View>
-        <Text key={language} maxFontSizeMultiplier={maxScale} /* A11Y-03: 200%; two lines in the shared bar, which grows (minHeight) */ style={[styles.barText, dense && { fontSize: 11 }, { color }, focused && { fontFamily: face.semibold }]} numberOfLines={2}>{label}</Text>
+        <Text key={language} maxFontSizeMultiplier={maxScale} /* A11Y-03: 200%; two lines in the shared bar, which grows (minHeight) */ style={[styles.barText, { color }, here && { fontFamily: face.semibold }]} numberOfLines={2}>{label}</Text>
       </Pressable>;
     })}
   </View></SafeAreaView>;
@@ -803,7 +806,7 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   listRow: { alignItems: 'center', gap: 12, minHeight: size.row, paddingHorizontal: 14, paddingVertical: 6 },
   listIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   listCopy: { flex: 1, minWidth: 0 },
-  listLabel: { fontSize: 15, fontFamily: face.medium, color: palette.ink },
+  listLabel: { fontSize: 15, lineHeight: 26, fontFamily: face.medium, color: palette.ink },
   listValue: { fontFamily: face.regular, fontSize: 13, color: palette.secondary },
   empty: { alignItems: 'center', gap: 8, paddingVertical: 32, paddingHorizontal: 10 },
   emptyIcon: { width: 56, height: 56, borderRadius: 18, backgroundColor: palette.olivePale, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
@@ -811,14 +814,14 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   railBrand: { alignItems: 'center', gap: 10, paddingHorizontal: 8, paddingBottom: 18 },
   railTitle: { fontSize: 16, fontFamily: face.semibold, color: palette.ink, flexShrink: 1 },
   railItem: { alignItems: 'center', gap: 10, minHeight: 44, paddingHorizontal: 10, borderRadius: 10 },
-  railText: { flex: 1, fontSize: 14, fontFamily: face.medium },
+  railText: { flex: 1, fontSize: 14, lineHeight: 24, fontFamily: face.medium },
   railCount: { minWidth: 22, minHeight: 22, borderRadius: 11, backgroundColor: palette.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   railCountText: { color: palette.onFill, fontSize: 12, fontFamily: face.semibold },
   bar: { backgroundColor: palette.card, borderTopWidth: 1, borderTopColor: palette.hair, width: '100%' },
   barRow: { maxWidth: 640, width: '100%', alignSelf: 'center', paddingHorizontal: 8, paddingTop: 6, paddingBottom: 4 },
   barItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 50, gap: 3 },
   barPill: { width: 54, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'transparent' },
-  barText: { fontSize: 12, fontFamily: face.medium, textAlign: 'center' },
+  barText: { fontSize: 12, lineHeight: 22, fontFamily: face.medium, textAlign: 'center' },
   barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, minHeight: 16, borderRadius: 8, backgroundColor: palette.warn, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   barBadgeText: { color: palette.onFill, fontSize: 12, fontFamily: face.semibold }, // 5.7:1 on clayInk; clay itself is too light for text
 }));

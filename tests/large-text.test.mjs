@@ -66,12 +66,13 @@ for (const path of tsxFiles(srcDir)) {
 }
 
 // 4. Fixed `height:` / `lineHeight:` in the style sheets of the shared kit and the order screen is for icons, dots and bars only.
-// Expressions count as much as literals. Text variants set lineHeight with their size, so they are exempt.
+// Expressions count as much as literals. Text variants, and the line-limited labels, set lineHeight with their size (it
+// scales with the font), so they are exempt.
 const iconOnly = new Set(['iconButton', 'stepperKey', 'listIcon', 'emptyIcon', 'barPill', 'grip', 'send', 'segment']);
 for (const file of ['../src/ui.tsx', '../src/app/order/[id].tsx']) {
   for (const line of read(file).split('\n')) {
     const m = /^  (\w+): \{.*(?<![A-Za-z])(height|lineHeight)\s*:/.exec(line);
-    if (m && !iconOnly.has(m[1]) && !/^  (display|h1|h2|title|body|label|caption|micro):/.test(line)) problems.push(`${file}: ${m[1]} pins ${m[2]}: ${line.trim().slice(0, 90)}`);
+    if (m && !iconOnly.has(m[1]) && !/^  (display|h1|h2|title|body|label|caption|micro|barText|listLabel|railText):/.test(line)) problems.push(`${file}: ${m[1]} pins ${m[2]}: ${line.trim().slice(0, 90)}`);
   }
 }
 

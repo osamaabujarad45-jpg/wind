@@ -293,7 +293,7 @@ const screens = [
   { id: 'book-send-another', group: 'Customer', name: 'Send another parcel (pickup copied, new recipient)', route: `/book?again=${proofRecovery.id}&keep=pickup`, file: 'src/app/book.tsx', role: 'customer' },
   { id: 'orders', group: 'Customer', name: 'My orders', route: '/orders', file: 'src/app/(customer)/orders.tsx', role: 'customer' },
   { id: 'order-searching', group: 'Customer', name: 'Order · finding a driver', route: `/order/${searching.id}`, file: 'src/app/order/[id].tsx', role: 'customer', motion: true },
-  { id: 'order-scheduled', group: 'Customer', name: 'Parcel · scheduled, changing its time', route: `/order/${scheduled.id}`, file: 'src/app/order/[id].tsx', role: 'customer', clicks: ['changeTime'] },
+  { id: 'order-scheduled', group: 'Customer', name: 'Parcel · scheduled, changing its time', route: `/order/${scheduled.id}`, file: 'src/app/order/[id].tsx', role: 'customer', expand: true, clicks: ['changeTime'] },
   { id: 'order-live', group: 'Customer', name: 'Order · on the way', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'rider', fix: true },
   { id: 'order-parcel-live', group: 'Customer', name: 'Parcel · awaiting handover', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
   { id: 'track', group: 'Customer', name: 'Public tracking link (recipient, no sign-in)', route: shared.path, shown: '/track/{token}', file: 'src/app/track/[token].tsx', role: null }, // shown: the index must not churn on the random token
@@ -344,6 +344,7 @@ const screens = [
   { id: 'admin-orders', group: 'Admin', name: 'All orders', route: '/admin/orders', file: 'src/app/admin/orders.tsx', role: 'admin' },
   { id: 'admin-order', group: 'Admin', name: 'Parcel · delivery code recovery', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'admin' },
   { id: 'admin-users', group: 'Admin', name: 'Users', route: '/admin/users', file: 'src/app/admin/users.tsx', role: 'admin' },
+  { id: 'admin-more', group: 'Admin', name: 'More: the pages that leave the phone tab bar', route: '/admin/more', file: 'src/app/admin/more.tsx', role: 'admin' },
   { id: 'admin-subscriptions', group: 'Admin', name: 'Subscriptions', route: '/admin/subscriptions', file: 'src/app/admin/subscriptions.tsx', role: 'admin' },
   { id: 'admin-settings', group: 'Admin', name: 'Tariffs & settings', route: '/admin/settings', file: 'src/app/admin/settings.tsx', role: 'admin' },
 ].filter(s => !only || only.includes(s.id));
@@ -428,6 +429,8 @@ for (const language of ['ar', 'en']) {
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => console.log(`no network idle on ${screen.route}, capturing anyway`)); // a live screen holds a long-poll open
     await page.waitForTimeout(screen.motion ? 2600 : 1200); // allow the first data and map render
     if (screen.tap) { await page.getByText(screen.tap, { exact: true }).first().click(); await page.waitForTimeout(900); } // literal text, e.g. a seeded name
+    // A collapsed map sheet keeps its body off screen and inert (since 209c4ca4), so open it before using a control in it.
+    if (screen.expand) { await page.getByRole('button', { name: copy[language].sheetExpand, exact: true }).first().click(); await page.waitForTimeout(700); }
     for (const click of screen.clicks ?? []) {
       await page.getByText(copy[language][click], { exact: true }).first().click();
       await page.waitForTimeout(700);
@@ -993,7 +996,7 @@ if (!only || only.includes('booking-narrow')) {
     { id: 'book-parcel-form', path: `/book?service=parcel&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
     { id: 'book-ride-form', path: `/book?service=ride&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
     { id: 'book-freight-form', path: `/book?service=freight&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
-    { id: 'order-scheduled', path: `/order/${scheduled.id}`, ready: t => t.saveTime, open: t => [t.changeTime] },
+    { id: 'order-scheduled', path: `/order/${scheduled.id}`, ready: t => t.saveTime, open: t => [t.sheetExpand, t.changeTime] },
   ];
   for (const language of ['ar', 'en']) for (const scale of [1, 1.3]) for (const view of views) {
     const t = copy[language], where = `${view.id} ${language} at 360px scale ${scale}`;

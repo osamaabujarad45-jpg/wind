@@ -346,6 +346,7 @@ const ar = {
   dashboard: 'اللوحة',
   dashboardTab: 'الرئيسية',
   users: 'المستخدمون',
+  moreTab: 'المزيد',
   usersTab: 'مستخدمون', // the screen's own word without the article: المستخدمون broke mid-word in a seven-tab bar (screens, 18 Nov)
   subscriptions: 'الاشتراكات',
   settings: 'الإعدادات',
@@ -2298,6 +2299,7 @@ const en: Copy = {
   dashboard: 'Dashboard',
   dashboardTab: 'Home', // seven admin tabs share 411 dp: "Dashboard" broke mid-word on the A53
   users: 'Users',
+  moreTab: 'More',
   usersTab: 'Users',
   subscriptions: 'Plans',
   settings: 'Settings',

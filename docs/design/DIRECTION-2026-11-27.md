@@ -1,6 +1,6 @@
 # Design direction, 27 November 2026
 
-Status: **proposed**. The owner reviews the four-screen proof before screens change. Rules for daily work: [`.agents/skills/wind-design/SKILL.md`](../../.agents/skills/wind-design/SKILL.md).
+Status: **in progress on the recommended direction**. The owner has the four-screen proof and can change the direction at any point; work stays on its own branch until reviewed. Rules for daily work: [`.agents/skills/wind-design/SKILL.md`](../../.agents/skills/wind-design/SKILL.md).
 
 The owner's brief: too much text on screen; the app reads as generated; use the design system and design-taste skills; make it look like professional human design; keep it matched to the new profile flows; no conflicting or wasted work.
 
@@ -21,8 +21,8 @@ The owner's brief: too much text on screen; the app reads as generated; use the 
 
 ## What the evidence shows
 
-1. **Fonts.** Only Readex Pro SemiBold and Bold are loaded (`app.json`, `src/app/_layout.tsx`). Body, caption, label and title text use the system font, so Arabic falls back to a Naskh book face beside Readex headings. The system asks for Readex everywhere; the 17 November review asked too. The Regular and Medium files (OFL, Arabic covered, internal names checked) are in `C:\w\wind-tools\design\fonts-download-1127`. Android embeds fonts at build time, so this needs a new APK.
-2. **Text.** Screen code references 437 explanatory sentences and 99 reason lines under buttons (F5 tree; every state, not all visible at once). The heaviest: `order/[id].tsx` (93 sentences), `book.tsx` (42), `driver/index.tsx` (27), `admin/cash.tsx` (21). `scripts/design-check.mjs` now holds this budget and only lets it go down.
+1. **Fonts.** At the F5 base (`4ecb7e15`) only Readex Pro SemiBold and Bold were loaded (`app.json`, `src/app/_layout.tsx`). Body, caption, label and title text used the system font, so Arabic fell back to a Naskh book face beside Readex headings (seen in the captures; Android's own Arabic font is Noto Naskh). The system asks for Readex everywhere; the 17 November review asked too. Regular and Medium (OFL, Arabic covered, internal names checked) are now in `assets/fonts`; Android embeds fonts at build time, so this needs a new APK. Two things the new face changed, both fixed: it draws the dots under a final ي half an em below the baseline, so at the system's 1.4–1.55 line heights "حسابي" rendered as "حسابى" (reproduced with the real files; line heights are now about 1.75); and it is wider, so eight admin tabs split words (a phone now has five).
+2. **Text.** Screen code makes 437 references to 378 distinct explanatory sentences and has 98 reason lines under buttons (every state, not all visible at once). The heaviest: `order/[id].tsx` (93 sentences), `book.tsx` (42), `driver/index.tsx` (27), `admin/cash.tsx` (21). `scripts/design-check.mjs` now holds this budget and only lets it go down.
 3. **Sameness.** Cards, pills and tinted icon tiles on every screen leave no hierarchy.
 
 ## Order of work
