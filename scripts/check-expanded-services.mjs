@@ -95,12 +95,12 @@ try {
   await login(who.driver, `/order/${ride.id}`);
   checks.push('A53 accepts a leased ride with nonce and capacity revision; driver never receives PIN');
   // Geofence-style cue: ~320 m out (a pace the server's 70 m/s filter accepts) the caption names the distance and
-  // Arrive steps back; back on the pickup the plain hint returns and Arrive leads again.
+  // Arrive steps back; back on the pickup the caption goes and Arrive leads again.
   await page.evaluate(() => { window.__windFix = { latitude: 31.90288, longitude: 35.19 }; });
   await page.getByText(fill(c.rideArrivalFar, { km: '0.3', m: 300 }), { exact: true }).waitFor({ timeout: 30_000 });
   await page.screenshot({ path: join(output, 'a53-arrive-far.png') });
   await page.evaluate(() => { window.__windFix = undefined; });
-  await page.getByText(c.rideArrivalHint, { exact: true }).waitFor({ timeout: 30_000 });
+  await page.getByText(fill(c.rideArrivalFar, { km: '0.3', m: 300 }), { exact: true }).waitFor({ state: 'hidden', timeout: 30_000 });
   checks.push('A53 Arrive cue names the distance outside the 300 m fence and leads again at the pickup');
   await click(c.rideArrive);
   await page.getByText(/Waiting time remaining/).waitFor();

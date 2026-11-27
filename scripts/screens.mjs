@@ -587,8 +587,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   await offer('رام الله', 'البيرة').click();
   await page.waitForURL(`**/order/${testOrder.id}`);
   await page.waitForFunction(() => window.trackingCheck.active.size === 1, null, { timeout: 3000 });
-  await page.getByText(copy.ar.driver_next_assigned, { exact: true }).waitFor();
-  assert.equal(await page.getByText(copy.ar.next_assigned, { exact: true }).count(), 0);
+  await page.getByRole('button', { name: copy.ar.advance_assigned, exact: true }).waitFor(); // the captain's own step, not the customer's view
   const stationaryPublications = publications;
   await page.waitForTimeout(31_000); // the watcher emits no movement after its initial fix
   assert.ok(publications > stationaryPublications, 'a stationary driver must refresh their GPS fix');
@@ -666,8 +665,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   await page.getByRole('button', { name: copy.ar.advance_assigned, exact: true }).click();
   await page.getByText(copy.ar.driver_next_at_pickup, { exact: true }).waitFor();
   await page.getByRole('button', { name: copy.ar.advance_at_pickup, exact: true }).click();
-  await page.getByText(copy.ar.driver_next_in_transit, { exact: true }).waitFor();
-  assert.equal(await page.getByText(copy.ar.next_in_transit, { exact: true }).count(), 0);
+  await page.getByRole('textbox', { name: copy.ar.codeFromCustomer, exact: true }).waitFor();
   await page.getByRole('button', { name: 'رجوع', exact: true }).click();
   await page.getByRole('button', { name: copy.ar.activeOrder, exact: true }).waitFor();
   for (const button of await page.getByRole('button', { name: copy.ar.accept, exact: true }).all()) assert.equal(await button.isDisabled(), true);

@@ -9,6 +9,7 @@ import { handoverExceptions, hhmm, isolate, latinDigits, ltr, minorFromText, typ
 import { currentCart, replaceCart } from './shop-cart';
 import { newRequestId } from './booking';
 import { recoverDriverAction } from './driver-recovery';
+import { statusText } from './copy';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScale, Row, Section, Txt, useCopy } from './ui';
 import { useTheme } from './theme-context';
 import { face } from './theme';
@@ -134,7 +135,7 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
     : !s.state ? c.shop_requested : order.status === 'completed' ? c.completed : c[`shop_${s.state}`];
   return <Card>
     <Section title={s.merchantName} />
-    <Txt variant="label" accessibilityLabel={step} style={{ marginBottom: 6 }}>{step}</Txt>
+    {step !== statusText(c, order) && <Txt variant="label" style={{ marginBottom: 6 }}>{step}</Txt>}
     {!s.state && order.status === 'requested' && <AcceptClock until={s.acceptDeadline} />}
     {s.change && <Card tone="warn" style={{ marginTop: 8 }}>
       <Txt variant="label" header>{c.shopConsentTitle}</Txt>

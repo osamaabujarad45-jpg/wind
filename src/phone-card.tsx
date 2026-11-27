@@ -212,7 +212,7 @@ export function PhoneCard() {
     <Row gap={10} style={styles.locked}>
       <Ionicons name={isVerified ? 'shield-checkmark' : 'call-outline'} size={16} color={isVerified ? palette.olive : palette.secondary} />
       <Txt variant="title" selectable style={[styles.ltr, { flex: 1, color: palette.secondary }]}>{user.phone}</Txt>
-      {badge && <View>{/* Badge aligns itself to the top of a row; this keeps it centred */}<Badge label={badge.label} tone={badge.tone} /></View>}
+      {badge && !featureOff && <View>{/* Badge aligns itself to the top of a row; this keeps it centred */}<Badge label={badge.label} tone={badge.tone} /></View>}
     </Row>
     {/* When the gate is closed, each disabled control already says why; repeating it here only adds noise */}
     {(gate === 'ready' || gate === 'checking') && <Txt variant="caption" style={{ marginTop: 8 }}>{status}</Txt>}

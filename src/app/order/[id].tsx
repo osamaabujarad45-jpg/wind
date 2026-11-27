@@ -176,7 +176,7 @@ export default function OrderScreen() {
   const step = steps.indexOf(['on_hold', 'returning'].includes(order.status) ? 'in_transit' : order.status);
   // a ride under way needs no step, for rider or driver: the bar shows it, and help sits at the foot.
   // Steps speak to the customer or the assigned driver; an admin is neither.
-  const next = (isCustomer || mine) && (c as Record<string, string | undefined>)[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}`];
+  const nextHint = (c as Record<string, string | undefined>)[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}`];
   const live = order.status === 'searching' || activeStatuses.includes(order.status);
   const rate = me.plan === 'pro' ? me.settings.proCommission : me.settings.commission;
   const resetReason = proofReset.id === id ? proofReset.reason : '';
@@ -205,6 +205,8 @@ export default function OrderScreen() {
   const needsCode = rideAction === 'boarding' || order.status === 'in_transit' || (order.status === 'returning' && !order.supportHasGoods);
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
+  // A shop customer hands nothing over at pickup; a rider with a PIN already reads "after checking the vehicle and driver".
+  const next = (isCustomer || mine) && !(isCustomer && order.status === 'at_pickup' && (order.service === 'shop' || !!boardingPin)) && nextHint;
   const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
   const rideNoShow = mine && order.service === 'ride' && !!order.ride && !order.safetyHold
     && ['assigned', 'at_pickup'].includes(order.status) && waitingEndsAt != null
@@ -421,7 +423,7 @@ export default function OrderScreen() {
           <Txt variant="caption" style={{ flex: 1 }}>{order.service === 'ride' ? c.sharedRideRun : c.courierRun}</Txt>
         </Row>}
         {/* The driver is close: get the parcel ready (Uber tells the rider when the car is around the corner). */}
-        {live && isCustomer && !mine && order.status === 'assigned' && order.pickupPoint && order.driverLocation && !location?.stale
+        {live && isCustomer && !mine && order.service === 'parcel' && order.status === 'assigned' && order.pickupPoint && order.driverLocation && !location?.stale
           && crowKm(order.pickupPoint, order.driverLocation) * 1000 <= 500 && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Ionicons name="walk-outline" size={16} color={palette.olive} />
           <Txt variant="caption" style={{ flex: 1, color: palette.olive }}>{fill(c.driverNearby, { m: 500 })}</Txt>
@@ -561,7 +563,6 @@ export default function OrderScreen() {
 
     {isAdmin && order.status === 'on_hold' && <Card tone="warn">
       <Txt variant="title">{c.exceptionTitle}</Txt>
-      <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.resolveConfirm}</Txt>
       <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setDecision({ id, reason })} />
       {suggested && <Txt variant="caption" style={{ marginBottom: 8 }}>
@@ -711,7 +712,6 @@ export default function OrderScreen() {
       {canDispute && !order.dispute && !reportOpen && !disputeReason && <Button title={c.disputeTitle} variant="ghost" size="sm" icon="flag-outline" onPress={() => setReport({ id, open: true })} />}
       {canDispute && !order.dispute && (reportOpen || !!disputeReason) && <Card>
         <Txt variant="title">{c.disputeTitle}</Txt>
-        <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.disputeHint}</Txt>
         <Field label={c.disputeReason} value={disputeReason} multiline maxLength={1000} disabled={!!busy}
           onChangeText={reason => setDispute({ id, reason })} />
         <Button title={c.disputeSend} variant="outline" icon="flag-outline" loading={busy === 'dispute'} disabled={!!busy || disputeReason.trim().length < 10} reason={busy ? c.wait_busy : c.reason_min10}
@@ -765,7 +765,7 @@ export default function OrderScreen() {
       </Radar>
       <Txt variant="title" center style={{ marginTop: 4 }}>{c.findingTitle}</Txt>
       {/* Addressed to the sender; a driver or admin viewing the same order reads the title only. */}
-      {isCustomer && <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{order.dispatch?.state === 'exhausted' ? c.dispatchExhausted : order.scheduledFor && now > order.scheduledFor ? c.scheduledMissed : c.findingBody}</Txt>}
+      {isCustomer && (order.dispatch?.state === 'exhausted' || !!order.scheduledFor && now > order.scheduledFor) && <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{order.dispatch?.state === 'exhausted' ? c.dispatchExhausted : c.scheduledMissed}</Txt>}
       {/* How long it has been, and past five minutes a way to reach support: a silent wait with a small pilot fleet reads as broken
           and ends in a cancel (Uber and inDrive show both; product audit, 21 Nov). Counted from the booked time once it passed. */}
       {isCustomer && searchMinutes >= 1 && order.dispatch?.state !== 'exhausted' && <Txt center variant="micro" style={{ marginTop: 4 }}>{fill(c.searchingFor, { n: searchMinutes })}</Txt>}
@@ -816,8 +816,8 @@ export default function OrderScreen() {
             onChangeText={text => setDoor({ context: proofContext, text, reason: null })} disabled={!!busy || advanceLocked === order.status}
             error={doorText.trim() && !doorValid ? c.doorInvalid : undefined} />
           {doorDiffers && <>
-            <Txt variant="caption">{c.doorReasonHint}</Txt>
-            <FilterChips label={c.doorReasonHint} items={doorReasons.map(key => ({ key, label: c[`variance_${key}`] }))} value={doorOwn.reason ?? ('' as VarianceReason)}
+            <Txt variant="label">{c.doorReasonShort}</Txt>{/* names the chips; the button's reason below says to pick one */}
+            <FilterChips label={c.doorReasonShort} items={doorReasons.map(key => ({ key, label: c[`variance_${key}`] }))} value={doorOwn.reason ?? ('' as VarianceReason)}
               disabled={!!busy || advanceLocked === order.status} onChange={reason => setDoor({ context: proofContext, text: doorOwn.text, reason })} />
           </>}
         </>}
@@ -826,9 +826,9 @@ export default function OrderScreen() {
             disabled={!!busy || advanceLocked === order.status} />}
         {needsCode && !busy && advanceLocked === order.status && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
         {order.status === 'returning' && order.supportHasGoods && <Txt variant="caption">{c.supportHasGoodsDriver}</Txt>}
-        {rideAction === 'arrive' && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
+        {rideAction === 'arrive' && arrivalFar && <Txt variant="caption">{fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS })}</Txt>}
         {parcelFarKm !== null && <Txt variant="caption">{farFill(c.parcelPickupFar, c.parcelPickupFarCity)}</Txt>}
-        {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
+        {rideAction === 'locked' && order.safetyHold && <ErrorText>{c.rideBoardingLocked}</ErrorText>}{/* otherwise the locked button's reason says it */}
         {order.status !== 'on_hold' && !order.safetyHold && !(order.service === 'shop' && atPickup) && !(order.status === 'returning' && order.supportHasGoods) && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
           icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code) || doorStep && !doorReady || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals)}

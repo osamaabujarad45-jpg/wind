@@ -92,7 +92,7 @@ export default function Profile() {
       </Appear>
       <ErrorText>{error}</ErrorText>
       {saved && !changed && <Txt center variant="caption" style={{ color: palette.forest, fontFamily: face.semibold, marginBottom: 10 }}>{c.nameSaved}</Txt>}
-      <Button title={c.save} icon="checkmark-outline" onPress={save} loading={busy} disabled={!changed} reason={c.profile_unchanged} />
+      <Button title={c.save} icon="checkmark-outline" onPress={save} loading={busy} disabled={!changed} />
     </Screen>
   </KeyboardAvoidingView>;
 }

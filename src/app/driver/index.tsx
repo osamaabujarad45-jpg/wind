@@ -295,7 +295,6 @@ export default function Jobs() {
 
     <ErrorText>{actionError || ((error || work.error) && err(error || work.error))}</ErrorText>
     {/* the cash rule holds for every job: said once above the list, not on each card (design review 17 Nov) */}
-    {!!jobs?.length && <Txt variant="caption" style={{ marginBottom: 8 }}>{c.noChangeDriver}</Txt>}
     {/* The same wait on every card (a current job, offline) is said once here, not repeated under each offer (UI compare, 22 Nov). */}
     {sharedWait && <Reason>{sharedWait}</Reason>}
 

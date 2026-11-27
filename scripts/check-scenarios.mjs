@@ -993,10 +993,12 @@ try {
   await pricePage.getByText(c.dispatchExhausted, { exact: true }).waitFor();
   orderFixture = { ...orderFixture, scheduledFor: Date.now() + 60_000, dispatch: null };
   await pricePage.reload();
-  await pricePage.getByText(c.findingBody, { exact: true }).waitFor();
+  await pricePage.getByText(c.findingTitle, { exact: true }).waitFor();
+  assert.equal(await pricePage.getByText(c.dispatchExhausted, { exact: true }).count(), 0);
   orderFixture = { ...orderFixture, scheduledFor: null };
   await pricePage.reload();
-  await pricePage.getByText(c.findingBody, { exact: true }).waitFor();
+  await pricePage.getByText(c.findingTitle, { exact: true }).waitFor();
+  assert.equal(await pricePage.getByText(c.dispatchExhausted, { exact: true }).count(), 0);
   await pricePage.unroute(orderPath);
   pass('price refusals and missed scheduled pickups show the right guidance');
   assert.deepEqual(errors, [], 'Unhandled browser errors');

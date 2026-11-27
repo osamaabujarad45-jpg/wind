@@ -1,6 +1,6 @@
 {
   "catalogue": {
-    "copyWords": 15684,
+    "copyWords": 15285,
     "pushWords": 566,
     "workerWords": 406
   },
@@ -72,7 +72,7 @@
     },
     "src/app/book.tsx": {
       "explanations": 43,
-      "words": 931,
+      "words": 910,
       "reasons": 3
     },
     "src/app/driver/earnings.tsx": {
@@ -81,8 +81,8 @@
       "reasons": 2
     },
     "src/app/driver/index.tsx": {
-      "explanations": 27,
-      "words": 514,
+      "explanations": 26,
+      "words": 489,
       "reasons": 1
     },
     "src/app/driver/trips.tsx": {
@@ -111,14 +111,14 @@
       "reasons": 2
     },
     "src/app/order/[id].tsx": {
-      "explanations": 94,
-      "words": 2133,
+      "explanations": 90,
+      "words": 1984,
       "reasons": 16
     },
     "src/app/profile.tsx": {
-      "explanations": 7,
-      "words": 130,
-      "reasons": 8
+      "explanations": 6,
+      "words": 121,
+      "reasons": 7
     },
     "src/app/profiles.tsx": {
       "explanations": 3,
@@ -147,7 +147,7 @@
     },
     "src/app/support.tsx": {
       "explanations": 4,
-      "words": 91,
+      "words": 72,
       "reasons": 0
     },
     "src/app/track/[token].tsx": {
@@ -207,7 +207,7 @@
     },
     "src/parts.tsx": {
       "explanations": 15,
-      "words": 309,
+      "words": 273,
       "reasons": 2
     },
     "src/phone-card.tsx": {
