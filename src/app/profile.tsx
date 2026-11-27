@@ -149,10 +149,10 @@ function EmailCard() {
 
   return <Card>
     <Txt variant="label" style={{ marginBottom: 7 }}>{c.email}</Txt>
-    <Row gap={10} style={styles.locked}>
+    <Row gap={10} style={[styles.locked, { flexWrap: 'wrap' }]}>
       <Ionicons name={emailVerifiedAt ? 'checkmark-circle' : 'mail-outline'} size={16} color={emailVerifiedAt ? palette.olive : palette.secondary} />
-      {/* minWidth 0: on the web a flex text will not shrink below an unbreakable address, which pushed the badge past the field edge; it wraps instead */}
-      <Txt variant="title" selectable={!!email} style={{ flex: 1, minWidth: 0, color: palette.secondary }}>{email ?? c.emailNotAdded}</Txt>
+      {/* minWidth 0: on the web a flex text will not shrink below an unbreakable address, which pushed the badge past the field edge. The row wraps, so the badge moves down before the address splits mid-word; only an address wider than the field still wraps. */}
+      <Txt variant="title" selectable={!!email} style={{ flexGrow: 1, flexShrink: 1, minWidth: 0, maxWidth: '88%', color: palette.secondary }}>{email ?? c.emailNotAdded}</Txt>
       {!!email && <View><Badge label={emailVerifiedAt ? c.verified : c.unverified} tone={emailVerifiedAt ? tones.olive : tones.warn} /></View>}
     </Row>
     {!!email && !emailVerifiedAt && changing === null && !action && codeMode && <View style={{ marginTop: 12 }}>

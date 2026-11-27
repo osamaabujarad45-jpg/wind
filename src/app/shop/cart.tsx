@@ -262,6 +262,7 @@ function ShopAddressSuggestion({ town, onSelect }: { town: CityId; onSelect: (ad
   const { c } = useCopy();
   const { data } = useApi<Places>(`/me/places?shopDelivery=1&town=${town}`);
   const address = data?.shopDelivery;
-  return address ? <Button title={fill(c.shopUseLastAddress, { address: isolate(address.note) })} variant="outline"
-    icon="time-outline" onPress={() => onSelect(address)} /> : null;
+  // the margin keeps it from touching the map-pin button below
+  return address ? <View style={{ marginVertical: 8 }}><Button title={fill(c.shopUseLastAddress, { address: isolate(address.note) })} variant="outline"
+    icon="time-outline" onPress={() => onSelect(address)} /></View> : null;
 }

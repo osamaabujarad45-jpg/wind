@@ -142,7 +142,7 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
       <Txt style={{ marginTop: 4 }}>{fill(c.shopConsentTotal, { r: money(s.change.goodsAfterAgorot / 100) })}</Txt>
       <Txt variant="caption" style={{ marginTop: 4 }}>{consent.left === 0 ? c.shopConsentExpired : fill(c.shopConsentTimer, { t: consent.text })}</Txt>
       <Row style={{ marginTop: 8, flexWrap: 'wrap' }}>
-        <Button title={c.shopApprove} loading={busy === 'approve'} disabled={consent.left === 0} reason={consent.left === 0 ? c.shopConsentExpired : undefined} onPress={() => act('approve', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'approve' })} />
+        <Button title={c.shopApprove} loading={busy === 'approve'} disabled={consent.left === 0} onPress={() => act('approve', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'approve' })} />
         <Button title={c.shopDecline} variant="outline" loading={busy === 'decline'} disabled={consent.left === 0} onPress={() => act('decline', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'decline' })} />
         {!s.change.extended && consent.left > 0 && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, extend: true })} />}
       </Row>
