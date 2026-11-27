@@ -116,6 +116,8 @@ section.
 | ONE-13 | A disabled service **line** (ride, shipping, shop) MUST be invisible: it must not appear as a broken tile. A switched-off **capability** inside an enabled line (for example freight within shipping, or a PostgreSQL-only feature) MUST read "not available in this stage", never as a fault (SCOPE, PR #63). | E |
 | ONE-14 | The service catalogue (enabled lines, their order on home, town pairs) MUST be server-driven, so an operator can enable a line or a town without a store release (R-CA §8.5 key registry, R-HA §6). | P: `WIND_ENABLED_SERVICES` env; no per-town table |
 
+**Proposed 27 Nov 2026, pending owner confirmation (ONE-01).** Each person MUST have one account and one Personal profile and MAY have approved work profiles. The server session determines the role for its active profile.
+
 ### 2.1 State mapping per service line
 
 | Spine state | Ride | Shipping (parcel/freight) | Delivery (shop) |
@@ -189,6 +191,8 @@ Changing any cell changes that table, which is server-enforced.
 | ACC-10 | Captains MUST be able to set a "heading to" destination preference. | E | PLAN D-23 |
 | ACC-11 | Plus (customer) and Pro (captain) subscriptions MUST state the services their benefits cover (CON-07); activation is manual by an admin while cash-only. | P: Plus and Pro exist with manual activation; benefits are not labelled per service line | PLAN A-13 |
 | ACC-12 | A referral code MUST credit the referrer after the referee's first completed order in any service line. | P: credited on the referee's first completed order; rides are E-off, so their referrals are too | PLAN C-20 |
+
+**Proposed 27 Nov 2026, pending owner confirmation (ACC-03).** Email is optional at sign-up. Self-service password reset by email MUST require a verified email address on the account.
 
 ---
 
@@ -293,6 +297,8 @@ PostgreSQL decision (ride lifecycle and dispatch are PostgreSQL-only today: `rid
 | RIDE-13 | Shared seats (D-6): a ride MAY be booked as shared seats, priced per seat; a captain MAY carry shared riders and parcels together up to the vehicle's seats; a private ride stays exclusive. | E (1.1.6) | D-6 |
 | RIDE-14 | Nearby cars (D-8): the customer home map MUST show unnamed nearby cars that could take one more rider, kept 3 minutes in memory, rounded about 200 m. | E (1.1.6) | D-8 |
 | RIDE-15 | Trip code (D-7): a ride MUST end only with the rider's 4-digit code, with the SHIP-05 lockout and reset. | E (1.1.6) | D-7 |
+
+**Proposed 27 Nov 2026, pending owner confirmation (RIDE-15).** A ride MUST end only with the 4-digit trip code shown to the order owner, who may have booked for someone else, with the SHIP-05 lockout and reset.
 
 ---
 
@@ -525,7 +531,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 
 | ID | Requirement | St |
 |---|---|---|
-| NTF-01 | Native push (FCM) MUST use per-event channels (`jobs`, `status`, `cash`, `attention`, `chat`, and `merchant_orders` for shops), with versioned channel ids. | P: one `default` channel today (`src/native-push.ts`); per-event channels are N (WP-10) |
+| NTF-01 | Native push (FCM) MUST use per-event channels (`jobs`, `status`, `cash`, `attention`, `chat`, and `merchant_orders` for shops), with versioned channel ids. | P: Android closed-app push live since 26 Nov 2026 with one `default` channel (`src/native-push.ts`). Per-event channels are N (WP-10). iOS native push needs APNs (G-PUSH). |
 | NTF-02 | Web Push MUST serve the web/home-screen app. | E |
 | NTF-03 | Push content MUST follow CON-09 and A11Y-12, and MUST contain no codes or personal data on the lock screen. | P |
 | NTF-04 | Chat MUST be anchored to the order, with quick replies; admin MAY redact a message. | P: order chat with quick replies exists; admin redaction is N |
@@ -584,7 +590,7 @@ Target: **WCAG 2.2 level AA** on Android (TalkBack), iOS (VoiceOver) and web, in
 | G-COD | SHIP-12, SHIP-18, DLV-15 | **Decided D-1 (yes):** Wind collects goods cash for shops and senders, under the ADM-12 ceiling; remittance per MER-07. The code part still waits on G-PG |
 | G-SMS / G-EMAIL | ACC-02/03 | SMS provider and sender id; email sending domain |
 | G-STORAGE | ADDR-05, ACC-05, proof photos | Object storage with scanning and retention |
-| G-PUSH | NTF-01 closed-app | Firebase `google-services.json` and FCM key on the new EAS project; server Firebase key |
+| G-PUSH | NTF-01 iOS native push | Android closed-app push has been live since 26 Nov 2026 with Firebase/FCM and was accepted on the A53. iOS native push needs APNs. [Push status](../design/FLOWS-2026-11-26-one-app-profiles.md#10-what-needs-the-owner) |
 | G-OSRM | TRK-02 road-aware ETA, MAP-11 | Self-hosted OSRM with the West Bank graph on the production host |
 | G-LEGAL | the MTDE ₪500 courier-payment reading (§1.2, PAY-06), the ADM-12 ceiling value, item-sale proceeds (SHIP-12, DLV-15), tax invoice (TRK-13), licensing and insurance per service line (NFR-11) | **Partly decided:** D-1 lets cash collection, including goods, proceed under ₪500 for the pilot. **Open:** the PAY-06 reading, TRK-13 and NFR-11 (counsel's written answer) |
 | G-TELECOM | TRK-12 phone masking | A telecom contract for relayed calls |
@@ -621,13 +627,16 @@ shops, decided "based on knowledge" of the competitor apps and without further q
 | D-10 | **Restaurants open in the shop line** (amends DLV-19 and D-2's category list): a merchant may apply as `restaurant`; a meal is a counted item like any other. The food-handling policy remains the merchant's under its own licence. | HAAT, Talabat and Careem Food. |
 | D-11 | **Pilot service lines:** parcel, ride (with shared seats) and shop delivery in Tulkarm (`WIND_ENABLED_SERVICES=parcel,ride,shop`, `WIND_SHOP_TOWN=tulkarm`). This supersedes D-2's wait on G-PG for the first shop order: production keeps SQLite with hourly off-host backups and a tested restore. Legal permission for passenger transport (G-RIDE) and insurance stay the owner's responsibility. | — |
 | D-12 | **Distribution:** Android installs the signed APK from `/install.html` (served from `/download/wind.apk`); iPhone uses the Safari Home Screen web app from the same page (NFR-09). | — |
+
+**Proposed 27 Nov 2026, pending owner confirmation (D-7).** Show the trip code to the order owner. When the owner books for someone else, they pass the code to the rider, who gives it to the driver after paying at drop-off.
+
 ---
 
 ## 17. Release plan (phased, one app throughout)
 
 | Phase | Scope | Exit gate |
 |---|---|---|
-| **1 — Shipping, hardened** (now) | ONE-01, 02, 04, 06, 13 (ONE-07 is already met for parcels on SQLite; versioned quote records wait for G-PG); PAY-01 (prices in integer agorot); ADM-12 (per-order cash ceiling, default ₪500); SHIP complete except gated items; ADDR-03/04; TRK-02 (needs G-OSRM); DRV-10/11; NTF-01 (closed-app part needs G-PUSH); A11Y checks on all existing screens | Pilot of 50 users runs 2 weeks with no lost order and no cash mismatch; A11Y §12.1 passes on the A53 |
+| **1 — Shipping, hardened** (now) | ONE-01, 02, 04, 06, 13 (ONE-07 is already met for parcels on SQLite; versioned quote records wait for G-PG); PAY-01 (prices in integer agorot); ADM-12 (per-order cash ceiling, default ₪500); SHIP complete except gated items; ADDR-03/04; TRK-02 (needs G-OSRM); DRV-10/11; NTF-01 (Android closed-app push live since 26 Nov 2026; iOS native push needs APNs under G-PUSH); A11Y checks on all existing screens | Pilot of 50 users runs 2 weeks with no lost order and no cash mismatch; A11Y §12.1 passes on the A53 |
 | **2 — One-app shell** | ONE-03 spine and state mapping (§2.1), ONE-05 service switcher, shared status/receipt/rating/chat components (DES-09..11), extend the existing eligibility path (`canTake` + `driver-refusal.ts`) with service-line approval and cash age (CON-04), notification channels | Parcel unchanged for users; Ride and Shop hidden (ONE-13); screens regenerated |
 | **3 — Ride** | §5 after G-RIDE and G-PG | Field test per town pair; boarding PIN and waiting grace on real phones; CON-01/02 enforced |
 | **4 — Delivery** | §7, MER (G-SHOP, G-REFUND, G-COD decided and G-LEGAL partly decided in §16a); G-PG, the NFR-06 items and per-town service enablement (ONE-14) are needed before the first shop order | 3–5 merchants in one town; substitution consent, timeouts and weighted totals verified; failed delivery, goods return and refund drilled; the cash ceiling holds; the NFR-11 licensing review is done before the first shop order; merchant ledger balances daily and a first payout is made |

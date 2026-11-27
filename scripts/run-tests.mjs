@@ -145,6 +145,7 @@ const suites = [
   "check-test-apk.test.mjs",
   "phone-test-state.test.mjs",
   "phone-ui.test.mjs",
+  "f0-baseline.test.mjs",
   "contracts-money.test.mjs",
   "contracts.test.mjs",
   "authz-matrix.test.mjs",
