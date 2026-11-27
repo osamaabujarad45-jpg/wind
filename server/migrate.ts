@@ -18,6 +18,7 @@ const NATIVE_PUSH_COLUMNS = ['token_hash','user_id','auth_session_hash','device_
 // Optional operator CLI history is outside the delivery-data migration contract.
 // It stays in the source snapshot; the PostgreSQL API keeps this feature gated.
 NON_LEGACY_TABLES.add('opencode_jobs');
+NON_LEGACY_TABLES.add('firebase_email_attempts'); // drain the provider journal before any database cutover
 NON_LEGACY_TABLES.add('firebase_resets'); // a reset in progress lasts an hour; a cutover simply asks the user to request it again
 // SQLite-only columns carried by the live schema but absent from the Postgres
 // snapshot. They stay in the source; the import does not invent a target column.
@@ -207,7 +208,7 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
       // A snapshot taken before A12 has no order_command_rejections; present rows import and reconcile normally (Fable CAND6).
       // Shop delivery tables (migration 33) are absent from a snapshot taken before the shop line; present rows import normally.
       const optionalLegacy = new Set(['order_command_rejections', 'merchants', 'merchant_hours', 'merchant_items', 'shop_orders', 'shop_lines', 'shop_snapshots',
-        'shop_changes', 'shop_handover_checks', 'shop_seals', 'shop_faults', 'shop_ledger', 'courier_block_reviews', 'support_threads', 'support_messages']);
+        'shop_changes', 'shop_handover_checks', 'shop_seals', 'shop_faults', 'shop_ledger', 'courier_block_reviews', 'support_threads', 'support_messages', 'recovery_email_proofs']);
       for (const name of new Set(legacyTables)) if (!optionalLegacy.has(name) && !snapshot.tables.some(t => t.name === name)) errors.push({ table: name, reason: 'required legacy table missing from snapshot' });
       if (errors.length) throw new Error('Snapshot preflight failed');
       // Users satisfy assignment guards, and reviews reference the already imported orders.

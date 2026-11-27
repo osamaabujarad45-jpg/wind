@@ -157,10 +157,10 @@ export default function Home() {
             <Txt variant="title">{first}</Txt>
           </View>
         </View>
-        <Press accessibilityLabel={c.personalRoads} containerStyle={{ flexShrink: 1 }} onPress={() => router.push('/roads')}
+        <Press accessibilityLabel={c.personalRoads} onPress={() => router.push('/roads')}
           style={[styles.roads, shadow, { flexDirection: row }]}>
           <Ionicons name="trail-sign-outline" size={iconSize.md} color={palette.olive} />
-          <Txt variant="label" style={{ flexShrink: 1 }}>{c.personalRoads}</Txt>
+          <Txt variant="label">{c.personalRoads}</Txt>
         </Press>
         <IconButton icon="help-circle-outline" label={c.help} onPress={() => router.push('/help')} />
       </View>

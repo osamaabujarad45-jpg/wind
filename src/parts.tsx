@@ -357,7 +357,7 @@ export function PlanCard() {
 }
 
 /** A Microsoft sign-in ready to prove the account for one sensitive action. Stays null for an account not linked to Microsoft. */
-function useEntraReauth(challengePath: string, open: boolean) {
+export function useEntraReauth(challengePath: string, open: boolean) {
   const [request, setRequest] = useState<EntraRequest | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -428,19 +428,22 @@ export function PasswordCard() {
   </Appear>;
 }
 
-/** Unverified email while the server can send codes: one row that opens the profile, where the code goes in. */
-export function VerifyEmailNudge() {
+export function VerifyEmailNudge({ allowAdd = false }: { allowAdd?: boolean }) {
   const { palette } = useTheme();
   const { me } = useSession();
   const { c } = useCopy();
-  if (!me?.capabilities?.emailVerification || !me.user.email || me.user.emailVerifiedAt) return null;
-  return <Press accessibilityLabel={c.emailVerifyTitle} onPress={() => router.push('/profile')} style={{ marginBottom: 12 }}>
+  const offerAdd = allowAdd && !!me?.capabilities?.offerRecoveryEmail;
+  const offerVerify = me?.user.email && !me.user.emailVerifiedAt
+    && (me.capabilities?.emailVerification || me.capabilities?.emailResetLinkProof);
+  if (!offerAdd && !offerVerify) return null;
+  const title = offerAdd ? c.emailAdd : c.emailVerifyTitle;
+  return <Press accessibilityLabel={title} onPress={() => router.push('/profile')} style={{ marginBottom: 12 }}>
     <Card tone="warn" style={{ marginBottom: 0 }}>
       <Row gap={10}>
         <Ionicons name="mail-unread-outline" size={22} color={palette.warn} />
         <View style={{ flex: 1 }}>
-          <Txt variant="title">{c.emailVerifyTitle}</Txt>
-          <Txt variant="caption">{c.emailVerifyNudge}</Txt>
+          <Txt variant="title">{title}</Txt>
+          <Txt variant="caption">{offerAdd ? c.emailRecoveryNudge : c.emailVerifyForRecovery}</Txt>
         </View>
       </Row>
     </Card>
@@ -528,10 +531,12 @@ export function AccountScreen() {
         </Press>
       </Card>
     </Appear>
-    <VerifyEmailNudge />
+    <VerifyEmailNudge allowAdd />
     <PlanCard />
     {user.role === 'customer' && <InviteCard />}
     <ListGroup>
+      <ListRow icon="mail-outline" label={c.email} value={user.email ? user.emailVerifiedAt ? c.verified : c.unverified : c.emailNotAdded}
+        tone="muted" onPress={() => router.push('/profile')} />
       <ListRow icon="language-outline" label={c.languageTitle} value={c.language} tone="muted" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />
       <PasswordCard />
       {pushSupported() ? <PushRow /> : Platform.OS !== 'web' && <NativePushRow />}

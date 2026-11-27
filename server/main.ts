@@ -35,6 +35,7 @@ import { hashPassword as createPasswordHash, verifyPassword, PasswordBusyError, 
 import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
 import { clientAddress } from './domain/client-address.ts';
 import { firebaseReset } from './domain/firebase-reset.ts';
+import { firebaseContinuationUrl, firebaseEmailService, recordRecoveryEmailProof, recoveryEmailVerified, validMailboxProof, registerRecoveryEmailRoutes, retireFirebaseEmail } from './domain/firebase-email.ts';
 import { registerRoutingStatusRoutes } from './domain/routing-status.ts';
 import { createGoogleRoutes, registerGoogleRouteRoutes } from './domain/google-routing.ts';
 import { registerPlaceSearchRoutes } from './domain/place-search.ts';
@@ -78,7 +79,8 @@ const RELEASE_BEFORE = 30 * 60_000; // scheduled orders reach drivers this long 
 const production = process.env.NODE_ENV === 'production';
 const selfService = process.env.WIND_IDENTITY_MODE === 'self-service';
 const contactVerificationRequired = selfService && process.env.WIND_CONTACT_VERIFICATION_REQUIRED === 'true';
-const contactAllowed = (r: Row) => !contactVerificationRequired || r.role === 'admin' || r.phone_verified_at || r.email_verified_at || r.approved_at;
+const contactAllowed = async (r: Row) => !contactVerificationRequired || r.role === 'admin'
+  || r.phone_verified_at || r.approved_at || await recoveryEmailVerified(persistence, r);
 const registrationOpen = selfService || (!production && process.env.WIND_IDENTITY_MODE !== 'operator-verified');
 // Entra External ID stays dark until the tenant is configured; password auth is untouched while it is off.
 // A partial or mistyped Entra config must never crash-loop the whole API.
@@ -98,6 +100,9 @@ if (production) {
 }
 const enabledServices = services.filter(service => (process.env.WIND_ENABLED_SERVICES ?? 'parcel').split(',').map(s => s.trim()).includes(service));
 const supportContact = (process.env.SUPPORT_CONTACT ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+const recoveryPage = readFileSync(new URL('./recovery-email.html', import.meta.url), 'utf8').replace(/\r\n?/g, '\n');
+const recoveryPageScript = /<script>([\s\S]*?)<\/script>/.exec(recoveryPage)?.[1] ?? '';
+const recoveryPageScriptHash = createHash('sha256').update(recoveryPageScript).digest('base64');
 const publicPages = new Map(['/privacy', '/terms', '/account-deletion'].map(path => [path,
   readFileSync(new URL(`${path.slice(1)}.html`, import.meta.url), 'utf8').replaceAll('{{contact}}', supportContact)]));
 // Dev (`npm run server`): serve public/ so the Android app's map page (/map.html + /vendor) loads; without it the WebView 404s
@@ -282,7 +287,7 @@ async function toUser(r: Row): Promise<User> {
     rating: stats?.rating ?? null, ...(stats && { priceRating: stats.priceRating, trips: stats.trips }), createdAt: r.created_at,
     ...(r.role === 'driver' && { heading: r.heading_city && r.heading_until > Date.now() ? { city: r.heading_city, until: r.heading_until } : null }),
     email: r.email ?? null, permanentlyApprovedAt: r.approved_at ?? null,
-    phoneVerifiedAt: r.phone_verified_at ?? null, emailVerifiedAt: r.email_verified_at ?? null };
+    phoneVerifiedAt: r.phone_verified_at ?? null, emailVerifiedAt: await recoveryEmailVerified(persistence, r) ? r.email_verified_at : null };
 }
 
 async function activePlan(userId: number): Promise<Plan | null> {
@@ -544,7 +549,7 @@ const entraExchange = async ({ body }: { body: Row }) => {
   // never run while one is open. A linked identity needs no new placeholder.
   const known = (await one('SELECT id FROM users WHERE entra_oid = ?', claims!.oid));
   const placeholder = known ? '' : await hashPassword(randomBytes(32).toString('hex'));
-  return persistence.atomic({ purpose: 'http_public' }, () => entraAccount(claims!, body, placeholder));
+  return persistence.atomic({ purpose: 'http_public' }, () => emailTransaction(() => entraAccount(claims!, body, placeholder)));
 };
 
 async function entraAccount(claims: EntraClaims, body: Row, placeholder: string) {
@@ -561,7 +566,7 @@ async function entraAccount(claims: EntraClaims, body: Row, placeholder: string)
     const emailUser = email ? await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email) : undefined;
     // A contact can be entered without proof on an older account. An external
     // proof alone must not turn that unverified contact into account ownership.
-    if ((phoneUser && !phoneUser.phone_verified_at) || (emailUser && !emailUser.email_verified_at) ||
+    if ((phoneUser && !phoneUser.phone_verified_at) || (emailUser && !await recoveryEmailVerified(persistence, emailUser)) ||
         (phoneUser && emailUser && phoneUser.id !== emailUser.id)) fail(403, 'entra_link_required');
     user = phoneUser ?? emailUser;
     if (user) {
@@ -571,7 +576,8 @@ async function entraAccount(claims: EntraClaims, body: Row, placeholder: string)
       if (user.status === 'blocked') fail(403, 'blocked');
       if (user.role === 'admin' || user.entra_oid) fail(403, 'entra_link_required');
       const linked = await run(`UPDATE users SET entra_oid = ? WHERE id = ? AND entra_oid IS NULL AND role <> 'admin' AND status <> 'blocked'
-        AND ((phone = ? AND phone_verified_at IS NOT NULL) OR (email = ? COLLATE NOCASE AND email_verified_at IS NOT NULL))`, claims.oid, user.id, phone, email);
+        AND ((phone = ? AND phone_verified_at IS NOT NULL) OR (email = ? COLLATE NOCASE AND EXISTS (SELECT 1 FROM recovery_email_proofs p
+          WHERE p.user_id = users.id AND p.email = users.email AND p.verified_at = users.email_verified_at)))`, claims.oid, user.id, phone, email);
       if (!linked.changes) fail(403, 'entra_link_required');
     } else {
       if (!registrationOpen) fail(403, 'registration_closed');
@@ -600,9 +606,9 @@ async function entraAccount(claims: EntraClaims, body: Row, placeholder: string)
   // Only the exact contact attested by Entra may be marked verified. A linked
   // identity can carry other verified contacts that do not belong to this row.
   if (phone && phone === user.phone && !user.phone_verified_at) (await run('UPDATE users SET phone_verified_at = ? WHERE id = ? AND phone = ?', Date.now(), user.id, phone));
-  if (email && email === normalizeEmail(user.email) && !user.email_verified_at) (await run('UPDATE users SET email_verified_at = ? WHERE id = ? AND email = ? COLLATE NOCASE', Date.now(), user.id, email));
+  if (email && email === normalizeEmail(user.email) && !await recoveryEmailVerified(persistence, user)) await recordRecoveryEmailProof(persistence, user.id, user.email, 'entra');
   user = (await one('SELECT * FROM users WHERE id = ?', user.id))!;
-  if (!contactAllowed(user)) fail(403, 'verification_required');
+  if (!await contactAllowed(user)) fail(403, 'verification_required');
   if (production && !selfService && !user.phone_verified_at) fail(403, 'phone_not_verified');
   return (await startSession(user.id));
 }
@@ -865,7 +871,7 @@ const realtime = new Realtime(persistence, fail);
 registerRealtimeRoutes(route, realtime);
 export const phoneIdentity = new PhoneIdentity(persistence, fail, value => hashPassword(newPassword(value, 12)), checkPassword);
 registerPhoneRoutes(route, phoneIdentity);
-registerEntraRoutes(route, entraExchange, purpose => async ({ user, req }) => {
+const recoveryChallenge = (purpose: EntraPurpose) => async ({ user, req }: Pick<Ctx, 'req'> & { user: User }) => {
   if (!entra || !(await one('SELECT entra_oid FROM users WHERE id=?', user.id))?.entra_oid) fail(409, 'entra_unavailable');
   await limit(identityKey(`${purpose}-challenge`, user.id), 10, 10 * 60_000);
   const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1] ?? fail(401, 'unauthorized');
@@ -873,11 +879,12 @@ registerEntraRoutes(route, entraExchange, purpose => async ({ user, req }) => {
   await run('DELETE FROM entra_replay WHERE expires_at < ?', Date.now());
   await run('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?)', sha(`${purpose}-challenge:${token}:${nonce}`), Date.now() + 5 * 60_000);
   return { nonce };
-});
+};
+registerEntraRoutes(route, entraExchange, recoveryChallenge);
 await phoneIdentity.reconcileStale();
 
 route('GET', '/api/health', async ({ query }) => ({ ok: true, ...(query.get('protocol') === '1' ? { protocol: await protocolCapabilities() } : {}) }), true);
-route('GET', '/api/auth/options', () => ({ registrationOpen, emailReset: emailReady, ...(!emailReady && firebaseReset ? { emailResetLink: true } : {}) }), true);
+route('GET', '/api/auth/options', () => ({ registrationOpen, emailReset: emailReady, ...(firebaseEmail.resetEnabled ? { emailResetLinkProof: true } : {}) }), true);
 route('GET', '/api/ready', async () => {
   let schema = 3;
   try {
@@ -899,13 +906,14 @@ route('GET', '/api/ready', async () => {
 
 
 
-route('POST', '/api/auth/register', async ({ body }) => {
+route('POST', '/api/auth/register', async ({ body, req }) => {
   if (!registrationOpen) fail(403, 'registration_closed');
   if (contactVerificationRequired) fail(403, 'verification_required'); // attach actual proof before opening this future gate
   const phone = normalizePhone(String(body.phone ?? '')) ?? fail(400, 'invalid_phone');
   const name = text(body.name, 60);
   const password = newPassword(body.password);
-  const email = selfService ? normalizeEmail(body.email) ?? fail(400, 'invalid_email') : null;
+  const email = selfService && body.email != null && !(typeof body.email === 'string' && !body.email.trim())
+    ? normalizeEmail(body.email) ?? fail(400, 'invalid_email') : null;
   if (selfService && body.consent !== true) fail(400, 'consent_required');
   const requestedRole = body.registrationRole ?? body.role;
   if (selfService && requestedRole !== undefined && !['customer', 'driver'].includes(requestedRole)) fail(400, 'invalid_role');
@@ -937,9 +945,17 @@ route('POST', '/api/auth/register', async ({ body }) => {
     }
   });
   if (!emailReady || !email) return session;
-  // Not awaited: the push outbox above is per request, and the email must not hold up the sign-up.
-  const account = (await one('SELECT * FROM users WHERE id = ?', id))!;
-  void persistence.detached(() => sendCode(account, 'verify')).catch(() => {});
+  const address = clientAddress(req);
+  firebaseEmail.background(async () => {
+    await limitEmailSend('verify', email, address);
+    const sessionHash = sha(session.token);
+    const send = await emailTransaction(async () => {
+      const account = await lockEmailAccount(id);
+      if (account.email !== email || account.password !== hashed || !await recoveryEmailSessionActive(account, sessionHash)) return;
+      return reserveEmailCode(account, 'verify', sessionHash);
+    });
+    await send?.();
+  });
   return { ...session, emailCode: 'requested' };
 }, true);
 
@@ -952,44 +968,22 @@ route('POST', '/api/auth/login', async ({ body }) => {
   (await limit(key, 5, 10 * 60_000));
   const legacyAccount = phone ? (await one('SELECT * FROM users WHERE phone = ?', phone))
     : email ? (await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email)) : undefined;
-  let r = legacyAccount ?? await phoneIdentity.loginAccount(identifier);
-  const supplied = String(body.password ?? '');
-  let valid = await checkLoginPassword(supplied, r?.password as string | undefined);
-  if (r && !valid && firebaseReset && r.email && r.status !== 'blocked' && r.role !== 'admin'
-    && supplied.length >= (production || selfService ? 12 : 6) && supplied.length <= 100) {
-    const pending = await one('SELECT requested_at FROM firebase_resets WHERE user_id = ? AND requested_at > ?', r.id, Date.now() - FIREBASE_RESET_TTL);
-    let verified = false;
-    if (pending) try { verified = await firebaseReset.verify(r.id, r.email, supplied); } catch { /* provider failures look like a wrong password */ }
-    if (verified && pending) {
-      const hashed = await hashPassword(supplied);
-      const account = r;
-      await persistence.atomic({ id: account.id }, async () => {
-        await persistence.exec('BEGIN IMMEDIATE');
-        try {
-          const changed = await run(`UPDATE users SET password = ?, email_verified_at = COALESCE(email_verified_at, ?) WHERE id = ? AND password = ? AND email = ?
-            AND status <> 'blocked' AND role <> 'admin' AND EXISTS (SELECT 1 FROM firebase_resets WHERE user_id = ? AND requested_at = ? AND requested_at > ?)`,
-          hashed, Date.now(), account.id, account.password, account.email, account.id, pending.requested_at, Date.now() - FIREBASE_RESET_TTL); // the emailed link proves the address; no account could verify one earlier without a sending domain
-          if (changed.changes) {
-            await run('DELETE FROM sessions WHERE user_id = ?', account.id);
-            await run('DELETE FROM push_subscriptions WHERE user_id = ?', account.id);
-            for (const id of [account.phone, account.email, identifier].filter(Boolean)) await run('DELETE FROM request_limits WHERE key = ?', identityKey('login', String(id).toLowerCase()));
-            await clearFirebaseReset(account.id);
-            await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'FIREBASE_PASSWORD_RESET', '{}', ?)", account.id, Date.now());
-            valid = true;
-          }
-          await persistence.exec('COMMIT');
-        } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
-      });
-      if (valid) r = await one('SELECT * FROM users WHERE id = ?', r.id);
-    }
-  }
-  if (!r || !valid) fail(401, 'wrong_credentials');
+  const r = legacyAccount ?? await phoneIdentity.loginAccount(identifier);
+  const valid = await checkLoginPassword(String(body.password ?? ''), r?.password);
+  if (!valid) fail(401, 'wrong_credentials');
+  const account = r ?? fail(401, 'wrong_credentials');
   (await run('DELETE FROM request_limits WHERE key = ?', key));
-  if (r!.status === 'blocked') fail(403, 'blocked');
-  if (!contactAllowed(r!)) fail(403, 'verification_required');
-  if (production && !selfService && !r!.phone_verified_at) fail(403, 'phone_not_verified');
-  if (production && selfService && r!.role === 'admin' && !r!.phone_verified_at && !r!.approved_at) fail(403, 'pending_approval');
-  return (await startSession(r!.id));
+  return emailTransaction(async () => {
+    // A reset can revoke sessions while an earlier password check is still running.
+    const current = await one(`SELECT * FROM users WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, account.id)
+      ?? fail(401, 'wrong_credentials');
+    if (current.password !== account.password) fail(401, 'wrong_credentials');
+    if (current.status === 'blocked') fail(403, 'blocked');
+    if (!await contactAllowed(current)) fail(403, 'verification_required');
+    if (production && !selfService && !current.phone_verified_at) fail(403, 'phone_not_verified');
+    if (production && selfService && current.role === 'admin' && !current.phone_verified_at && !current.approved_at) fail(403, 'pending_approval');
+    return startSession(current.id);
+  });
 }, true);
 
 async function startSession(userId: number) {
@@ -1000,7 +994,14 @@ async function startSession(userId: number) {
 
 async function me(user: User, payroll = false) {
   const rideOfferSeconds = user.role === 'driver' ? await dispatch.offerSeconds(user.id) : undefined;
-  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), ...settingsResponse(await settings(), payroll && user.role === 'admin'), rideOfferSeconds, capabilities: { enabledServices, pooling: enabledServices.includes('ride'), ...(await presenceOffered() ? {} : { driverPresence: false }), emailVerification: emailReady, ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
+  const offerRecoveryEmail = user.role === 'customer' && !user.email && (emailReady || firebaseEmail.resetEnabled)
+    && !!await one("SELECT 1 FROM orders WHERE customer_id = ? AND status = 'completed' LIMIT 1", user.id);
+  return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), ...settingsResponse(await settings(), payroll && user.role === 'admin'), rideOfferSeconds,
+    capabilities: { enabledServices, pooling: enabledServices.includes('ride'), ...(await presenceOffered() ? {} : { driverPresence: false }),
+      emailVerification: emailReady,
+      ...(firebaseEmail.verificationEnabled ? { emailVerificationLink: true } : {}),
+      ...(firebaseEmail.resetEnabled ? { emailResetLinkProof: true } : {}),
+      ...(offerRecoveryEmail ? { offerRecoveryEmail: true } : {}), ...(await scopeAvailable(persistence) ? { declaredScope: true } : {}) } };
 }
 
 // Email (Cloudflare Email Service REST API): a 6-digit code verifies the address, resets a forgotten password, and lets
@@ -1010,14 +1011,11 @@ const cloudflareAccount = process.env.CLOUDFLARE_ACCOUNT_ID?.trim(), cloudflareT
 const emailReady = !!(emailFrom && cloudflareAccount && cloudflareToken);
 const cloudflareApi = (process.env.CLOUDFLARE_API_BASE ?? 'https://api.cloudflare.com/client/v4').replace(/\/$/, '');
 const CODE_TTL = 15 * 60_000, CODE_GAP = 60_000, CODE_TRIES = 5;
-const FIREBASE_RESET_TTL = 60 * 60_000;
-if (process.env.WIND_FIREBASE_API_KEY && !firebaseReset) console.error('Firebase reset settings are invalid: the email reset option stays off');
-// shortcut: same-process only; use shared fencing before running multiple API instances.
-const firebaseSending = new Set<number>();
+const firebaseEmail = firebaseEmailService(persistence, firebaseReset, emailReady ? undefined : firebaseContinuationUrl());
+if (process.env.WIND_FIREBASE_EMAIL_LINKS === '1' && !emailReady && !firebaseEmail.verificationEnabled)
+  console.error('Firebase email settings are invalid: recovery links stay off');
 async function clearFirebaseReset(userId: number) {
-  const removed = await run('DELETE FROM firebase_resets WHERE user_id = ?', userId);
-  const reset = firebaseReset;
-  if (removed.changes && reset) persistence.defer(() => reset.deleteUser(userId).catch(() => {}));
+  await retireFirebaseEmail(persistence, userId);
 }
 async function revokeUserAccess(userId: number) {
   await run('DELETE FROM sessions WHERE user_id = ?', userId);
@@ -1062,26 +1060,34 @@ async function sendEmail(to: string, subject: string, lines: string[]) {
 }
 
 const codeKey = randomBytes(32); // in memory only: a database copy cannot recover live codes; a restart voids pending ones
-const codeHash = (r: Row, purpose: CodePurpose, code: string) =>
-  createHmac('sha256', codeKey).update(`${purpose}:${r.id}:${String(r.email).toLowerCase()}:${code}`).digest('hex');
-async function sendCode(r: Row, purpose: CodePurpose) {
+const codeHash = (r: Row, purpose: CodePurpose, code: string, sessionHash?: string) =>
+  createHmac('sha256', codeKey).update(`${purpose}:${r.id}:${String(r.email).toLowerCase()}:${code}:${sessionHash ?? ''}`).digest('hex');
+async function reserveEmailCode(r: Row, purpose: CodePurpose, sessionHash?: string) {
+  if (purpose === 'verify' && !sessionHash) throw new Error('Email verification needs an initiating session');
   if (!r.email) fail(409, 'no_email');
   const last = (await one('SELECT sent_at FROM email_codes WHERE user_id = ? AND purpose = ?', r.id, purpose));
   if (last && Date.now() - last.sent_at < CODE_GAP) fail(429, 'code_recently_sent');
   (await limit(identityKey(`email-${purpose}`, r.id), 5, 60 * 60_000));
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0'), now = Date.now();
+  const hash = codeHash(r, purpose, code, sessionHash);
   (await run(`INSERT INTO email_codes (user_id, purpose, code_hash, sent_at, expires_at, tries) VALUES (?, ?, ?, ?, ?, 0)
     ON CONFLICT(user_id, purpose) DO UPDATE SET code_hash = excluded.code_hash, sent_at = excluded.sent_at, expires_at = excluded.expires_at, tries = 0`,
-  r.id, purpose, codeHash(r, purpose, code), now, now + CODE_TTL));
-  const [subject, lines] = codeMail[purpose](code);
-  try { await sendEmail(r.email, subject, lines); }
-  catch (error) { (await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ? AND sent_at = ?', r.id, purpose, now)); throw error; }
+  r.id, purpose, hash, now, now + CODE_TTL));
+  return async () => {
+    const generation = [r.id, purpose, hash, now];
+    const where = 'WHERE user_id = ? AND purpose = ? AND code_hash = ? AND sent_at = ?';
+    if (!await one(`SELECT 1 FROM email_codes ${where} AND expires_at > ?`, ...generation, Date.now())) return false;
+    const [subject, lines] = codeMail[purpose](code);
+    try { await sendEmail(r.email, subject, lines); }
+    catch (error) { await run(`DELETE FROM email_codes ${where}`, ...generation); throw error; }
+    return true;
+  };
 }
 // A code works once, for 15 minutes, for the address it was sent to; five wrong tries void it.
-async function useCode(r: Row, purpose: CodePurpose, input: unknown, consume = true) {
+async function useCode(r: Row, purpose: CodePurpose, input: unknown, consume = true, sessionHash?: string) {
   const row = (await one('SELECT * FROM email_codes WHERE user_id = ? AND purpose = ? AND expires_at > ?', r.id, purpose, Date.now())) ?? fail(400, 'code_expired');
   const code = typeof input === 'string' ? input.trim() : '';
-  if (!/^\d{6}$/.test(code) || !timingSafeEqual(Buffer.from(codeHash(r, purpose, code), 'hex'), Buffer.from(row.code_hash, 'hex'))) {
+  if (!/^\d{6}$/.test(code) || !timingSafeEqual(Buffer.from(codeHash(r, purpose, code, sessionHash), 'hex'), Buffer.from(row.code_hash, 'hex'))) {
     const spent = row.tries + 1 >= CODE_TRIES;
     if (spent) (await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ?', r.id, purpose));
     else (await run('UPDATE email_codes SET tries = tries + 1 WHERE user_id = ? AND purpose = ?', r.id, purpose));
@@ -1095,64 +1101,209 @@ async function useCode(r: Row, purpose: CodePurpose, input: unknown, consume = t
   return row.code_hash as string;
 }
 
-route('POST', '/api/me/email/code', async ({ user }) => {
-  const r = (await one('SELECT * FROM users WHERE id = ?', user.id))!;
-  if (r.email_verified_at) fail(409, 'already_verified');
-  await sendCode(r, 'verify');
+async function lockEmailAccount(id: number) {
+  const row = await one(`SELECT * FROM users WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, id);
+  return row && row.status !== 'blocked' ? row : fail(401, 'unauthorized');
+}
+async function currentEmailProfile(id: number) {
+  return me(await toUser((await one('SELECT * FROM users WHERE id = ?', id))!));
+}
+async function emailTransaction<T>(work: () => Promise<T>) {
+  await persistence.exec('BEGIN IMMEDIATE');
+  try {
+    const result = await work();
+    await persistence.exec('COMMIT');
+    return result;
+  } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
+}
+async function recoveryEmailSessionActive(account: Row, sessionHash: string) {
+  const now = Date.now();
+  const session = await one(`SELECT 1 FROM sessions WHERE token_hash = ? AND user_id = ? AND created_at > ?
+    AND COALESCE(last_seen_at, created_at) > ?${persistence.backend === 'postgres' ? ' FOR SHARE' : ''}`,
+  sessionHash, account.id, now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY);
+  return session && await sessionEligible(account);
+}
+async function emailAuthority({ user, body, req }: Ctx & { user: User }) {
+  if (body.current === undefined && body.idToken === undefined) fail(426, 'client_update_required');
+  const key = identityKey('recovery-email-auth', user.id);
+  await limit(key, 20, 10 * 60_000);
+  const token = bearer(req) ?? fail(401, 'unauthorized');
+  const sessionHash = sha(token);
+  const snapshot = await one('SELECT password, entra_oid FROM users WHERE id = ?', user.id) ?? fail(401, 'unauthorized');
+  const proof = await entraProof('recovery-email', token, body, snapshot.entra_oid);
+  if (!proof && !await checkPassword(typeof body.current === 'string' ? body.current : '', snapshot.password))
+    fail(401, body.idToken ? 'invalid_token' : 'wrong_password');
+  const check = async () => {
+    const account = await lockEmailAccount(user.id);
+    const now = Date.now();
+    if (!await recoveryEmailSessionActive(account, sessionHash)) fail(401, 'unauthorized');
+    if (account.password !== snapshot.password) fail(401, 'wrong_password');
+    if (proof) {
+      if (account.entra_oid !== proof.oid || proof.expiresAt <= now || !proof.authenticatedAt || proof.authenticatedAt < now - 5 * 60_000 - 999)
+        fail(401, 'invalid_token');
+      await spendEntraProof(proof);
+    }
+    return account;
+  };
+  return { sessionHash, check };
+}
+async function limitEmailSend(purpose: 'verify' | 'reset', recipient: string, address: string) {
+  await limit(identityKey(`recovery-${purpose}-recipient`, recipient.toLowerCase()), 5, 60 * 60_000);
+  await limit(identityKey(`recovery-${purpose}-address`, address), 20, 60 * 60_000);
+}
+
+route('POST', '/api/me/email/code', async ctx => {
+  if (!emailReady) fail(503, 'email_unavailable');
+  const { check, sessionHash } = await emailAuthority(ctx);
+  const address = clientAddress(ctx.req);
+  const send = await emailTransaction(async () => {
+    const current = await check();
+    if (await recoveryEmailVerified(persistence, current)) fail(409, 'already_verified');
+    await limitEmailSend('verify', current.email ?? fail(409, 'no_email'), address);
+    return reserveEmailCode(current, 'verify', sessionHash);
+  });
+  if (!await send()) fail(409, 'user_changed');
   return { sent: true };
 });
-route('POST', '/api/me/email', async ({ user, body }) => {
-  const r = (await one('SELECT * FROM users WHERE id = ?', user.id))!;
-  if (r.email_verified_at) fail(409, 'already_verified'); // a verified address changes through support
-  const email = normalizeEmail(body.email) ?? fail(400, 'invalid_email');
-  if ((await one('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id <> ?', email, r.id))) fail(409, 'email_taken');
-  (await run('UPDATE users SET email = ? WHERE id = ?', email, r.id));
-  (await run('DELETE FROM email_codes WHERE user_id = ?', r.id));
-  await clearFirebaseReset(r.id); // a link sent to the old address must not reset this account
-  return (await me((await toUser((await one('SELECT * FROM users WHERE id = ?', r.id))!))));
+route('POST', '/api/me/email', async ctx => {
+  const { check } = await emailAuthority(ctx);
+  const email = normalizeEmail(ctx.body.email) ?? fail(400, 'invalid_email');
+  await emailTransaction(async () => {
+    const account = await check();
+    if (await recoveryEmailVerified(persistence, account)) fail(409, 'already_verified'); // verified addresses change through support
+    if (account.email === email) return;
+    if (await one('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id <> ?', email, account.id)) fail(409, 'email_taken');
+    await run('UPDATE users SET email = ?, email_verified_at = NULL WHERE id = ?', email, account.id);
+    await run('DELETE FROM recovery_email_proofs WHERE user_id = ?', account.id);
+    await run('DELETE FROM email_codes WHERE user_id = ?', account.id);
+    await clearFirebaseReset(account.id);
+  });
+  return currentEmailProfile(ctx.user.id);
 });
-route('POST', '/api/me/email/verify', async ({ user, body }) => {
-  const r = (await one('SELECT * FROM users WHERE id = ?', user.id))!;
-  if (!r.email_verified_at) {
-    (await useCode(r, 'verify', body.code));
-    (await run('UPDATE users SET email_verified_at = ? WHERE id = ?', Date.now(), r.id));
-  }
-  return (await me((await toUser((await one('SELECT * FROM users WHERE id = ?', user.id))!))));
+route('POST', '/api/me/email/verify', async ctx => {
+  if (!emailReady) fail(503, 'email_unavailable');
+  const { check, sessionHash } = await emailAuthority(ctx);
+  await emailTransaction(async () => {
+    const account = await check();
+    if (!await recoveryEmailVerified(persistence, account)) {
+      // Committing an invalid code's try counter preserves the lockout even when validation fails.
+      let refusal: HttpError | undefined;
+      try { await useCode(account, 'verify', ctx.body.code, true, sessionHash); }
+      catch (error) {
+        if (!(error instanceof HttpError)) throw error;
+        refusal = error;
+      }
+      if (refusal) return refusal;
+      await recordRecoveryEmailProof(persistence, account.id, account.email, 'cloudflare-code');
+    }
+  }).then(refusal => { if (refusal) throw refusal; });
+  return currentEmailProfile(ctx.user.id);
 });
 
-// Forgotten password, self-service: only to an already verified address (a typed one could be someone else's), never
-// for administrators (operator shell only). The same answer whether or not the account exists.
-const accountFor = async (identifier: unknown, verified = true) => {
+// The same response for missing and eligible accounts. Only a current, proven address can receive recovery mail.
+const accountFor = async (identifier: unknown) => {
   const value = String(identifier ?? '').trim(), phone = normalizePhone(value), email = normalizeEmail(value);
-  const r = phone ? (await one('SELECT * FROM users WHERE phone = ?', phone)) : email ? (await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email)) : undefined;
-  return r && (r.email_verified_at || !verified) && r.status !== 'blocked' && r.role !== 'admin' ? r : undefined;
+  const account = phone ? await one('SELECT * FROM users WHERE phone = ?', phone)
+    : email ? await one('SELECT * FROM users WHERE email = ? COLLATE NOCASE', email) : undefined;
+  return account && account.status !== 'blocked' && account.role !== 'admin' && await recoveryEmailVerified(persistence, account)
+    ? account : undefined;
 };
-route('POST', '/api/auth/reset/code', async ({ body }) => {
-  if (!emailReady && !firebaseReset) fail(503, 'email_unavailable');
-  const r = (await accountFor(body.identifier, emailReady));
-  // Not awaited: the reply time must not tell a real account (provider call) from none; errors stay silent too.
-  if (r) void persistence.detached(async () => {
-    if (emailReady) return sendCode(r, 'reset');
-    if (!firebaseReset || !r.email) return;
-    if (firebaseSending.has(r.id)) return;
-    firebaseSending.add(r.id);
-    try {
-      const previous = await one('SELECT requested_at FROM firebase_resets WHERE user_id = ?', r.id);
-      if (previous && Date.now() - previous.requested_at < CODE_GAP) return;
-      await limit(identityKey('email-reset', r.id), 5, FIREBASE_RESET_TTL);
-      await run('DELETE FROM firebase_resets WHERE user_id = ?', r.id);
-      const requestedAt = Date.now();
-      try {
-        await firebaseReset.send(r.id, r.email, body.lang === 'en' ? 'en' : 'ar');
-        const result = await run(`INSERT INTO firebase_resets (user_id, requested_at)
-          SELECT id, ? FROM users WHERE id = ? AND password = ? AND email = ? AND status <> 'blocked' AND role <> 'admin'
-          ON CONFLICT(user_id) DO UPDATE SET requested_at = excluded.requested_at`, requestedAt, r.id, r.password, r.email);
-        if (!result.changes) await firebaseReset.deleteUser(r.id).catch(() => {});
-      } catch { await firebaseReset.deleteUser(r.id).catch(() => {}); }
-    } finally { firebaseSending.delete(r.id); }
-  }).catch(() => {});
+route('POST', '/api/auth/reset/code', ({ body, req }) => {
+  if (!emailReady) fail(503, 'email_unavailable');
+  const address = clientAddress(req);
+  firebaseEmail.background(async () => {
+    const account = await accountFor(body.identifier);
+    if (!account) return;
+    await limitEmailSend('reset', account.email, address);
+    const send = await emailTransaction(async () => {
+      const current = await lockEmailAccount(account.id);
+      if (current.email !== account.email || current.password !== account.password || current.role === 'admin'
+        || !await recoveryEmailVerified(persistence, current)) return;
+      return reserveEmailCode(current, 'reset');
+    });
+    await send?.();
+  });
   return { ok: true };
 }, true);
+
+const requestResetLink: Handler = ({ body, req }) => {
+  if (!firebaseEmail.resetEnabled) fail(503, 'email_unavailable');
+  const address = clientAddress(req);
+  firebaseEmail.background(async () => {
+    const account = await accountFor(body.identifier);
+    if (!account) return;
+    await limitEmailSend('reset', account.email, address);
+    await limit(identityKey('firebase-reset-send-gap', account.id), 1, CODE_GAP);
+    await limit(identityKey('firebase-reset-send', account.id), 5, 60 * 60_000);
+    const dispatch = await emailTransaction(async () => {
+      const current = await lockEmailAccount(account.id);
+      if (current.email !== account.email || current.password !== account.password || current.role === 'admin'
+        || !await recoveryEmailVerified(persistence, current)) return;
+      return firebaseEmail.reserve(current, 'reset', null, body.lang === 'en' ? 'en' : 'ar', address);
+    });
+    dispatch?.();
+  });
+  return { ok: true };
+};
+
+const requestVerificationLink: Handler = async ctx => {
+  if (!firebaseEmail.verificationEnabled) fail(503, 'email_unavailable');
+  const { sessionHash, check } = await emailAuthority(ctx);
+  const id = ctx.user.id;
+  const address = clientAddress(ctx.req);
+  const dispatch = await emailTransaction(async () => {
+    const account = await check();
+    if (await recoveryEmailVerified(persistence, account)) fail(409, 'already_verified');
+    const email = account.email ?? fail(409, 'no_email');
+    await limit(identityKey('firebase-email-send-gap', id), 1, CODE_GAP);
+    await limit(identityKey('firebase-email-send', id), 5, 60 * 60_000);
+    await limitEmailSend('verify', email, address);
+    return firebaseEmail.reserve(account, 'verify', sessionHash, ctx.body.lang === 'en' ? 'en' : 'ar', address);
+  });
+  dispatch();
+  return { sent: true };
+};
+const confirmVerificationLink: Handler = async ctx => {
+  if (!firebaseEmail.verificationEnabled) fail(503, 'email_unavailable');
+  const { sessionHash, check } = await emailAuthority(ctx);
+  await limit(identityKey('firebase-email-confirm', ctx.user.id), 10, 60_000);
+  const account = await one('SELECT * FROM users WHERE id = ?', ctx.user.id);
+  const attempt = account && await firebaseEmail.pending(account, 'verify', ctx.body.mailboxProof, sessionHash);
+  if (!attempt || !await firebaseEmail.checkVerification(attempt).catch(() => false)) fail(400, 'wrong_email_code');
+  await emailTransaction(async () => {
+    const current = await check();
+    if ((await firebaseEmail.pending(current, 'verify', ctx.body.mailboxProof, sessionHash, true))?.uid !== attempt!.uid)
+      fail(400, 'wrong_email_code');
+    await recordRecoveryEmailProof(persistence, current.id, current.email, 'firebase-link');
+  });
+  return currentEmailProfile(ctx.user.id);
+};
+
+const adoptResetLink: Handler = async ({ body }) => {
+  if (!firebaseEmail.resetEnabled) fail(503, 'email_unavailable');
+  const password = newPassword(body.password);
+  const deny = () => fail(400, 'wrong_email_code');
+  if (!validMailboxProof(body.mailboxProof)) deny();
+  const account = await accountFor(body.identifier) ?? deny();
+  const attempt = await firebaseEmail.pending(account, 'reset', body.mailboxProof, null) ?? deny();
+  if (!await firebaseEmail.checkPassword(attempt, password).catch(() => false)) deny();
+  const hashed = await hashPassword(password);
+  await persistence.atomic({ id: account.id }, () => emailTransaction(async () => {
+    const current = await lockEmailAccount(account.id);
+    if (current.role === 'admin' || !await recoveryEmailVerified(persistence, current)
+      || (await firebaseEmail.pending(current, 'reset', body.mailboxProof, null, true))?.uid !== attempt.uid) deny();
+    await run('UPDATE users SET password = ? WHERE id = ?', hashed, current.id);
+    await revokeUserAccess(current.id);
+    for (const id of [current.phone, current.email].filter(Boolean)) await run('DELETE FROM request_limits WHERE key = ?', identityKey('login', String(id).toLowerCase()));
+    await run("INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'FIREBASE_PASSWORD_RESET', '{}', ?)", current.id, Date.now());
+  }));
+  firebaseEmail.background(() => firebaseEmail.sweep({ userId: account.id }));
+  return { ok: true };
+};
+registerRecoveryEmailRoutes(route, {
+  challenge: recoveryChallenge('recovery-email'), requestVerificationLink, confirmVerificationLink, requestResetLink, adoptResetLink,
+});
+
 route('POST', '/api/auth/reset', async ({ body }) => {
   const password = await hashPassword(newPassword(body.password)); // before the lookup: the same checks whether or not it exists
   // One answer for every miss (no account, no code, wrong or spent code), so failures say nothing about the account.
@@ -1163,7 +1314,7 @@ route('POST', '/api/auth/reset', async ({ body }) => {
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
     const current = await one(`SELECT * FROM users WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`, r.id);
-    if (!current || current.password !== r.password || current.email !== r.email || !current.email_verified_at
+    if (!current || current.password !== r.password || current.email !== r.email || !await recoveryEmailVerified(persistence, current)
       || current.status === 'blocked' || current.role === 'admin') fail(400, 'wrong_email_code');
     // Claim the code with the password and session writes. A failed write must leave a retryable code.
     if (!(await run('DELETE FROM email_codes WHERE user_id = ? AND purpose = ? AND code_hash = ? AND expires_at > ? AND tries < ?',
@@ -1202,8 +1353,9 @@ route('POST', '/api/me', async ({ user, body }) => {
 
 // A Microsoft account never saw its placeholder password. A fresh Microsoft sign-in, bound to this session by a one-use nonce
 // issued for this one purpose, stands in for it; each proof works once, inside the transaction it authorizes.
+type EntraPurpose = 'delete' | 'password' | 'recovery-email';
 type EntraProof = { oid: string; challengeHash: string; tokenHash: string; expiresAt: number; authenticatedAt?: number };
-async function entraProof(purpose: 'delete' | 'password', token: string, body: Row, oid: unknown): Promise<EntraProof | undefined> {
+async function entraProof(purpose: EntraPurpose, token: string, body: Row, oid: unknown): Promise<EntraProof | undefined> {
   if (!entra || !oid || typeof body.idToken !== 'string' || typeof body.nonce !== 'string' || !/^[a-f0-9]{64}$/.test(body.nonce)) return undefined;
   let claims: EntraClaims | undefined;
   try { claims = await verifyEntraIdToken(body.idToken, entra, { nonce: body.nonce, maxAuthAgeSeconds: 300 }); }
@@ -1271,7 +1423,7 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
       const now = Date.now();
       const session = await one(`SELECT 1 FROM sessions WHERE user_id=? AND token_hash=? AND created_at>? AND COALESCE(last_seen_at,created_at)>?${persistence.backend === 'postgres' ? ' FOR SHARE' : ''}`,
         user.id, proof.sessionHash, now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY);
-      if (!current || current.status === 'blocked' || !contactAllowed(current) || !session || (production && !(selfService ? current.role !== 'admin' || current.phone_verified_at || current.approved_at : current.phone_verified_at))) fail(401, 'unauthorized');
+      if (!current || !session || !await sessionEligible(current)) fail(401, 'unauthorized');
       if (proof.passwordHash !== undefined && current?.password !== proof.passwordHash) fail(401, 'wrong_password');
       if (proof.oid !== undefined && (current?.entra_oid !== proof.oid || !proof.challengeHash || !proof.tokenHash || !proof.expiresAt || proof.expiresAt <= now || !proof.authenticatedAt || proof.authenticatedAt < now - 5 * 60_000 - 999)) fail(401, 'invalid_token');
     }
@@ -1290,6 +1442,7 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
     (await run('DELETE FROM saved_places WHERE user_id = ?', user.id));
     (await run('DELETE FROM email_codes WHERE user_id = ?', user.id));
     await clearFirebaseReset(user.id);
+    await run('DELETE FROM recovery_email_proofs WHERE user_id = ?', user.id);
     (await run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id));
     (await run('UPDATE referral_codes SET active = 0 WHERE user_id = ?', user.id)); // the code stops working and is never reissued
     (await run("UPDATE checkpoint_reports SET note = '' WHERE reporter_id = ?", user.id));
@@ -3303,7 +3456,8 @@ route('POST', '/api/location', async ({ user, body, req }) => {
       SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE u.id = ? AND u.role = 'driver' AND u.status = 'active' AND s.token_hash = ?
         AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?
-        AND (? = 0 OR u.phone_verified_at IS NOT NULL OR u.email_verified_at IS NOT NULL OR u.approved_at IS NOT NULL)
+        AND (? = 0 OR u.phone_verified_at IS NOT NULL OR u.approved_at IS NOT NULL OR EXISTS (SELECT 1 FROM recovery_email_proofs p
+          WHERE p.user_id = u.id AND p.email = u.email AND p.verified_at = u.email_verified_at))
         AND (? = 0 OR u.phone_verified_at IS NOT NULL)
     ) AND EXISTS (SELECT 1 FROM orders o WHERE o.driver_id = ? AND o.status IN (${activeSql})
       AND (o.assigned_at IS NULL OR o.assigned_at <= ? + 15000))`;
@@ -3987,7 +4141,10 @@ const editUser: Handler = async ({ user, params, body }) => {
       email !== (target.email ?? null) ? null : target.email_verified_at ?? null,
       identityChanged || roleChanged || vehicleChanged ? null : target.approved_at ?? null, target.id));
     if (roleChanged) await endRoleBenefits(target.id);
+    const emailChanged = email !== (target.email ?? null);
+    if (emailChanged) await run('DELETE FROM email_codes WHERE user_id = ?', target.id);
     if (body.status !== undefined || identityChanged || roleChanged || vehicleChanged) await revokeUserAccess(target.id);
+    if (emailChanged) await run('DELETE FROM recovery_email_proofs WHERE user_id = ?', target.id);
     const now = Date.now();
     const auditFields = [
       name !== target.name ? 'name' : null,
@@ -4173,8 +4330,8 @@ route('DELETE', '/api/admin/users/:id', async ({ user, params }) => {
 // verified address) nothing can prove the caller, so the admin writes down what they checked, and that line goes in the audit.
 const SUPPORT_PROOF_TTL = 10 * 60_000;
 const supportProof = (adminId: number, r: Row, at: number) => createHmac('sha256', codeKey).update(`support-proof:${adminId}:${r.id}:${r.password}:${at}`).digest('hex');
-function resetVerification(adminId: number, target: Row, body: Row) {
-  if (emailReady && target.email_verified_at) {
+async function resetVerification(adminId: number, target: Row, body: Row) {
+  if (emailReady && await recoveryEmailVerified(persistence, target)) {
     const [at, signature] = String(body.proof ?? '').split('.');
     const confirmedAt = Number(at), age = Date.now() - confirmedAt;
     const expected = Buffer.from(supportProof(adminId, target, confirmedAt), 'hex'), given = Buffer.from(signature ?? '', 'hex');
@@ -4192,7 +4349,7 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) =>
   need(user, 'admin');
   (await limit(identityKey('support-password', user.id), 20, 60 * 60_000));
   const target = (await one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
-  const verification = resetVerification(user.id, target, body);
+  const verification = await resetVerification(user.id, target, body);
   const password = randomBytes(12).toString('base64url');
   const hashed = await hashPassword(password);
   // Keep the envelope's actor on the journaled security event: the route no longer runs inside it.
@@ -4217,14 +4374,14 @@ const supportTarget = async (id: unknown) => (await one("SELECT * FROM users WHE
 route('POST', '/api/admin/users/:id/identity-code', async ({ user, params }) => {
   need(user, 'admin');
   const target = (await supportTarget(params[0]));
-  if (!target.email_verified_at) fail(409, 'email_not_verified');
-  await sendCode(target, 'support');
+  if (!await recoveryEmailVerified(persistence, target)) fail(409, 'email_not_verified');
+  if (!await (await reserveEmailCode(target, 'support'))()) fail(409, 'user_changed');
   return { sent: true };
 });
 route('POST', '/api/admin/users/:id/identity-check', async ({ user, params, body }) => {
   need(user, 'admin');
   const target = (await supportTarget(params[0]));
-  if (!target.email_verified_at) fail(409, 'email_not_verified');
+  if (!await recoveryEmailVerified(persistence, target)) fail(409, 'email_not_verified');
   (await useCode(target, 'support', body.code));
   const at = Date.now();
   return { confirmed: true, at, proof: `${at}.${supportProof(user.id, target, at)}` };
@@ -4350,13 +4507,16 @@ async function readBody(req: IncomingMessage): Promise<Row> {
   catch { return fail(400, 'invalid_json'); }
 }
 
+const bearer = (req: IncomingMessage) => /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1];
+const sessionEligible = async (r: Row) => r.status !== 'blocked' && await contactAllowed(r)
+  && (!production || (selfService ? r.role !== 'admin' || r.phone_verified_at || r.approved_at : r.phone_verified_at));
 async function authenticate(req: IncomingMessage, touch = true, lockSession = false): Promise<User | null> {
-  const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1];
+  const token = bearer(req);
   if (!token) return null;
   const now = Date.now();
   const r = (await one(`SELECT u.*, s.created_at AS session_created_at, s.last_seen_at AS session_last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?${lockSession ? ' FOR KEY SHARE OF s' : ''}`,
     sha(token), now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY));
-  if (!r || r.status === 'blocked' || !contactAllowed(r) || (production && !(selfService ? r.role !== 'admin' || r.phone_verified_at || r.approved_at : r.phone_verified_at))) return null;
+  if (!r || !await sessionEligible(r)) return null;
   if (touch && now - Number(r.session_last_seen_at ?? r.session_created_at) > 60 * 60_000)
     void run('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?', now, sha(token)).catch(() => {});
   return (await toUser(r));
@@ -4364,7 +4524,7 @@ async function authenticate(req: IncomingMessage, touch = true, lockSession = fa
 
 let draining = false;
 // Per client address, per 10 minutes, before any password or email work.
-const publicAuthLimits: Record<string, number> = { '/api/auth/login': 50, '/api/auth/register': 20, '/api/auth/entra': 30, '/api/auth/reset/code': 10, '/api/auth/reset': 20 };
+const publicAuthLimits: Record<string, number> = { '/api/auth/login': 50, '/api/auth/register': 20, '/api/auth/entra': 30, '/api/auth/reset/code': 10, '/api/auth/reset': 20, '/api/auth/reset/link/code': 10, '/api/auth/reset/link': 20 };
 export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) => {
   if (production) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
   res.setHeader('Access-Control-Allow-Origin', '*'); // Bearer [REDACTED], no cookies: open CORS is safe
@@ -4384,6 +4544,11 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
     await persistence.scope(async () => {
     if (draining) fail(503, 'unavailable');
     if (url.pathname.startsWith('/api/') && clientUpdateRequired(req.headers['x-wind-client'])) fail(426, 'client_update_required');
+    if (req.method === 'GET' && url.pathname === '/recovery-email') {
+      res.setHeader('Content-Security-Policy', `default-src 'none'; script-src 'sha256-${recoveryPageScriptHash}'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'`);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(recoveryPage);
+      return;
+    }
     const page = req.method === 'GET' ? publicPages.get(url.pathname) : undefined;
     if (page) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(page); return; }
     if (req.method === 'GET' && serveWeb(url.pathname, req, res)) return;
@@ -4467,11 +4632,10 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       // current authority. It owns short transactions and command results instead of an HTTP-long lock.
       payload = await invoke();
     } else if (['POST','PATCH','DELETE'].includes(req.method ?? '') &&
-      (/^\/api\/(?:auth\/(?:login|register|reset(?:\/code)?|entra)|me\/(?:password|delete)|admin\/users\/\d+\/password)$/.test(url.pathname)
+      (/^\/api\/(?:auth\/(?:login|register|reset(?:\/(?:code|link(?:\/code)?))?|entra)|me\/(?:password|delete|email(?:\/(?:code|verify|link(?:\/confirm)?))?)|admin\/users\/\d+\/password)$/.test(url.pathname)
         || /^\/api\/partner\//.test(url.pathname))) {
-      // Password routes wait for the bounded KDF before their own short transactions: an HTTP-long
-      // envelope would hold a pooled connection and a transaction for the whole hash. Entra and
-      // partner create passwordless placeholder credentials, so they take the same path.
+      // These routes own short transactions. Hashing credentials or waiting for a mail provider
+      // inside the envelope would hold a pooled connection for that external work.
       if (body.commandId !== undefined) fail(400, 'unsupported_command');
       if (persistence.backend === 'postgres' && /^\/api\/partner\/orders(?:\/|$)/.test(url.pathname)
         && !(await durableProtocolAvailable(persistence))) fail(503, 'durable_schema_required');
@@ -4580,10 +4744,8 @@ export async function pruneExpired() {
   (await run('DELETE FROM request_limits WHERE until < ?', Date.now()));
 }
 export async function sweepFirebaseResets() {
-  for (const row of await all('SELECT user_id, requested_at FROM firebase_resets WHERE requested_at <= ? LIMIT 10', Date.now() - FIREBASE_RESET_TTL)) {
-    if ((await run('DELETE FROM firebase_resets WHERE user_id = ? AND requested_at = ?', row.user_id, row.requested_at)).changes && firebaseReset)
-      await firebaseReset.deleteUser(row.user_id).catch(() => {});
-  }
+  await run('DELETE FROM firebase_resets WHERE requested_at <= ?', Date.now() - 60 * 60_000);
+  await firebaseEmail.sweep();
 }
 export async function shutdown() {
   if (draining) return;
@@ -4594,7 +4756,7 @@ export async function shutdown() {
   const force = setTimeout(() => server.closeAllConnections(), 10_000);
   force.unref();
   try { await new Promise<void>(resolve => server.close(() => resolve())); }
-  finally { clearTimeout(force); await presenceSweepJob; await firebaseSweepJob; await phoneIdentity.drain(); await closePasswordHasher(); await persistence.close(); db.close(); }
+  finally { clearTimeout(force); await presenceSweepJob; await firebaseSweepJob; await firebaseEmail.drain(); await phoneIdentity.drain(); await closePasswordHasher(); await persistence.close(); db.close(); }
 }
 
 // Phones aren't verified by SMS, so admin rights are granted from the server shell, never over the API.

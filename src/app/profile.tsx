@@ -1,10 +1,11 @@
 // Edit profile: display name (POST /api/me). The phone card proves control with a code and changes the number only with the current password.
-// Email: verified with an emailed 6-digit code when the server can send email (capabilities.emailVerification).
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { api } from '../api';
-import { useFormat } from '../parts';
+import { api, apiSessionRevision } from '../api';
+import { normalizeEmail } from '../model';
+import { useEntraReauth, useFormat } from '../parts';
+import { signInWithEntra } from '../entra-auth';
 import { PhoneCard } from '../phone-card';
 import { codeInput } from '../phone/flow';
 import { useSession, type Me } from '../session';
@@ -73,7 +74,7 @@ export default function Profile() {
         </Card>
       </Appear>
       <Appear index={2}><PhoneCard key={user.id} /></Appear>
-      {user.email && <Appear index={3}><EmailCard /></Appear>}
+      <Appear index={3}><EmailCard key={user.id} /></Appear>
       {me.rideOfferSeconds !== undefined && <Card>
         <Txt variant="title" header>{c.dispatchOfferSettings}</Txt>
         <FilterChips label={c.dispatchOfferSettings} disabled={savingOffer}
@@ -98,55 +99,95 @@ export default function Profile() {
 function EmailCard() {
   const { palette, tones } = useTheme();
   const styles = useStyles();
-  const { me, refresh } = useSession();
+  const { me, refresh, language } = useSession();
   const { c, err } = useCopy();
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [action, setAction] = useState<'send' | 'confirm' | 'change' | null>(null);
   const [changing, setChanging] = useState<string | null>(null); // a new address being typed
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  if (!me?.user.email) return null;
+  const entra = useEntraReauth('/me/email/challenge', action !== null);
+  if (!me) return null;
   const { email, emailVerifiedAt } = me.user;
-  const canVerify = !emailVerifiedAt && !!me.capabilities?.emailVerification;
+  const linkMode = !!me.capabilities?.emailVerificationLink;
+  const codeMode = !!me.capabilities?.emailVerification;
+  const nextEmail = normalizeEmail(changing);
 
-  async function run(action: () => Promise<unknown>) {
+  async function submit(microsoft = false) {
+    if (busy || !action) return;
     setBusy(true); setError('');
-    try { await action(); haptic.success(); }
-    catch (e) { haptic.error(); setError(err(e)); }
-    setBusy(false);
+    const revision = apiSessionRevision();
+    try {
+      const proof = microsoft && entra.request ? await signInWithEntra(entra.request) : { current };
+      if (!proof || revision !== apiSessionRevision()) return;
+      if (action === 'send') {
+        if (linkMode) await api('/me/email/link', { ...proof, lang: language });
+        else await api('/me/email/code', proof);
+        setSent(true); setCode('');
+      } else if (action === 'confirm') {
+        if (linkMode) await api('/me/email/link/confirm', { ...proof, mailboxProof: code.trim() });
+        else await api('/me/email/verify', { ...proof, code });
+        await refresh();
+      } else if (nextEmail && nextEmail !== email) {
+        await api('/me/email', { ...proof, email: nextEmail });
+        await refresh();
+        setChanging(null); setSent(false); setCode('');
+      }
+      setAction(null); setCurrent('');
+      haptic.success();
+    } catch (e) {
+      haptic.error();
+      setError(err(e));
+    } finally {
+      setBusy(false);
+      if (microsoft) entra.retry();
+    }
   }
-  const send = () => run(async () => { await api('/me/email/code', {}); setSent(true); setCode(''); });
-  const verify = () => run(async () => { await api<Me>('/me/email/verify', { code: code.trim() }); await refresh(); });
-  const change = () => run(async () => {
-    await api<Me>('/me/email', { email: changing?.trim() });
-    await refresh(); setChanging(null); setSent(false); setCode('');
-    await api('/me/email/code', {}); setSent(true); // the new address gets its code at once
-  });
+  const choose = (next: typeof action) => { setAction(next); setCurrent(''); setError(''); };
 
   return <Card>
     <Txt variant="label" style={{ marginBottom: 7 }}>{c.email}</Txt>
     <Row gap={10} style={styles.locked}>
       <Ionicons name={emailVerifiedAt ? 'checkmark-circle' : 'mail-outline'} size={16} color={emailVerifiedAt ? palette.olive : palette.secondary} />
       {/* minWidth 0: on the web a flex text will not shrink below an unbreakable address, which pushed the badge past the field edge; it wraps instead */}
-      <Txt variant="title" selectable style={{ flex: 1, minWidth: 0, color: palette.secondary }}>{email}</Txt>
-      <View>{/* Badge aligns itself to the top of a row; this keeps it centred */}<Badge label={emailVerifiedAt ? c.verified : c.unverified} tone={emailVerifiedAt ? tones.olive : tones.warn} /></View>
+      <Txt variant="title" selectable={!!email} style={{ flex: 1, minWidth: 0, color: palette.secondary }}>{email ?? c.emailNotAdded}</Txt>
+      {!!email && <View><Badge label={emailVerifiedAt ? c.verified : c.unverified} tone={emailVerifiedAt ? tones.olive : tones.warn} /></View>}
     </Row>
-    {emailVerifiedAt ? <Txt variant="caption" style={{ marginTop: 8 }}>{c.emailVerifiedNote}</Txt> : canVerify && <View style={{ marginTop: 12 }}>
-      <Txt variant="title" style={{ marginBottom: 4 }}>{c.emailVerifyTitle}</Txt>
-      <Txt variant="caption" style={{ marginBottom: 10 }}>{sent ? fill(c.emailCodeSent, { email }) : fill(c.emailVerifyBody, { email })}</Txt>
-      {/* sign-up already emailed a code, so the field comes first */}
+    {!!email && !emailVerifiedAt && changing === null && !action && codeMode && <View style={{ marginTop: 12 }}>
+      <Txt variant="caption" style={{ marginBottom: 10 }}>{fill(sent ? c.emailCodeSent : c.emailVerifyBody, { email })}</Txt>
       <Field label={c.emailCodeLabel} value={code} onChangeText={next => setCode(codeInput(next))} keyboardType="number-pad"
-        autoComplete="one-time-code" maxLength={6} disabled={busy} onSubmitEditing={code.length === 6 ? verify : undefined} />
-      <ErrorText>{error}</ErrorText>
-      <Button title={c.emailConfirm} icon="checkmark-outline" onPress={verify} loading={busy} disabled={code.length !== 6} reason={c.code_six_digits} />
-      <Button title={sent ? c.emailResend : c.emailSendCode} icon="mail-outline" variant="ghost" onPress={send} disabled={busy} reason={c.wait_busy} />
-      {changing === null
-        ? <Button title={c.emailChange} icon="create-outline" variant="ghost" onPress={() => setChanging(email)} disabled={busy} reason={c.wait_busy} />
-        : <View style={{ marginTop: 8 }}>
-          <Field label={c.email} value={changing} onChangeText={setChanging} keyboardType="email-address" autoComplete="email" maxLength={254} disabled={busy} onSubmitEditing={change} />
-          <Button title={c.emailChangeSave} icon="checkmark-outline" variant="soft" onPress={change} loading={busy} disabled={!changing.trim() || changing.trim() === email} reason={c.email_unchanged} />
-        </View>}
+        autoComplete="one-time-code" maxLength={6} disabled={busy} onSubmitEditing={code.length === 6 ? () => choose('confirm') : undefined} />
+      <Button title={c.emailConfirm} icon="checkmark-outline" onPress={() => choose('confirm')} disabled={code.length !== 6} reason={c.code_six_digits} />
+      <Button title={sent ? c.emailResend : c.emailSendCode} icon="mail-outline" variant="ghost" onPress={() => choose('send')} disabled={busy} reason={c.wait_busy} />
     </View>}
+    {!!email && !emailVerifiedAt && changing === null && !action && linkMode && <View style={{ marginTop: 12 }}>
+      {sent && <View accessibilityLiveRegion="polite"><Txt variant="caption">{fill(c.emailLinkSent, { email })}</Txt></View>}
+      <Field label={c.emailLinkProof} value={code} onChangeText={next => setCode(next.trim())}
+        autoCorrect={false} maxLength={32} disabled={busy} />
+      <Button title={c.emailConfirm} icon="checkmark-outline" onPress={() => choose('confirm')}
+        disabled={!/^[A-Za-z0-9_-]{32}$/.test(code)} reason={c.emailLinkProof} />
+      <Button title={sent ? c.emailResendLink : c.emailSendLink} icon="mail-outline" variant="ghost" onPress={() => choose('send')} />
+    </View>}
+    {!action && !emailVerifiedAt && (!!email || codeMode || linkMode) && <View style={{ marginTop: 8 }}>
+      {changing === null
+        ? <Button title={email ? c.emailChange : c.emailAdd} icon="create-outline" variant={email ? 'ghost' : 'soft'} onPress={() => setChanging(email ?? '')} disabled={busy} reason={c.wait_busy} />
+        : <>
+          <Field label={c.email} value={changing} onChangeText={setChanging} keyboardType="email-address" autoComplete="email" maxLength={254} disabled={busy} onSubmitEditing={nextEmail && nextEmail !== email ? () => choose('change') : undefined} />
+          <Button title={c.emailChangeSave} icon="checkmark-outline" variant="soft" onPress={() => choose('change')} disabled={!nextEmail || nextEmail === email} reason={err(nextEmail === email && nextEmail ? 'email_unchanged' : 'invalid_email')} />
+          <Button title={c.cancel} variant="ghost" onPress={() => { setChanging(null); setError(''); }} disabled={busy} reason={c.wait_busy} />
+        </>}
+    </View>}
+    {!!action && <View style={{ marginTop: 12 }}>
+      <Field label={c.currentPassword} value={current} onChangeText={setCurrent} secureTextEntry autoComplete="password"
+        maxLength={100} disabled={busy} onSubmitEditing={current ? () => void submit() : undefined} />
+      <Button title={c.continue} onPress={() => submit()} loading={busy} disabled={!current} reason={c.currentPassword} />
+      {!!entra.request && <Button title={c.deleteMicrosoft} variant="soft" disabled={busy} onPress={() => submit(true)} />}
+      {entra.failed && <Button title={c.retry} variant="soft" disabled={busy} onPress={entra.retry} />}
+      <Button title={c.cancel} variant="ghost" disabled={busy} onPress={() => choose(null)} />
+    </View>}
+    <ErrorText>{error}</ErrorText>
   </Card>;
 }
 

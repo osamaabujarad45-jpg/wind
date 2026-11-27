@@ -57,20 +57,20 @@ try {
   assert.ok(welcome.html.includes(welcome.code) && !JSON.stringify(customer).includes(welcome.code));
 
   // A minute between codes; a wrong code is refused; the right one verifies once and for good.
-  assert.equal((await call('/me/email/code', { token: customer.token, body: {}, expect: 429 })).error, 'code_recently_sent');
-  assert.equal((await call('/me/email/verify', { token: customer.token, body: { code: other(welcome.code) }, expect: 400 })).error, 'wrong_email_code');
-  assert.equal((await call('/me/email/verify', { token: customer.token, body: { code: 'abc' }, expect: 400 })).error, 'wrong_email_code');
-  const verified = await call('/me/email/verify', { token: customer.token, body: { code: ` ${welcome.code} ` } });
+  assert.equal((await call('/me/email/code', { token: customer.token, body: { current: password }, expect: 429 })).error, 'code_recently_sent');
+  assert.equal((await call('/me/email/verify', { token: customer.token, body: { current: password, code: other(welcome.code) }, expect: 400 })).error, 'wrong_email_code');
+  assert.equal((await call('/me/email/verify', { token: customer.token, body: { current: password, code: 'abc' }, expect: 400 })).error, 'wrong_email_code');
+  const verified = await call('/me/email/verify', { token: customer.token, body: { current: password, code: ` ${welcome.code} ` } });
   assert.ok(verified.user.emailVerifiedAt > 0);
-  assert.ok((await call('/me/email/verify', { token: customer.token, body: { code: welcome.code } })).user.emailVerifiedAt, 'a repeat is harmless');
-  assert.equal((await call('/me/email/code', { token: customer.token, body: {}, expect: 409 })).error, 'already_verified');
+  assert.ok((await call('/me/email/verify', { token: customer.token, body: { current: password, code: welcome.code } })).user.emailVerifiedAt, 'a repeat is harmless');
+  assert.equal((await call('/me/email/code', { token: customer.token, body: { current: password }, expect: 409 })).error, 'already_verified');
 
   // Five wrong tries void a code, even for the right digits afterwards.
   const driver = await register(2, { registrationRole: 'driver', vehicle: 'car' });
   const driverMail = await mailTo('user2@mail.example');
-  for (let i = 0; i < 4; i++) assert.equal((await call('/me/email/verify', { token: driver.token, body: { code: other(driverMail.code) }, expect: 400 })).error, 'wrong_email_code');
-  assert.equal((await call('/me/email/verify', { token: driver.token, body: { code: other(driverMail.code) }, expect: 400 })).error, 'code_expired');
-  assert.equal((await call('/me/email/verify', { token: driver.token, body: { code: driverMail.code }, expect: 400 })).error, 'code_expired');
+  for (let i = 0; i < 4; i++) assert.equal((await call('/me/email/verify', { token: driver.token, body: { current: password, code: other(driverMail.code) }, expect: 400 })).error, 'wrong_email_code');
+  assert.equal((await call('/me/email/verify', { token: driver.token, body: { current: password, code: other(driverMail.code) }, expect: 400 })).error, 'code_expired');
+  assert.equal((await call('/me/email/verify', { token: driver.token, body: { current: password, code: driverMail.code }, expect: 400 })).error, 'code_expired');
 
   // Provider refusal or a bounce: a clear error, and no cooldown left behind, so a retry can go out at once.
   mode = 'fail';
@@ -80,28 +80,28 @@ try {
   for (let i = 0; i < 100 && await persistence.scope(() => persistence.one('SELECT 1 FROM email_codes WHERE user_id = ?', third.user.id)); i++)
     await new Promise(resolve => setTimeout(resolve, 20));
   assert.ok(!(await persistence.scope(() => persistence.one('SELECT 1 FROM email_codes WHERE user_id = ?', third.user.id))), 'the failed send left no cooldown behind');
-  assert.equal((await call('/me/email/code', { token: third.token, body: {}, expect: 503 })).error, 'email_unavailable');
+  assert.equal((await call('/me/email/code', { token: third.token, body: { current: password }, expect: 503 })).error, 'email_unavailable');
   mode = 'bounce';
-  assert.equal((await call('/me/email/code', { token: third.token, body: {}, expect: 422 })).error, 'email_bounced');
+  assert.equal((await call('/me/email/code', { token: third.token, body: { current: password }, expect: 422 })).error, 'email_bounced');
   mode = 'ok';
-  assert.deepEqual(await call('/me/email/code', { token: third.token, body: {} }), { sent: true });
+  assert.deepEqual(await call('/me/email/code', { token: third.token, body: { current: password } }), { sent: true });
   await mailTo('user3@mail.example', 4);
 
   // A mistyped address is not a dead end: an unverified account changes it, and a new code goes to the new one.
-  assert.equal((await call('/me/email', { token: third.token, body: { email: 'broken' }, expect: 400 })).error, 'invalid_email');
-  assert.equal((await call('/me/email', { token: third.token, body: { email: 'user1@mail.example' }, expect: 409 })).error, 'email_taken'); // verified elsewhere
-  assert.equal((await call('/me/email', { token: third.token, body: { email: 'User3b@mail.example' } })).user.email, 'user3b@mail.example');
-  await call('/me/email/code', { token: third.token, body: {} });
+  assert.equal((await call('/me/email', { token: third.token, body: { current: password, email: 'broken' }, expect: 400 })).error, 'invalid_email');
+  assert.equal((await call('/me/email', { token: third.token, body: { current: password, email: 'user1@mail.example' }, expect: 409 })).error, 'email_taken'); // verified elsewhere
+  assert.equal((await call('/me/email', { token: third.token, body: { current: password, email: 'User3b@mail.example' } })).user.email, 'user3b@mail.example');
+  await call('/me/email/code', { token: third.token, body: { current: password } });
   const moved3 = await mailTo('user3b@mail.example');
-  assert.ok((await call('/me/email/verify', { token: third.token, body: { code: moved3.code } })).user.emailVerifiedAt);
-  assert.equal((await call('/me/email', { token: third.token, body: { email: 'user3c@mail.example' }, expect: 409 })).error, 'already_verified');
+  assert.ok((await call('/me/email/verify', { token: third.token, body: { current: password, code: moved3.code } })).user.emailVerifiedAt);
+  assert.equal((await call('/me/email', { token: third.token, body: { current: password, email: 'user3c@mail.example' }, expect: 409 })).error, 'already_verified');
 
   // A taken address (verified or not) cannot be signed up or switched to again.
   const owner = await register(4, { email: 'owner@mail.example' });
   await mailTo('owner@mail.example'); // its sign-up email goes out after the reply; it must land before the count below
   await call('/auth/register', { body: { name: 'Late', email: 'OWNER@mail.example', phone: '0599700006', password, consent: true }, expect: 409 });
-  assert.equal((await call('/me/email', { token: third.token, body: { email: 'owner@mail.example' }, expect: 409 })).error, 'already_verified');
-  assert.equal((await call('/me/email', { token: owner.token, body: { email: 'user3b@mail.example' }, expect: 409 })).error, 'email_taken');
+  assert.equal((await call('/me/email', { token: third.token, body: { current: password, email: 'owner@mail.example' }, expect: 409 })).error, 'already_verified');
+  assert.equal((await call('/me/email', { token: owner.token, body: { current: password, email: 'user3b@mail.example' }, expect: 409 })).error, 'email_taken');
 
   // Password reset: only a verified address receives a code, and the answer never says whether an account exists.
   const sent = inbox.length;

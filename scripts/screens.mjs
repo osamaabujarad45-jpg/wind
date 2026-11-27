@@ -941,6 +941,15 @@ if (!only || only.includes('personal-home-narrow')) {
       }
     });
     await page.screenshot({ path: join(narrowDir, `home-shop-${language}-200.png`) });
+    const roads = page.getByRole('button', { name: t.personalRoads, exact: true });
+    const roadsFit = await roads.getByText(t.personalRoads, { exact: true }).evaluate(node => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const rects = range.getClientRects();
+      const chip = node.closest('[role="button"]').getBoundingClientRect();
+      return rects.length === 1 && rects[0].left >= chip.left && rects[0].right <= chip.right;
+    });
+    assert.equal(roadsFit, true, `${language}: the Roads label fits inside its chip on one line at 200%`);
     const grip = page.getByRole('button', { name: t.sheetExpand, exact: true });
     await grip.click({ trial: true });
     await entry.click();

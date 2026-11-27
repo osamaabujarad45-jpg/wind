@@ -40,6 +40,30 @@
     },
     {
       "type": "index",
+      "name": "firebase_email_account",
+      "tableName": "firebase_email_attempts",
+      "sql": "CREATE INDEX firebase_email_account ON firebase_email_attempts(user_id, purpose, state)"
+    },
+    {
+      "type": "index",
+      "name": "firebase_email_cleanup",
+      "tableName": "firebase_email_attempts",
+      "sql": "CREATE INDEX firebase_email_cleanup ON firebase_email_attempts(project_id, cleanup_at)"
+    },
+    {
+      "type": "index",
+      "name": "firebase_email_one_live_recipient",
+      "tableName": "firebase_email_attempts",
+      "sql": "CREATE UNIQUE INDEX firebase_email_one_live_recipient ON firebase_email_attempts(project_id, recipient_key)\n  WHERE state IN ('sending', 'ready')"
+    },
+    {
+      "type": "index",
+      "name": "firebase_email_recipient",
+      "tableName": "firebase_email_attempts",
+      "sql": "CREATE INDEX firebase_email_recipient ON firebase_email_attempts(project_id, recipient_key, state)"
+    },
+    {
+      "type": "index",
       "name": "merchant_items_merchant",
       "tableName": "merchant_items",
       "sql": "CREATE INDEX merchant_items_merchant ON merchant_items(merchant_id, section, sort)"
@@ -286,6 +310,12 @@
     },
     {
       "type": "table",
+      "name": "firebase_email_attempts",
+      "tableName": "firebase_email_attempts",
+      "sql": "CREATE TABLE firebase_email_attempts (\n  uid TEXT PRIMARY KEY,\n  project_id TEXT NOT NULL,\n  owner_marker TEXT NOT NULL,\n  user_id BIGINT NOT NULL,\n  purpose TEXT NOT NULL CHECK (purpose IN ('verify', 'reset')),\n  recipient_key TEXT NOT NULL,\n  credential_hash TEXT NOT NULL,\n  nonce_hash TEXT NOT NULL UNIQUE,\n  session_hash TEXT,\n  state TEXT NOT NULL CHECK (state IN ('queued', 'sending', 'ready', 'retired', 'reconcile')),\n  expires_at BIGINT NOT NULL,\n  cleanup_at BIGINT NOT NULL,\n  retry_until BIGINT NOT NULL\n)"
+    },
+    {
+      "type": "table",
       "name": "firebase_resets",
       "tableName": "firebase_resets",
       "sql": "CREATE TABLE firebase_resets (\n  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, requested_at INTEGER NOT NULL)"
@@ -409,6 +439,12 @@
       "name": "quotes",
       "tableName": "quotes",
       "sql": "CREATE TABLE quotes (\n  id TEXT PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES users(id), service TEXT NOT NULL CHECK (service IN ('ride','parcel','freight')),\n  pickup_city TEXT NOT NULL, dropoff_city TEXT NOT NULL, pickup_lat REAL, pickup_lng REAL, dropoff_lat REAL, dropoff_lng REAL,\n  pickup_note TEXT NOT NULL, dropoff_note TEXT NOT NULL, contact TEXT NOT NULL, pickup_contact TEXT, recipient_name TEXT, recipient_phone TEXT,\n  detail TEXT NOT NULL, option TEXT NOT NULL, loading_help INTEGER NOT NULL, shared INTEGER NOT NULL, scheduled_for INTEGER,\n  currency TEXT NOT NULL DEFAULT 'ILS' CHECK (currency = 'ILS'), price_minor INTEGER NOT NULL, discount_minor INTEGER, commission_minor INTEGER,\n  tariff_snapshot TEXT NOT NULL, tariff_basis_points TEXT NOT NULL, tariff_version TEXT NOT NULL,\n  graph_version TEXT, profile_version TEXT, restriction_version TEXT, provider_version TEXT,\n  eta_min_seconds INTEGER NOT NULL, eta_max_seconds INTEGER NOT NULL,\n  feasibility TEXT NOT NULL CHECK (feasibility IN ('feasible','infeasible','uncertain')), reasons TEXT NOT NULL, disclosures TEXT NOT NULL, lines TEXT NOT NULL,\n  itinerary_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, consumed_at INTEGER, consumed_order_id INTEGER REFERENCES orders(id), priority TEXT NOT NULL DEFAULT 'standard' CHECK (priority IN ('standard','same_day') AND (service = 'parcel' OR priority = 'standard')))"
+    },
+    {
+      "type": "table",
+      "name": "recovery_email_proofs",
+      "tableName": "recovery_email_proofs",
+      "sql": "CREATE TABLE recovery_email_proofs (\n  user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,\n  email TEXT NOT NULL,\n  verified_at BIGINT NOT NULL,\n  method TEXT NOT NULL CHECK (method IN ('cloudflare-code', 'firebase-link', 'entra'))\n)"
     },
     {
       "type": "table",
@@ -1470,6 +1506,116 @@
           "cid": 1,
           "name": "expires_at",
           "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": []
+    },
+    {
+      "name": "firebase_email_attempts",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "uid",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "project_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "owner_marker",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "user_id",
+          "type": "BIGINT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "purpose",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "recipient_key",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "credential_hash",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "nonce_hash",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "session_hash",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "state",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "expires_at",
+          "type": "BIGINT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "cleanup_at",
+          "type": "BIGINT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "retry_until",
+          "type": "BIGINT",
           "notnull": 1,
           "dflt_value": null,
           "pk": 0
@@ -3653,6 +3799,55 @@
           "to": "id",
           "on_update": "NO ACTION",
           "on_delete": "NO ACTION",
+          "match": "NONE"
+        }
+      ]
+    },
+    {
+      "name": "recovery_email_proofs",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "user_id",
+          "type": "BIGINT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "email",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "verified_at",
+          "type": "BIGINT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "method",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
           "match": "NONE"
         }
       ]

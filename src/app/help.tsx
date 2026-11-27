@@ -27,12 +27,13 @@ export default function Help() {
   const [open, setOpen] = useState<Topic | null>(topics.includes(topic as Topic) && (shown as readonly Topic[]).includes(topic as Topic) ? topic as Topic : null);
   const orderRef = typeof order === 'string' && /^W-\d+$/.test(order) ? order : undefined;
   // The email answer is only true where the server can send a reset; until it says so, give the support path, which always works.
-  const [emailReset, setEmailReset] = useState(false);
+  const [resetOptions, setResetOptions] = useState<{ emailReset?: boolean; emailResetLinkProof?: boolean }>({});
   useEffect(() => {
     let active = true;
-    void api<{ emailReset?: boolean; emailResetLink?: boolean }>('/auth/options').then(o => { if (active) setEmailReset(!!o.emailReset || !!o.emailResetLink); }).catch(() => {});
+    void api<typeof resetOptions>('/auth/options').then(options => { if (active) setResetOptions(options); }).catch(() => {});
     return () => { active = false; };
   }, []);
+  const passwordAnswer = resetOptions.emailResetLinkProof ? c.a_password : resetOptions.emailReset ? c.a_password_code : c.a_password_support;
 
   return <Screen>
     <Header title={c.help} back />
@@ -70,7 +71,7 @@ export default function Help() {
             </Row>
           </Pressable>
           {expanded && <Animated.View entering={FadeIn.duration(220)} style={{ paddingBottom: 14 }}>
-            <Txt>{key === 'password' && !emailReset ? c.a_password_support : c[`a_${key}`]}</Txt>
+            <Txt>{key === 'password' ? passwordAnswer : c[`a_${key}`]}</Txt>
           </Animated.View>}
         </Animated.View>;
       })}

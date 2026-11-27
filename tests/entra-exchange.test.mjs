@@ -66,7 +66,10 @@ try {
   assert.equal(unchanged.email_verified_at, null, 'a different claimed email cannot verify the stored email');
 
   const verified = await register('0599300103', 'verified@example.com');
-  db.prepare('UPDATE users SET email_verified_at = ? WHERE id = ?').run(Date.now(), verified.user.id);
+  const verifiedAt = Date.now();
+  db.prepare('UPDATE users SET email_verified_at = ? WHERE id = ?').run(verifiedAt, verified.user.id);
+  await exchange({ oid: 'legacy-address-owner', email: 'verified@example.com', email_verified: true }, {}, 403);
+  db.prepare('INSERT INTO recovery_email_proofs (user_id, email, verified_at, method) VALUES (?, ?, ?, ?)').run(verified.user.id, verified.user.email, verifiedAt, 'cloudflare-code');
   await exchange({ oid: 'first-identity', email: 'verified@example.com', email_verified: true });
   await exchange({ oid: 'second-identity', email: 'verified@example.com', email_verified: true }, {}, 403);
   assert.equal(db.prepare('SELECT entra_oid FROM users WHERE id = ?').get(verified.user.id).entra_oid, 'first-identity',
@@ -81,6 +84,26 @@ try {
   const row = db.prepare('SELECT phone_verified_at, email_verified_at FROM users WHERE id = ?').get(created.user.id);
   assert.equal(row.phone_verified_at, null, 'a manually entered phone is never treated as verified');
   assert.ok(row.email_verified_at, 'the attested email can satisfy contact verification');
+  const proofFailure = { oid: 'proof-write-failure', email: 'proof-failure@example.com', email_verified: true, name: 'Proof Rider' };
+  const proofRegistration = { phone: '0599300109', consent: true };
+  db.exec(`CREATE TRIGGER fail_recovery_proof BEFORE INSERT ON recovery_email_proofs
+    WHEN NEW.email = 'proof-failure@example.com' BEGIN SELECT RAISE(ABORT, 'synthetic proof failure'); END;`);
+  try {
+    await exchange(proofFailure, proofRegistration, 500);
+    assert.equal(db.prepare('SELECT 1 FROM users WHERE entra_oid = ?').get(proofFailure.oid), undefined);
+  } finally { db.exec('DROP TRIGGER fail_recovery_proof'); }
+  const recovered = await exchange(proofFailure, proofRegistration);
+  assert.equal(db.prepare('SELECT method FROM recovery_email_proofs WHERE user_id = ?').get(recovered.user.id).method, 'entra');
+  const emailChallenge = await call('/me/email/challenge', { token: linked.token, body: {} });
+  const now = Math.floor(Date.now() / 1000) + 1;
+  const emailProof = auth_time => ({ email: 'recovery@example.com', nonce: emailChallenge.nonce,
+    idToken: token({ oid: 'linked-user', nonce: emailChallenge.nonce, auth_time }) });
+  const recoveryEdit = (session, body, expect = 200) => call('/me/email', { token: session, body, expect });
+  const proofForEmail = emailProof(now);
+  await recoveryEdit(linked.token, emailProof(now - 310), 401);
+  await recoveryEdit(existing.token, proofForEmail, 401);
+  assert.equal((await recoveryEdit(linked.token, proofForEmail)).user.email, 'recovery@example.com');
+  await recoveryEdit(linked.token, { ...proofForEmail, email: 'reused@example.com' }, 401);
   const expired = await call('/me/delete/challenge', { token: linked.token, body: {} });
   db.prepare('UPDATE entra_replay SET expires_at=? WHERE token_hash=?').run(Date.now() - 2_000,
     createHash('sha256').update(`delete-challenge:${linked.token}:${expired.nonce}`).digest('hex'));

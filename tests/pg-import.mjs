@@ -52,6 +52,9 @@ sqlite.prepare('INSERT INTO entra_replay(token_hash,expires_at) VALUES(?,?)').ru
 sqlite.prepare("UPDATE users SET name=?,status='active',approved_at=? WHERE id=?").run('سائق تجريبي — القدس', now, driver);
 sqlite.prepare("INSERT INTO subscriptions(user_id,plan,status,price,activated_at,ends_at,created_at) VALUES(?,'pro','active',10,?,?,?)").run(driver, now, Date.parse('2026-10-30T23:30:00+02:00'), now);
 sqlite.prepare("INSERT INTO email_codes(user_id,purpose,code_hash,sent_at,expires_at) VALUES(?,'support',?,?,?)").run(user,'synthetic-hash',now,now+300000);
+const provenAddress = 'recovery-import@example.test';
+sqlite.prepare('UPDATE users SET email=?,email_verified_at=? WHERE id=?').run(provenAddress,now,user);
+sqlite.prepare("INSERT INTO recovery_email_proofs(user_id,email,verified_at,method) VALUES(?,?,?,'cloudflare-code')").run(user,provenAddress,now);
 sqlite.prepare("INSERT INTO driver_locations(driver_id,lat,lng,updated_at) VALUES(?,31.9038,35.2034,?) ON CONFLICT(driver_id) DO UPDATE SET lat=excluded.lat,lng=excluded.lng,updated_at=excluded.updated_at").run(driver,now);
 sqlite.prepare("INSERT INTO checkpoints(name,cities,created_by,created_at,lat,lng) VALUES('حاجز تجريبي','[\"ramallah\"]',?,?,31.9,35.2)").run(admin,now);
 const checkpoint=sqlite.prepare('SELECT max(id) id FROM checkpoints').get().id;
@@ -153,6 +156,8 @@ try {
   assert.equal((await database.one('SELECT priority FROM orders WHERE id=?',priorityOrder)).priority,'same_day','current snapshot retains parcel priority');
   assert.equal((await database.one("SELECT error FROM order_command_rejections WHERE request_id='00000000-0000-4000-8000-000000000001'")).error,'priority_cutoff','terminal refusal survives import');
   assert.ok(report.reconciliation.tables.every(t=>t.sourceRows>0),'every legacy table has nonempty import evidence');
+  const recovery = await database.one('SELECT email,verified_at,method FROM recovery_email_proofs WHERE user_id=?',user);
+  assert.deepEqual([recovery.email,recovery.verified_at,recovery.method],[provenAddress,now,'cloudflare-code'],'the mailbox proof survives the database import');
   const redemptions=report.reconciliation.tables.find(t=>t.table==='promo_redemptions');
   assert.deepEqual(redemptions.keyColumns,['order_id'],'PK-less table uses its non-null unique natural key');
   assert.equal(redemptions.sourceRows,2);assert.equal(redemptions.targetRows,2);

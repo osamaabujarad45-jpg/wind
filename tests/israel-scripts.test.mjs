@@ -39,8 +39,13 @@ case "$1" in
       # provision.sh's Caddy drop-in: no start while the ingress hold exists.
       if [ "$u" = caddy ] && [ -e "$HOLD" ]; then echo "hold: $(cat "$HOLD")" >&2; exit 1; fi
       if [ "$u" = caddy ] && [ -n "$FAKE_CADDY_FAIL" ]; then exit 1; fi
+      case "$u" in wind-api|wind-backup.service) /bin/sh -c "$DB_SWAP_GUARD" || exit 1 ;; esac
+      if [ "$u" = wind-backup.timer ] && [ -n "$FAKE_TIMER_START_FAIL" ]; then exit 1; fi
       # provision.sh's API check: a host that had a database never starts on a fresh one.
       if [ "$u" = wind-api ] && [ -e "$(dirname "$DB")/.wind-db-expected" ] && [ ! -s "$DB" ]; then exit 1; fi
+      if [ "$u" = wind-api ]; then
+        WIND_FIREBASE_RESET_LINKS="$FAKE_START_RESET_LINKS" /bin/sh -c "$RESTORE_GUARD" || exit 1
+      fi
       if [ "$u" = wind-api ] && [ -e "$LIVE/STARTFAIL" ]; then exit 1; fi
       if [ "$u" = wind-api ] && [ -e "$LIVE/MIGRATE" ]; then "$NODE" "$HELPER" write "$DB" migrated; fi
       if [ "$u" = wind-api ] && [ -n "$FAKE_RESTART_DB_PATH" ]; then printf 'DB_PATH=%s\\0' "$FAKE_RESTART_DB_PATH" > "$PROCESS_ENV"; fi
@@ -49,7 +54,21 @@ case "$1" in
       if [ "$u" = caddy ] && [ -n "$FAKE_TERM_ON_CADDY_START" ]; then kill -TERM "$PPID"; fi
       done ;;
   is-active) for a; do u=$a; done; s=$(st "$u"); case "$*" in *--quiet*) ;; *) echo "$s" ;; esac; [ "$s" = active ] ;;
-  show) if [ "$3" = ExecStartPre ]; then case "$5,$FAKE_NO_GUARDS" in caddy,*caddy*|wind-api,*wind-api*) ;; caddy,*) echo "{ argv[]=/bin/sh -c if [ -e /etc/wind-ingress-hold ] }" ;; *) echo "{ argv[]=/bin/sh -c if [ -e /data/.wind-db-expected ] }" ;; esac
+  show) if [ "$3" = ExecStartPre ]; then case "$5,$FAKE_NO_GUARDS" in
+      caddy,*caddy*|wind-api,*wind-api*|wind-backup.service,backup-swap) ;;
+      caddy,*) echo "{ argv[]=/bin/sh -c if [ -e /etc/wind-ingress-hold ] }" ;;
+      wind-backup.service,*) printf '{ argv[]=%s }\\n' "$DB_SWAP_GUARD" ;;
+      wind-api,*)
+        echo "{ argv[]=/bin/sh -c if [ -e /data/.wind-db-expected ] }"
+        [ "$FAKE_NO_GUARDS" = restore-email ] || printf '{ argv[]=/bin/sh -c %s }\\n' "$RESTORE_GUARD"
+        [ "$FAKE_NO_GUARDS" = api-swap ] || printf '{ argv[]=%s }\\n' "$DB_SWAP_GUARD" ;;
+      esac
+    elif [ "$3" = Environment ]; then printf '%s\\n' "$FAKE_UNIT_ENVIRONMENT"
+    elif [ "$3" = EnvironmentFiles ]; then printf '%s\\n' "$FAKE_UNIT_ENV_FILES"
+    elif [ "$3" = NextElapseUSecRealtime ]; then
+      if [ -n "$FAKE_TIMER_UNSCHEDULED$FAKE_TIMER_DISPATCHED" ]; then echo n/a; else echo 'Thu 2099-01-01 12:00:00 UTC'; fi
+    elif [ "$3" = SubState ]; then
+      if [ -n "$FAKE_TIMER_DISPATCHED" ]; then echo running; else echo waiting; fi
     elif [ "$3" = ActiveState ]; then st "$5"; elif [ "$(st "$5")" = active ]; then echo 4242; else echo 0; fi ;;
   *) exit 0 ;;
 esac`);
@@ -81,15 +100,30 @@ elif [ "$(cat "$STATE/wind-api" 2>/dev/null)" = active ]; then pid=4242
 else exit 0
 fi
 printf 'LISTEN 0 511 127.0.0.1:4000 0.0.0.0:* users:(("node",pid=%s,fd=23))\\n' "$pid"`);
-// A signal right after a given rename, such as restore's move of the replacement into place.
-stub('mv', '/bin/mv "$@"; rc=$?; if [ -n "$FAKE_TERM_AFTER_MV_FROM" ]; then case "$*" in *"$FAKE_TERM_AFTER_MV_FROM"*) kill -TERM "$PPID" ;; esac; fi; exit $rc');
+// Interrupt at a rename boundary to exercise recovery with and without shell traps.
+stub('mv', `/bin/mv "$@"; rc=$?
+if [ "$rc" = 0 ] && [ "$*" = "-T $LIVE.next $LIVE" ] && [ -n "$FAKE_POWER_LOSS_AFTER_POINT" ]; then kill -KILL "$PPID"; fi
+if [ "$rc" = 0 ] && [ -n "$FAKE_POWER_LOSS_AFTER_RESTORE_MAIN" ]; then
+  case "$*" in "-Tf -- $DB.before-restore-"*" $DB") kill -KILL "$PPID" ;; esac
+fi
+if [ "$rc" = 0 ] && [ -n "$FAKE_POWER_LOSS_AFTER_PARK_MAIN" ]; then
+  case "$*" in "-Tf -- $DB $DB.before-restore-"*) kill -KILL "$PPID" ;; esac
+fi
+if [ "$rc" = 0 ] && [ -n "$FAKE_POWER_LOSS_AFTER_REPLACEMENT" ]; then
+  case "$*" in "-T -- "*/restore.*"/wind.db $DB") kill -KILL "$PPID" ;; esac
+fi
+if [ -n "$FAKE_TERM_AFTER_MV_FROM" ]; then case "$*" in *"$FAKE_TERM_AFTER_MV_FROM"*) kill -TERM "$PPID" ;; esac; fi
+exit "$rc"`);
 stub('sudo', 'w=""; while [ $# -gt 0 ]; do case "$1" in -u) w=$2; shift 2 ;; -E) shift ;; *) break ;; esac; done; if [ "$w" = wind ] && [ -n "$FAKE_WIND_UNREADABLE" ]; then for a; do case "$a" in *"$FAKE_WIND_UNREADABLE") echo "Permission denied" >&2; exit 1 ;; esac; done; fi; exec "$@"');
 stub('chown', 'exit 0');
 stub('sleep', 'exit 0');
 stub('journalctl', 'echo "(journal)"');
 stub('install', 'a=""; while [ $# -gt 0 ]; do case "$1" in -o|-g) shift 2 ;; *) a="$a \\"$1\\""; shift ;; esac; done; eval exec /usr/bin/install $a');
-// Distinct stamps, as installs minutes apart would have.
-stub('date', 'case "$*" in *%S*) n=$(($(cat "$STATE/date" 2>/dev/null || echo 0) + 1)); echo "$n" > "$STATE/date"; printf "20990101%06d\\n" "$n" ;; *) exec /bin/date "$@" ;; esac');
+// Distinct stamps by default. The retry fixtures deliberately share a clock second.
+stub('date', `if [ "$*" = '-u +%Y%m%dT%H%M%SZ' ] && [ -n "$FAKE_RESTORE_STAMP" ]; then
+  printf '%s\\n' "$FAKE_RESTORE_STAMP"; exit 0
+fi
+case "$*" in *%S*) n=$(($(cat "$STATE/date" 2>/dev/null || echo 0) + 1)); echo "$n" > "$STATE/date"; printf "20990101%06d\\n" "$n" ;; *) exec /bin/date "$@" ;; esac`);
 
 const script = (name, swaps) => {
   let text = readFileSync(new URL(`../infra/vm-israel/${name}`, import.meta.url), 'utf8');
@@ -101,6 +135,14 @@ const script = (name, swaps) => {
 };
 const nodeSwap = ['/opt/node/bin/node', node];
 const hold = join(root, 'wind-ingress-hold');
+const swapMarker = join(root, 'wind-db-swap');
+const provisionText = readFileSync(new URL('../infra/vm-israel/provision.sh', import.meta.url), 'utf8');
+const restoreGuard = /^ExecStartPre=:\/bin\/sh -c '([^'\n]+Wind restore: Firebase email links must be off[^'\n]+)'$/m
+  .exec(provisionText)?.[1].replaceAll('/etc/wind-ingress-hold', hold);
+assert.ok(restoreGuard, 'the unit checks the effective Firebase switches without pre-expanding shell variables');
+const swapGuard = [...provisionText.matchAll(/^ExecStartPre=(\/usr\/bin\/test ! -e \/etc\/wind-db-swap)$/gm)];
+assert.equal(swapGuard.length, 2, 'the API and the backup service share the swap check');
+const swapCheck = swapGuard[0][1].replace('/etc/wind-db-swap', swapMarker);
 const configPath = join(root, 'wind-api.env'), processEnvPath = join(root, 'process-env');
 const configSwap = ['API_ENV=/etc/wind-api.env', `API_ENV=${configPath}`];
 const processSwap = ['"/proc/$pid/environ"', `"${processEnvPath}"`];
@@ -108,7 +150,7 @@ const install = script('install-release.sh', [nodeSwap,
   ['RELEASES=/opt/wind-releases; LIVE=/opt/windapi; DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold', `RELEASES=${releases}; LIVE=${live}; DATA=${data}; DB=${db}; HOLD=${hold}`],
   configSwap, processSwap, ["prune /opt 'windapi-old-*'", `prune ${opt} 'windapi-old-*'`]]);
 const backup = script('backup.sh', [nodeSwap, ['DIR=/data/backups; DB=/data/wind.db', `DIR=${data}/backups; DB=${db}`], ['exec 8</data', `exec 8<${data}`]]);
-const restore = script('restore.sh', [nodeSwap, configSwap, processSwap, ['DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold', `DATA=${data}; DB=${db}; HOLD=${hold}`]]);
+const restore = script('restore.sh', [nodeSwap, configSwap, processSwap, ['DATA=/data; DB=/data/wind.db; HOLD=/etc/wind-ingress-hold; SWAP=/etc/wind-db-swap', `DATA=${data}; DB=${db}; HOLD=${hold}; SWAP=${swapMarker}`]]);
 const sqliteConfig = [
   'SUPPORT_CONTACT=+972597127547',
   'WIND_PUSH_SUBJECT=mailto:fixture@example.invalid',
@@ -128,16 +170,27 @@ writeFileSync(configPath, sqliteConfig);
 writeFileSync(processEnvPath, sqliteProcessEnv);
 
 const dryEnv = join(root, 'dry-env.json');
-const env = extra => ({ PATH: `${bin}:${process.env.PATH}`, CALLS: calls, DRY_ENV_OUT: dryEnv, STATE: state, NODE: node, HELPER: helper, DB: db, LIVE: live, HOLD: hold, PROCESS_ENV: processEnvPath, ...extra });
+const env = extra => ({ PATH: `${bin}:${process.env.PATH}`, CALLS: calls, DRY_ENV_OUT: dryEnv, STATE: state, NODE: node, HELPER: helper, DB: db, LIVE: live, HOLD: hold, PROCESS_ENV: processEnvPath, RESTORE_GUARD: restoreGuard, DB_SWAP_GUARD: swapCheck, ...extra });
 const run = (file, args, extra = {}) => {
   rmSync(calls, { force: true }); rmSync(dryEnv, { force: true });
   const r = spawnSync('bash', [file, ...args], { encoding: 'utf8', env: env(extra) });
-  return { status: r.status, err: r.stderr + r.stdout, calls: existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n') : [] };
+  return { status: r.status, signal: r.signal, err: r.stderr + r.stdout, calls: existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n') : [] };
 };
 const unit = name => existsSync(join(state, name)) ? readFileSync(join(state, name), 'utf8').trim() : 'inactive';
 const setUnits = () => { writeFileSync(join(state, 'caddy'), 'active\n'); writeFileSync(join(state, 'wind-api'), 'active\n'); };
 const notes = file => { const d = new DatabaseSync(file, { readOnly: true }); try { return d.prepare('SELECT note FROM orders ORDER BY id').all().map(r => r.note); } finally { d.close(); } };
 const count = (file, table) => { const d = new DatabaseSync(file, { readOnly: true }); try { return d.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n; } finally { d.close(); } };
+const recoverSnapshot = (main, wal) => {
+  const work = mkdtempSync(join(root, 'paired-wal-'));
+  writeFileSync(join(work, 'source.db'), readFileSync(main));
+  writeFileSync(join(work, 'source.db-wal'), readFileSync(wal));
+  const instructions = readFileSync(new URL('../docs/operations/restore.md', import.meta.url), 'utf8');
+  const vacuum = /--input-type=module - "\$work" <<'NODE'\n([\s\S]+?)\nNODE/.exec(instructions)?.[1];
+  assert.ok(vacuum, 'the runbook includes the WAL-aware snapshot command');
+  const snapshot = spawnSync(node, ['--disable-warning=ExperimentalWarning', '--input-type=module', '-', work], { input: vacuum, encoding: 'utf8' });
+  assert.equal(snapshot.status, 0, snapshot.stderr);
+  return join(work, 'recovered.db');
+};
 const freshDb = file => {
   rmSync(file, { force: true });
   const d = new DatabaseSync(file);
@@ -275,6 +328,20 @@ ${r.err}`);
   assert.equal(active(), first);
   assert.deepEqual([unit('caddy'), unit('wind-api'), existsSync(hold)], ['active', 'active', false]);
 
+  // An untrappable interruption at the pointer switch leaves the identity of both releases and the verified checkpoint.
+  setUnits();
+  r = run(install, release(), { FAKE_POWER_LOSS_AFTER_POINT: '1', TMPDIR: root });
+  assert.equal(r.signal, 'SIGKILL', r.err);
+  assert.notEqual(active(), first, 'the pointer switched before the interruption');
+  assert.deepEqual([unit('caddy'), unit('wind-api')], ['inactive', 'inactive']);
+  const [installState, previousRelease, candidateRelease, checkpointRecord] = readFileSync(hold, 'utf8').trimEnd().split('\n');
+  assert.match(installState, /^install \d+ switching /);
+  assert.equal(previousRelease, `previous release: ${first}`);
+  assert.equal(candidateRelease, `candidate release: ${active()}`);
+  assert.ok(checkpointRecord.startsWith(`checkpoint: ${join(data, 'backups', 'pre-install-')}`));
+  assert.deepEqual(notes(checkpointRecord.slice('checkpoint: '.length)), notes(db), 'the recorded checkpoint is usable');
+  unlinkSync(live); symlinkSync(first, live); rmSync(hold); setUnits();
+
   // 2g. Without provision.sh's two unit checks nothing runs.
   setUnits();
   for (const file of [install, restore]) {
@@ -301,7 +368,6 @@ ${r.err}`);
     const rootWrites = segments.filter(s => write.test(s));
     assert.deepEqual(rootWrites, [], `${name}: root writes under /data`);
   }
-  const provisionText = readFileSync(new URL('../infra/vm-israel/provision.sh', import.meta.url), 'utf8');
   assert.ok(/sudo -u wind touch -- \/data\/\.wind-db-expected/.test(provisionText));
   // The strings the preflight looks for are the ones provision.sh puts in the two units.
   const unitText = marker => provisionText.slice(provisionText.indexOf(marker), provisionText.indexOf('\nEOF', provisionText.indexOf(marker)));
@@ -408,31 +474,158 @@ ${r.err}`);
   assert.equal(statSync(marker).mtimeMs, putAt, 'a failed upload leaves the existing marker as it was');
   assert.equal(run(backup, [], { WIND_BACKUP_ACCOUNT: 'bad/name' }).status, 1, 'an invalid account name is refused');
 
+  // Recover an acknowledged write from a split WAL before handing a self-contained snapshot to restore.sh.
+  {
+    const raw = join(root, 'raw-wal.db'); freshDb(raw);
+    const writer = new DatabaseSync(raw);
+    try {
+      writer.exec("PRAGMA wal_autocheckpoint = 0; INSERT INTO orders (note) VALUES ('committed in WAL')");
+      assert.ok(statSync(`${raw}-wal`).size > 0, 'the committed write needs its WAL');
+      r = run(restore, [raw]);
+      assert.equal(r.status, 1, r.err);
+      assert.match(r.err, /restore input has a SQLite journal/);
+      assert.ok(!r.calls.some(c => /systemctl stop/.test(c)));
+
+      const displaced = join(data, 'wind.db.before-restore-wal-fixture');
+      writeFileSync(displaced, readFileSync(raw));
+      assert.deepEqual(notes(displaced), ['first'], 'the displaced main file can be read without the committed WAL write');
+      r = run(restore, [displaced]);
+      assert.equal(r.status, 1, r.err);
+      assert.match(r.err, /make a self-contained SQLite snapshot/);
+      assert.ok(!r.calls.some(c => /systemctl stop/.test(c)));
+
+      const recovered = recoverSnapshot(displaced, `${raw}-wal`);
+      assert.deepEqual(notes(recovered), ['first', 'committed in WAL']);
+      setUnits();
+      r = run(restore, [recovered]);
+      assert.equal(r.status, 0, r.err);
+      assert.deepEqual(notes(db), ['first', 'committed in WAL']);
+      assert.match(readFileSync(hold, 'utf8'), /^displaced database: .+\.before-restore-/m);
+      assert.match(readFileSync(hold, 'utf8'), /^failed replacement: .+\.restore-failed-/m);
+      assert.equal(unit('caddy'), 'inactive');
+      rmSync(hold);
+    } finally { writer.close(); }
+  }
+
   // 8. Restore: the copy loses every session, Caddy stays closed afterwards, and the replaced file is kept.
   setUnits(); freshDb(db);
   const copy = join(root, 'copy.db'); freshDb(copy);
-  { const d = new DatabaseSync(copy); d.exec("INSERT INTO orders (note) VALUES ('from-copy'); INSERT INTO push_subscriptions DEFAULT VALUES; INSERT INTO native_push_tokens DEFAULT VALUES;"); d.close(); }
+  {
+    const d = new DatabaseSync(copy);
+    d.exec(`INSERT INTO orders (note) VALUES ('from-copy'); INSERT INTO push_subscriptions DEFAULT VALUES; INSERT INTO native_push_tokens DEFAULT VALUES;
+      CREATE TABLE email_codes (user_id INTEGER PRIMARY KEY); INSERT INTO email_codes VALUES (1);
+      CREATE TABLE firebase_resets (user_id INTEGER PRIMARY KEY); INSERT INTO firebase_resets VALUES (1);
+      CREATE TABLE firebase_email_attempts (uid TEXT PRIMARY KEY, state TEXT NOT NULL, cleanup_at INTEGER NOT NULL, retry_until INTEGER NOT NULL);
+      INSERT INTO firebase_email_attempts VALUES ('1', 'ready', 100, 0), ('2', 'sending', 200, 400), ('3', 'queued', 300, 400),
+        ('4', 'reconcile', 350, 0), ('5', 'retired', 500, 600);`);
+    d.close();
+  }
   r = run(restore, [copy]);
   assert.equal(r.status, 0, r.err);
   assert.deepEqual(notes(db), ['first', 'from-copy']);
   assert.deepEqual([count(db, 'sessions'), count(db, 'push_subscriptions'), count(db, 'native_push_tokens')], [0, 0, 0], 'no session or push registration survives a restore');
+  assert.equal(count(db, 'email_codes'), 0, 'transient email codes are invalidated');
+  assert.equal(count(db, 'firebase_resets'), 0, 'legacy reset requests are invalidated');
+  {
+    const d = new DatabaseSync(db, { readOnly: true });
+    const attempts = d.prepare('SELECT uid, state, cleanup_at, retry_until FROM firebase_email_attempts ORDER BY uid').all();
+    assert.deepEqual(attempts.map(r => [r.uid, r.state, r.cleanup_at, r.retry_until]), [
+      ['1', 'retired', 0, 0], ['2', 'retired', 200, 400], ['3', 'retired', 0, 0], ['4', 'reconcile', 350, 0], ['5', 'retired', 500, 600],
+    ],
+      'restored reset links are retired and the provider cleanup journal is preserved');
+    d.close();
+  }
   assert.match(readFileSync(hold, 'utf8'), /re-apply later blocks/, 'the reconciliation hold persists (a reboot stays closed)');
+  assert.match(readFileSync(hold, 'utf8'), /verified email changes/);
   assert.match(run(install, release()).err, /ingress hold is in place/, 'and no install reopens it');
   assert.equal(unit('caddy'), 'inactive', 'Caddy stays stopped until later blocks are re-applied');
   assert.equal(unit('wind-api'), 'active');
   assert.ok(readdirSync(data).some(n => n.startsWith('wind.db.before-restore-')));
-  setUnits();
+  rmSync(hold);
+  setUnits(); freshDb(db);
   r = run(restore, [copy, '--open']);
   assert.equal(r.status, 0, r.err);
-  assert.deepEqual([unit('caddy'), existsSync(hold)], ['active', false], '--open lifts the hold');
+  assert.deepEqual([unit('caddy'), existsSync(hold)], ['inactive', true], '--open holds ingress for a snapshot with cleanup records');
+  rmSync(hold);
 
   assert.ok(existsSync(join(data, '.wind-db-expected')), 'after a restore the API refuses to start without a database');
 
   // 8b. A relative path is resolved from the operator's directory, not from / (Haiku C1).
+  const cleanCopy = join(root, 'copy-clean.db'); freshDb(cleanCopy);
+  { const d = new DatabaseSync(cleanCopy); d.exec("INSERT INTO orders (note) VALUES ('from-copy');"); d.close(); }
   setUnits();
-  r = spawnSync('bash', [restore, 'copy.db', '--open'], { encoding: 'utf8', cwd: root, env: env({}) });
+  r = run(restore, [cleanCopy, '--open']);
+  assert.equal(r.status, 0, r.err);
+  assert.match(r.err, /displaced database needs email reconciliation/);
+  assert.deepEqual([unit('caddy'), existsSync(hold)], ['inactive', true], '--open holds ingress for the displaced journal');
+
+  const earlierHold = 'install recovery pending\n';
+  writeFileSync(hold, earlierHold);
+  r = run(restore, [cleanCopy, '--open']);
+  assert.equal(r.status, 0, r.err);
+  assert.deepEqual([unit('caddy'), existsSync(hold)], ['inactive', true], '--open preserves an earlier hold with two clean databases');
+  assert.ok(readFileSync(hold, 'utf8').endsWith(earlierHold));
+  rmSync(hold);
+
+  setUnits();
+  r = spawnSync('bash', [restore, 'copy-clean.db', '--open'], { encoding: 'utf8', cwd: root, env: env({}) });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(notes(db), ['first', 'from-copy']);
+  assert.deepEqual([unit('caddy'), existsSync(hold)], ['active', false], 'the clean snapshot can reopen when no earlier hold exists');
+  for (const suffix of ['', '-wal', '-shm']) rmSync(db + suffix, { force: true });
+  writeFileSync(join(state, 'wind-api'), 'inactive\n');
+  assert.ok(existsSync(join(data, '.wind-db-expected')));
+  r = run(restore, [cleanCopy, '--open']);
+  assert.equal(r.status, 0, r.err);
+  assert.match(r.err, /previously initialized database is missing/);
+  assert.deepEqual(notes(db), ['first', 'from-copy']);
+  assert.deepEqual([unit('caddy'), existsSync(hold)], ['inactive', true], '--open keeps ingress closed when the initialized database is unavailable');
+  rmSync(hold);
+  {
+    const config = readFileSync(configPath, 'utf8');
+    writeFileSync(configPath, config + '\nWIND_FIREBASE_EMAIL_LINKS=1\n');
+    try {
+      const blockedRestore = run(restore, [copy]);
+      assert.equal(blockedRestore.status, 1);
+      assert.match(blockedRestore.err, /unset both Firebase email link switches/);
+      assert.ok(!blockedRestore.calls.some(c => /systemctl stop/.test(c)));
+    } finally { writeFileSync(configPath, config); }
+  }
+  {
+    writeFileSync(join(state, 'wind-api'), 'inactive\n');
+    const before = statSync(db).ino;
+    const blockedRestore = run(restore, [copy], { FAKE_UNIT_ENVIRONMENT: 'NODE_ENV=production WIND_FIREBASE_RESET_LINKS=1' });
+    assert.equal(blockedRestore.status, 1, blockedRestore.err);
+    assert.match(blockedRestore.err, /unset both Firebase email link switches in the loaded API unit/);
+    assert.ok(!blockedRestore.calls.some(c => /systemctl stop/.test(c)));
+    assert.equal(statSync(db).ino, before, 'a stopped API with an enabled override is rejected before replacing the database');
+    const extraEnvironment = join(root, 'extra-api.env');
+    writeFileSync(extraEnvironment, 'WIND_FIREBASE_EMAIL_LINKS="1"\n');
+    const blockedFile = run(restore, [copy], { FAKE_UNIT_ENV_FILES: `${configPath} (ignore_errors=no)\n${extraEnvironment} (ignore_errors=yes)` });
+    assert.equal(blockedFile.status, 1, blockedFile.err);
+    assert.match(blockedFile.err, /unset both Firebase email link switches in the loaded API environment files/);
+    assert.ok(!blockedFile.calls.some(c => /systemctl stop/.test(c)));
+    assert.equal(statSync(db).ino, before, 'the service environment-file override is also checked before the swap');
+    const missingGuard = run(restore, [copy], { FAKE_NO_GUARDS: 'restore-email' });
+    assert.equal(missingGuard.status, 1, missingGuard.err);
+    assert.match(missingGuard.err, /API restore email check is not loaded/);
+    assert.ok(!missingGuard.calls.some(c => /systemctl stop/.test(c)));
+    for (const guard of ['api', 'backup']) {
+      const missingSwapGuard = run(restore, [copy], { FAKE_NO_GUARDS: `${guard}-swap` });
+      assert.equal(missingSwapGuard.status, 1, missingSwapGuard.err);
+      assert.match(missingSwapGuard.err, /swap check is not loaded/);
+      assert.ok(!missingSwapGuard.calls.some(c => /systemctl stop/.test(c)));
+    }
+  }
+  {
+    setUnits(); freshDb(db); writeFileSync(hold, earlierHold);
+    const blockedStart = run(restore, [cleanCopy, '--open'], { FAKE_START_RESET_LINKS: '1' });
+    assert.equal(blockedStart.status, 2, blockedStart.err);
+    assert.match(blockedStart.err, /Wind restore: Firebase email links must be off/);
+    assert.match(readFileSync(hold, 'utf8'), /^restore of /, 'a failed API launch leaves a restore hold through reboot');
+    assert.deepEqual([unit('wind-api'), unit('caddy'), notes(db)], ['inactive', 'inactive', ['first']]);
+    rmSync(hold);
+  }
   // A copy the service user cannot stage is refused before anything stops (the stub's wind user cannot read *.unreadable).
   setUnits();
   const unreadable = join(root, 'x.unreadable'); writeFileSync(unreadable, 'x');
@@ -464,7 +657,32 @@ ${r.err}`);
   assert.equal(count(db, 'sessions'), 1, 'the previous database is back as it was');
   assert.deepEqual([unit('caddy'), unit('wind-api')], ['active', 'active']);
   assert.match(r.err, /previous database is live again/);
+  const timerCheck = r.calls.indexOf('systemctl show -p NextElapseUSecRealtime --value wind-backup.timer');
+  assert.ok(timerCheck >= 0 && timerCheck < r.calls.indexOf('systemctl start caddy'), 'the timer is confirmed before Caddy starts');
   assert.ok(!existsSync(hold));
+
+  for (const failure of [{ FAKE_TIMER_START_FAIL: '1' }, { FAKE_TIMER_UNSCHEDULED: '1' }]) {
+    setUnits(); freshDb(db);
+    r = run(restore, [poisoned], failure);
+    assert.equal(r.status, 2, r.err);
+    assert.match(r.err, /previous database is ready but the backup timer has no confirmed run/);
+    assert.deepEqual(notes(db), ['first']);
+    assert.deepEqual([unit('wind-api'), unit('caddy'), existsSync(hold), existsSync(swapMarker)], ['active', 'inactive', true, false]);
+    assert.ok(!r.calls.includes('systemctl start caddy'), 'the backup failure keeps ingress held');
+    rmSync(hold);
+  }
+  setUnits(); freshDb(db);
+  r = run(restore, [poisoned], { FAKE_TIMER_DISPATCHED: '1' });
+  assert.equal(r.status, 1, r.err);
+  assert.match(r.err, /backup timer has dispatched its next run/);
+  assert.deepEqual([unit('caddy'), existsSync(hold)], ['active', false]);
+  setUnits(); freshDb(db);
+  r = run(restore, [cleanCopy, '--open'], { FAKE_TIMER_START_FAIL: '1' });
+  assert.equal(r.status, 2, r.err);
+  assert.match(r.err, /restored database is ready but the backup timer has no confirmed run/);
+  assert.deepEqual(notes(db), ['first', 'from-copy'], 'the validated restored copy stays in place');
+  assert.deepEqual([unit('wind-api'), unit('caddy'), existsSync(hold), existsSync(swapMarker)], ['active', 'inactive', true, false]);
+  rmSync(hold);
 
   // Readiness must come from the service on the expected database before the hold is released.
   for (const [file, args] of [[install, release()], [restore, [copy, '--open']]]) {
@@ -512,6 +730,88 @@ ${r.err}`);
   assert.deepEqual(notes(db), ['first'], 'the original database is live again');
   assert.equal(count(db, 'sessions'), 1);
   assert.deepEqual([unit('caddy'), unit('wind-api'), existsSync(hold)], ['active', 'active', false]);
+
+  {
+    const fixedClock = { FAKE_RESTORE_STAMP: '20990101T120000Z' };
+    const original = join(root, 'rollback-wal.db'); freshDb(original);
+    const walOnlyOrder = 'acknowledged before rollback';
+    let originalMain, originalWal;
+    const writer = new DatabaseSync(original);
+    try {
+      writer.exec('PRAGMA wal_autocheckpoint = 0');
+      writer.prepare('INSERT INTO orders (note) VALUES (?)').run(walOnlyOrder);
+      originalMain = readFileSync(original);
+      originalWal = readFileSync(`${original}-wal`);
+    } finally { writer.close(); }
+    assert.ok(originalWal.length > 0);
+    const stageOriginal = () => {
+      setUnits();
+      for (const suffix of ['', '-wal', '-shm']) rmSync(db + suffix, { force: true });
+      writeFileSync(db, originalMain);
+      writeFileSync(`${db}-wal`, originalWal);
+    };
+    const displacedFiles = () => [...readFileSync(hold, 'utf8').matchAll(/^displaced database: (.+)$/gm)].map(match => match[1]);
+
+    // The first attempt parks both originals. A second attempt in the same second must park its files elsewhere.
+    stageOriginal();
+    r = run(restore, [cleanCopy], { ...fixedClock, FAKE_POWER_LOSS_AFTER_REPLACEMENT: '1' });
+    assert.equal(r.signal, 'SIGKILL', r.err);
+    assert.ok(existsSync(swapMarker) && existsSync(db), 'the replacement reached the live path');
+    const [firstArchive] = displacedFiles();
+    assert.deepEqual(readFileSync(firstArchive), originalMain);
+    assert.deepEqual(readFileSync(`${firstArchive}-wal`), originalWal);
+    r = run(restore, [cleanCopy], { ...fixedClock, FAKE_POWER_LOSS_AFTER_PARK_MAIN: '1' });
+    assert.equal(r.signal, 'SIGKILL', r.err);
+    const [secondArchive, retainedArchive] = displacedFiles();
+    assert.equal(retainedArchive, firstArchive);
+    assert.notEqual(secondArchive, firstArchive);
+    for (const path of [firstArchive, secondArchive]) assert.ok(path.startsWith(`${db}.before-restore-${fixedClock.FAKE_RESTORE_STAMP}`));
+    const replacements = [...readFileSync(hold, 'utf8').matchAll(/^failed replacement: (.+)$/gm)].map(match => match[1]);
+    assert.equal(new Set(replacements).size, 2, 'both failed-replacement paths are unique as well');
+    assert.deepEqual(readFileSync(firstArchive), originalMain, 'the retry leaves the first main intact');
+    assert.deepEqual(readFileSync(`${firstArchive}-wal`), originalWal, 'the retry leaves the first WAL intact');
+    assert.deepEqual(notes(secondArchive), ['first', 'from-copy']);
+    const paired = recoverSnapshot(firstArchive, `${firstArchive}-wal`);
+    assert.deepEqual(notes(paired), ['first', walOnlyOrder]);
+    r = run(restore, [paired]);
+    assert.equal(r.status, 0, r.err);
+    assert.deepEqual(notes(db), ['first', walOnlyOrder]);
+    assert.deepEqual([existsSync(swapMarker), existsSync(hold)], [false, true]);
+    rmSync(hold);
+
+    // The first rollback returns the original main before its WAL. The interrupted retry parks only that main again.
+    stageOriginal();
+    r = run(restore, [poisoned], { ...fixedClock, FAKE_POWER_LOSS_AFTER_RESTORE_MAIN: '1' });
+    assert.equal(r.signal, 'SIGKILL', r.err);
+    assert.ok(existsSync(swapMarker) && existsSync(db) && !existsSync(`${db}-wal`));
+    const [displaced] = displacedFiles();
+    assert.ok(displaced && existsSync(`${displaced}-wal`));
+    for (const service of ['wind-api', 'wind-backup.service']) {
+      const boot = spawnSync(join(bin, 'systemctl'), ['start', service], { encoding: 'utf8', env: env({}) });
+      assert.equal(boot.status, 1, boot.stderr);
+      assert.equal(unit(service), 'inactive');
+    }
+    assert.ok(!existsSync(`${db}-wal`), 'boot did not create a competing WAL');
+    r = run(restore, [poisoned], { ...fixedClock, FAKE_POWER_LOSS_AFTER_PARK_MAIN: '1' });
+    assert.equal(r.signal, 'SIGKILL', r.err);
+    const [displacedMain, displacedWalBase] = displacedFiles();
+    assert.equal(displacedWalBase, displaced);
+    assert.notEqual(displacedMain, displacedWalBase);
+    assert.ok(!existsSync(db) && !existsSync(`${displacedMain}-wal`), 'the second interruption leaves the matching files under different names');
+    assert.deepEqual(readFileSync(displacedMain), originalMain);
+    assert.deepEqual(readFileSync(`${displacedWalBase}-wal`), originalWal);
+    const recovered = recoverSnapshot(displacedMain, `${displacedWalBase}-wal`);
+    assert.deepEqual(notes(recovered), ['first', walOnlyOrder]);
+    r = run(restore, [poisoned]);
+    assert.equal(r.status, 2, r.err);
+    assert.match(r.err, /earlier database swap still needs recovery/);
+    assert.deepEqual([existsSync(hold), existsSync(swapMarker), unit('wind-api'), unit('caddy')], [true, true, 'inactive', 'inactive']);
+    r = run(restore, [recovered, '--open']);
+    assert.equal(r.status, 0, r.err);
+    assert.deepEqual(notes(db), ['first', walOnlyOrder]);
+    assert.deepEqual([existsSync(hold), existsSync(swapMarker), unit('wind-api'), unit('caddy')], [true, false, 'active', 'inactive']);
+    rmSync(hold);
+  }
   // 12. Road routing: the container is reachable from this host only, read-only and unprivileged, on the same pinned image as
   //     the graph build; the API is pointed at it only once a graph exists; a re-run restarts it only when something changed.
   {

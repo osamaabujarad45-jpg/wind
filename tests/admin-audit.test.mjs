@@ -82,9 +82,9 @@ try {
 
   // Self-service recovery uses a verified email and a real one-use reset code.
   const recovered = await register();
-  await call('/me/email', { token: recovered.token, body: { email } });
-  await call('/me/email/code', { token: recovered.token, body: {} });
-  await call('/me/email/verify', { token: recovered.token, body: { code: await mailCode(1) } });
+  await call('/me/email', { token: recovered.token, body: { current: password, email } });
+  await call('/me/email/code', { token: recovered.token, body: { current: password } });
+  await call('/me/email/verify', { token: recovered.token, body: { current: password, code: await mailCode(1) } });
   subscribe(recovered);
   await call('/auth/reset/code', { body: { identifier: email } });
   await call('/auth/reset', { body: { identifier: email, code: await mailCode(2), password: 'Recovered-Audit-123' } });

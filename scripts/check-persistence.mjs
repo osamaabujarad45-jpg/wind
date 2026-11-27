@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const tests = ['journey.mjs', 'db-persistence.test.mjs', 'db-api.test.mjs', 'pg-dialect.mjs', 'pg-memo.mjs',
   'pg-contracts.mjs', 'pg-import.mjs', 'parcel-priority.mjs', 'pg-migration-lock.mjs', 'pg-claims.mjs', 'pg-cash.mjs', 'pg-shop.mjs', 'driver-multi-recipient.mjs', 'pg-offers.mjs', 'pg-jobs-pagination.mjs',
-  'pg-customer-rating.mjs', 'pg-email.mjs', 'pg-staff-roles.mjs', 'pg-support-inbox.mjs', 'pg-booking-races.mjs', 'database-logging.test.mjs',
+  'pg-customer-rating.mjs', 'pg-email.mjs', 'firebase-reset.test.mjs', 'pg-staff-roles.mjs', 'pg-support-inbox.mjs', 'pg-booking-races.mjs', 'database-logging.test.mjs',
   'cross-process-claims.test.mjs', 'runtime-dependencies.test.mjs',
   'commands.mjs', 'commands-sqlite.mjs', 'events.mjs', 'outbox.mjs',
   'coverage.mjs', 'capacity.mjs', 'eligibility.mjs', 'eligibility-legacy.mjs', 'eligibility-review.mjs', 'pg-live-commit.mjs',
@@ -16,8 +16,9 @@ const filter = process.argv.find(value => value.startsWith('--filter='))?.slice(
 const selected = tests.filter(name => !filter || name.includes(filter));
 if (!selected.length) throw new Error('No persistence tests match the filter');
 for (const test of selected) {
+  const args = test === 'firebase-reset.test.mjs' ? ['--postgres'] : [];
   const result = spawnSync(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning',
-    fileURLToPath(new URL(`../tests/${test}`, import.meta.url))], { stdio: 'inherit', windowsHide: true });
+    fileURLToPath(new URL(`../tests/${test}`, import.meta.url)), ...args], { stdio: 'inherit', windowsHide: true });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }

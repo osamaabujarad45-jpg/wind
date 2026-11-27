@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 import { merchantsTable, sqliteShopSchema } from './sqlite-shop.ts';
 type Row = Record<string, any>;
@@ -130,6 +131,7 @@ CREATE TABLE IF NOT EXISTS saved_places (
 -- One-time email codes (verify the address, reset a password, support identity check); the hash binds the address.
 CREATE TABLE IF NOT EXISTS firebase_resets (
   user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, requested_at INTEGER NOT NULL);
+${readFileSync(new URL('./email-recovery.sql', import.meta.url), 'utf8')}
 CREATE TABLE IF NOT EXISTS email_codes (
   user_id INTEGER NOT NULL REFERENCES users(id), purpose TEXT NOT NULL CHECK (purpose IN ('verify','reset','support')),
   code_hash TEXT NOT NULL, sent_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, tries INTEGER NOT NULL DEFAULT 0,

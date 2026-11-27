@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Wind</title>
+<main>
+  <h1 id="title">Wind</h1>
+  <p id="missing">Open the link in your Wind email to get your confirmation code.</p>
+  <div id="proof" hidden>
+    <label for="code" id="label">Copy this confirmation code into Wind</label>
+    <p><input id="code" readonly size="34" dir="ltr" autocomplete="off" spellcheck="false"></p>
+  </div>
+</main>
+<script>
+  const match = /^#(en|ar)\.([A-Za-z0-9_-]{32})$/.exec(location.hash);
+  if (match) {
+    history.replaceState(null, '', location.pathname);
+    if (match[1] === 'ar') {
+      document.documentElement.lang = 'ar';
+      document.documentElement.dir = 'rtl';
+      document.getElementById('title').textContent = 'ويند';
+      document.getElementById('label').textContent = 'انسخ رمز التأكيد هذا إلى ويند';
+    }
+    document.getElementById('missing').hidden = true;
+    document.getElementById('proof').hidden = false;
+    document.getElementById('code').value = match[2];
+  }
+</script>
+</html>

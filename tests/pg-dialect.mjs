@@ -18,7 +18,7 @@ try{
   const admin=await register(1);await promote(admin.user.phone);
   admin.token = (await call('/auth/login', { body: { phone: admin.user.phone, password: 'synthetic-secret' } })).token;
   const customer=await register(2,{email:'Case@wp03.example'});
-  await call('/me/email',{token:customer.token,body:{email:'Case@wp03.example'}});
+  await call('/me/email',{token:customer.token,body:{current:'synthetic-secret',email:'Case@wp03.example'}});
   const friend=await register(3);
   const driver=await register(4,{role:'driver',vehicle:'car'});
   const switcher=await register(5,{role:'driver',vehicle:'car'});
