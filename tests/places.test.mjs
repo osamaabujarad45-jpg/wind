@@ -88,11 +88,12 @@ try {
   const point = { latitude: 32.3102, longitude: 35.0299 };
   const stamp = Date.now();
   const history = db.prepare(`INSERT INTO orders(customer_id,service,shared,pickup_city,dropoff_city,pickup_note,dropoff_note,
-    dropoff_lat,dropoff_lng,contact,detail,option,loading_help,price,status,created_at,updated_at)
-    VALUES(?,?,0,'tulkarm','tulkarm','Pickup',?,?,?,'0599600001','Synthetic history','small',0,20,?,?,?)`);
-  const earlierShop = Number(history.run(customer.user.id, 'shop', 'Blue door', point.latitude, point.longitude, 'completed', stamp, stamp).lastInsertRowid);
-  for (let i = 0; i < HISTORY_PAGE + 1; i++) history.run(customer.user.id, 'parcel', 'Newer parcel', point.latitude, point.longitude, 'completed', stamp, stamp);
-  history.run(customer.user.id, 'shop', 'Cancelled shop', point.latitude, point.longitude, 'cancelled', stamp, stamp);
+    dropoff_lat,dropoff_lng,contact,detail,option,loading_help,price,status,driver_id,created_at,updated_at,completed_at)
+    VALUES(?,?,0,'tulkarm','tulkarm','Pickup',?,?,?,'0599600001','Synthetic history','small',0,20,?,?,?,?,?)`);
+  const completed = ['completed', driver.user.id, stamp, stamp, stamp];
+  const earlierShop = Number(history.run(customer.user.id, 'shop', 'Blue door', point.latitude, point.longitude, ...completed).lastInsertRowid);
+  for (let i = 0; i <= HISTORY_PAGE; i++) history.run(customer.user.id, 'parcel', 'Newer parcel', point.latitude, point.longitude, ...completed);
+  history.run(customer.user.id, 'shop', 'Cancelled shop', point.latitude, point.longitude, 'cancelled', null, stamp, stamp, null);
   assert.ok((await call('/orders', { token: t })).every(entry => entry.id !== earlierShop), 'the saved shop is beyond the first history page');
   assert.deepEqual((await call('/me/places?shopDelivery=1&town=tulkarm', { token: t })).shopDelivery,
     { id: earlierShop, city: 'tulkarm', note: 'Blue door', point });
