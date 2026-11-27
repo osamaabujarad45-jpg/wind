@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { CopyKey } from './copy';
 import { Appear, Button, Card, IconName, maxScale, Row, Txt, useCopy } from './ui';
 import { themedStyles, useTheme } from './theme-context';
+import { face } from './theme';
 
 // The server accepts only consentVersion 1; the consent text in copy.ts is version 1.
 export const PRESENCE_CONSENT_VERSION = 1;
@@ -126,11 +127,11 @@ export function BackgroundLocationAction({ onRequest }: { onRequest: () => Promi
 }
 
 const useStyles = themedStyles(palette => StyleSheet.create({
-  result: { marginTop: 10, fontSize: 13, fontWeight: '700', color: palette.ink },
+  result: { marginTop: 10, fontSize: 13, fontFamily: face.semibold, color: palette.ink },
   icon:{ width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   text: { flex: 1 },
   gap: { marginTop: 4 },
   actions: { gap: 8, marginTop: 12 },
   consent: { gap: 4, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: palette.line },
-  error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, fontWeight: '700', marginTop: 10, overflow: 'hidden' },
+  error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, fontFamily: face.semibold, marginTop: 10, overflow: 'hidden' },
 }));

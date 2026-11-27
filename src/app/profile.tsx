@@ -11,6 +11,7 @@ import { codeInput } from '../phone/flow';
 import { useSession, type Me } from '../session';
 import { Appear, Avatar, Badge, Button, Card, ErrorText, Field, FilterChips, fill, haptic, Header, Row, Screen, Txt, useCopy } from '../ui';
 import { themedStyles, useTheme } from '../theme-context';
+import { face } from '../theme';
 
 export default function Profile() {
   const { palette, tones } = useTheme();
@@ -90,7 +91,7 @@ export default function Profile() {
         </Card>
       </Appear>
       <ErrorText>{error}</ErrorText>
-      {saved && !changed && <Txt center variant="caption" style={{ color: palette.forest, fontWeight: '800', marginBottom: 10 }}>{c.nameSaved}</Txt>}
+      {saved && !changed && <Txt center variant="caption" style={{ color: palette.forest, fontFamily: face.semibold, marginBottom: 10 }}>{c.nameSaved}</Txt>}
       <Button title={c.save} icon="checkmark-outline" onPress={save} loading={busy} disabled={!changed} reason={c.profile_unchanged} />
     </Screen>
   </KeyboardAvoidingView>;

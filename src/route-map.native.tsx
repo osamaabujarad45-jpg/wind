@@ -10,7 +10,7 @@ import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-prev
 import { mapReadyMs } from './runtime-config';
 import { maxScale, useCopy } from './ui';
 import { themedStyles, useTheme } from './theme-context';
-import { palettes } from './theme';
+import { face, palettes } from './theme';
 // Google draws its map in the day style whatever the app theme, so what is drawn on the map keeps the Day colours.
 const onMap = palettes.day;
 
@@ -79,7 +79,7 @@ function AppleRouteMap(props: RouteMapProps) {
     <RoutePreview {...props} />
     <View style={[StyleSheet.absoluteFill, styles.cover]}>
       <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
-        <Text maxFontSizeMultiplier={maxScale}>{c.retry}</Text>
+        <Text maxFontSizeMultiplier={maxScale} style={{ fontFamily: face.medium }}>{c.retry}</Text>
       </Pressable>
     </View>
   </View>;
@@ -187,7 +187,7 @@ function ApplePin({ center, onChange, onGesture, onFail, onReady, height = 320 }
   }, [ready, attempt]);
   if (failed) return <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.mapWash }}>
     <Pressable onPress={() => { setReady(false); setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
-      <Text maxFontSizeMultiplier={maxScale}>{c.retry}</Text>
+      <Text maxFontSizeMultiplier={maxScale} style={{ fontFamily: face.medium }}>{c.retry}</Text>
     </Pressable>
   </View>;
   return <View style={{ height, width: '100%' }}>

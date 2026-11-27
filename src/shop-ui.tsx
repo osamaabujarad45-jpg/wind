@@ -11,6 +11,7 @@ import { newRequestId } from './booking';
 import { recoverDriverAction } from './driver-recovery';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScale, Row, Section, Txt, useCopy } from './ui';
 import { useTheme } from './theme-context';
+import { face } from './theme';
 
 const WEIGHT_STEP = 250; // grams
 
@@ -44,7 +45,7 @@ export function QtyControl({ item, qtyMilli, name, onChange }: { item: Pick<Merc
     </Pressable>;
   return <View style={{ flexDirection: row, alignItems: 'center', gap: 6 }}>
     {key(-step, qtyMilli - step < min ? 'trash-outline' : 'remove', qtyMilli - step < min ? c.shopRemove : c.stepperDecrease)}
-    <Text maxFontSizeMultiplier={maxScale} accessibilityLabel={`${name} ${shown}`} style={{ minWidth: 64, textAlign: 'center', fontWeight: '600', color: palette.ink, writingDirection: 'ltr' }}>{shown}</Text>
+    <Text maxFontSizeMultiplier={maxScale} accessibilityLabel={`${name} ${shown}`} style={{ minWidth: 64, textAlign: 'center', fontFamily: face.medium, color: palette.ink, writingDirection: 'ltr' }}>{shown}</Text>
     {key(step, 'add', c.stepperIncrease, qtyMilli + step > max)}
   </View>;
 }

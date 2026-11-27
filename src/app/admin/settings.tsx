@@ -7,6 +7,7 @@ import { useSession } from '../../session';
 import { Badge, Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, Header, IconButton, ListGroup, Loading, Row, Screen, Txt, useCopy } from '../../ui';
 import { router } from 'expo-router';
 import { useTheme } from '../../theme-context';
+import { face } from '../../theme';
 
 const groups: { title: 'pricing' | 'discounts' | 'plans' | 'cashLimits' | 'shopTimers'; keys: (keyof Settings)[] }[] = [
   { title: 'pricing', keys: ['parcelPrice', 'parcelLarge', 'pickupPayPerKm', 'rideBase', 'ridePerKm', 'freightBase', 'freightPerKm', 'freightLarge', 'loadingHelp', 'perMinute', 'nightExtra'] },
@@ -163,7 +164,7 @@ function AdminSettingsForm({ initial, payroll }: { initial: Settings; payroll: S
     </Card>)}
     <Promos />
     <ErrorText>{error}</ErrorText>
-    {!!message && <Txt center style={{ marginBottom: 10, fontWeight: '800' }}>{message}</Txt>}
+    {!!message && <Txt center style={{ marginBottom: 10, fontFamily: face.semibold }}>{message}</Txt>}
     <View style={{ gap: 10 }}>
       <Button title={c.save} icon="save-outline" onPress={save} loading={busy} />
       <Button title={c.language} icon="language-outline" variant="soft" onPress={() => setLanguage(language === 'ar' ? 'en' : 'ar')} />

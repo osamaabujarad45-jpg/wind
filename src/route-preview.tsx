@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { Point } from './model';
 import { maxScale, useCopy } from './ui';
 import { themedStyles } from './theme-context';
+import { face } from './theme';
 
 /** What the app's own chrome covers at the map's edges, in points: the camera and the pin keep clear of it. */
 export type MapInsets = { top?: number; bottom?: number; left?: number; right?: number };
@@ -75,6 +76,6 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   line: { position: 'absolute', height: 4, borderRadius: 2, backgroundColor: palette.forest },
   pickup: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },
   dropoff: { position: 'absolute', width: 16, height: 16, borderRadius: 4, backgroundColor: palette.clay, borderWidth: 3, borderColor: palette.card },
-  label: { position: 'absolute', width: 120, textAlign: 'center', fontSize: 12, fontWeight: '800', color: palette.ink },
-  diagram: { position: 'absolute', top: 8, left: 12, right: 12, textAlign: 'center', fontSize: 11, fontWeight: '600', color: palette.secondary },
+  label: { position: 'absolute', width: 120, textAlign: 'center', fontSize: 12, fontFamily: face.semibold, color: palette.ink },
+  diagram: { position: 'absolute', top: 8, left: 12, right: 12, textAlign: 'center', fontSize: 11, fontFamily: face.medium, color: palette.secondary },
 }));

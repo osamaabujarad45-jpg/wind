@@ -1,0 +1,194 @@
+{
+  "src/admin-assign.tsx": {
+    "explanations": 8,
+    "reasons": 2
+  },
+  "src/app/_layout.tsx": {
+    "explanations": 5,
+    "reasons": 0
+  },
+  "src/app/(customer)/index.tsx": {
+    "explanations": 3,
+    "reasons": 0
+  },
+  "src/app/admin/approvals.tsx": {
+    "explanations": 4,
+    "reasons": 0
+  },
+  "src/app/admin/cash.tsx": {
+    "explanations": 21,
+    "reasons": 11
+  },
+  "src/app/admin/index.tsx": {
+    "explanations": 3,
+    "reasons": 0
+  },
+  "src/app/admin/merchants.tsx": {
+    "explanations": 1,
+    "reasons": 3
+  },
+  "src/app/admin/orders.tsx": {
+    "explanations": 6,
+    "reasons": 2
+  },
+  "src/app/admin/settings.tsx": {
+    "explanations": 3,
+    "reasons": 1
+  },
+  "src/app/admin/subscriptions.tsx": {
+    "explanations": 1,
+    "reasons": 0
+  },
+  "src/app/admin/support.tsx": {
+    "explanations": 4,
+    "reasons": 0
+  },
+  "src/app/admin/users.tsx": {
+    "explanations": 11,
+    "reasons": 7
+  },
+  "src/app/auth.tsx": {
+    "explanations": 13,
+    "reasons": 4
+  },
+  "src/app/book.tsx": {
+    "explanations": 42,
+    "reasons": 3
+  },
+  "src/app/driver/earnings.tsx": {
+    "explanations": 6,
+    "reasons": 2
+  },
+  "src/app/driver/index.tsx": {
+    "explanations": 27,
+    "reasons": 1
+  },
+  "src/app/driver/trips.tsx": {
+    "explanations": 1,
+    "reasons": 0
+  },
+  "src/app/help.tsx": {
+    "explanations": 4,
+    "reasons": 0
+  },
+  "src/app/merchant/catalogue.tsx": {
+    "explanations": 4,
+    "reasons": 1
+  },
+  "src/app/merchant/index.tsx": {
+    "explanations": 9,
+    "reasons": 1
+  },
+  "src/app/merchant/order/[id].tsx": {
+    "explanations": 9,
+    "reasons": 2
+  },
+  "src/app/order/[id].tsx": {
+    "explanations": 93,
+    "reasons": 16
+  },
+  "src/app/profile.tsx": {
+    "explanations": 7,
+    "reasons": 8
+  },
+  "src/app/profiles.tsx": {
+    "explanations": 3,
+    "reasons": 0
+  },
+  "src/app/roads.tsx": {
+    "explanations": 9,
+    "reasons": 5
+  },
+  "src/app/shop/[id].tsx": {
+    "explanations": 2,
+    "reasons": 0
+  },
+  "src/app/shop/cart.tsx": {
+    "explanations": 11,
+    "reasons": 1
+  },
+  "src/app/shop/index.tsx": {
+    "explanations": 1,
+    "reasons": 0
+  },
+  "src/app/support.tsx": {
+    "explanations": 4,
+    "reasons": 0
+  },
+  "src/app/track/[token].tsx": {
+    "explanations": 4,
+    "reasons": 0
+  },
+  "src/app/welcome.tsx": {
+    "explanations": 1,
+    "reasons": 0
+  },
+  "src/destination-change.tsx": {
+    "explanations": 9,
+    "reasons": 7
+  },
+  "src/driver-offer-clock.tsx": {
+    "explanations": 2,
+    "reasons": 0
+  },
+  "src/driver-presence-card.tsx": {
+    "explanations": 11,
+    "reasons": 3
+  },
+  "src/driver-support-card.tsx": {
+    "explanations": 2,
+    "reasons": 0
+  },
+  "src/freight-details.tsx": {
+    "explanations": 10,
+    "reasons": 0
+  },
+  "src/google-map.native.tsx": {
+    "explanations": 1,
+    "reasons": 0
+  },
+  "src/merchant-settings.tsx": {
+    "explanations": 5,
+    "reasons": 1
+  },
+  "src/native-push-row.tsx": {
+    "explanations": 3,
+    "reasons": 0
+  },
+  "src/office-ui.tsx": {
+    "explanations": 7,
+    "reasons": 2
+  },
+  "src/parts.tsx": {
+    "explanations": 15,
+    "reasons": 2
+  },
+  "src/phone-card.tsx": {
+    "explanations": 13,
+    "reasons": 5
+  },
+  "src/phone-recovery.tsx": {
+    "explanations": 9,
+    "reasons": 3
+  },
+  "src/pin-sheet.tsx": {
+    "explanations": 9,
+    "reasons": 1
+  },
+  "src/road.tsx": {
+    "explanations": 1,
+    "reasons": 0
+  },
+  "src/route-map.native.tsx": {
+    "explanations": 1,
+    "reasons": 0
+  },
+  "src/shop-ui.tsx": {
+    "explanations": 16,
+    "reasons": 5
+  },
+  "src/trip-search.tsx": {
+    "explanations": 3,
+    "reasons": 0
+  }
+}

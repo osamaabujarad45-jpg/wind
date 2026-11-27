@@ -9,6 +9,7 @@ import { recoveryIssueBody, recoveryProveBody } from './phone/requests';
 import { Button, ErrorText, Field, fill, haptic, Press, Txt, useCopy } from './ui';
 import type { CopyKey } from './copy';
 import { useTheme } from './theme-context';
+import { face } from './theme';
 
 const RECOVERY_SLOT = 'wp06.phone.issue.recovery';
 
@@ -115,7 +116,7 @@ export function PhoneRecovery({ gate, onBack, onDone }: { gate: Gate; onBack: ()
           reason={!open ? c.wait_busy : sendReason} />
       </> : <>
         {/* Shown for every reply: the request is recorded, and whether a code goes out is not disclosed */}
-        <Txt variant="caption" style={{ marginBottom: 12, color: palette.olive, fontWeight: '700' }}>{c.phone_recovery_recorded}</Txt>
+        <Txt variant="caption" style={{ marginBottom: 12, color: palette.olive, fontFamily: face.semibold }}>{c.phone_recovery_recorded}</Txt>
         <Field label={c.phone_code_label} value={code} onChangeText={next => setCode(codeInput(next))} keyboardType="number-pad" autoComplete="one-time-code"
           maxLength={6} disabled={busy} />
         <Field label={c.newPassword} value={password} onChangeText={setPassword} hint={c.passwordMinimum} secureTextEntry maxLength={100}
@@ -128,7 +129,7 @@ export function PhoneRecovery({ gate, onBack, onDone }: { gate: Gate; onBack: ()
     </>}
     <ErrorText>{error}</ErrorText>
     <Press accessibilityRole="link" accessibilityLabel={c.backToSignIn} onPress={onBack}>
-      <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.backToSignIn}</Txt>
+      <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontFamily: face.semibold }}>{c.backToSignIn}</Txt>
     </Press>
   </>;
 }
