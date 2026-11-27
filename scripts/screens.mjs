@@ -503,9 +503,11 @@ for (const language of ['ar', 'en']) {
       for (const button of await page.getByRole('button', { name: copy[language].accept, exact: true }).all()) assert.equal(await button.isDisabled(), true);
       assert.ok(await page.getByText(copy[language].accept_go_online, { exact: true }).count() > 0);
     }
+    // A closed sheet's body is inert: includeHidden keeps this "never offered to a customer" check from passing for that reason alone.
     if (screen.id === 'order-parcel-live')
-      assert.equal(await page.getByRole('button', { name: copy[language].proofResetAction, exact: true }).count(), 0);
+      assert.equal(await page.getByRole('button', { name: copy[language].proofResetAction, exact: true, includeHidden: true }).count(), 0);
     if (screen.id === 'admin-order' && language === 'ar') {
+      await page.getByRole('button', { name: copy.ar.sheetExpand, exact: true }).first().click();
       const reset = page.getByRole('button', { name: copy.ar.proofResetAction, exact: true });
       assert.equal(await reset.isDisabled(), true);
       const reason = 'تم التواصل مع المستلم والتحقق منه';
