@@ -8,6 +8,7 @@ import { useApi } from '../../api';
 import { pickupErrorKey } from '../../customer-location';
 import { MapSheet, SIDE_SHEET, useSideSheet } from '../../map-sheet';
 import { activeStatuses, city, currentRank, isolate, isOpen, type Order, type Places, type Point, type Service } from '../../model';
+import { openProfiles, ProfileDot, profilesLabel, useProfileUpdates } from '../../profile-switch';
 import { bookingService, lastShopAddress, personalServices, rememberHomeDestination, type PersonalService } from '../../personal-services';
 import { pickupLocation, rememberedHere, rememberHere } from '../../pickup-location';
 import { SceneMap } from '../../scene-map';
@@ -36,6 +37,7 @@ export default function Home() {
   const otherActive = active.filter(o => o !== primary);
   const first = me?.user.name.split(' ')[0] ?? '';
   const greet = new Date().getHours() < 12 ? c.goodMorning : c.goodEvening;
+  const updates = useProfileUpdates();
 
   const enabled = me?.capabilities?.enabledServices ?? ['parcel'];
   const lines = personalServices.filter(line => bookingService(line, enabled));
@@ -150,13 +152,22 @@ export default function Home() {
       label={cars ? `${c.home}. ${nearbyLabel}` : c.home} />}
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={[styles.top, side && (rtl ? { left: SIDE_SHEET, right: 0 } : { right: SIDE_SHEET })]} onLayout={e => setTopBar(Math.ceil(e.nativeEvent.layout.height))}>
       <View style={[styles.topRow, { flexDirection: row }]} pointerEvents="box-none">
-        <View style={[styles.hello, shadow, { flexDirection: row }]}>
+        {/* with account profiles the identity chip is the switcher's shortcut (FLOWS §2.2) */}
+        {me?.accountProfile ? <Press accessibilityLabel={`${first}. ${profilesLabel(c, updates)}`} onPress={openProfiles}
+          style={[styles.hello, shadow, { flexDirection: row }]}>
+          <View><Logo size={30} decorative />{updates > 0 && <ProfileDot />}</View>
+          <View style={{ flexShrink: 1 }}>
+            <Txt variant="micro">{greet}</Txt>
+            <Txt variant="title">{first}</Txt>
+          </View>
+          <Ionicons name="chevron-down" size={14} color={palette.secondary} />
+        </Press> : <View style={[styles.hello, shadow, { flexDirection: row }]}>
           <Logo size={30} decorative />
           <View style={{ flexShrink: 1 }}>
             <Txt variant="micro">{greet}</Txt>
             <Txt variant="title">{first}</Txt>
           </View>
-        </View>
+        </View>}
         <Press accessibilityLabel={c.personalRoads} onPress={() => router.push('/roads')}
           style={[styles.roads, shadow, { flexDirection: row }]}>
           <Ionicons name="trail-sign-outline" size={iconSize.md} color={palette.olive} />
