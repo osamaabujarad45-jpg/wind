@@ -6,6 +6,7 @@ type Basket = { merchantId: number; lines: { itemId: number; qtyMilli: number; p
 export type ShopCheckout = { basket: string; requestId: string; commandExpiresAt: number };
 export const shopCheckoutLimits = [0, 0.1, 0.2] as const;
 export type ShopDelivery = { requestId: string; expectedGoodsAgorot: number; agreeLimit: (typeof shopCheckoutLimits)[number];
+  expectedDeliveryFeeAgorot?: number; expectedServiceFeeAgorot?: number;
   dropoffCity: CityId; dropoffPoint: Point; dropoffNote: string; contact: string };
 export const shopCheckoutKey = (userId: number) => 'shop.checkout.' + userId;
 // Identity and basket contents only. The checkout address and phone never enter this record.
@@ -29,6 +30,7 @@ export function readShopDelivery(raw: unknown, requestId: string): ShopDelivery 
   const delivery = raw as Partial<ShopDelivery>;
   const point = delivery.dropoffPoint;
   if (delivery.requestId !== requestId || !Number.isSafeInteger(delivery.expectedGoodsAgorot)
+    || [delivery.expectedDeliveryFeeAgorot, delivery.expectedServiceFeeAgorot].some(fee => fee !== undefined && (!Number.isSafeInteger(fee) || fee < 0))
     || delivery.agreeLimit === undefined || !shopCheckoutLimits.includes(delivery.agreeLimit)
     || !isCity(delivery.dropoffCity) || !point || !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)
     || typeof delivery.dropoffNote !== 'string' || delivery.dropoffNote.length < 3 || delivery.dropoffNote.length > 200

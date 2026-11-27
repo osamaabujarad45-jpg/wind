@@ -210,6 +210,7 @@ sudo -u wind env -i PATH=/opt/node/bin:/usr/bin:/bin \
   NODE_ENV=production PORT=4010 HOST=127.0.0.1 DB_PATH="$DRY/wind.db" TZ=Asia/Hebron WEB_ROOT="$REL/web" \
   SUPPORT_CONTACT="${SUPPORT_CONTACT:-}" WIND_PUSH_SUBJECT="${WIND_PUSH_SUBJECT:-}" \
   WIND_TRUST_PROXY="${WIND_TRUST_PROXY:-}" WIND_IDENTITY_MODE="${WIND_IDENTITY_MODE:-}" \
+  WIND_PROFILE_SWITCHING="${WIND_PROFILE_SWITCHING:-0}" WIND_MIN_CLIENT_BUILD="${WIND_MIN_CLIENT_BUILD:-}" \
   WIND_ENABLED_SERVICES="${WIND_ENABLED_SERVICES-parcel}" "${backup_age[@]}" \
   /opt/node/bin/node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning server/main.ts > "$WORK/dry.log" 2>&1 8<&- &
 PID=$! # sudo relays the kill to node

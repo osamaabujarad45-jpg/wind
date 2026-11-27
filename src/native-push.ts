@@ -8,7 +8,7 @@ import { router } from 'expo-router';
 import type { User } from './model';
 import { setNativePushRegistered } from './push-state.ts';
 
-type NavigationAccount = { user: Pick<User, 'id' | 'role' | 'status'> } | null;
+type NavigationAccount = { user: Pick<User, 'id' | 'role' | 'status' | 'accountMode' | 'modeRevision'> } | null;
 let syncNavigation: (ready: boolean, me: NavigationAccount) => void = () => {};
 export function syncNativePushNavigation(sessionReady: boolean, me: NavigationAccount) { syncNavigation(sessionReady, me); }
 
@@ -23,12 +23,19 @@ if (Platform.OS !== 'web') {
   type Tap = { identifier: string; url: string; kind?: string; recipient?: number };
   type PendingTarget = Tap & { credential: string | null };
   let readyRevision: number | undefined, account: NavigationAccount = null, pending: PendingTarget | null = null;
-  let lastOpened: string | undefined, received = 0;
+  let received = 0;
+  const recentTaps = new Set<string>();
+  const remember = (tap: Tap) => {
+    if (recentTaps.has(tap.identifier)) return false;
+    if (recentTaps.size >= 64) recentTaps.delete(recentTaps.values().next().value!);
+    recentTaps.add(tap.identifier);
+    return true;
+  };
   const startupRevision = apiSessionRevision();
   // Start this read before either Expo response path can resume after a new sign-in.
   const startupCredential = storage.get('token').catch(() => null);
   const allowed = (url: string, role: User['role']) => {
-    if (url === '/support' || /^\/(?:order|receipt)\/[1-9]\d*$/.test(url)) return true;
+    if (url === '/support' || /^\/profiles(?:\?notice=[A-Za-z0-9_-]{24})?$/.test(url) || /^\/(?:order|receipt)\/[1-9]\d*$/.test(url)) return true;
     if (role === 'driver') return /^\/driver(?:\/(?:earnings|account))?$/.test(url);
     if (role === 'admin') return /^\/admin(?:\/(?:users|orders|cash|subscriptions|merchants|support))?$/.test(url);
     return url === '/account' || url === '/merchant' || /^\/merchant\/order\/[1-9]\d*$/.test(url);
@@ -52,15 +59,33 @@ if (Platform.OS !== 'web') {
     const target = pending;
     pending = null; // a stale or refused tap is never retried under another account
     consume(target.identifier);
-    if (!target.credential || target.credential !== apiSessionCredential() || target.identifier === lastOpened
-      || !account || (target.recipient !== undefined && target.recipient !== account.user.id)
-      || !allowed(target.url, account.user.role)) return;
+    if (!target.credential || target.credential !== apiSessionCredential()
+      || !account || (target.recipient !== undefined && target.recipient !== account.user.id)) return;
     const user = account.user;
     // An approval tap can arrive before the foreground session refresh. The driver screen has its own pending gate.
     const pendingDriverTap = user.status === 'pending' && user.role === 'driver' && target.recipient === user.id
       && ((target.kind === 'support_reply' && target.url === '/support') || (target.kind === 'approved' && target.url === '/driver'));
     if (user.status !== 'active' && !pendingDriverTap) return;
-    lastOpened = target.identifier;
+    if (user.accountMode) {
+      const revision = apiSessionRevision();
+      const arrival = received;
+      void (async () => {
+        const current = (await api<{ user: NonNullable<NavigationAccount>['user'] }>('/me')).user;
+        if (current.id !== user.id || current.status !== 'active') return;
+        let url = allowed(target.url, current.role) ? target.url : '/profiles';
+        const detail = /^\/(?:order|receipt|merchant\/order)\/([1-9]\d*)$/.exec(url);
+        if (detail) {
+          if (url.startsWith('/merchant') && current.accountMode !== 'shop') url = '/profiles';
+          else try { await api(`/orders/${detail[1]}`); }
+          catch (error) { if (!['forbidden','not_found','mode_changed'].includes(errorCode(error))) return; url = '/profiles'; }
+        }
+        if (arrival !== received || readyRevision !== revision || revision !== apiSessionRevision()
+            || target.credential !== apiSessionCredential() || account?.user.id !== current.id || account.user.status !== 'active') return;
+        router.replace(url as never);
+      })().catch(() => {});
+      return;
+    }
+    if (!allowed(target.url, user.role)) return;
     router.replace(target.url as never);
   };
   const queue = (tap: Tap, credential: string | null) => {
@@ -70,7 +95,7 @@ if (Platform.OS !== 'web') {
   const initialArrival = received;
   Notifications.addNotificationResponseReceivedListener(response => {
     const tap = tapFrom(response);
-    if (!tap) return;
+    if (!tap || !remember(tap)) return;
     const arrival = ++received;
     const credential = apiSessionCredential();
     if (credential || readyRevision !== undefined || apiSessionRevision() !== startupRevision) {
@@ -82,7 +107,7 @@ if (Platform.OS !== 'web') {
   });
   void Promise.all([startupCredential, Notifications.getLastNotificationResponseAsync()]).then(([credential, response]) => {
     const tap = tapFrom(response);
-    if (tap && initialArrival === received) queue(tap, credential);
+    if (tap && initialArrival === received && remember(tap)) queue(tap, credential);
   }).catch(() => { /* No cold-start tap. */ });
   syncNavigation = (sessionReady, me) => {
     readyRevision = sessionReady ? apiSessionRevision() : undefined;

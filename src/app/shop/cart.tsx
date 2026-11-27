@@ -8,12 +8,12 @@ import { api, ApiError, errorCode, storage, useApi } from '../../api';
 import { apiSessionRevision, serverOffset } from '../../api-client';
 import { pendingOutcome } from '../../booking';
 import { basketIdentity, newShopCheckout, readShopCheckout, readShopDelivery, shopCheckoutBody, shopCheckoutKey, shopCheckoutLimits as limits, type ShopCheckout, type ShopDelivery } from '../../shop-checkout';
-import { city, crowKm, goodsCapFor, isCity, isolate, normalizePhone, SERVICE_KM, shopPolicies, type CityId, type Order, type Places, type Point, type ShopPolicy } from '../../model';
+import { city, crowKm, goodsCapFor, isCity, isolate, normalizePhone, SERVICE_KM, shopPolicies, type CityId, type Merchant, type MerchantItem, type Order, type Places, type Point, type ShopPolicy } from '../../model';
 import { readHomeDestination, shopAddressForOrder } from '../../personal-services';
 import PinSheet from '../../pin-sheet';
 import { recoveryStorage } from '../../recovery-storage';
 import { useSession } from '../../session';
-import { cartGoods, clearCart, setPolicy, setQuantity, storedCart, useCart } from '../../shop-cart';
+import { cartGoods, clearCart, refreshCart, setPolicy, setQuantity, storedCart, useCart } from '../../shop-cart';
 import { QtyControl } from '../../shop-ui';
 import { Button, Card, Choices, Empty, ErrorText, Field, fill, Header, Row, Screen, Section, Txt, useCopy } from '../../ui';
 import { useTheme } from '../../theme-context';
@@ -54,6 +54,7 @@ export default function ShopCart() {
   const [contact, setContact] = useState(defaultContact);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [cartNeedsRefresh, setCartNeedsRefresh] = useState(false);
   const key = accountId !== null ? shopCheckoutKey(accountId) : null;
   const [pending, setPending] = useState<ShopCheckout | null>(null);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
@@ -86,7 +87,10 @@ export default function ShopCart() {
       if (!recovering && e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 426, 429].includes(e.status)
         && code !== 'idempotency_conflict' && code !== 'booking_command_expired') {
         await clearCheckout(current);
-        if (current()) setPending(null);
+        if (current()) {
+          setPending(null);
+          setCartNeedsRefresh(code === 'price_changed' || code === 'unavailable_item');
+        }
       }
       if (current()) setError(c[`err_${code}` as keyof typeof c] ?? c.err_generic);
       return;
@@ -168,6 +172,7 @@ export default function ShopCart() {
     {key && <Button title={c.orders} variant="ghost" onPress={() => router.replace('/(customer)/orders')} />}
   </Screen>;
   if (!cart) return <Screen><Header title={c.shopCart} back /><Empty icon="basket-outline" title={c.shopCartEmpty}
+    body={error || undefined}
     action={<Button title={c.shopBrowse} onPress={() => router.replace({ pathname: '/shop', params: { destinationOrder } })} />} /></Screen>;
   const goods = cartGoods(cart);
   const short = Math.max(0, cart.minOrderAgorot - goods);
@@ -179,6 +184,19 @@ export default function ShopCart() {
     : note.trim().length < 3 ? c.shopNoteNeeded : !deliveryContact ? c.err_invalid_phone : '';
   const shopInfo = { merchantId: cart.merchantId, merchantName: cart.merchantName, city: cart.city, minOrderAgorot: cart.minOrderAgorot,
     deliveryFeeAgorot: cart.deliveryFeeAgorot, serviceFeeAgorot: cart.serviceFeeAgorot };
+  async function reviewCart() {
+    if (!cart || placing.current) return;
+    const revision = apiSessionRevision(), current = () => revision === apiSessionRevision();
+    placing.current = true;
+    setBusy(true);
+    try {
+      const latest = await api<{ merchant: Merchant; items: MerchantItem[] }>(`/shop/merchants/${cart.merchantId}`);
+      if (!await refreshCart(latest.merchant, latest.items, current) || !current()) return;
+      setCartNeedsRefresh(false);
+      setError(c.shopCartReviewUpdated);
+    } catch (e) { if (current()) setError(err(e)); }
+    finally { placing.current = false; setBusy(false); }
+  }
   async function place() {
     if (!key || !cart || !point || !deliveryContact || placing.current || reason) return;
     const dropoffCity = cart.city;
@@ -194,6 +212,7 @@ export default function ShopCart() {
         if (saved) { setPending(saved); return; }
         const command = newShopCheckout(cart);
         const delivery: ShopDelivery = { requestId: command.requestId, expectedGoodsAgorot: goods, agreeLimit: limit,
+          expectedDeliveryFeeAgorot: cart.deliveryFeeAgorot, expectedServiceFeeAgorot: cart.serviceFeeAgorot,
           dropoffCity, dropoffPoint: point, dropoffNote: note.trim(), contact: deliveryContact };
         await recoveryStorage.write('shop-checkout', delivery, deliveryRecoveryMs);
         if (!current()) return;
@@ -205,7 +224,9 @@ export default function ShopCart() {
     } catch { if (current()) setError(c.bookingStorageError); }
     finally { placing.current = false; setBusy(false); }
   }
-  const footer = <Button title={fill(c.shopPlace, { r: money((goods + fees) / 100) })} icon="checkmark" loading={busy} disabled={!!reason} reason={reason || undefined} onPress={place} />;
+  const footer = cartNeedsRefresh
+    ? <Button title={c.shopCartReview} loading={busy} onPress={reviewCart} />
+    : <Button title={fill(c.shopPlace, { r: money((goods + fees) / 100) })} icon="checkmark" loading={busy} disabled={!!reason} reason={reason || undefined} onPress={place} />;
   return <Screen footer={footer}>
     <Header title={c.shopCart} back subtitle={cart.merchantName} />
     {!!changes && <Card tone="warn"><Txt variant="label">{c.shopAgainChanged}</Txt><Txt style={{ marginTop: 4 }}>{changes}</Txt></Card>}

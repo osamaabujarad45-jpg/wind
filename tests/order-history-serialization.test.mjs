@@ -15,6 +15,7 @@ let handler, active = 0, maximum = 0, failId;
 let rows = Array.from({ length: 251 }, (_, index) => ({ id: 251 - index }));
 const context = {
   route: (_method, _path, callback) => { handler = callback; }, HISTORY_PAGE: 200, activeSql: "'assigned'", orderSelect: 'SELECT orders',
+  need: (user, ...roles) => assert.ok(roles.includes(user.role)),
   all: async () => rows,
   toOrder: async row => {
     active++; maximum = Math.max(maximum, active);

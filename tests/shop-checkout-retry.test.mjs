@@ -10,9 +10,10 @@ import * as checkout from '../src/shop-checkout.ts';
 import { themeModules } from './theme-mock.mjs';
 
 const c = copy.en;
-const cart = { merchantId: 1, merchantName: 'Market', city: 'ramallah', minOrderAgorot: 0,
+const seededCart = { merchantId: 1, merchantName: 'Market', city: 'ramallah', minOrderAgorot: 0,
   deliveryFeeAgorot: 800, serviceFeeAgorot: 0,
   lines: [{ itemId: 10, qtyMilli: 1000, policy: 'remove', unitAgorot: 2000, nameEn: 'Bread' }] };
+let cart = seededCart, latestMerchant, quoteRefusal;
 const shopSelection = { id: 23, customerId: 17, service: 'shop', status: 'completed',
   dropoffCity: 'ramallah', dropoffPoint: { latitude: 31.91, longitude: 35.21 }, dropoffNote: 'Saved directions' };
 const state = [], references = [], posts = [], navigation = [];
@@ -44,13 +45,16 @@ const modules = {
     ApiError,
     errorCode: error => error.message,
     useApi: path => {
+      if (path?.startsWith('/me/places?shopDelivery=1')) return {};
       assert.equal(path, destinationOrder ? `/orders/${destinationOrder}` : null);
       return { data: selectedOrder, error: selectedError, reload: () => { selectionReloads.push(path); } };
     },
     api: async (path, body) => {
       if (path.startsWith('/orders/commands/')) return { orderId: receiptOrderId };
+      if (path === '/shop/merchants/1') return { merchant: latestMerchant, items: [] };
       assert.equal(path, '/orders');
       posts.push(JSON.parse(JSON.stringify(body)));
+      if (quoteRefusal) { quoteRefusal = false; throw new ApiError('price_changed', 409); }
       if (failFirst) { failFirst = false; throw new ApiError(firstStatus ? 'blocked' : 'network', firstStatus); }
       if (rejectRetry) throw new ApiError('price_changed', 409);
       return { id: 12 };
@@ -74,6 +78,7 @@ const modules = {
   '../../pin-sheet': { __esModule: true, default: 'PinSheet' },
   '../../session': { useSession: () => ({ me: { user: { id: 17, role: 'customer', phone: '0599100017' } } }) },
   '../../shop-cart': { useCart: () => cart, storedCart: async required => { if (cartReadFails && required) throw new Error('basket unavailable'); return cart; }, clearCart: async () => { cartCleared = true; },
+    refreshCart: async merchant => { cart = { ...cart, deliveryFeeAgorot: merchant.deliveryFeeAgorot }; return true; },
     cartGoods: () => 2000, setPolicy() {}, setQuantity() {} },
   '../../shop-ui': { QtyControl: 'QtyControl' },
   '../../ui': ui,
@@ -291,5 +296,34 @@ try {
   assert.equal(addressField().value, '', 'a late response cannot pair its saved landmark with the manual pin');
   assert.ok(find(render(), 'Button', props => props.title === c.shopPinChange), 'the manual pin remains selected');
 } finally { closeAfterLookupFailure(); }
+
+state.length = references.length = posts.length = navigation.length = 0;
+destinationOrder = undefined;
+selectedOrder = undefined;
+selectedError = undefined;
+protectedWriteFails = false;
+failFirst = false;
+quoteRefusal = true;
+latestMerchant = { deliveryFeeAgorot: 950 };
+store.clear();
+protectedStore.clear();
+render();
+const closeAfterChangedQuote = focus();
+try {
+  await flush();
+  enterDelivery();
+  await render().props.footer.props.onPress();
+  assert.equal(posts[0].expectedDeliveryFeeAgorot, 800);
+  const review = render().props.footer.props;
+  assert.equal(review.title, c.shopCartReview);
+  await review.onPress();
+  assert.equal(posts.length, 1, 'refreshing the cart does not place an order');
+  assert.equal(find(render(), 'Field', props => props.label === c.shopLandmark).value, 'Blue door');
+  await render().props.footer.props.onPress();
+  assert.equal(posts[1].expectedDeliveryFeeAgorot, 950);
+  assert.equal(posts[1].expectedServiceFeeAgorot, 0);
+  assert.notEqual(posts[0].requestId, posts[1].requestId);
+  assert.deepEqual(navigation, ['/order/12']);
+} finally { closeAfterChangedQuote(); cart = seededCart; }
 
 console.log('Shop checkout keeps the exact command across restart, restores the draft on absence, and releases a first-send refusal');

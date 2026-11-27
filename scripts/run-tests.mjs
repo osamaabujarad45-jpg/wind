@@ -32,6 +32,7 @@ const suites = [
   "second-tick.test.mjs",
   "personal-home.test.mjs",
   "account-profiles.test.mjs",
+  "profile-switching.test.mjs",
   "driver-presence.test.mjs",
   "driver-presence-runtime.test.mjs",
   "api-client.test.mjs",

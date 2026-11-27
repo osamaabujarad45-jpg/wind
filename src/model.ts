@@ -193,6 +193,9 @@ export function invalidSetting(values: Record<string, number>): keyof Settings |
 }
 
 export type User = {
+  captainApproval?: { applicationId: string; revision: number; state: 'under_review' | 'review' };
+  accountMode?: AccountMode;
+  modeRevision?: number;
   id: number; phone: string; name: string; role: Role; status: UserStatus;
   vehicle: Vehicle | null; plate?: string | null; rating: number | null; createdAt: number;
   priceRating?: number | null; trips?: number; // drivers only
@@ -394,6 +397,13 @@ export function commissionOn(price: number, rate: number): number {
 /** Arabic-Indic and Persian digits typed on an Arabic keyboard, as ASCII. */
 export const latinDigits = (text: string) =>
   text.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06F0));
+/** A trade licence date written as YYYY-MM-DD or eight digits. Refuse rolled-over calendar dates. */
+export function licenceExpiryFromText(text: string): number {
+  const date = latinDigits(text.trim()).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NaN;
+  const time = Date.parse(`${date}T00:00:00Z`);
+  return Number.isFinite(time) && new Date(time).toISOString().startsWith(date) ? time : NaN;
+}
 /** A number typed in a form: Arabic-Indic digits and the Arabic decimal separator (٫) or a comma are normal input here. */
 export const typedNumber = (text: string) => Number(latinDigits(text.trim()).replace(/[٫,]/, '.'));
 /** Shekels typed by a person as exact integer agorot, never through a float: "12.5" → 1250, "٠٫٠٥" → 5, "-3" → -300.
@@ -524,6 +534,7 @@ export type ShopView = {
   handoverExceptionAt?: number | null; // admin view: the open exception episode a support decision binds to
   office?: { until: number; closed: null | { action: 'collected' | 'donated' | 'destroyed'; at: number } } | null; // owning shop only
   packages: { no: number; sealed: boolean; lineIds: number[] }[] | null;
+  readySnapshotId?: number;
   pickupCode: string | null; // the merchant and support only (§2.1a)
   returnCode: string | null; // the merchant, while the goods come back (DLV-21)
   merchantRating: number | null;

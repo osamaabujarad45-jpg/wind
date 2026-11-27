@@ -53,7 +53,8 @@ export default function Approvals() {
     finally { setBusy(null); await reload(); }
   }
   const approveDriver = (u: User) => confirm(fill(c.approvalConfirm, { name: u.name }),
-    () => void decide(`driver${u.id}`, `/admin/users/${u.id}/approve`, {}), c.approve, c.cancel);
+    () => void decide(`driver${u.id}`, `/admin/users/${u.id}/approve`, u.captainApproval
+      ? { expectedApplicationId: u.captainApproval.applicationId, expectedRevision: u.captainApproval.revision, expectedState: u.captainApproval.state } : {}), c.approve, c.cancel);
   // A-03, as on the Plans tab: the decision names who, which plan and how much before it is sent.
   const decidePlan = (s: Subscription, action: 'activate' | 'reject') => confirm(
     fill(action === 'activate' ? c.subActivateReview : c.subRejectReview, { n: s.userName ?? '', p: s.plan === 'plus' ? c.plusTitle : c.proTitle, a: money(s.price) }),

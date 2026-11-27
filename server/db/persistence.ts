@@ -6,7 +6,7 @@ import { logServerError } from '../domain/diagnostics.ts';
 export type Row = Record<string, any>;
 export type WriteResult = { changes: number | bigint; lastInsertRowid: number | bigint };
 type Effect = () => void | Promise<void>;
-type Owner = { envelope?: boolean; savepoints?: string[]; client?: PoolClient; clientFailure?: Error; clientError?: (error: Error) => void; release?: () => void; active: boolean; closed: boolean; pending: Effect[]; committed: Effect[]; memo: Map<string, Promise<unknown>> };
+type Owner = { envelope?: boolean; savepoints?: { name: string; effects: number }[]; client?: PoolClient; clientFailure?: Error; clientError?: (error: Error) => void; release?: () => void; active: boolean; closed: boolean; pending: Effect[]; committed: Effect[]; memo: Map<string, Promise<unknown>> };
 export type PersistenceOptions = {
   sqlite?: DatabaseSync; connectionString?: string; pool?: PoolConfig;
   poolSize?: number; acquireTimeoutMs?: number; statementTimeoutMs?: number; lockTimeoutMs?: number;
@@ -177,12 +177,18 @@ export class Persistence {
       const stack = owner.savepoints!;
       if (command.startsWith('BEGIN')) {
         const name = `legacy_${stack.length}`;
-        await owner.client!.query(`SAVEPOINT ${name}`); stack.push(name); return;
+        await this.run(`SAVEPOINT ${name}`);
+        stack.push({ name, effects: owner.pending.length });
+        return;
       }
-      const name = stack.pop();
-      if (!name) { if (command === 'ROLLBACK') return; throw new Error('Missing legacy transaction'); }
-      if (command === 'ROLLBACK') await owner.client!.query(`ROLLBACK TO SAVEPOINT ${name}`);
-      await owner.client!.query(`RELEASE SAVEPOINT ${name}`); return;
+      const savepoint = stack.pop();
+      if (!savepoint) { if (command === 'ROLLBACK') return; throw new Error('Missing legacy transaction'); }
+      if (command === 'ROLLBACK') {
+        await this.run(`ROLLBACK TO SAVEPOINT ${savepoint.name}`);
+        owner.pending.length = savepoint.effects;
+      }
+      await this.run(`RELEASE SAVEPOINT ${savepoint.name}`);
+      return;
     }
     if (command.startsWith('BEGIN')) {
       if (owner.active) throw new Error('Nested transaction requires an explicit savepoint');
@@ -222,6 +228,25 @@ export class Persistence {
       this.releaseClient(owner);
       owner.release?.(); owner.release = undefined;
     }
+  }
+
+  async sqliteModeWrite<T>(work: () => Promise<T>): Promise<T> {
+    if (this.backend !== 'sqlite' || this.inTransaction) throw new Error('Profile writes need an owned SQLite transaction');
+    return this.scope(async () => {
+      await this.exec('BEGIN IMMEDIATE');
+      const owner = this.owner()!;
+      try {
+        owner.envelope = true; owner.savepoints = [];
+        const result = await work();
+        if (owner.savepoints.length) throw new Error('Unclosed profile transaction');
+        owner.envelope = false;
+        await this.exec('COMMIT');
+        return result;
+      } finally {
+        owner.envelope = false; owner.savepoints = undefined;
+        if (owner.active) await this.exec('ROLLBACK');
+      }
+    });
   }
 
   /** Roll back a business mutation while keeping earlier writes in its transaction. */

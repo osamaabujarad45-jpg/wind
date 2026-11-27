@@ -15,8 +15,10 @@ Approved under the standing go-ahead of 2026-10-04.
 
 ## API
 
-`GET /api/push/key` (public) → `{ key }`; `POST /api/push/subscribe` `{endpoint, p256dh, auth, lang}`; `POST /api/push/unsubscribe` `{endpoint}`.
+`GET /api/push/key` (public) → `{ key }`; `POST /api/push/subscribe` `{endpoint, p256dh, auth, lang, bindSession?}`; `POST /api/push/unsubscribe` `{endpoint}`.
 Tables `push_keys`, `push_subscriptions` (at most 5 per user). Encryption RFC 8291 (aes128gcm), VAPID RFC 8292, in `server/push.ts`.
+
+On the SQLite pilot, the updated web client sends `bindSession: true` after saving a fingerprint of its credential and subscription. The server binds those alerts to that session. An older registration receives neutral alerts until the browser renews it with the updated client.
 
 ## Testing
 

@@ -94,7 +94,7 @@ sqlite.prepare("INSERT INTO shop_ledger(book,merchant_id,driver_id,order_id,kind
 sqlite.prepare('INSERT OR IGNORE INTO referral_codes(user_id,code) VALUES(?,?)').run(user,'WTEST3');
 sqlite.prepare('INSERT OR IGNORE INTO referrals(referee_id,referrer_id,order_id,reward_promo_id,created_at) VALUES(?,?,?,?,?)').run(driver,user,order,promo,now);
 sqlite.prepare("INSERT INTO push_keys(id,private_jwk) VALUES(1,'{\"synthetic\":true}') ON CONFLICT(id) DO NOTHING").run();
-sqlite.prepare("INSERT INTO push_subscriptions(endpoint,user_id,p256dh,auth,created_at) VALUES('https://push.invalid/wp03',?,'synthetic','synthetic',?)").run(user,now);
+sqlite.prepare("INSERT INTO push_subscriptions(endpoint,user_id,p256dh,auth,created_at,auth_session_hash) VALUES('https://push.invalid/wp03',?,'synthetic','synthetic',?,?)").run(driver,now,sessionHash);
 sqlite.prepare('INSERT OR IGNORE INTO order_offers(order_id,driver_id,price,created_at) VALUES(?,?,20,?)').run(order,driver,now);
 // Ensure a non-cent REAL exception is retained/reported rather than silently overwritten.
 sqlite.prepare('UPDATE orders SET price=20.005,commission=1.005 WHERE id=?').run(order);
@@ -171,6 +171,7 @@ try {
   assert.equal(redemptions.sourceRows,2);assert.equal(redemptions.targetRows,2);
   assert.ok(report.reconciliation.openCustodyCount>0,'open custody is rehearsed');
   const pushRow=await database.one('SELECT * FROM native_push_tokens WHERE token_hash=?',pushHash);
+  assert.equal((await database.one("SELECT user_id FROM push_subscriptions WHERE endpoint='https://push.invalid/wp03'")).user_id, driver);
   assert.deepEqual([pushRow.user_id,pushRow.auth_session_hash,pushRow.lang,pushRow.prefs_json,pushRow.disabled_at],[driver,sessionHash,'en',{alpha:false,zeta:true,quietHours:{startMinute:1320,endMinute:360,utcOffsetMinutes:120}},now],'the token, its session and its preferences move exactly');
   const pushReport=report.reconciliation.tables.find(t=>t.table==='native_push_tokens');
   assert.deepEqual([pushReport.sourceRows,pushReport.targetRows],[1,1]);
