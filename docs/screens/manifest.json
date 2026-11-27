@@ -2,64 +2,28 @@
   {
     "id": "intro",
     "group": "Launch",
-    "name": "Animated intro",
+    "name": "Branded launch frame",
     "route": "/",
     "file": "src/intro.tsx",
     "ar": [
-      "ar/intro-1.png",
-      "ar/intro-2.png",
-      "ar/intro-3.png",
-      "ar/intro-4.png",
-      "ar/intro-5.png"
+      "ar/intro.png"
     ],
     "en": [
-      "en/intro-1.png",
-      "en/intro-2.png",
-      "en/intro-3.png",
-      "en/intro-4.png",
-      "en/intro-5.png"
+      "en/intro.png"
     ],
-    "session": null
+    "session": "customer"
   },
   {
-    "id": "welcome-1",
+    "id": "welcome",
     "group": "Launch",
-    "name": "Welcome · services",
+    "name": "Welcome",
     "route": "/",
     "file": "src/app/welcome.tsx",
     "ar": [
-      "ar/welcome-1.png"
+      "ar/welcome.png"
     ],
     "en": [
-      "en/welcome-1.png"
-    ],
-    "session": null
-  },
-  {
-    "id": "welcome-2",
-    "group": "Launch",
-    "name": "Welcome · clear pricing",
-    "route": "/",
-    "file": "src/app/welcome.tsx",
-    "ar": [
-      "ar/welcome-2.png"
-    ],
-    "en": [
-      "en/welcome-2.png"
-    ],
-    "session": null
-  },
-  {
-    "id": "welcome-3",
-    "group": "Launch",
-    "name": "Welcome · track & handover",
-    "route": "/",
-    "file": "src/app/welcome.tsx",
-    "ar": [
-      "ar/welcome-3.png"
-    ],
-    "en": [
-      "en/welcome-3.png"
+      "en/welcome.png"
     ],
     "session": null
   },

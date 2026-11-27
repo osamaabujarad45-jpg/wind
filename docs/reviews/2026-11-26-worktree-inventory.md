@@ -2,7 +2,23 @@
 
 Inventory captured before consolidation: 128 registered worktrees. Every tree was checked for tracked/untracked changes, commits outside origin/master, and substantive changes with end-of-line whitespace ignored. Twenty-three clean, fully merged trees with no ignored files were removed. Other trees remain preserved; this is not a claim that every old patch has been integrated.
 
-The active writer is the main checkout on feature/session-consolidation-20261126, based on 941d5cac. Old branch names below are historical labels, not directions to resume them. The root row records its pre-takeover backup branch. Raw per-file statuses, commit subjects, session handoffs and patches remain in the ignored .artifacts/takeover-20261126 directory.
+The 26 November inventory used the main checkout on `feature/session-consolidation-20261126`, based on `941d5cac`. Its root row records the pre-takeover backup branch. Raw per-file statuses, commit subjects, handoffs and patches remain in the ignored `.artifacts/takeover-20261126` directory.
+
+## 27 November follow-up
+
+The main checkout now uses `feature/pilot-personal-flow`. The follow-up checked six additional checkouts and removed the disposable PR #121 verification checkout. Git now lists 110 worktrees.
+
+| Checkout | Evidence and disposition |
+|---|---|
+| `feature/f0-baseline` | Five staged paths at base `816d3e17`. The pilot branch records the revised harness and partial baseline in `2e78bad7`. The original patch is preserved in `.artifacts/pilot-2026-11-27/f0-inherited.patch`. |
+| `feature/f1-personal-home` | 39 status entries at base `816d3e17`. The main checkout holds the reviewed F1 candidate and new verification. The original patch is preserved in `.artifacts/pilot-2026-11-27/f1-inherited.patch` until the A53 gates pass. |
+| `feature/verified-email-reset` | 30 status entries at base `816d3e17`, including the SQL migration and hosted continuation page. Retain the worktree and its v5 checkpoint through integration and provider rehearsal. |
+| `wind-push-1126` and `wind-apk-1126` | Git is clean at merged revisions. Both have ignored dependencies. Confirm those dependency paths and active build use before removal. |
+| Detached PR #121 verification checkout | Removed after confirming an empty Git and ignored-file status, no running checkout process, and ancestry from `816d3e17` to `origin/master`. |
+
+See the current order of work in the [pilot checkpoint](../PLAN-2026-11-26-CONTINUE.md#27-november-pilot-checkpoint).
+
+## 26 November inventory
 
 | Worktree | Head | Tracked / untracked status entries | Substantive diff files | Disposition |
 |---|---|---:|---:|---|
