@@ -1,7 +1,7 @@
 import { needStaff, staffActor } from './ops.ts';
 import { randomInt } from 'node:crypto';
 import type { Persistence, Row } from '../db/persistence.ts';
-import { offerRange, vehicleServices, type Vehicle } from '../../src/model.ts';
+import { offerRange, rideSeatDemand, seatsFor, vehicleServices, type Vehicle } from '../../src/model.ts';
 import { declaredScopeRow } from './resource-scope.ts';
 import { returnCustody } from './office.ts';
 
@@ -13,6 +13,7 @@ const active = "('assigned','at_pickup','in_transit','on_hold','returning')";
 const states = ['draft','submitted','under_review','approved','changes_required','rejected','suspended','expired'];
 const classes = ['bicycle','motorcycle','car','van','truck'];
 const services = ['ride','parcel','freight'];
+export const approachMaxAgeMs = 300_000;
 export const eligibilityDefaults = Object.freeze({ version: 1, boundary: 'ST_Covers', coordinateOrder: 'longitude_latitude',
   dimensionPolicy: 'fixed_axes_no_stacking', reservationPolicy: 'all_accepted_pickups_until_finished', secondaryCountLimit: 200,
   insertionOptimization: false, identityScansCollected: false, legacyCapacityMeasured: false,
@@ -92,7 +93,10 @@ export class Eligibility {
     await this.db.one('SELECT id FROM vehicles WHERE id=? FOR UPDATE',vehicleId);
     await this.db.one('SELECT vehicle_id FROM vehicle_runs WHERE vehicle_id=? FOR UPDATE',vehicleId);
   }
-  async lockPolicy(mode:'update'|'share'='update') { await this.available(); return (await this.db.one(`SELECT * FROM eligibility_policy WHERE id=1 FOR ${mode==='share'?'SHARE':'UPDATE'}`))!; }
+  async lockPolicy(mode: 'update' | 'share' = 'update', { nowait = false } = {}) {
+    await this.available();
+    return (await this.db.one(`SELECT * FROM eligibility_policy WHERE id=1 FOR ${mode === 'share' ? 'SHARE' : 'UPDATE'}${nowait ? ' NOWAIT' : ''}`))!;
+  }
   async audit(actor: number, action: string, subject: number, reason: string, evidence: string | null = null) {
     await this.db.run('INSERT INTO eligibility_audit(actor_id,action,subject_id,reason,evidence_ref,created_at) VALUES(?,?,?,?,?,?)',actor,action,subject,reason,evidence,Date.now());
     // Safe domain event intentionally excludes operator free text and provenance references.
@@ -154,7 +158,7 @@ export class Eligibility {
     const leg=await this.db.one('SELECT * FROM order_approaches WHERE order_id=? AND vehicle_id=? ORDER BY id DESC LIMIT 1',order.id,v.id);
     if (!leg) this.fail(409,'approach_evidence_missing');
     if (leg.vehicle_revision!==v.revision || leg.requirements_revision!==req.revision || leg.run_revision!==run.revision) this.fail(409,'approach_evidence_changed');
-    if (leg.observed_at>now || leg.observed_at<now-300000 || leg.valid_until<=now || leg.valid_until<start+leg.seconds*1000) this.fail(409,'approach_evidence_expired');
+    if (leg.observed_at>now || leg.observed_at<now-approachMaxAgeMs || leg.valid_until<=now || leg.valid_until<start+leg.seconds*1000) this.fail(409,'approach_evidence_expired');
     if (leg.to_lng!==order.pickup_lng || leg.to_lat!==order.pickup_lat) this.fail(409,'approach_endpoint_mismatch');
     const last=[...loads].sort((a,b)=>b.planned_end-a.planned_end || b.order_id-a.order_id)[0];
     if (last) {
@@ -163,14 +167,16 @@ export class Eligibility {
     }
     return leg.seconds*1000;
   }
-  async base(driverId: number, policy: Row, requireEnrolled = true) {
-    const user=await this.db.one('SELECT id,role,status,vehicle FROM users WHERE id=? FOR UPDATE',driverId);
-    const d=await this.db.one('SELECT * FROM driver_eligibility WHERE driver_id=? FOR UPDATE',driverId);
+  async base(driverId: number, policy: Row, requireEnrolled = true, { nowait = false } = {}) {
+    const lock = nowait ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE';
+    const user=await this.db.one(`SELECT id,role,status,vehicle FROM users WHERE id=? ${lock}`,driverId);
+    const d=await this.db.one(`SELECT * FROM driver_eligibility WHERE driver_id=? ${lock}`,driverId);
     if (!d || (requireEnrolled && !d.enrolled)) this.fail(409,'measured_cohort_required');
-    const v=await this.db.one('SELECT * FROM vehicles WHERE id=? FOR UPDATE',d.vehicle_id);
+    const v=await this.db.one(`SELECT * FROM vehicles WHERE id=? ${lock}`,d.vehicle_id);
     if (!v) this.fail(409,'vehicle_evidence_missing');
-    await this.db.run('INSERT INTO vehicle_runs(vehicle_id) VALUES(?) ON CONFLICT DO NOTHING',v.id);
-    const run=await this.db.one('SELECT * FROM vehicle_runs WHERE vehicle_id=? FOR UPDATE',v.id);
+    // The dispatch shortlist already requires a vehicle run before issuing an offer.
+    if (!nowait) await this.db.run('INSERT INTO vehicle_runs(vehicle_id) VALUES(?) ON CONFLICT DO NOTHING',v.id);
+    const run=await this.db.one(`SELECT * FROM vehicle_runs WHERE vehicle_id=? ${lock}`,v.id) ?? this.fail(409,'vehicle_evidence_missing');
     if (await this.unknown(v.id)) { await this.markInspection(v.id,driverId); this.fail(409,'legacy_load_inspection_required'); }
     if (!policy.activated) this.fail(409,'coverage_policy_inactive');
     if (!user || user.role!=='driver' || user.status!=='active' || d.state!=='approved' || d.valid_until<=Date.now()) this.fail(409,'driver_ineligible');
@@ -328,7 +334,8 @@ export class Eligibility {
     if (loads.some(x=>x.service!=='parcel') || (order.service!=='parcel' && loads.length)) this.fail(409,'shared_vehicle_busy');
     if (loads.length>=200 || loads.reduce((s,x)=>s+x.pieces,eff.pieces)>Math.min(200,v.max_pieces)) this.fail(409,'piece_capacity_exceeded');
     if (loads.reduce((s,x)=>s+x.grams,eff.grams)>v.usable_grams || loads.reduce((s,x)=>s+x.cm3,eff.cm3)>v.usable_cm3) this.fail(409,'measured_capacity_exceeded');
-    if (eff.seats>v.seats) this.fail(409,'seats_unavailable');
+    const seats = order.service === 'ride' ? rideSeatDemand(order.option, Number(eff.seats)) : Number(eff.seats);
+    if (seats > v.seats || (order.service === 'ride' && seats > seatsFor(v.class))) this.fail(409,'seats_unavailable');
     if (eff.equipment.some((x:string)=>!v.equipment.includes(x))) this.fail(409,'equipment_unavailable');
     // Deliberately conservative packing certificate: fixed axes, every piece occupies its own
     // longitudinal slice, full width/height. Summed volume or sorted dimensions is NOT packing proof.

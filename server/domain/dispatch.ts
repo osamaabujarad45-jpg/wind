@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { optionsFor, rideSeatDemand, rideVehiclesFor } from '../../src/model.ts';
 import type { Persistence, Row } from '../db/persistence.ts';
-import { Eligibility, dispatchEnabled, eligibilityDefaults } from './eligibility.ts';
+import { Eligibility, approachMaxAgeMs, dispatchEnabled, eligibilityDefaults } from './eligibility.ts';
+import { enqueuePush } from './events.ts';
 
 type Fail = (status: number, message: string) => never;
 type Actor = { id: number; role: string; status: string };
@@ -13,6 +15,16 @@ export const DISPATCH_SHORTLIST_LIMIT = 10;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const activeStatuses = "('assigned','at_pickup','in_transit','on_hold','returning')";
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+const rideFits = (driverClass: unknown, vehicleClass: unknown, approvedSeats: unknown, option: string | null, assessed: unknown) => {
+  const seats = rideSeatDemand(option, Number(assessed ?? 0));
+  return driverClass === vehicleClass && seats <= Number(approvedSeats ?? 0)
+    && rideVehiclesFor(option, seats).some(allowed => allowed === vehicleClass);
+};
+const rideOptions = optionsFor('ride');
+const rideClassesByParty = JSON.stringify(Object.fromEntries(rideOptions.map(option => [option, rideVehiclesFor(option)])));
+const bookedSeatsByOption = JSON.stringify(Object.fromEntries(rideOptions.map(option => [option, rideSeatDemand(option)])));
+const sameOrderSnapshot = (order: Row, offer: Row) => Number(order.version) === Number(offer.order_revision)
+  && Number(order.assignment_epoch) === Number(offer.assignment_epoch);
 
 /** Pure rank: rating is never an input (WP10 binding formula). */
 export const idleCreditSeconds = (idleSeconds: number) => Math.min(eligibilityDefaults.rankIdleCreditMaxSeconds, Math.floor(Math.max(0, idleSeconds) / eligibilityDefaults.rankIdleDivisor));
@@ -51,9 +63,8 @@ export class Dispatch {
   private eligibility: Eligibility;
   private fail: Fail;
   private eta: EtaProvider;
-  onOffer?: (driverId: number, orderId: number) => Promise<void>;
-  constructor(db: Persistence, eligibility: Eligibility, fail: Fail, eta: EtaProvider = straightLineEta, onOffer?: (driverId: number, orderId: number) => Promise<void>) {
-    this.db = db; this.eligibility = eligibility; this.fail = fail; this.eta = eta; this.onOffer = onOffer;
+  constructor(db: Persistence, eligibility: Eligibility, fail: Fail, eta: EtaProvider = straightLineEta) {
+    this.db = db; this.eligibility = eligibility; this.fail = fail; this.eta = eta;
   }
   enabled() { return dispatchEnabled(); }
   async available() { return dispatchAvailable(this.db); }
@@ -84,10 +95,16 @@ export class Dispatch {
     const result: Row = { roundId: round.id, state: round.state, closeReason: round.close_reason ?? null,
       offersIssued: Number(round.offers_issued), deadlineAt: Number(round.deadline_at), startedAt: Number(round.started_at) };
     if (viewerDriverId) {
-      const offer = await this.db.one(`SELECT o.*, s.auth_session_hash FROM dispatch_offers o
+      const offer = await this.db.one(`SELECT o.*, s.auth_session_hash, u.vehicle AS driver_vehicle, v.class AS vehicle_class, v.seats AS approved_seats,
+        d.vehicle_id AS selected_vehicle_id, ride.option AS ride_option, q.seats AS assessed_seats FROM dispatch_offers o
+        JOIN orders ride ON ride.id=o.order_id JOIN users u ON u.id=o.driver_id JOIN vehicles v ON v.id=o.vehicle_id
+        LEFT JOIN driver_eligibility d ON d.driver_id=o.driver_id
+        LEFT JOIN order_requirements q ON q.order_id=o.order_id
         LEFT JOIN driver_presence_sessions s ON s.id=o.presence_session_id AND s.driver_id=o.driver_id
-        WHERE o.order_id=? AND o.driver_id=? AND o.state='open' ORDER BY o.issued_at DESC LIMIT 1`, orderId, viewerDriverId);
-      result.myOffer = offer ? { id: offer.id, offerId: offer.id, expiresAt: Number(offer.expires_at), issuedAt: Number(offer.issued_at),
+        WHERE o.order_id=? AND o.driver_id=? AND o.state='open' AND o.order_revision=ride.version AND o.assignment_epoch=ride.assignment_epoch
+        ORDER BY o.issued_at DESC LIMIT 1`, orderId, viewerDriverId);
+      result.myOffer = offer && offer.selected_vehicle_id === offer.vehicle_id
+        && rideFits(offer.driver_vehicle, offer.vehicle_class, offer.approved_seats, offer.ride_option, offer.assessed_seats) ? { id: offer.id, offerId: offer.id, expiresAt: Number(offer.expires_at), issuedAt: Number(offer.issued_at),
         leaseNonce: offer.auth_session_hash ? leaseNonceFor(offer.id, offer.auth_session_hash) : null,
         pickupEtaSeconds: Number(offer.pickup_eta_seconds), idleSeconds: Number(offer.idle_seconds),
         idleCreditSeconds: Number(offer.idle_credit_seconds), rankScore: Number(offer.rank_score), etaEstimated: !!offer.eta_estimated } : null;
@@ -109,27 +126,20 @@ export class Dispatch {
     const order = await this.db.one('SELECT * FROM orders WHERE id=? FOR UPDATE', orderId);
     await this.db.one('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', `dispatch:${orderId}`);
     if (!order || order.service !== 'ride' || order.status !== 'searching') return null;
-    const open = await this.db.one("SELECT * FROM dispatch_rounds WHERE order_id=? AND state='open' ORDER BY round_number DESC LIMIT 1", orderId);
-    if (open) {
-      const offer = await this.db.one("SELECT * FROM dispatch_offers WHERE round_id=?::uuid AND state='open' LIMIT 1", open.id);
-      return { round: open, offer: offer ?? null };
-    }
-    const last = await this.db.one('SELECT COALESCE(MAX(round_number),0) AS n FROM dispatch_rounds WHERE order_id=?', orderId);
-    const roundId = randomUUID();
-    const round = await this.db.one(`INSERT INTO dispatch_rounds(id,order_id,round_number,state,started_at,deadline_at,offers_issued)
-      VALUES(?::uuid,?,?, 'open',?,?,0) RETURNING *`, roundId, orderId, Number(last!.n) + 1, now, now + eligibilityDefaults.dispatchSearchSeconds * 1000);
-    const offer = await this.issueNext(roundId, now);
-    return { round: (await this.db.one('SELECT * FROM dispatch_rounds WHERE id=?::uuid', roundId)) ?? round!, offer };
+    return this.startRoundLocked(order, now);
   }
 
   private async candidates(order: Row, req: Row, roundId: string, now: number): Promise<Row[]> {
     if (order.pickup_lng == null || order.pickup_lat == null) return [];
     const fresh = now - eligibilityDefaults.matchingFixMaxAgeSeconds * 1000;
+    const seats = rideSeatDemand(order.option, Number(req.seats));
+    const classes = rideVehiclesFor(order.option, seats);
+    if (!classes.length) return [];
     const equipment = typeof req.equipment === 'string' ? req.equipment : JSON.stringify(req.equipment ?? []);
     const check = (kind: string, vehicle: boolean) => `COALESCE((SELECT c.outcome='approved' AND c.valid_from<=${now} AND c.expires_at>${now}${vehicle ? ' AND c.vehicle_revision=v.revision' : ''}
       FROM verification_checks c WHERE ${vehicle ? 'c.vehicle_id=v.id' : 'c.driver_id=u.id'} AND c.kind='${kind}' AND c.permit_key='' ORDER BY c.id DESC LIMIT 1),false)`;
     return this.db.all(`SELECT u.id AS driver_id, s.id AS session_id, s.started_at, s.auth_session_hash,
-        l.lat, l.lng, ${await this.offerSettingsAvailable() ? 'u.ride_offer_seconds' : '20 AS ride_offer_seconds'}, d.vehicle_id, d.revision AS driver_revision, v.revision AS vehicle_revision,
+        l.lat, l.lng, l.effective_at AS fix_effective_at, ${await this.offerSettingsAvailable() ? 'u.ride_offer_seconds' : '20 AS ride_offer_seconds'}, d.vehicle_id, d.revision AS driver_revision, v.revision AS vehicle_revision,
         p.revision AS policy_revision, vr.revision AS run_revision
       FROM driver_presence_sessions s
       JOIN users u ON u.id=s.driver_id AND u.role='driver' AND u.status='active'
@@ -140,7 +150,7 @@ export class Dispatch {
       JOIN driver_latest_locations l ON l.driver_id=u.id AND l.session_id=s.id AND l.effective_at>=?
       WHERE s.state='online' AND s.lease_until>?
         AND ${check('driver_license', false)} AND ${check('vehicle_registration', true)} AND ${check('vehicle_inspection', true)}
-        AND ? <= v.seats AND v.equipment @> ?::jsonb
+        AND u.vehicle IN (${classes.map(() => '?').join(',')}) AND ? <= v.seats AND v.equipment @> ?::jsonb
         AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.driver_id=u.id AND o.status IN ${activeStatuses})
         AND NOT EXISTS(SELECT 1 FROM orders o JOIN driver_vehicles dv ON dv.driver_id=o.driver_id
           JOIN driver_eligibility selected ON selected.driver_id=dv.driver_id AND selected.vehicle_id=dv.vehicle_id
@@ -150,11 +160,22 @@ export class Dispatch {
         AND NOT EXISTS(SELECT 1 FROM dispatch_offers other_open WHERE other_open.driver_id=u.id AND other_open.state='open')
       ORDER BY l.position <-> ST_SetSRID(ST_MakePoint(?,?),4326), u.id
       LIMIT ${DISPATCH_SHORTLIST_LIMIT}`,
-      now, now, fresh, now, req.seats, equipment, order.id, roundId, order.pickup_lng, order.pickup_lat);
+      now, now, fresh, now, ...classes, seats, equipment, order.id, roundId, order.pickup_lng, order.pickup_lat);
   }
 
-  /** Issue the next single offer, or exhaust the round. Assumes an enclosing transaction. */
-  async issueNext(roundId: string, now = Date.now()) {
+  private async deferIfBusy<T>(work: () => Promise<T>): Promise<T | undefined> {
+    try { return await this.db.savepoint(work); }
+    catch (error) {
+      if ((error as { code?: string } | null)?.code !== '55P03') throw error;
+    }
+  }
+
+  /** Issue the next offer or exhaust the round. Undefined leaves a busy round for retry. */
+  private async issueNext(roundId: string, now: number) {
+    return this.deferIfBusy(() => this.issueNextLocked(roundId, now));
+  }
+
+  private async issueNextLocked(roundId: string, now: number, lockedPolicy?: Row) {
     const { order, round } = await this.lockOrderAndRound(roundId);
     if (!order || !round || round.state !== 'open') return null;
     if (order.service !== 'ride' || order.status !== 'searching') {
@@ -181,25 +202,33 @@ export class Dispatch {
       return { ...c, driverId: Number(c.driver_id), pickupEtaSeconds: Math.round(eta.seconds), etaEstimated: !!eta.estimated,
         idleSeconds: Math.max(0, Math.floor((now - Number(c.started_at)) / 1000)) };
     })));
-    let policy: Row;
-    try { policy = await this.eligibility.lockPolicy('share'); } catch { return exhaust('no_driver'); }
+    let policy = lockedPolicy;
+    if (!policy) {
+      try { policy = await this.eligibility.lockPolicy('share', { nowait: true }); }
+      catch (error) { if (this.isConflict(error)) return exhaust('no_driver'); throw error; }
+    }
     let blockedByDeadline = false;
     for (const candidate of ranked) {
       if (Date.now() >= deadline) return exhaust('deadline');
       if (Number((await this.db.one('SELECT offers_issued FROM dispatch_rounds WHERE id=?::uuid', roundId))!.offers_issued) >= eligibilityDefaults.dispatchMaxOffers) return exhaust('no_driver');
       try {
-        const { d, v, run } = await this.eligibility.base(candidate.driverId, policy);
+        const { d, v, run } = await this.eligibility.base(candidate.driverId, policy, true, { nowait: true });
         if (d.revision !== candidate.driver_revision || v.revision !== candidate.vehicle_revision || run.revision !== candidate.run_revision) continue;
-        const session = await this.db.one('SELECT * FROM driver_presence_sessions WHERE driver_id=? FOR UPDATE', candidate.driverId);
-        if (!session || session.id !== candidate.session_id || session.state !== 'online' || Number(session.lease_until) <= now
+        const session = await this.db.one('SELECT * FROM driver_presence_sessions WHERE driver_id=? FOR UPDATE NOWAIT', candidate.driverId);
+        if (!session || session.id !== candidate.session_id || session.state !== 'online' || Number(session.lease_until) <= Date.now()
           || session.driver_revision !== d.revision || session.vehicle_revision !== v.revision || session.policy_revision !== policy.revision) continue;
         if (await this.db.one(`SELECT 1 FROM orders WHERE driver_id=? AND status IN ${activeStatuses} LIMIT 1`, candidate.driverId)) continue;
+        if (await this.db.one("SELECT 1 FROM dispatch_offers WHERE driver_id=? AND state='open'", candidate.driverId)) continue;
         const leg = await this.db.one('SELECT * FROM order_approaches WHERE order_id=? AND vehicle_id=? ORDER BY id DESC LIMIT 1', order.id, v.id);
         if (!leg || leg.vehicle_revision !== v.revision || leg.requirements_revision !== req.revision || leg.run_revision !== run.revision
-          || Number(leg.valid_until) <= now || Number(leg.to_lng) !== Number(order.pickup_lng) || Number(leg.to_lat) !== Number(order.pickup_lat)) continue;
-        const through = now + candidate.pickupEtaSeconds * 1000 + (Number(req.route_seconds) + 2 * Number(req.service_seconds)) * 1000;
+           || Number(leg.to_lng) !== Number(order.pickup_lng) || Number(leg.to_lat) !== Number(order.pickup_lat)) continue;
+        const through = Math.max(now, Date.now()) + candidate.pickupEtaSeconds * 1000 + (Number(req.route_seconds) + 2 * Number(req.service_seconds)) * 1000;
         await this.eligibility.coverage(order, req, v, candidate.driverId, through);
         const issued = Math.max(now, Date.now());
+        // Validate the sampled fix that supplied the ETA, even if a newer fix arrived during routing.
+        if (Number(session.lease_until) <= issued || Number(candidate.fix_effective_at) < issued - eligibilityDefaults.matchingFixMaxAgeSeconds * 1000
+          || Number(leg.observed_at) > issued || Number(leg.observed_at) < issued - approachMaxAgeMs
+          || Number(leg.valid_until) <= issued || Number(leg.valid_until) < issued + Number(leg.seconds) * 1000) continue;
         const expires = issued + Number(candidate.ride_offer_seconds) * 1000;
         if (expires > deadline) { blockedByDeadline = true; continue; }
         const offerId = randomUUID();
@@ -212,7 +241,7 @@ export class Dispatch {
           order.version, order.assignment_epoch, session.id, v.id, d.revision, v.revision, policy.revision, req.revision, run.revision,
           candidate.pickupEtaSeconds, candidate.idleSeconds, candidate.idleCreditSeconds, candidate.rankScore, candidate.etaEstimated ? 1 : 0);
         await this.db.run('UPDATE dispatch_rounds SET offers_issued=offers_issued+1 WHERE id=?::uuid', roundId);
-        if (this.onOffer) await this.onOffer(candidate.driverId, Number(order.id));
+        await enqueuePush(this.db, [candidate.driverId], 'offer', Number(order.id));
         return { ...offer!, leaseNonce: nonce };
       } catch (error) { if (this.isConflict(error)) continue; throw error; }
     }
@@ -225,7 +254,7 @@ export class Dispatch {
     const peek = await this.db.one('SELECT * FROM dispatch_offers WHERE id=?::uuid', offerId) ?? this.fail(404, 'not_found');
     await this.db.one('SELECT * FROM orders WHERE id=? FOR UPDATE', peek!.order_id);
     await this.db.one('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', `dispatch:${peek!.order_id}`);
-    await this.db.one('SELECT id FROM users WHERE id=? FOR UPDATE', driverId);
+    // Order and offer locks serialize decline with acceptance and expiry. No captain row is changed.
     const offer = await this.db.one('SELECT * FROM dispatch_offers WHERE id=?::uuid FOR UPDATE', offerId) ?? this.fail(404, 'not_found');
     if (Number(offer!.driver_id) !== driverId) this.fail(404, 'not_found');
     if (offer!.state === 'declined') return { ok: true, offerId, state: 'declined', dispatch: await this.summary(Number(offer!.order_id), driverId) };
@@ -248,12 +277,25 @@ export class Dispatch {
   }
   private async startRoundLocked(order: Row, now: number) {
     const open = await this.db.one("SELECT * FROM dispatch_rounds WHERE order_id=? AND state='open' ORDER BY round_number DESC LIMIT 1", order.id);
-    if (open) return { round: open, offer: await this.db.one("SELECT * FROM dispatch_offers WHERE round_id=?::uuid AND state='open' LIMIT 1", open.id) };
+    if (open) {
+      const offer = await this.db.one(`SELECT o.*, u.vehicle AS driver_vehicle, v.class AS vehicle_class, v.seats AS approved_seats,
+        d.vehicle_id AS selected_vehicle_id, q.seats AS assessed_seats FROM dispatch_offers o
+        JOIN users u ON u.id=o.driver_id JOIN vehicles v ON v.id=o.vehicle_id
+        LEFT JOIN driver_eligibility d ON d.driver_id=o.driver_id LEFT JOIN order_requirements q ON q.order_id=o.order_id
+        WHERE o.round_id=?::uuid AND o.state='open' LIMIT 1`, open.id);
+      if (offer && sameOrderSnapshot(order, offer) && offer.selected_vehicle_id === offer.vehicle_id
+        && rideFits(offer.driver_vehicle, offer.vehicle_class, offer.approved_seats, order.option, offer.assessed_seats)) return { round: open, offer };
+      if (!offer) await this.issueNext(open.id, now);
+      else if (!await this.retireOffer(offer.id, now)) return { round: open, offer };
+      return { round: await this.db.one('SELECT * FROM dispatch_rounds WHERE id=?::uuid', open.id),
+        offer: await this.db.one("SELECT * FROM dispatch_offers WHERE round_id=?::uuid AND state='open' LIMIT 1", open.id) ?? null };
+    }
     const last = await this.db.one('SELECT COALESCE(MAX(round_number),0) AS n FROM dispatch_rounds WHERE order_id=?', order.id);
     const roundId = randomUUID();
     await this.db.run("INSERT INTO dispatch_rounds(id,order_id,round_number,state,started_at,deadline_at,offers_issued) VALUES(?::uuid,?,?, 'open',?,?,0)",
       roundId, order.id, Number(last!.n) + 1, now, now + eligibilityDefaults.dispatchSearchSeconds * 1000);
-    return { round: await this.db.one('SELECT * FROM dispatch_rounds WHERE id=?::uuid', roundId), offer: await this.issueNext(roundId, now) };
+    const offer = await this.issueNext(roundId, now) ?? null;
+    return { round: await this.db.one('SELECT * FROM dispatch_rounds WHERE id=?::uuid', roundId), offer };
   }
 
   async hasOpenOffer(orderId: number): Promise<boolean> {
@@ -302,7 +344,7 @@ export class Dispatch {
     const round = await this.db.one('SELECT * FROM dispatch_rounds WHERE id=?::uuid FOR UPDATE', offer!.round_id);
     if (!round || round.state !== 'open') this.fail(409, 'dispatch_offer_closed');
     if (order!.service !== 'ride' || order!.status !== 'searching') this.fail(409, 'already_taken');
-    if (Number(order!.version) !== Number(offer!.order_revision) || Number(order!.assignment_epoch) !== Number(offer!.assignment_epoch)) this.fail(409, 'dispatch_order_changed');
+    if (!sameOrderSnapshot(order!, offer!)) this.fail(409, 'dispatch_order_changed');
     if (!presence || presence.id !== offer!.presence_session_id || presence.state !== 'online' || Number(presence.lease_until) <= Date.now()) this.fail(409, 'presence_session_changed');
     const d = await this.db.one('SELECT * FROM driver_eligibility WHERE driver_id=?', input.driverId);
     const v = d && await this.db.one('SELECT * FROM vehicles WHERE id=?', d.vehicle_id);
@@ -315,6 +357,7 @@ export class Dispatch {
       || Number(run.revision) !== Number(offer!.run_revision) || Number(v.id) !== Number(offer!.vehicle_id)
       || Number(presence.driver_revision) !== Number(d.revision) || Number(presence.vehicle_revision) !== Number(v.revision)
       || Number(presence.policy_revision) !== Number(policy.revision)) this.fail(409, 'eligibility_changed');
+    if (!rideFits(driver.vehicle, v.class, v.seats, order.option, req.seats)) this.fail(409, 'wrong_vehicle');
     if (await this.db.one(`SELECT 1 FROM orders WHERE driver_id=? AND status IN ${activeStatuses} LIMIT 1`, input.driverId)) this.fail(409, 'vehicle_busy');
     if (await this.db.one(`SELECT 1 FROM orders o JOIN driver_vehicles dv ON dv.driver_id=o.driver_id
         JOIN driver_eligibility selected ON selected.driver_id=dv.driver_id AND selected.vehicle_id=dv.vehicle_id
@@ -322,11 +365,16 @@ export class Dispatch {
     if (await this.db.one('SELECT 1 FROM order_releases WHERE order_id=? AND driver_id=?', input.orderId, input.driverId)) this.fail(404, 'not_found');
     await guardRider(input.orderId);
     await this.eligibility.guard(input.driverId, input.orderId, 'accept', input.capacityProtocol, undefined, input.expectedRequirementsRevision);
-    // Lock/eligibility waits consume the lease; arrival before expiry gives no right to commit late.
-    if (Date.now() >= Math.min(Number(offer!.expires_at), Number(round!.deadline_at))) this.fail(409, 'offer_expired');
-    if (Number(presence.lease_until) <= Date.now()) this.fail(409, 'presence_session_changed');
+    const deadline = Math.min(Number(offer!.expires_at), Number(round!.deadline_at));
+    const checkDeadline = (at: number) => {
+      if (at >= deadline) this.fail(409, 'offer_expired');
+      if (at >= Number(presence.lease_until)) this.fail(409, 'presence_session_changed');
+    };
+    checkDeadline(Date.now());
     const result = await assign();
     const acceptedAt = Date.now();
+    // An expiry during assignment rolls back both assignment and capacity reservation.
+    checkDeadline(acceptedAt);
     await this.db.run("UPDATE dispatch_offers SET state='accepted',responded_at=? WHERE id=?::uuid", acceptedAt, offerId);
     await this.db.run("UPDATE dispatch_offers SET state='revoked',responded_at=? WHERE round_id=?::uuid AND state='open'", acceptedAt, offer!.round_id);
     await this.db.run("UPDATE dispatch_rounds SET state='matched',close_reason='matched',closed_at=? WHERE id=?::uuid", acceptedAt, offer!.round_id);
@@ -335,47 +383,67 @@ export class Dispatch {
       VALUES(?,?,?,?,?::uuid,'assigned',?,?,?)`, input.orderId, input.driverId, offer!.vehicle_id, offer!.round_id, offerId, Number(after?.assignment_epoch ?? offer!.assignment_epoch), input.driverId, acceptedAt);
     await this.db.one("SELECT append_domain_event(?,'dispatch.matched',?::jsonb) AS id", input.orderId, JSON.stringify({ offerId, roundId: offer!.round_id, driverId: input.driverId }));
     if (result && typeof result === 'object') (result as Row).dispatch = await this.summary(input.orderId, input.driverId);
+    checkDeadline(Date.now());
     return result;
   }
 
-  private async expireOne(offerId: string, now: number): Promise<boolean> {
+  private async retireOffer(offerId: string, now: number): Promise<boolean> {
     const peek = await this.db.one('SELECT order_id FROM dispatch_offers WHERE id=?::uuid', offerId);
     if (!peek) return false;
     const order = await this.db.one('SELECT * FROM orders WHERE id=? FOR UPDATE', peek.order_id);
     await this.db.one('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', `dispatch:${peek.order_id}`);
     const offerPeek = await this.db.one('SELECT * FROM dispatch_offers WHERE id=?::uuid', offerId);
-    if (offerPeek) {
-      await this.db.one('SELECT id FROM users WHERE id=? FOR UPDATE', offerPeek.driver_id);
-      await this.db.one('SELECT * FROM driver_presence_sessions WHERE driver_id=? FOR UPDATE', offerPeek.driver_id);
-      await this.db.one('SELECT * FROM vehicles WHERE id=? FOR UPDATE', offerPeek.vehicle_id);
-      await this.db.one('SELECT * FROM vehicle_runs WHERE vehicle_id=? FOR UPDATE', offerPeek.vehicle_id);
-    }
-    const offer = await this.db.one('SELECT * FROM dispatch_offers WHERE id=?::uuid FOR UPDATE', offerId);
-    if (!offer || offer.state !== 'open' || Number(offer.expires_at) > now) return false;
-    // Identical version boundary to acceptance: exactly one of them can win.
-    if (!order || order.status !== 'searching' || Number(order.version) !== Number(offer.order_revision) || Number(order.assignment_epoch) !== Number(offer.assignment_epoch)) {
-      await this.db.run("UPDATE dispatch_offers SET state='revoked',responded_at=? WHERE id=?::uuid AND state='open'", now, offerId);
+    if (!offerPeek || offerPeek.state !== 'open') return false;
+    return await this.deferIfBusy(async () => {
+      // Admin reviews lock policy before resources. Acceptance can already hold a shared
+      // vehicle, so defer the whole repair if a resource in either lease is busy.
+      const policy = await this.eligibility.lockPolicy('share', { nowait: true });
+      const driver = await this.db.one('SELECT vehicle FROM users WHERE id=? FOR UPDATE NOWAIT', offerPeek.driver_id);
+      const selected = await this.db.one('SELECT vehicle_id FROM driver_eligibility WHERE driver_id=? FOR UPDATE NOWAIT', offerPeek.driver_id);
+      const vehicle = await this.db.one('SELECT class, seats FROM vehicles WHERE id=? FOR UPDATE NOWAIT', offerPeek.vehicle_id);
+      const req = await this.db.one('SELECT seats FROM order_requirements WHERE order_id=?', peek.order_id);
+      const incompatible = selected?.vehicle_id !== offerPeek.vehicle_id
+        || (!!order && !rideFits(driver?.vehicle, vehicle?.class, vehicle?.seats, order.option, req?.seats));
+      const stale = !order || order.status !== 'searching' || !sameOrderSnapshot(order, offerPeek);
+      if (!incompatible && !stale && Number(offerPeek.expires_at) > now) return false;
+      await this.db.one('SELECT vehicle_id FROM vehicle_runs WHERE vehicle_id=? FOR UPDATE NOWAIT', offerPeek.vehicle_id);
+      await this.db.one('SELECT id FROM driver_presence_sessions WHERE driver_id=? FOR UPDATE NOWAIT', offerPeek.driver_id);
+      const offer = await this.db.one('SELECT * FROM dispatch_offers WHERE id=?::uuid FOR UPDATE NOWAIT', offerId);
+      if (!offer || offer.state !== 'open') return false;
+      // Advance on the current order and requirements. Acceptance still rejects the old snapshot.
+      await this.db.run("UPDATE dispatch_offers SET state=?,responded_at=? WHERE id=?::uuid AND state='open'", incompatible || stale ? 'revoked' : 'expired', now, offerId);
+      await this.issueNextLocked(offer.round_id, now, policy);
       return true;
-    }
-    await this.db.run("UPDATE dispatch_offers SET state='expired',responded_at=? WHERE id=?::uuid AND state='open'", now, offerId);
-    await this.issueNext(offer.round_id, now);
-    return true;
+    }) ?? false;
   }
 
-  /** Worker-safe, idempotent expiry; safe to call again after a restart. */
+  /** Worker-safe, idempotent expiry and capacity recheck. */
   async processExpiries(limit = 100, now = Date.now()): Promise<number> {
     if (!(await this.available())) return 0;
     let processed = 0;
-    const offers = await this.db.all("SELECT id FROM dispatch_offers WHERE state='open' AND expires_at<=? ORDER BY expires_at,id LIMIT ?", now, limit);
+    const offers = await this.db.all(`SELECT o.id FROM dispatch_offers o JOIN orders ride ON ride.id=o.order_id
+      JOIN users u ON u.id=o.driver_id JOIN vehicles v ON v.id=o.vehicle_id
+      LEFT JOIN driver_eligibility d ON d.driver_id=o.driver_id
+      LEFT JOIN order_requirements q ON q.order_id=o.order_id
+      CROSS JOIN LATERAL (SELECT GREATEST(COALESCE((?::jsonb ->> ride.option)::int,1), COALESCE(q.seats,0)) AS seats) demand
+      WHERE o.state='open' AND (o.expires_at<=? OR d.vehicle_id IS DISTINCT FROM o.vehicle_id OR v.seats<demand.seats OR u.vehicle IS DISTINCT FROM v.class
+        OR NOT jsonb_exists(COALESCE(?::jsonb -> demand.seats::text, '[]'::jsonb), v.class)
+        OR o.order_revision<>ride.version OR o.assignment_epoch<>ride.assignment_epoch)
+      ORDER BY o.expires_at,o.id LIMIT ?`, bookedSeatsByOption, now, rideClassesByParty, limit);
     for (const offer of offers) {
-      const changed = await this.db.atomic({ purpose: 'dispatch_offer_expiry' }, () => this.expireOne(offer.id, now));
+      const changed = await this.db.atomic({ purpose: 'dispatch_offer_expiry' }, () => this.retireOffer(offer.id, now));
       if (changed) processed++;
     }
-    const rounds = await this.db.all("SELECT id FROM dispatch_rounds WHERE state='open' AND deadline_at<=? ORDER BY deadline_at,id LIMIT ?", now, limit);
+    const rounds = await this.db.all(`SELECT r.id FROM dispatch_rounds r WHERE r.state='open' AND (r.deadline_at<=? OR NOT EXISTS(
+      SELECT 1 FROM dispatch_offers o WHERE o.round_id=r.id AND o.state='open')) ORDER BY r.deadline_at,r.id LIMIT ?`, now, limit);
     for (const round of rounds) {
-      const changed = await this.db.atomic({ purpose: 'dispatch_deadline_expiry' }, async () => {
+      const changed = await this.db.atomic({ purpose: 'dispatch_round_advance' }, async () => {
         const { order, round: current } = await this.lockOrderAndRound(round.id);
-        if (!current || current.state !== 'open' || Number(current.deadline_at) > now) return false;
+        if (!current || current.state !== 'open') return false;
+        if (Number(current.deadline_at) > now) {
+          if (await this.db.one("SELECT 1 FROM dispatch_offers WHERE round_id=?::uuid AND state='open'", round.id)) return false;
+          return (await this.issueNext(round.id, now)) !== undefined;
+        }
         await this.db.run("UPDATE dispatch_offers SET state='expired',responded_at=? WHERE round_id=?::uuid AND state='open'", now, round.id);
         const reason = order && order.status === 'searching' ? 'deadline' : 'cancelled';
         await this.db.run('UPDATE dispatch_rounds SET state=?,close_reason=?,closed_at=? WHERE id=?::uuid AND state=?', reason === 'deadline' ? 'exhausted' : 'cancelled', reason, now, round.id, 'open');

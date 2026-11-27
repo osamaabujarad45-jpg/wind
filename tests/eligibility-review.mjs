@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { fixture } from './eligibility-support.mjs';
-import { measuredCapability } from '../server/domain/eligibility.ts';
+import { Eligibility, measuredCapability } from '../server/domain/eligibility.ts';
 import { phoneSchemaAvailable } from '../server/domain/phone-identity.ts';
 const tiny={items:[{count:1,gramsEach:1,lengthMm:1,widthMm:1,heightMm:1}]};
 const failures=[];let scenarios=0;
@@ -84,11 +84,64 @@ await scenario('negotiated offers require current measured consent without refre
   assert.equal((await f.call(`/jobs/${order.id}/offer`,{token:f.d1.token,body:{capacityProtocol:1,price},expect:409})).error,'requirements_revision_required');
   await f.call(`/jobs/${order.id}/offer`,{token:f.d1.token,body:{capacityProtocol:1,expectedRequirementsRevision:1,price}});
   const snapshot=await f.db.one('SELECT * FROM eligibility_offers WHERE order_id=?',order.id);
-  await f.assess(order,{items:[],seats:2});
+  const view = () => f.call(`/orders/${order.id}`, { token: f.customer.token });
+  const viewMeasured = () => f.call(`/orders/${order.id}?capacityProtocol=1&journeyProtocol=1`, { token: f.customer.token });
+  assert.deepEqual((await view()).offers.map(offer => offer.driverId), [f.d1.user.id]);
+  const changeDuringQuoteRead = async (read, change) => {
+    let reading;
+    await f.db.atomic({ purpose: 'eligibility_quote_read_test' }, async () => {
+      await f.db.run('LOCK TABLE order_offers IN ACCESS EXCLUSIVE MODE');
+      const { pid } = await f.db.one('SELECT pg_backend_pid() AS pid');
+      reading = read().catch(error => error);
+      const deadline = Date.now() + 1500;
+      while (!(await f.db.detached(() => f.db.one("SELECT 1 FROM pg_stat_activity WHERE ?::int = ANY(pg_blocking_pids(pid)) AND query LIKE '%FROM order_offers f%'", pid)))) {
+        assert.ok(Date.now() < deadline, 'customer order read did not reach its quote query');
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      await change();
+    });
+    const response = await reading;
+    if (response instanceof Error) throw response;
+    return response;
+  };
+  const concurrentRead = await changeDuringQuoteRead(view, () => f.db.run('UPDATE order_requirements SET seats=2,revision=revision+1 WHERE order_id=?', order.id));
+  assert.deepEqual(concurrentRead.offers, [], 'the quote query uses the assessment committed while it waited');
+  const measuredView = await viewMeasured();
+  assert.equal(measuredView.measuredScope.requirementsRevision, 2);
+  assert.deepEqual(measuredView.offers, []);
   assert.equal((await f.call(`/jobs/${order.id}/offer`,{token:f.d1.token,body:{expectedRequirementsRevision:1,price},expect:409})).error,'requirements_changed');
   assert.deepEqual(await f.db.one('SELECT * FROM eligibility_offers WHERE order_id=?',order.id),snapshot);
   assert.equal((await f.call(`/orders/${order.id}/offers/${f.d1.user.id}/accept`,{token:f.customer.token,body:{expectedRequirementsRevision:1},expect:409})).error,'requirements_changed');
   assert.equal((await f.db.one('SELECT count(*) n FROM capacity_reservations')).n,0);
+  await f.approach(order);
+  await f.call(`/jobs/${order.id}/offer`, { token: f.d1.token, body: { price } });
+  const duringAssignment = await changeDuringQuoteRead(viewMeasured, async () => {
+    const eligibility = new Eligibility(f.db, (status, message) => { throw Object.assign(new Error(message), { status }); });
+    await eligibility.guard(f.d1.user.id, order.id, 'accept');
+    await f.db.run("UPDATE orders SET driver_id=?,status='assigned' WHERE id=?", f.d1.user.id, order.id);
+  });
+  assert.equal(duringAssignment.status, 'searching', 'projected journey and quotes share the original read snapshot');
+  assert.deepEqual(duringAssignment.offers.map(offer => offer.driverId), [f.d1.user.id]);
+  const assigned = await viewMeasured();
+  assert.equal(assigned.status, 'assigned');
+  assert.equal(Object.hasOwn(assigned, 'offers'), false, 'an assigned trip never carries the earlier quote list');
+});
+await scenario('negotiated ride offers disappear when the approved vehicle loses seats', async f => {
+  const order = await f.book({ service: 'ride', option: '2', pricing: 'smart' });
+  await f.assess(order, { items: [], seats: 2 });
+  await f.call(`/jobs/${order.id}/offer`, { token: f.d1.token, body: { price: order.recommendedPrice } });
+  const view = () => f.call(`/orders/${order.id}`, { token: f.customer.token });
+  assert.deepEqual((await view()).offers.map(offer => offer.driverId), [f.d1.user.id]);
+  const editSeats = (seats, expectedRevision) => f.call(`/admin/eligibility/vehicles/${f.vehicle.id}`, { token: f.admin.token, method: 'PATCH',
+    body: { ...f.vehicleBody, ...f.evidence, expectedRevision, seats } });
+  const revised = await editSeats(2, f.vehicle.revision);
+  assert.deepEqual((await view()).offers, [], 'a stale quote is hidden even when both riders still fit');
+  for (const kind of ['vehicle_registration', 'vehicle_inspection']) await f.check(kind, { vehicleId: f.vehicle.id });
+  await f.approach(order);
+  await f.call(`/jobs/${order.id}/offer`, { token: f.d1.token, body: { price: order.recommendedPrice } });
+  assert.deepEqual((await view()).offers.map(offer => offer.driverId), [f.d1.user.id], 'a quote with current evidence is visible');
+  await editSeats(1, revised.revision);
+  assert.deepEqual((await view()).offers, [], 'a one-seat car cannot honor the quote for two riders');
 });
 await scenario('approach duration, append-only refresh, freshness and revision binding',async f=>{
   const order=await f.book();await f.assess(order,{...tiny,pickupBefore:Date.now()+60000,approach:false});

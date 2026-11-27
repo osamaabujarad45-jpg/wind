@@ -169,6 +169,29 @@ try {
   const me = await call('/me', { token: sami.token });
   assert.deepEqual([me.user.rating, me.user.priceRating, me.user.trips], [5, 3, 1]);
 
+  const twoSeats = { ...input, option: '2' };
+  const partyPrice = (await call('/price', { token: customer.token, body: twoSeats })).price;
+  const party = await call('/orders', { token: customer.token, body: { ...twoSeats, quotedPrice: partyPrice, requestId: randomUUID() } });
+  const beforeLock = Promise.withResolvers(), continueOffer = Promise.withResolvers();
+  const originalOne = persistence.one;
+  persistence.one = async function (sql, ...args) {
+    if (sql === 'SELECT id FROM orders WHERE id=? FOR UPDATE' && args[0] === party.id) {
+      beforeLock.resolve();
+      await continueOffer.promise;
+    }
+    return originalOne.call(this, sql, ...args);
+  };
+  const submit = call(`/jobs/${party.id}/offer`, { token: sami.token, body: { price: partyPrice }, expect: 409 });
+  try {
+    await Promise.race([beforeLock.promise, submit.then(() => { throw new Error('Expected to reach the order write lock'); })]);
+    await persistence.run("UPDATE users SET vehicle='motorcycle' WHERE id=?", sami.user.id);
+  } finally {
+    continueOffer.resolve();
+    persistence.one = originalOne;
+  }
+  assert.equal((await submit).error, 'wrong_vehicle', 'the quote uses the current class even after authentication saw a car');
+  assert.equal(await persistence.one('SELECT 1 FROM order_offers WHERE order_id=? AND driver_id=?', party.id, sami.user.id), undefined);
+
   console.log('Driver offers checks passed');
 } finally {
   await shutdown();

@@ -64,7 +64,7 @@ import { brotliCompress } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
   activeStatuses, cities, city, pickupPayCents as pickupPayFor, commissionOn, crowKm, distanceKm, exceptionReasons, finishedStatuses, pickupRefusal, pickupRefusalDetails, defaultSettings, fractionSettings, invalidSetting, isCity, nextStatus, normalizeEmail, normalizePhone,
-  alongTheWay, canTake, CLOSED_MINUTES, nearestCity, onTheWay, poolable, HISTORY_PAGE, isNight, latinDigits, offerRange, overCashCeiling, optionsFor, orderCode, planForRole, quote, roadAlerts, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
+  alongTheWay, canTake, CLOSED_MINUTES, nearestCity, onTheWay, poolable, HISTORY_PAGE, isNight, latinDigits, offerRange, overCashCeiling, optionsFor, orderCode, planForRole, quote, rideSeatDemand, rideVehiclesFor, roadAlerts, seatsFor, SERVICE_KM, services, SLOW_MINUTES, smartPrice, vehicleServices, vehicles,
   type CityId, type DriverStats, type Offer, type Order, type Plan, type Point, type Role, type Service, type Settings, type Subscription, type User, type Vehicle,
 } from '../src/model.ts';
 import { BOOKING_COMMAND_TTL_MS } from '../src/booking.ts';
@@ -455,8 +455,20 @@ async function jobCardData(rows: Row[], driverId: number): Promise<JobCardData> 
 }
 const offersFor = async (orderId: number): Promise<Offer[]> => {
   const order = await one('SELECT service, shared, option FROM orders WHERE id = ?', orderId);
+  const measured = order?.service === 'ride' && await measuredCapability(persistence);
+  const rideVehicles = order?.service === 'ride' ? rideVehiclesFor(order.option) : [];
+  if (order?.service === 'ride' && !rideVehicles.length) return [];
   const rows = await all(`SELECT f.driver_id, f.price, f.created_at, u.name, u.vehicle FROM order_offers f JOIN users u ON u.id = f.driver_id
-    WHERE f.order_id = ? ${offerOpen} ORDER BY f.price, f.created_at LIMIT 20`, orderId, Date.now() - OFFER_TTL);
+    ${measured ? 'LEFT JOIN order_requirements q ON q.order_id=f.order_id' : ''}
+    WHERE f.order_id = ? ${offerOpen} ${rideVehicles.length ? `AND u.vehicle IN (${rideVehicles.map(() => '?').join(',')})` : ''}
+    ${measured ? `AND (q.order_id IS NULL OR EXISTS (SELECT 1 FROM eligibility_offers e JOIN driver_eligibility d ON d.driver_id=e.driver_id
+      JOIN vehicles v ON v.id=d.vehicle_id JOIN vehicle_runs r ON r.vehicle_id=v.id JOIN eligibility_policy p ON p.id=1
+      WHERE e.order_id=f.order_id AND e.driver_id=f.driver_id AND e.vehicle_id=v.id
+      AND e.driver_revision=d.revision AND e.vehicle_revision=v.revision AND e.policy_revision=p.revision AND e.run_revision=r.revision
+      AND e.requirements_revision=q.revision AND v.class=u.vehicle
+      AND GREATEST(?,q.seats)<=LEAST(v.seats, COALESCE((?::jsonb ->> v.class)::int,0))))` : ''}
+    ORDER BY f.price, f.created_at LIMIT 20`, orderId, Date.now() - OFFER_TTL, ...rideVehicles,
+    ...(measured ? [rideSeatDemand(order?.option), JSON.stringify(Object.fromEntries(rideVehicles.map(vehicle => [vehicle, seatsFor(vehicle)])))] : []));
   // A driver already carrying shared riders offers only while the seats still fit (the accept checks the same).
   const fits = await Promise.all(rows.map(async f => !order || servesFor(f.vehicle).includes(order.service) && canTake(await activeLoad(Number(f.driver_id)), order.service as Service,
     { shared: !!Number(order.shared ?? 0), option: order.option == null ? null : String(order.option) }, (f.vehicle ?? null) as Vehicle | null)));
@@ -1518,7 +1530,6 @@ const queuePush = async (userIds: (number | null)[], kind: PushKind, order: numb
   if (ids.length && persistence.backend === 'postgres') { await enqueuePush(persistence, ids, kind, order, path); return; }
   if (ids.length) persistence.defer(async () => (await sendPush(ids, kind, order, path)));
 };
-dispatch.onOffer = async (driverId, orderId) => { await queuePush([driverId], 'offer', orderId); };
 rideLifecycle.onBoardingLocked = async orderId => { await queuePush((await adminIds()), 'attention', orderId, '/admin/orders'); };
 rideLifecycle.onNoShow = async (orderId, customerId) => { await queuePush([customerId], 'cancelled', orderId); };
 const adminIds = async () => (await all("SELECT id FROM users WHERE role = 'admin' AND status = 'active'")).map(a => a.id as number);
@@ -1598,13 +1609,14 @@ async function deliver(s: Row, message: string, urgency: string, ttl: number) {
 async function newJobPush(service: Service, orderId: number, customerId: number, exceptDriver = 0) {
   // Booking is never refused for this, but one account cannot keep 100 drivers' phones ringing: 5 job alerts per 10 minutes.
   try { (await limit(identityKey('job-push', customerId), 5, 10 * 60_000)); } catch { return false; }
-  const fits = vehicles.filter(v => vehicleServices[v].includes(service));
+  const job = await one('SELECT shared, option FROM orders WHERE id = ?', orderId);
+  const next = { shared: !!Number(job?.shared ?? 0), option: job?.option == null ? null : String(job.option) };
+  const fits = vehicles.filter(v => vehicleServices[v].includes(service) && canTake([], service, next, v));
+  if (!fits.length) return false;
   const reachable = (await nativePushAvailable(persistence))
     ? '(EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id) OR EXISTS(SELECT 1 FROM native_push_tokens n WHERE n.user_id = u.id AND n.disabled_at IS NULL))'
     : 'EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)';
   // RIDE-13: a parcel or a shared ride also reaches drivers whose load can share (parcels, shared riders); seats are counted below.
-  const job = await one('SELECT shared, option FROM orders WHERE id = ?', orderId);
-  const next = { shared: !!Number(job?.shared ?? 0), option: job?.option == null ? null : String(job.option) };
   const pooled = poolable({ service, shared: next.shared });
   const candidates = (await all(`SELECT u.id, u.vehicle FROM users u WHERE u.role = 'driver' AND u.status = 'active' ${production && selfService ? 'AND u.approved_at IS NOT NULL' : ''}
     AND u.vehicle IN (${fits.map(() => '?').join(',')}) AND ${reachable}
@@ -2329,10 +2341,15 @@ function recoveryMetadata(row: Row) {
   return { schemaVersion: 1 as const, version, assignmentEpoch: row.assignment_epoch ?? null };
 }
 route('GET', '/api/orders/:id', async ({ user, params, query }) => {
-  const order=query.get('protocol') === '1' ? await orderProtocol(user,Number(params[0]),query) : await getOrder(Number(params[0]),user,query.get('liveProtocol') === '1',query.get('recoveryProtocol') === '1');
-  if ('journey' in order) return order;
-  const result = query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([order]))[0] : order;
-  return result;
+  const orderId = Number(params[0]);
+  if (query.get('protocol') === '1') return orderProtocol(user, orderId, query);
+  const read = () => getOrder(orderId, user, query.get('liveProtocol') === '1', query.get('recoveryProtocol') === '1');
+  if (query.get('capacityProtocol') !== '1') return read();
+  return persistence.transaction(async () => {
+    if (persistence.backend === 'postgres') await run('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const [order] = await withMeasuredScopes([await read()]);
+    return query.get('journeyProtocol') === '1' ? journeyOrder(persistence, rideLifecycle, order!, user) : order;
+  }, { commandId: randomUUID() });
 });
 // Live driver fix (long-poll): answers the moment a fix newer than `since` lands, else after LIVE_HOLD with what it has.
 route('GET', '/api/orders/:id/live', async ({ user, params, query, req }) => {
@@ -2699,6 +2716,7 @@ route('GET', '/api/jobs', async ({ user, query }) => {
   needActive(user);
   if (!servesFor(user.vehicle).length) fail(409, 'no_vehicle'); // say why the list is empty
   const allowed = servesFor(user.vehicle).filter(service => enabledServices.includes(service));
+  const oversized = allowed.includes('ride') ? optionsFor('ride').filter(option => !canTake([], 'ride', { option }, user.vehicle)) : [];
   const paging = query.get('page') === '1';
   const pageSize = paging ? 20 : 50; // keep legacy responses stable while bounding mobile rendering and per-request work
   if (!allowed.length) return paging ? { version: 1, jobs: [], nextCursor: null } : [];
@@ -2719,10 +2737,11 @@ route('GET', '/api/jobs', async ({ user, query }) => {
     cursor = [at, id];
   }
   const rows = await all(`${orderSelect} WHERE o.status = 'searching' AND o.service IN (${allowed.map(() => '?').join(',')})
+    ${oversized.length ? `AND (o.service <> 'ride' OR COALESCE(o.option, '1') NOT IN (${oversized.map(() => '?').join(',')}))` : ''}
     AND (o.scheduled_for IS NULL OR o.scheduled_for <= ?) AND (? = '' OR o.dropoff_city = ?${way.length ? ` OR (o.pickup_city IN (${way.map(() => '?').join(',')}) AND o.dropoff_city IN (${way.map(() => '?').join(',')}))` : ''})
     AND NOT EXISTS(SELECT 1 FROM order_releases r WHERE r.order_id = o.id AND r.driver_id = ?)
     ${cursor ? 'AND (COALESCE(o.scheduled_for, o.created_at) > ? OR (COALESCE(o.scheduled_for, o.created_at) = ? AND o.id > ?))' : ''}
-    ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT ${paging ? pageSize + 1 : pageSize}`, ...allowed, Date.now() + RELEASE_BEFORE, heading, heading, ...way, ...way, user.id,
+    ORDER BY COALESCE(o.scheduled_for, o.created_at), o.id LIMIT ${paging ? pageSize + 1 : pageSize}`, ...allowed, ...oversized, Date.now() + RELEASE_BEFORE, heading, heading, ...way, ...way, user.id,
     ...(cursor ? [cursor[0], cursor[0], cursor[1]] : []));
   // The town list keeps a job whose two ends are on the way; the direction check drops one that would go backwards.
   const fits = (r: Row) => !origin || r.dropoff_city === heading || alongTheWay(origin, heading as CityId, { pickupCity: r.pickup_city as CityId, dropoffCity: r.dropoff_city as CityId });
@@ -2815,11 +2834,11 @@ route('POST', '/api/jobs/:id/accept', async ({ user, params, body }) => {
 route('POST', '/api/jobs/:id/offer', async ({ user, params, body }) => {
   need(user, 'driver');
   needActive(user);
-  (await limit(identityKey('offer', user.id), 30, 10 * 60_000));
   const order = (await getOrder(Number(params[0]), user)); // 404 unless an open job this driver may take
   if (order.status !== 'searching') fail(409, 'already_taken');
   const recommended = order.recommendedPrice ?? fail(409, 'fixed_price'); // Souq and older apps: accept at the shown price
-  if (!enabledServices.includes(order.service) || !servesFor(user.vehicle).includes(order.service)) fail(409, 'wrong_vehicle');
+  if (!enabledServices.includes(order.service) || !servesFor(user.vehicle).includes(order.service)
+    || (order.service === 'ride' && !order.shared && !canTake([], order.service, order, user.vehicle))) fail(409, 'wrong_vehicle');
   if (!canTake((await activeLoad(user.id)), order.service, order, user.vehicle)) fail(409, 'vehicle_busy');
   const [min, max] = offerRange(recommended);
   if (!Number.isInteger(body.price) || body.price < min || body.price > max) fail(400, 'invalid_offer');
@@ -4298,9 +4317,8 @@ async function orderProtocol(user: User, id: number, query: URLSearchParams) {
       || Number(event.payload?.assignmentEpoch) === Number(order.assignment_epoch));
     const snapshot = { ...await getOrder(id, user, false, query.get('recoveryProtocol') === '1'), protocol: { version: order.version, assignmentEpoch: order.assignment_epoch,
       events: events.filter(event => event.type !== 'fare.changed' || fareVisible(event)).map(publicEvent), nextCursor: events.at(-1)?.sequence ?? after, snapshotRequired: true, serverTime: Date.now() } };
-    if (query.get('journeyProtocol') !== '1') return snapshot;
     const measured = query.get('capacityProtocol') === '1' ? (await withMeasuredScopes([snapshot]))[0] : snapshot;
-    return journeyOrder(persistence, rideLifecycle, measured, user);
+    return query.get('journeyProtocol') === '1' ? journeyOrder(persistence, rideLifecycle, measured, user) : measured;
   }, { commandId: randomUUID() });
 }
 
@@ -4321,11 +4339,11 @@ async function readBody(req: IncomingMessage): Promise<Row> {
   catch { return fail(400, 'invalid_json'); }
 }
 
-async function authenticate(req: IncomingMessage, touch = true): Promise<User | null> {
+async function authenticate(req: IncomingMessage, touch = true, lockSession = false): Promise<User | null> {
   const token = /^Bearer (\w+)$/.exec(req.headers.authorization ?? '')?.[1];
   if (!token) return null;
   const now = Date.now();
-  const r = (await one('SELECT u.*, s.created_at AS session_created_at, s.last_seen_at AS session_last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?',
+  const r = (await one(`SELECT u.*, s.created_at AS session_created_at, s.last_seen_at AS session_last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?${lockSession ? ' FOR KEY SHARE OF s' : ''}`,
     sha(token), now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY));
   if (!r || r.status === 'blocked' || !contactAllowed(r) || (production && !(selfService ? r.role !== 'admin' || r.phone_verified_at || r.approved_at : r.phone_verified_at))) return null;
   if (touch && now - Number(r.session_last_seen_at ?? r.session_created_at) > 60 * 60_000)
@@ -4362,7 +4380,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       .find(r => r.method === req.method && r.m) ?? fail(404, 'not_found');
     if (!match.isPublic && !(await authenticate(req))) fail(401, 'unauthorized');
     const body = req.method === 'POST' || req.method === 'PATCH' ? await readBody(req) : {};
-    const user = (await authenticate(req)); // a slow body cannot retain authority revoked while it was uploading
+    let user = (await authenticate(req)); // a slow body cannot retain authority revoked while it was uploading
     if (!match.isPublic && !user) fail(401, 'unauthorized');
     const perAddress = publicAuthLimits[url.pathname];
     if (perAddress) (await limit(identityKey(url.pathname, clientAddress(req)), perAddress, 10 * 60_000));
@@ -4375,9 +4393,15 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       }
       const driverWork = /^\/api\/jobs\/(\d+)\/(accept|offer)$/.exec(url.pathname);
       const customerOffer = /^\/api\/orders\/(\d+)\/offers\/(\d+)\/accept$/.exec(url.pathname);
+      const submittingQuote = req.method === 'POST' && driverWork?.[2] === 'offer';
+      if (submittingQuote) {
+        need(user!, 'driver'); needActive(user!);
+        await limit(identityKey('offer', user!.id), 30, 10 * 60_000); // invalid quotes still count when the write rolls back
+      }
       // Sol R2-H2: the HTTP envelope commits handled refusals, so the measured preflight writes (reservation, run revision, stops)
       // and the handler share one savepoint: any refusal after them, in the preflight or the handler, rolls all of them back.
-      const boundary = persistence.backend === 'postgres' && req.method === 'POST' && !!(driverWork || customerOffer);
+      // SQLite quotes also need a write transaction so a concurrent vehicle edit cannot overtake the capacity check.
+      const boundary = submittingQuote || (req.method === 'POST' && persistence.backend === 'postgres' && !!(driverWork || customerOffer));
       if (boundary) await persistence.exec('BEGIN IMMEDIATE');
       try {
       if (req.method === 'POST' && driverWork) {
@@ -4386,11 +4410,18 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
         // and admin assign do the same). The fence also refuses before eligibility.guard writes any reservation (review 19 Nov).
         const work = await getOrder(Number(driverWork[1]), user!); // authorize first: a hidden ride answers 404, never the fence (Sol R2-M1)
         if (driverWork[2] === 'accept') await guardRideAssignment(Number(driverWork[1]));
-        // Before eligibility.guard writes reservations: a cash-cap refusal must leave nothing behind (the handler checks again).
-        if (driverWork[2] === 'accept' && body.offerId === undefined && body.leaseNonce === undefined) await guardCashCap(user!.id, work.price, await driverRate(user!.id));
-        // One resource order on every assignment path: order, rider fence, captain row, then the policy row (Sol R2-H1).
-        if (persistence.backend === 'postgres' && body.offerId === undefined && body.leaseNonce === undefined) await one('SELECT id FROM users WHERE id = ? FOR UPDATE', user!.id);
-        if (body.offerId === undefined && body.leaseNonce === undefined) await eligibility.guard(user!.id, Number(driverWork[1]), driverWork[2] as 'accept'|'offer', body.capacityProtocol, body.price, body.expectedRequirementsRevision);
+        const legacyWork = driverWork[2] === 'offer' || (body.offerId === undefined && body.leaseNonce === undefined);
+        if (legacyWork && boundary) {
+          // Lock the captain after the order and rider fence, before checking capacity or writing eligibility.
+          // SQLite accepts take their own write transaction and re-read the captain in the handler.
+          if (persistence.backend === 'postgres') await one('SELECT id FROM users WHERE id = ? FOR UPDATE', user!.id);
+          const current = (await authenticate(req, false, persistence.backend === 'postgres')) ?? fail(401, 'unauthorized');
+          need(current, 'driver'); needActive(current);
+          user = current;
+          if (work.service === 'ride' && !work.shared && !canTake([], 'ride', work, current.vehicle)) fail(409, 'wrong_vehicle');
+          if (driverWork[2] === 'accept') await guardCashCap(current.id, work.price, await driverRate(current.id));
+        }
+        if (legacyWork) await eligibility.guard(user!.id, Number(driverWork[1]), driverWork[2] as 'accept'|'offer', body.capacityProtocol, body.price, body.expectedRequirementsRevision);
       } else if (req.method === 'POST' && customerOffer) {
         need(user!, 'customer'); needActive(user!);
         const order = await one('SELECT id,service FROM orders WHERE id=? AND customer_id=?', Number(customerOffer[1]), user!.id) ?? fail(404, 'not_found');
@@ -4452,9 +4483,9 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       const viewer = await authenticate(req, false) ?? fail(401, 'unauthorized');
       const decorate = async (value: unknown) => {
         if (!value || typeof value !== 'object' || !('service' in value) || !('id' in value)) return value;
-        if ('protocol' in value && 'journey' in value) return value; // already projected in the cursor's snapshot
+        if ('journey' in value) return value; // already projected in its detail or cursor snapshot
         const authorized = await getOrder(Number((value as Order).id), viewer, false, 'recovery' in value);
-        return journeyOrder(persistence, rideLifecycle, { ...value as Order, ...authorized }, viewer);
+        return journeyOrder(persistence, rideLifecycle, { ...value as Order, ...authorized, offers: authorized.offers }, viewer);
       };
       // A card accepted or released between the page read and this snapshot drops out of the list instead of
       // failing the whole page; a single order still answers 404. ponytail: one re-read per card (pages are small),

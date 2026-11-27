@@ -4,9 +4,9 @@ import { fixture } from './eligibility-support.mjs';
 export const dispatchFixture = (label) => fixture(label, { WIND_DISPATCH_TEST_ONLY: '1' });
 
 /** A fully eligible, online driver on their own approved vehicle with a fresh fix near pickup. */
-export async function addDriver(f, { latitude = 31.9005, longitude = 35.195, idleSeconds = 0 } = {}) {
-  const driver = await f.account('driver');
-  const vehicle = await f.post('/vehicles', { ...f.vehicleBody, plate: `SYN-DISP-${driver.user.id}` });
+export async function addDriver(f, { latitude = 31.9005, longitude = 35.195, idleSeconds = 0, vehicleClass = 'car', seats = 4 } = {}) {
+  const driver = await f.account('driver', vehicleClass);
+  const vehicle = await f.post('/vehicles', { ...f.vehicleBody, class: vehicleClass, seats, plate: `SYN-DISP-${driver.user.id}` });
   await f.verify(driver, vehicle.id);
   const deviceId = randomUUID();
   const online = await f.call('/driver/presence/online', { token: driver.token, body: { commandId: randomUUID(), deviceId, consentVersion: 1 } });

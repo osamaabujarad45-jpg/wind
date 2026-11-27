@@ -296,11 +296,15 @@ export function parcelFare(s: Settings, o: { option: string; plus?: boolean }): 
 
 /** Parcels a driver may carry at once; private rides, freight and shop orders are exclusive. */
 export const PARCEL_LOAD = 200; // ponytail: the owner said 100+; raise when a van route carries more
-/** RIDE-13 (owner decision 23 Nov 2026): passenger seats a vehicle offers shared riders. A car four, a motorcycle one. */
+/** Passenger seats available for a ride: a car has four and a motorcycle has one. */
 export const seatsFor = (vehicle: Vehicle | null | undefined) => vehicle === 'car' ? 4 : vehicle === 'motorcycle' ? 1 : 0;
 /** Seats a ride holds (its option, 1–4); other work holds none. */
 export const seatsOf = (o: { service: Service; option?: string | null }) =>
   o.service === 'ride' ? Math.min(4, Math.max(1, Math.trunc(Number(o.option)) || 1)) : 0;
+export const rideSeatDemand = (option: string | null | undefined, assessedSeats = 0) =>
+  Math.max(seatsOf({ service: 'ride', option }), assessedSeats);
+export const rideVehiclesFor = (option: string | null | undefined, assessedSeats = 0) =>
+  vehicles.filter(vehicle => seatsFor(vehicle) >= rideSeatDemand(option, assessedSeats));
 /** Work that may share a vehicle with other work: parcels and shared rides. A driver going Tulkarm → Ramallah fills the
  *  empty seats and the boot along the way, the way service taxis do here. Private rides, loads and shop orders stay alone. */
 export const poolable = (o: { service: Service; shared?: boolean | number | null }) => o.service === 'parcel' || (o.service === 'ride' && !!o.shared);
@@ -310,9 +314,12 @@ export type Load = { service: Service; shared?: boolean | number | null; option?
  *  not know it assumes a car and the server still decides. */
 export const canTake = (active: Load[], service: Service, next?: { shared?: boolean | number | null; option?: string | null }, vehicle?: Vehicle | null) => {
   if (service === 'parcel') return active.every(poolable) && active.filter(o => o.service === 'parcel').length < PARCEL_LOAD;
-  if (service === 'ride' && next?.shared) {
+  if (service === 'ride') {
     const seats = vehicle === undefined ? 4 : seatsFor(vehicle);
-    return active.every(poolable) && active.reduce((n, o) => n + seatsOf(o), 0) + seatsOf({ service, option: next.option }) <= seats;
+    const party = seatsOf({ service, option: next?.option });
+    if (party > seats) return false;
+    if (!next?.shared) return active.length === 0;
+    return active.every(poolable) && active.reduce((n, o) => n + seatsOf(o), 0) + party <= seats;
   }
   return active.length === 0;
 };

@@ -28,8 +28,11 @@ export async function driverRefusal(deps: RefusalDeps, order: RefusalOrder, driv
   if (!deps.servesFor(driver.vehicle).includes(order.service)) return 'wrong_vehicle';
   if (order.scheduled_for != null && order.scheduled_for > Date.now() + deps.releaseBefore) return 'not_released_yet';
   if (await deps.one('SELECT 1 FROM order_releases WHERE order_id = ? AND driver_id = ?', order.id, driver.id)) return 'driver_released_order';
+  const next = { shared: order.shared, option: order.option };
+  const vehicle = (driver.vehicle ?? null) as never;
+  if (order.service === 'ride' && !order.shared && !deps.canTake([], order.service as never, next, vehicle)) return 'wrong_vehicle';
   // RIDE-13: a shared ride fits beside parcels and other shared riders while the driver's vehicle has the seats.
-  if (!deps.canTake((await deps.activeLoad(Number(driver.id))) as never, order.service as never, { shared: order.shared, option: order.option }, (driver.vehicle ?? null) as never)) return 'vehicle_busy';
+  if (!deps.canTake((await deps.activeLoad(Number(driver.id))) as never, order.service as never, next, vehicle)) return 'vehicle_busy';
   try { await deps.guardCashCap(Number(driver.id), Number(order.price), rate, undefined, order.id); } // a shop order adds its door cash
   catch (error) { if ((error as { status?: number }).status === 409) return (error as Error).message; throw error; }
   return null;
