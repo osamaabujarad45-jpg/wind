@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { Persistence, type Row } from './db/persistence.ts';
 import { initializePostgres, isolatedSchema, MIGRATION_LOCK } from './db/postgres-schema.ts';
+import { backfillPostgresAccountProfiles } from './db/account-profiles.ts';
 
 type Table = { name: string; columns: { name: string; type: string; pk: number; notnull: number }[]; keyColumns: string[];
   foreignKeys: { from: string; table: string; to: string }[] };
@@ -208,7 +209,8 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
       // A snapshot taken before A12 has no order_command_rejections; present rows import and reconcile normally (Fable CAND6).
       // Shop delivery tables (migration 33) are absent from a snapshot taken before the shop line; present rows import normally.
       const optionalLegacy = new Set(['order_command_rejections', 'merchants', 'merchant_hours', 'merchant_items', 'shop_orders', 'shop_lines', 'shop_snapshots',
-        'shop_changes', 'shop_handover_checks', 'shop_seals', 'shop_faults', 'shop_ledger', 'courier_block_reviews', 'support_threads', 'support_messages', 'recovery_email_proofs']);
+        'shop_changes', 'shop_handover_checks', 'shop_seals', 'shop_faults', 'shop_ledger', 'courier_block_reviews', 'support_threads', 'support_messages', 'recovery_email_proofs',
+        'captain_profiles']);
       for (const name of new Set(legacyTables)) if (!optionalLegacy.has(name) && !snapshot.tables.some(t => t.name === name)) errors.push({ table: name, reason: 'required legacy table missing from snapshot' });
       if (errors.length) throw new Error('Snapshot preflight failed');
       // Users satisfy assignment guards, and reviews reference the already imported orders.
@@ -246,6 +248,7 @@ export async function importSnapshot(snapshot: Snapshot, database: Persistence, 
       }
       if (errors.length) throw new Error('Invalid legacy rows require review');
       await database.run('SET CONSTRAINTS ALL IMMEDIATE');
+      if (!snapshot.rows.captain_profiles) await backfillPostgresAccountProfiles(database);
       await database.run("INSERT INTO driver_run_resources(driver_id) SELECT id FROM users WHERE role='driver' ON CONFLICT DO NOTHING");
       for (const table of snapshot.tables.filter(t => !NON_LEGACY_TABLES.has(t.name) && t.columns.some(c => c.name === 'id' && c.pk)))
         {

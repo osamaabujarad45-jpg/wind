@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
+import { initializeSqliteAccountProfiles } from './account-profiles.ts';
 import { merchantsTable, sqliteShopSchema } from './sqlite-shop.ts';
 type Row = Record<string, any>;
 
@@ -425,5 +426,6 @@ if (!String((db.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND 
   } finally { db.exec('PRAGMA foreign_keys = ON'); }
 }
 if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database foreign-key check failed');
+initializeSqliteAccountProfiles(db);
 
 }

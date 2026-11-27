@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import type { Persistence } from './persistence.ts';
+import { migratePostgresAccountProfiles } from './account-profiles.ts';
 
 export const MIGRATION_LOCK = 5703001;
-export const POSTGRES_SCHEMA_VERSION = 44;
+export const POSTGRES_SCHEMA_VERSION = 45;
 const firstMigration = 3, skippedMigration = 24;
 
 /** Runtime probes inspect the migration ledger without creating or changing it. */
@@ -192,6 +193,10 @@ export async function initializePostgres(database: Persistence, schema: string) 
     if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 44'))) {
       await database.run(readFileSync(new URL('./email-recovery.sql', import.meta.url), 'utf8'));
       await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(44,?)', Date.now());
+    }
+    if (!(await database.one('SELECT version FROM schema_migrations WHERE version = 45'))) {
+      await migratePostgresAccountProfiles(database);
+      await database.run('INSERT INTO schema_migrations(version,applied_at) VALUES(45,?)', Date.now());
     }
   });
 }

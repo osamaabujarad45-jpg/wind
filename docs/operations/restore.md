@@ -7,7 +7,7 @@ PostgreSQL Flexible Server point-in-time restore and Blob recovery are infrastru
 3. Keep ingress closed. Verify TLS, private DNS/network path, PostGIS required extensions, schema/migration state, and least-privilege operator access.
    Before starting the restored API, [prepare the provider journal](#prepare-the-provider-journal) and verify the effective Firebase link switches are off.
 4. Run reviewed, read-only reconciliation against the restored server and compare domain counts, balanced ledgers, active assignments/custody, returns, idempotency, event/outbox continuity, and Blob object references. Never use SQLite re-import to repair a PostgreSQL server that accepted newer authoritative writes.
-5. Keep ingress closed. For an older staging restore point, apply migration 44 to the isolated target with the candidate's [staging migration command](deploy.md#rollout-and-rollback-gates). Connect `psql` to that restored target with `-X -v ON_ERROR_STOP=1`. The current staging runtime uses `wp16_staging`. Use the approved runtime schema for any other target. Run the transaction and post-commit verification below. The API retains the cleanup journal and the original recipient key.
+5. Keep ingress closed. For an older staging restore point, apply the current migrations through version 45 to the isolated target with the candidate's [staging migration command](deploy.md#rollout-and-rollback-gates). Connect `psql` to that restored target with `-X -v ON_ERROR_STOP=1`. The current staging runtime uses `wp16_staging`. Use the approved runtime schema for any other target. Run the transaction and post-commit verification below. The API retains the cleanup journal and the original recipient key.
 
    ```sql
    BEGIN;
@@ -32,7 +32,7 @@ PostgreSQL Flexible Server point-in-time restore and Blob recovery are infrastru
        WHERE state IN ('ready', 'queued', 'sending')) AS active_email_attempts;
    ```
 
-   Require all six counts to be zero. Complete [email reconciliation](#reconcile-restored-recovery-email). Test API and worker behavior against the restored copy with provider calls disabled. Require `/api/ready` to report PostgreSQL and schema 44 or later.
+   Require all six counts to be zero. Complete [email reconciliation](#reconcile-restored-recovery-email). Test API and worker behavior against the restored copy with provider calls disabled. Require `/api/ready` to report PostgreSQL and schema 45 or later.
 6. Obtain owner approval for a controlled recovery cutover. Preserve the source server read-only for investigation under the approved retention policy.
 
 ## Reconcile restored recovery email

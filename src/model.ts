@@ -31,6 +31,15 @@ const jerusalemHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusal
 /** Same-day booking closes at 12:00 Jerusalem time. Intl follows daylight saving; a fixed offset would be wrong half the year. */
 export const sameDayBookingOpen = (at: number) => Number.isFinite(at) && Math.abs(at) <= 8.64e15 && Number(jerusalemHour.format(at)) < 12;
 export type Role = 'customer' | 'driver' | 'admin';
+export type AccountMode = 'personal' | 'captain' | 'shop';
+export type CaptainProfileState = 'draft' | 'under_review' | 'action_needed' | 'approved' | 'review' | 'paused' | 'closing' | 'rejected';
+export type ProfilePreview = {
+  mode: AccountMode;
+  revision: number;
+  role: Exclude<Role, 'admin'>;
+  captain: { state: CaptainProfileState; available: boolean } | null;
+  shop: { id: number; name: string; state: 'pending' | 'active' | 'paused' } | null;
+};
 export type Vehicle = 'motorcycle' | 'bicycle' | 'car' | 'van' | 'truck';
 export type UserStatus = 'active' | 'pending' | 'blocked';
 // `requested` is a shop order the merchant has not released to captains yet (SRS ONE-03): open for the customer, off the board.

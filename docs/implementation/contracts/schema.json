@@ -166,6 +166,12 @@
     },
     {
       "type": "index",
+      "name": "sessions_one_captain",
+      "tableName": "sessions",
+      "sql": "CREATE UNIQUE INDEX sessions_one_captain ON sessions(user_id) WHERE active_mode = 'captain'"
+    },
+    {
+      "type": "index",
       "name": "sessions_token_user",
       "tableName": "sessions",
       "sql": "CREATE UNIQUE INDEX sessions_token_user ON sessions(token_hash, user_id)"
@@ -259,6 +265,12 @@
       "name": "users_entra_oid_unique",
       "tableName": "users",
       "sql": "CREATE UNIQUE INDEX users_entra_oid_unique ON users(entra_oid) WHERE entra_oid IS NOT NULL"
+    },
+    {
+      "type": "table",
+      "name": "captain_profiles",
+      "tableName": "captain_profiles",
+      "sql": "CREATE TABLE captain_profiles (\n  user_id BIGINT NOT NULL PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,\n  state TEXT NOT NULL CHECK (state IN ('draft','under_review','action_needed','approved','review','paused','closing','rejected')),\n  vehicle TEXT CHECK (vehicle IN ('motorcycle','bicycle','car','van','truck')),\n  plate TEXT,\n  approved_at BIGINT,\n  legacy_role TEXT CHECK (legacy_role IN ('customer','driver')),\n  legacy_status TEXT CHECK (legacy_status IN ('active','pending','blocked')),\n  revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0)\n)"
     },
     {
       "type": "table",
@@ -498,7 +510,7 @@
       "type": "table",
       "name": "sessions",
       "tableName": "sessions",
-      "sql": "CREATE TABLE sessions (\n  token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, last_seen_at INTEGER)"
+      "sql": "CREATE TABLE sessions (\n  token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, last_seen_at INTEGER, active_mode TEXT DEFAULT 'personal' CHECK (active_mode IN ('personal','captain','shop')), mode_revision INTEGER NOT NULL DEFAULT 0 CHECK (mode_revision >= 0))"
     },
     {
       "type": "table",
@@ -576,7 +588,7 @@
       "type": "table",
       "name": "users",
       "tableName": "users",
-      "sql": "CREATE TABLE users (\n  id INTEGER PRIMARY KEY, phone TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password TEXT NOT NULL,\n  role TEXT NOT NULL CHECK (role IN ('customer','driver','admin')),\n  status TEXT NOT NULL CHECK (status IN ('active','pending','blocked')),\n  vehicle TEXT CHECK (vehicle IN ('motorcycle','bicycle','car','van','truck')), created_at INTEGER NOT NULL, phone_verified_at INTEGER, email TEXT, email_verified_at INTEGER, approved_at INTEGER, consent_at INTEGER, consent_version TEXT, entra_oid TEXT, plate TEXT, heading_city TEXT, heading_until INTEGER)"
+      "sql": "CREATE TABLE users (\n  id INTEGER PRIMARY KEY, phone TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password TEXT NOT NULL,\n  role TEXT NOT NULL CHECK (role IN ('customer','driver','admin')),\n  status TEXT NOT NULL CHECK (status IN ('active','pending','blocked')),\n  vehicle TEXT CHECK (vehicle IN ('motorcycle','bicycle','car','van','truck')), created_at INTEGER NOT NULL, phone_verified_at INTEGER, email TEXT, email_verified_at INTEGER, approved_at INTEGER, consent_at INTEGER, consent_version TEXT, entra_oid TEXT, plate TEXT, heading_city TEXT, heading_until INTEGER, captain_state TEXT CHECK (captain_state IN ('active','review','paused','closing')))"
     },
     {
       "type": "trigger",
@@ -613,6 +625,12 @@
       "name": "orders_recovery_revision",
       "tableName": "orders",
       "sql": "CREATE TRIGGER orders_recovery_revision AFTER UPDATE ON orders\n  WHEN NEW.version <= OLD.version BEGIN\n    UPDATE orders SET version = OLD.version + 1 WHERE id = NEW.id;\n  END"
+    },
+    {
+      "type": "trigger",
+      "name": "scrub_deleted_captain",
+      "tableName": "users",
+      "sql": "CREATE TRIGGER scrub_deleted_captain AFTER UPDATE OF phone ON users\n      WHEN NEW.phone LIKE 'deleted-%' BEGIN\n        DELETE FROM captain_profiles WHERE user_id = NEW.id;\n        UPDATE users SET captain_state = NULL WHERE id = NEW.id;\n      END"
     },
     {
       "type": "trigger",
@@ -676,6 +694,87 @@
     }
   ],
   "tables": [
+    {
+      "name": "captain_profiles",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "user_id",
+          "type": "BIGINT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "state",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "vehicle",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "plate",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "approved_at",
+          "type": "BIGINT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "legacy_role",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "legacy_status",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "revision",
+          "type": "BIGINT",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ]
+    },
     {
       "name": "cash_entries",
       "columns": [
@@ -4575,6 +4674,22 @@
           "notnull": 0,
           "dflt_value": null,
           "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "active_mode",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": "'personal'",
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "mode_revision",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
         }
       ],
       "foreignKeys": [
@@ -5974,6 +6089,14 @@
           "cid": 17,
           "name": "heading_until",
           "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 18,
+          "name": "captain_state",
+          "type": "TEXT",
           "notnull": 0,
           "dflt_value": null,
           "pk": 0

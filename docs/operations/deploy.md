@@ -382,7 +382,7 @@ WIND_POSTGRES_STAGING=1 WIND_DATABASE_URL='postgresql://…?sslmode=verify-full'
   npm run db:migrate:staging -- --confirm
 ```
 
-`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option beyond a single `sslmode=verify-full`, and a missing `--confirm`. It creates `wp16_staging` and applies the required migrations under `MIGRATION_LOCK`. It verifies the migration ledger before reporting success. `/api/ready` must then return `ok: true`, `backend: postgres`, and schema 44 or later, with all required migrations through 44 present. Migration 24 was skipped. Migration 44 adds the email proof and cleanup tables. The operator-run script initializes staging. Use the separately reviewed importer for a legacy-data cutover.
+`scripts/migrate-postgres.mjs` refuses loopback URLs, any URL option beyond a single `sslmode=verify-full`, and a missing `--confirm`. It creates `wp16_staging` and applies the required migrations under `MIGRATION_LOCK`. It verifies the migration ledger before reporting success. `/api/ready` must then return `ok: true`, `backend: postgres`, and schema 45 or later, with all required migrations through 45 present. Migration 24 was skipped. Migration 44 adds the email proof and cleanup tables. Migration 45 prepares account profiles and session modes. The operator-run script initializes staging. Use the separately reviewed importer for a legacy-data cutover.
 
 `server/migrate.ts` separately restricts its import CLI to test mode, loopback and an isolated schema. Its `--freeze-writes` holds the SQLite lock only while taking the snapshot, releasing it before import. Production needs a reviewed importer and a continuously enforced freeze of every SQLite writer.
 

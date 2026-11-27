@@ -25,6 +25,7 @@ import type { Plan, Service, Settings, Subscription, User } from './model';
 
 export type Language = 'ar' | 'en';
 export type Me = { user: User; plan: Plan | null; subscription: Subscription | null; settings: Settings;
+  profilePreview?: import('./model').ProfilePreview;
   rideOfferSeconds?: 20 | 30 | 40;
   capabilities?: { enabledServices: Service[]; pooling: boolean; emailVerification?: boolean; emailVerificationLink?: boolean; emailResetLinkProof?: boolean;
     offerRecoveryEmail?: boolean; declaredScope?: boolean; driverPresence?: boolean } };

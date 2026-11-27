@@ -33,6 +33,7 @@ import { cashOwed } from './domain/money.ts';
 import { logServerError } from './domain/diagnostics.ts';
 import { hashPassword as createPasswordHash, verifyPassword, PasswordBusyError, closePasswordHasher } from './domain/passwords.ts';
 import { SESSION_DAYS, SESSION_IDLE_DAYS } from './domain/session-policy.ts';
+import { previewProfiles } from './domain/account-profiles.ts';
 import { clientAddress } from './domain/client-address.ts';
 import { firebaseReset } from './domain/firebase-reset.ts';
 import { firebaseContinuationUrl, firebaseEmailService, recordRecoveryEmailProof, recoveryEmailVerified, validMailboxProof, registerRecoveryEmailRoutes, retireFirebaseEmail } from './domain/firebase-email.ts';
@@ -988,15 +989,21 @@ route('POST', '/api/auth/login', async ({ body }) => {
 
 async function startSession(userId: number) {
   const token = randomBytes(32).toString('hex');
-  (await run('INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at) VALUES (?, ?, ?, ?)', sha(token), userId, Date.now(), Date.now()));
-  return { token, ...(await me((await toUser((await one('SELECT * FROM users WHERE id = ?', userId))!)))) };
+  const sessionHash = sha(token);
+  (await run('INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at) VALUES (?, ?, ?, ?)', sessionHash, userId, Date.now(), Date.now()));
+  return { token, ...(await me((await toUser((await one('SELECT * FROM users WHERE id = ?', userId))!)), false, sessionHash)) };
 }
 
-async function me(user: User, payroll = false) {
+async function me(user: User, payroll = false, sessionHash?: string) {
   const rideOfferSeconds = user.role === 'driver' ? await dispatch.offerSeconds(user.id) : undefined;
   const offerRecoveryEmail = user.role === 'customer' && !user.email && (emailReady || firebaseEmail.resetEnabled)
     && !!await one("SELECT 1 FROM orders WHERE customer_id = ? AND status = 'completed' LIMIT 1", user.id);
+  const profilePreview = sessionHash && process.env.WIND_PROFILE_SHADOW === '1'
+    ? await previewProfiles(persistence, user, sessionHash, enabledServices.includes('shop')) : undefined;
+  if (profilePreview) console.info(JSON.stringify({ category: 'profile_shadow', mode: profilePreview.mode,
+    roleMatches: profilePreview.role === user.role, captainAvailable: profilePreview.captain?.available ?? false }));
   return { user, subscription: (await latestSubscription(user.id)), plan: (await activePlan(user.id)), ...settingsResponse(await settings(), payroll && user.role === 'admin'), rideOfferSeconds,
+    ...(profilePreview && { profilePreview }),
     capabilities: { enabledServices, pooling: enabledServices.includes('ride'), ...(await presenceOffered() ? {} : { driverPresence: false }),
       emailVerification: emailReady,
       ...(firebaseEmail.verificationEnabled ? { emailVerificationLink: true } : {}),
@@ -1335,7 +1342,10 @@ route('POST', '/api/auth/logout', async ({ user }) => {
   (await run('DELETE FROM push_subscriptions WHERE user_id = ?', user.id)); // every session ended, so every browser stops alerting
   return { ok: true };
 });
-route('GET', '/api/me', async ({ user, query }) => me(user, query.get('payroll') === '1'));
+route('GET', '/api/me', async ({ user, query, req }) => {
+  const token = bearer(req);
+  return me(user, query.get('payroll') === '1', token && sha(token));
+});
 
 // Destination filter (SPEC-driver-destination.md): only jobs dropping off in that city, for 3 hours.
 const HEADING_FOR = 3 * 3_600_000; // ponytail: Uber-like window; tune from how long intercity drives home take
@@ -1433,6 +1443,8 @@ async function deleteAccount(user: User, actorId: number | null, proof?: { sessi
     if (proof?.oid) await spendEntraProof(proof as EntraProof);
     (await run(`UPDATE users SET name = '—', phone = ?, email = NULL, phone_verified_at = NULL, email_verified_at = NULL, entra_oid = NULL,
       approved_at = NULL, consent_at = NULL, consent_version = NULL, password = '', status = 'blocked', vehicle = NULL, plate = NULL WHERE id = ?`, `deleted-${user.id}`, user.id));
+    await run('DELETE FROM captain_profiles WHERE user_id = ?', user.id);
+    await run('UPDATE users SET captain_state = NULL WHERE id = ?', user.id);
     await phoneIdentity.forget(user.id, current?.phone, actorId);
     (await run(`UPDATE orders SET contact = '', pickup_contact = '', recipient_name = '', recipient_phone = NULL, handover_code = NULL, pickup_note = '', dropoff_note = '', detail = '', pickup_lat = NULL, pickup_lng = NULL, dropoff_lat = NULL, dropoff_lng = NULL, share_token_hash = NULL
       WHERE customer_id = ?`, user.id));
