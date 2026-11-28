@@ -206,12 +206,15 @@ export default function OrderScreen() {
   const needsCode = rideAction === 'boarding' || order.status === 'in_transit' || (order.status === 'returning' && !order.supportHasGoods);
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
-  // A shop customer prepares and hands over nothing; a rider with a PIN already reads "after checking the vehicle and driver";
-  // once support has the goods, the captain has nothing left to return.
-  const next = (isCustomer || mine)
-    && !(isCustomer && (order.service === 'shop' && ['assigned', 'at_pickup'].includes(order.status) || order.status === 'at_pickup' && !!boardingPin))
-    && !(mine && order.status === 'returning' && order.supportHasGoods) && nextHint;
   const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
+  // The captain can arrive (and start the waiting clock) while the order is still `assigned`.
+  const arrived = order.service === 'ride' && order.status === 'assigned' && (order.ride?.arrivedAt != null || waitingEndsAt != null);
+  const goodsWithSupport = !!mine && order.status === 'returning' && !!order.supportHasGoods; // nothing left to return or drive to
+  // No next step during a safety pause. A shop customer prepares and hands over nothing; a rider with a PIN already reads
+  // "after checking the vehicle and driver"; a rider whose captain has arrived is not told to wait for them.
+  const next = (isCustomer || mine) && !order.safetyHold && !goodsWithSupport
+    && !(isCustomer && (arrived || order.service === 'shop' && ['assigned', 'at_pickup'].includes(order.status) || order.status === 'at_pickup' && !!boardingPin))
+    && nextHint;
   const rideNoShow = mine && order.service === 'ride' && !!order.ride && !order.safetyHold
     && ['assigned', 'at_pickup'].includes(order.status) && waitingEndsAt != null
     && order.recovery?.assignmentEpoch != null && secondsUntil(waitingEndsAt, now, order.journey) <= 0;
@@ -308,7 +311,7 @@ export default function OrderScreen() {
   const location = locationState(order.driverLocation, now);
   const age = location?.ageSeconds ?? 0;
   // The driver is close: get the parcel ready (Uber tells the rider when the car is around the corner).
-  const nearby = live && isCustomer && !mine && (order.service === 'parcel' || order.service === 'freight') && order.status === 'assigned'
+  const nearby = live && isCustomer && !mine && !order.safetyHold && (order.service === 'parcel' || order.service === 'freight') && order.status === 'assigned'
     && !!order.pickupPoint && !!order.driverLocation && !location?.stale && crowKm(order.pickupPoint, order.driverLocation) * 1000 <= 500;
   const later = bookedAhead(order, now) ? order.scheduledFor! : 0; // booked ahead: the time
   const finding = order.status === 'searching' && !later;
@@ -591,7 +594,7 @@ export default function OrderScreen() {
         onChangeText={reason => setDecision({ id, reason })} />
       <View style={{ gap: 8 }}>
         {([
-          ['confirm_sender_return', undefined, c.confirmReturn, c.confirmReturnHint],
+          ['confirm_sender_return', undefined, order.service === 'shop' ? c.confirmReturnShop : c.confirmReturn, order.service === 'shop' ? c.confirmReturnShopHint : c.confirmReturnHint],
           // Who brought the goods decides the captain's office leg: recorded by the button, never assumed.
           ['confirm_office_return', 'captain', c.confirmOfficeReturnCaptain, c.confirmOfficeReturnHint],
           ['confirm_office_return', 'staff', c.confirmOfficeReturnStaff, c.confirmOfficeReturnStaffHint],
@@ -806,7 +809,7 @@ export default function OrderScreen() {
           plate={order.driverPlate ?? undefined} approved />}
           {/* A driver's next stop leads the closed sheet, as in ride-hail driver apps: Open in Maps goes there, so the sheet names it (UI compare, 22 Nov). */}
           {/* Not on hold: the item is kept safe while support decides, so there is no stop to head for yet. */}
-          {mine && order.status !== 'on_hold' && (() => {
+          {mine && order.status !== 'on_hold' && !goodsWithSupport && (() => {
             const toDropoff = order.status === 'in_transit'; // returning goes back to the sender
             const ride = order.service === 'ride';
             const label = order.status === 'returning' ? (order.service === 'shop' ? c.returnToShop : c.returnToSender) : toDropoff ? (ride ? c.dropoff_ride : c.dropoff) : (ride ? c.pickup_ride : c.pickup);
@@ -832,11 +835,11 @@ export default function OrderScreen() {
             disabled={!!busy || advanceLocked === order.status} />}
         {needsCode && !busy && advanceLocked === order.status && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
         {order.status === 'returning' && order.supportHasGoods && <Txt variant="caption">{c.supportHasGoodsDriver}</Txt>}
-        {rideAction === 'arrive' && (arrivalFar || arrivalKm === null) && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
-        {parcelFarKm !== null && <Txt variant="caption">{farFill(c.parcelPickupFar, c.parcelPickupFarCity)}</Txt>}
+        {rideAction === 'arrive' && !order.safetyHold && (arrivalFar || arrivalKm === null) && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
+        {parcelFarKm !== null && !order.safetyHold && <Txt variant="caption">{farFill(c.parcelPickupFar, c.parcelPickupFarCity)}</Txt>}
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}{/* announced when it appears; the locked button repeats nothing */}
         {order.status !== 'on_hold' && !order.safetyHold && !(order.service === 'shop' && atPickup) && !(order.status === 'returning' && order.supportHasGoods) && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
-          : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
+          : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : order.service === 'shop' && order.status === 'returning' ? 'advance_returning_shop' : `advance_${order.status}` as 'advance_assigned']}
           icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code) || doorStep && !doorReady || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals)}
           reason={order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals) ? c.shopSealsNeeded : doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? undefined : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
@@ -847,12 +850,12 @@ export default function OrderScreen() {
         {rideNoShow && <Button title={c.rideNoShow} variant="outline" disabled={!!busy} loading={busy === 'no-show'}
           onPress={() => confirm(c.rideNoShowConfirm, () => act('no-show', `/orders/${order.id}/ride/no-show`,
             { reason: 'absent', expectedAssignmentEpoch: order.recovery?.assignmentEpoch }, () => { void work.reload(); }), c.rideNoShow, c.no)} />}
-        <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
+        {!goodsWithSupport && <Button title={c.navigate} icon="navigate-outline" variant="soft" onPress={() => {
           const toDropoff = order.status === 'in_transit' || order.status === 'on_hold'; // returning goes back to the sender
           openMaps(toDropoff ? order.dropoffPoint ?? null : order.pickupPoint, (toDropoff ? to : from)[language], toDropoff ? order.dropoffNote : order.pickupNote, c.mapsRegion)
             .catch(() => setActionError(c.mapUnavailable));
-        }} />
-        {!(order.status === 'in_transit' || order.status === 'on_hold' ? order.dropoffPoint : order.pickupPoint) && <Txt center variant="caption">{c.navigateLandmark}</Txt>}
+        }} />}
+        {!goodsWithSupport && !(order.status === 'in_transit' || order.status === 'on_hold' ? order.dropoffPoint : order.pickupPoint) && <Txt center variant="caption">{c.navigateLandmark}</Txt>}
       </View></BoundedFooter> : undefined}>
       {body}
     </MapSheet>

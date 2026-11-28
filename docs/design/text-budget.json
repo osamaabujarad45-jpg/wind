@@ -1,6 +1,6 @@
 {
   "catalogue": {
-    "copyWords": 15431,
+    "copyWords": 15457,
     "pushWords": 566,
     "workerWords": 406
   },
@@ -111,8 +111,8 @@
       "reasons": 2
     },
     "src/app/order/[id].tsx": {
-      "explanations": 93,
-      "words": 2038,
+      "explanations": 94,
+      "words": 2063,
       "reasons": 16
     },
     "src/app/profile.tsx": {

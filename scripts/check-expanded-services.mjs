@@ -131,6 +131,9 @@ try {
   await click(c.advance_at_pickup_ride);
   await page.getByRole('button', { name: c.advance_in_transit_ride, exact: true }).waitFor();
   await page.screenshot({ path: join(output, 'a53-ride-underway.png') });
+  const trip = await f.call(`/orders/${ride.id}`, { token: f.customer.token });
+  await page.getByLabel(c.codeFromRider, { exact: true }).fill(trip.handoverCode);
+  await page.getByLabel(c.codeFromRider, { exact: true }).evaluate(input => input.blur());
   await click(c.advance_in_transit_ride);
   await until(async () => (await f.call(`/orders/${ride.id}`, { token: f.customer.token })).status === 'completed', 'ride completion');
   checks.push('A53 confirms arrival, displays grace clock, starts with passenger PIN and completes ride');
