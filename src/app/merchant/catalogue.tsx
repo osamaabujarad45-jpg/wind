@@ -2,7 +2,7 @@
 // out-of-stock switch, which is the edit a busy shop makes most often.
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Switch, View } from 'react-native';
-import { api, useApi } from '../../api';
+import { api, ApiError, useApi } from '../../api';
 import { minorFromText, type MerchantItem } from '../../model';
 import { newRequestId } from '../../command-id';
 import { useSession } from '../../session';
@@ -15,7 +15,8 @@ export default function MerchantCatalogue() {
   const { me } = useSession();
   const back = me?.accountProfile?.mode !== 'shop';
   const { data, error, reload } = useApi<{ items: MerchantItem[] }>('/merchant/catalogue');
-  const [editing, setEditing] = useState<MerchantItem | 'new' | null>(null);
+  // Each opening is its own object, so a save that answers late closes only the form that sent it (never a later "new" one).
+  const [editing, setEditing] = useState<{ item: MerchantItem | null } | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [actionError, setActionError] = useState('');
   if (!data) return <Screen><Header title={c.merchantCatalogue} back={back} /><Loading failed={!!error} onRetry={reload} /></Screen>;
@@ -26,12 +27,15 @@ export default function MerchantCatalogue() {
     finally { setBusy(null); }
   }
   const sections = [...new Set(data.items.map(i => i.section))];
-  return <Screen onRefresh={reload} footer={!editing ? <Button title={c.merchantAddItem} icon="add" onPress={() => setEditing('new')} /> : undefined}>
+  // The form gets a fresh scroll view: opened from low in a long list, it must start at its top.
+  return <Screen key={editing ? 'form' : 'list'} onRefresh={reload} footer={!editing ? <Button title={c.merchantAddItem} icon="add" onPress={() => setEditing({ item: null })} /> : undefined}>
     <Header title={c.merchantCatalogue} back={back} />
-    {editing && <ItemForm item={editing === 'new' ? null : editing} onDone={async () => { setEditing(null); await reload(); }} />}
+    {editing && <ItemForm item={editing.item} available={data.items.find(i => i.id === editing.item?.id)?.available}
+      onDone={async () => { setEditing(current => current === editing ? null : current); await reload(); }} />}
     {!data.items.length && !editing && <Empty icon="pricetags-outline" title={c.merchantNoItems} body={c.merchantNoItemsBody} />}
     <ErrorText>{actionError}</ErrorText>
-    {sections.map(section => <Card key={section}>
+    {/* The form is the whole screen while it is open. */}
+    {!editing && sections.map(section => <Card key={section}>
       <Section title={section} />
       {data.items.filter(i => i.section === section).map(i => <View key={i.id} style={{ borderTopWidth: 1, borderTopColor: palette.line, paddingVertical: 8 }}>
         <Row style={{ justifyContent: 'space-between' }}>
@@ -49,7 +53,7 @@ export default function MerchantCatalogue() {
             {busy === i.id && <ActivityIndicator size="small" color={palette.olive} />}
             <Txt variant="label" style={{ color: i.available ? palette.olive : palette.secondary }}>{i.available ? c.merchantInStock : c.merchantNotInStock}</Txt>
           </Row>
-          <Button size="sm" variant="ghost" title={c.edit} onPress={() => setEditing(i)} />
+          <Button size="sm" variant="ghost" title={c.edit} onPress={() => setEditing({ item: i })} />
         </Row>
         {!i.available && <Txt variant="caption">{c.merchantOutOfStock}</Txt>}
       </View>)}
@@ -57,7 +61,7 @@ export default function MerchantCatalogue() {
   </Screen>;
 }
 
-function ItemForm({ item, onDone }: { item: MerchantItem | null; onDone: () => void }) {
+function ItemForm({ item, available, onDone }: { item: MerchantItem | null; available?: boolean; onDone: () => void }) {
   const { c, err } = useCopy();
   const [section, setSection] = useState(item?.section ?? '');
   const [nameAr, setNameAr] = useState(item?.nameAr ?? '');
@@ -73,10 +77,12 @@ function ItemForm({ item, onDone }: { item: MerchantItem | null; onDone: () => v
   async function save() {
     setBusy(true); setError('');
     try {
+      if (item && available === undefined) throw new ApiError('not_found');
       if (!item) requestId.current ??= newRequestId();
       await api(item ? `/merchant/items/${item.id}` : '/merchant/items', { section: section.trim(), nameAr: nameAr.trim(), nameEn: nameEn.trim(),
-        priceAgorot, byWeight, available: item?.available ?? true, ...(!item && { requestId: requestId.current }) });
-      onDone();
+        // Older servers write stock on edits, so echo the current catalogue value for rollback compatibility.
+        priceAgorot, byWeight, available: item ? available : true, ...(!item && { requestId: requestId.current }) });
+      await onDone();
     } catch (e) { setError(err(e)); }
     finally { setBusy(false); }
   }

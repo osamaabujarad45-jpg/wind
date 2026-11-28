@@ -347,6 +347,8 @@ sudo systemd-run --wait --pipe --collect -p User=wind -p EnvironmentFile=/etc/wi
 
 The command keeps orders and cash rows. It restores pending driver rows for applications and rechecks and revokes sessions whose legacy role or status is being restored. It pauses shops whose owners would lose their Shop inbox. It detaches browser subscriptions from their sessions so the older API can update them by endpoint. It refuses if an affected shop has an outstanding balance backed by cleared captain cash, if an inaccessible shop has any outstanding balance, or if an account would lose access to outstanding work or cash. A later job can make the older API hold the cleared cash again. On refusal, keep the current release and use it to finish or settle those obligations. When the command succeeds, set `WIND_PROFILE_SWITCHING=0` and restore a `WIND_MIN_CLIENT_BUILD` supported by the selected fallback's web bundle and signed APK. Check `/api/ready` both with the fallback's `X-Wind-Client` build number and without it. Verify the approval queue, current orders, shop pauses and balances and backup schedule before reopening ingress. Keep the current database if it contains acknowledged work since activation.
 
+An older API can overwrite stock when saving item details. Keep concurrent stock changes and detail edits off the same item while that API is active. If an installed build omits stock from detail edits, use the availability switch only until a compatible client or API is active again.
+
 ### Email checks before rolling back to an older release
 
 Complete these checks before switching to an older release or launching a deployment that can automatically fall back to it.

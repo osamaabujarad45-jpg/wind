@@ -5,7 +5,9 @@ import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { test } from 'node:test';
 import { initializeSqlite } from '../server/db/sqlite-schema.ts';
+import { initializeSqliteModeSwitching } from '../server/db/account-profiles.ts';
 import { initializePostgres } from '../server/db/postgres-schema.ts';
 import { importSnapshot, readSnapshot } from '../server/migrate.ts';
 import { SESSION_DAY_MS } from '../server/domain/session-policy.ts';
@@ -20,6 +22,53 @@ const now = Date.now();
 const tokenHash = token => createHash('sha256').update(token).digest('hex');
 let runtime, imported;
 try {
+  for (const column of ['captain_state', 'active_mode', 'mode_revision']) await test(`SQLite shadow repairs a missing ${column}`, () => {
+    const partial = new DatabaseSync(':memory:');
+    try {
+      initializeSqlite(partial);
+      partial.exec('DROP INDEX sessions_one_captain; DROP TRIGGER scrub_deleted_captain');
+      partial.exec(`ALTER TABLE ${column === 'captain_state' ? 'users' : 'sessions'} DROP COLUMN ${column}`);
+      partial.exec(`INSERT INTO users (id,phone,name,password,role,status,vehicle,created_at,approved_at)
+        VALUES (1,'0599690131','Synthetic profile','unused','driver','active','car',1,1);
+        INSERT INTO sessions (token_hash,user_id,created_at) VALUES ('partial',1,${now});`);
+      initializeSqlite(partial);
+      initializeSqlite(partial);
+      assert.deepEqual({ ...partial.prepare('SELECT active_mode,mode_revision FROM sessions').get() }, { active_mode: 'captain', mode_revision: 1 }, column);
+      assert.equal(partial.prepare('SELECT captain_state FROM users').get().captain_state, 'active', column);
+    } finally { partial.close(); }
+  });
+  for (const incomplete of ['ALTER TABLE sessions ADD COLUMN captain_online_at INTEGER', 'ALTER TABLE merchant_items ADD COLUMN client_request_id TEXT']) {
+    const partialSchema = new DatabaseSync(':memory:');
+    try {
+      initializeSqlite(partialSchema);
+      partialSchema.exec(incomplete);
+      initializeSqliteModeSwitching(partialSchema, true);
+      initializeSqliteModeSwitching(partialSchema, true);
+      // The regular initializer still opens the repaired schema.
+      initializeSqlite(partialSchema);
+      assert.ok(partialSchema.prepare("SELECT 1 FROM pragma_table_info('sessions') WHERE name='last_activity_at'").get(), incomplete);
+      assert.ok(partialSchema.prepare("SELECT 1 FROM pragma_index_list('merchant_items') WHERE name='merchant_items_request' AND \"unique\"=1 AND partial=1").get(), incomplete);
+    } finally { partialSchema.close(); }
+  }
+  for (const partial of [false, true]) await test(`SQLite ${partial ? 'repairs' : 'initializes'} shop publication`, () => {
+    const database = new DatabaseSync(':memory:');
+    try {
+      initializeSqlite(database);
+      if (partial) database.exec('ALTER TABLE merchants ADD COLUMN published_at INTEGER');
+      for (const [id, status, paused] of [[1, 'active', 0], [2, 'active', 1], [3, 'pending', 0]]) {
+        database.prepare("INSERT INTO users (id,phone,name,password,role,status,created_at) VALUES (?,?,'Synthetic owner','unused','customer','active',1)")
+          .run(id, `059969013${id}`);
+        database.prepare(`INSERT INTO merchants (owner_user_id,name,category,city,lat,lng,status,paused_new,min_order_agorot,
+          delivery_fee_agorot,service_fee_agorot,commission_bps,prep_minutes,licence_no,licence_expires_at,created_at,updated_at)
+          VALUES (?,'Synthetic shop','grocery','tulkarm',32,35,?,?,3000,1000,200,1000,20,'QA-1',?,1,1)`).run(id, status, paused, now);
+      }
+      initializeSqliteModeSwitching(database, true);
+      initializeSqliteModeSwitching(database, true);
+      assert.deepEqual(database.prepare('SELECT published_at,paused_new FROM merchants ORDER BY id').all().map(row => ({ ...row })), [
+        { published_at: 1, paused_new: 0 }, { published_at: partial ? null : 1, paused_new: 1 }, { published_at: null, paused_new: 1 },
+      ]);
+    } finally { database.close(); }
+  });
   initializeSqlite(source);
   const preProfiles = `
     DROP INDEX sessions_one_captain;

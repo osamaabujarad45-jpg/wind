@@ -1043,13 +1043,21 @@ async function startSession(userId: number) {
   return { token, ...await me(await userInMode(account, mode, mode === 'personal' ? 0 : 1), false, sessionHash) };
 }
 
-async function me(user: User, payroll = false, sessionHash?: string) {
+async function me(user: User, payroll = false, sessionHash?: string, confirmSession = false) {
   const rideOfferSeconds = user.role === 'driver' ? await dispatch.offerSeconds(user.id) : undefined;
   const offerRecoveryEmail = user.role === 'customer' && !user.email && (emailReady || firebaseEmail.resetEnabled)
     && !!await one("SELECT 1 FROM orders WHERE customer_id = ? AND status = 'completed' LIMIT 1", user.id);
   const shadow = process.env.WIND_PROFILE_SHADOW === '1';
   const profiles = sessionHash && (shadow || accountModes)
     ? await previewProfiles(persistence, user, sessionHash, enabledServices.includes('shop'), accountModes) : undefined;
+  if (confirmSession && sessionHash && !profiles) {
+    // A missing profile can also mean a live admin or a just-blocked account. Check the session itself.
+    const now = Date.now();
+    const current = await one(`SELECT u.status FROM sessions s JOIN users u ON u.id = s.user_id
+      WHERE s.token_hash = ? AND s.user_id = ? AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?`,
+      sessionHash, user.id, now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY) ?? fail(401, 'unauthorized');
+    user = { ...user, status: current.status };
+  }
   if (profiles && shadow) console.info(JSON.stringify({ category: 'profile_shadow', mode: profiles.mode,
     roleMatches: profiles.role === user.role, captainAvailable: profiles.captain?.available ?? false }));
   const accountProfile = accountModes && profiles ? { ...profiles,
@@ -1185,7 +1193,7 @@ async function emailTransaction<T>(work: () => Promise<T>) {
     const result = await work();
     await persistence.exec('COMMIT');
     return result;
-  } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
+  } catch (error) { return persistence.rollbackAfterError(error); }
 }
 async function recoveryEmailSessionActive(account: Row, sessionHash: string) {
   const now = Date.now();
@@ -1416,14 +1424,18 @@ route('POST', '/api/auth/logout', async ({ user, req }) => {
 });
 route('GET', '/api/me', async ({ user, query, req }) => {
   const token = bearer(req);
-  if (accountModes) return emailTransaction(async () => {
-    const current = await authenticate(req, false) ?? fail(401, 'unauthorized');
-    const sessionHash = sha(token!);
-    if (current.accountMode === 'captain' && query.get('launch') === '1')
-      await setCaptainOffline(persistence, current.id, await captainOfflineReason(persistence, current.id, sessionHash, Date.now(), true));
-    return me(current, query.get('payroll') === '1', sessionHash);
+  if (!accountModes) return me(user, query.get('payroll') === '1', token && sha(token), true);
+  const sessionHash = sha(token!);
+  const current = await authenticate(req, false) ?? fail(401, 'unauthorized');
+  // only the launch reset writes, so plain polls skip the write lock
+  if (current.accountMode !== 'captain' || query.get('launch') !== '1')
+    return me(current, query.get('payroll') === '1', sessionHash, true);
+  return emailTransaction(async () => {
+    const locked = await authenticate(req, false) ?? fail(401, 'unauthorized');
+    if (locked.accountMode === 'captain')
+      await setCaptainOffline(persistence, locked.id, await captainOfflineReason(persistence, locked.id, sessionHash, Date.now(), true));
+    return me(locked, query.get('payroll') === '1', sessionHash, true);
   });
-  return me(user, query.get('payroll') === '1', token && sha(token));
 });
 
 async function changeSessionMode({ user, body, req }: Pick<Ctx, 'body' | 'req'> & { user: { id: number } }) {
@@ -4425,17 +4437,17 @@ route('POST', '/api/subscriptions', async ({ user, req }) => {
 // Admin
 route('POST', '/api/admin/orders/:id/proof-reset', async ({ user, params, body }) => {
   need(user, 'admin');
+  needStaff(await staffActor(persistence, user), fail, 'support');
   const reason = text(body.reason, 500);
   if (reason.length < 5) fail(400, 'invalid_input');
   const order = (await getOrder(Number(params[0]), user));
   if (!['in_transit', 'returning'].includes(order.status)) fail(409, 'cannot_advance');
-  (await persistence.exec('BEGIN IMMEDIATE'));
-  try {
+  await emailTransaction(async () => {
+    needStaff(await staffActor(persistence, user, true), fail, 'support');
     (await run('DELETE FROM proof_attempts WHERE order_id = ?', order.id));
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PROOF_RESET', ?, ?)`, user.id, order.id, JSON.stringify({ reason }), Date.now()));
     await queuePush([order.driverId ?? null], 'support', order.id); // the driver can enter the code again
-    (await persistence.exec('COMMIT'));
-  } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+  });
   return { ok: true };
 });
 route('GET', '/api/admin/stats', async ({ user }) => {
@@ -4820,18 +4832,26 @@ async function resetVerification(adminId: number, target: Row, body: Row) {
   return { method: 'attested', note };
 }
 
+const supportTarget = async (id: unknown, lock = false) => (await one(`SELECT * FROM users WHERE id = ? AND role != 'admin'
+  AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'${lock && persistence.backend === 'postgres' ? ' FOR NO KEY UPDATE' : ''}`,
+  Number(id))) ?? fail(404, 'not_found');
+
 // No SMS provider yet: support verifies the caller, resets, and reads the temporary password out to them.
-route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) => {
+route('POST', '/api/admin/users/:id/password', async ({ user, params, body, req }) => {
   need(user, 'admin');
+  needStaff(await staffActor(persistence, user), fail, 'support');
   (await limit(identityKey('support-password', user.id), 20, 60 * 60_000));
-  const target = (await one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
+  const target = await supportTarget(params[0]);
   const verification = await resetVerification(user.id, target, body);
   const password = randomBytes(12).toString('base64url');
   const hashed = await hashPassword(password);
   // Keep the envelope's actor on the journaled security event: the route no longer runs inside it.
-  await persistence.atomic({ id: user.id, correlationId: randomUUID() }, async () => {
-    (await persistence.exec('BEGIN IMMEDIATE'));
-    try {
+  await persistence.atomic({ id: user.id, correlationId: randomUUID() }, () =>
+    emailTransaction(async () => {
+      needStaff(await staffActor(persistence, user, true), fail, 'support');
+      await supportTarget(target.id, true);
+      // Recheck after the target row wait, then pin the session through the credential write.
+      if (!await authenticate(req, false, persistence.backend === 'postgres')) fail(401, 'unauthorized');
       // The password the check was bound to, or two requests racing one proof would both win.
       if (!(await run('UPDATE users SET password = ? WHERE id = ? AND password = ?', hashed, target.id, target.password)).changes) fail(409, 'identity_check_required');
       (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
@@ -4839,16 +4859,14 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) =>
       await clearFirebaseReset(target.id);
       (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SUPPORT_PASSWORD_RESET', ?, ?)`,
         user.id, JSON.stringify({ targetId: target.id, sessionsRevoked: true, verification }), Date.now()));
-      (await persistence.exec('COMMIT'));
-    } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
-  });
+    }));
   return { password };
 });
 
 // Caller identity for support: a one-time code goes to the account's verified email; the caller reads it back.
-const supportTarget = async (id: unknown) => (await one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(id))) ?? fail(404, 'not_found');
 route('POST', '/api/admin/users/:id/identity-code', async ({ user, params }) => {
   need(user, 'admin');
+  needStaff(await staffActor(persistence, user), fail, 'support');
   const target = (await supportTarget(params[0]));
   if (!await recoveryEmailVerified(persistence, target)) fail(409, 'email_not_verified');
   if (!await (await reserveEmailCode(target, 'support'))()) fail(409, 'user_changed');
@@ -4856,6 +4874,7 @@ route('POST', '/api/admin/users/:id/identity-code', async ({ user, params }) => 
 });
 route('POST', '/api/admin/users/:id/identity-check', async ({ user, params, body }) => {
   need(user, 'admin');
+  needStaff(await staffActor(persistence, user), fail, 'support');
   const target = (await supportTarget(params[0]));
   if (!await recoveryEmailVerified(persistence, target)) fail(409, 'email_not_verified');
   (await useCode(target, 'support', body.code));
@@ -5058,7 +5077,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       if (user?.accountMode && target && url.pathname.startsWith('/api/orders/') && !url.pathname.endsWith('/release')
         && ['POST','PATCH','DELETE'].includes(req.method ?? ''))
         await getOrder(Number(target[1]), user);
-      if (persistence.backend === 'postgres' && target && ['POST','PATCH','DELETE'].includes(req.method ?? '')) {
+      if (persistence.backend === 'postgres' && persistence.inTransaction && target && ['POST','PATCH','DELETE'].includes(req.method ?? '')) {
         // Handler-owned authorization/replay ordering is part of the installed-client contract.
         await one('SELECT id FROM orders WHERE id=? FOR UPDATE', Number(target[1]));
       }
@@ -5109,7 +5128,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       const result = await match.handler({ user: user!, body, params: match.m!.slice(1), query: url.searchParams, req });
       if (boundary) await persistence.exec('COMMIT');
       return result;
-      } catch (error) { if (boundary) await persistence.exec('ROLLBACK'); throw error; }
+      } catch (error) { if (boundary) return persistence.rollbackAfterError(error); throw error; }
     };
     const profileWrite = user?.accountMode && ['POST','PATCH','DELETE'].includes(req.method ?? '')
       && /^\/api\/(?:orders|jobs|location|driver|captain|merchant|roads|subscriptions|promos|me\/places)(?:\/|$)/.test(url.pathname)

@@ -34,6 +34,7 @@ const suites = [
   "second-tick.test.mjs",
   "personal-home.test.mjs",
   "account-profiles.test.mjs",
+  "persistence-cleanup.test.mjs",
   "profile-switching.test.mjs",
   "driver-presence.test.mjs",
   "driver-presence-runtime.test.mjs",
@@ -184,6 +185,7 @@ const suites = [
 const exempt = new Map([
   ['db-persistence.test.mjs', 'needs live PostgreSQL (WIND_TEST_DATABASE_URL); npm run test:persistence'],
   ['db-api.test.mjs', 'needs live PostgreSQL (WIND_TEST_DATABASE_URL); npm run test:persistence'],
+  ['pg-review-hardening.mjs', 'needs live PostgreSQL (WIND_TEST_DATABASE_URL); npm run test:persistence'],
 ]);
 // Selection discipline: every *.test.mjs on disk must be selected or explicitly exempt.
 // This is what silently skipped four real suites (REVIEW-2026-10-29, P1 #4).

@@ -20,9 +20,11 @@ export async function previewProfiles(db: Persistence, user: User, sessionHash: 
   const captainState: CaptainProfileState = captainAvailable
     ? modes ? row.captain_state === 'active' ? 'approved' : row.captain_state : row.status === 'pending' || row.approved_at == null ? 'review' : 'approved'
     : 'under_review';
-  const mode: AccountMode = row.active_mode === 'captain' && captainAvailable ? 'captain'
-    : row.active_mode === 'shop' && row.shop_id != null ? 'shop' : 'personal';
-  return { mode, revision: Number(row.mode_revision), role: mode === 'captain' ? 'driver' : 'customer',
+  // The authenticated user and its profile must describe the same session revision.
+  const sessionMode = modes ? user.accountMode : undefined;
+  const mode: AccountMode = sessionMode ?? (row.active_mode === 'captain' && captainAvailable ? 'captain'
+    : row.active_mode === 'shop' && row.shop_id != null ? 'shop' : 'personal');
+  return { mode, revision: sessionMode ? user.modeRevision! : Number(row.mode_revision), role: mode === 'captain' ? 'driver' : 'customer',
     captain: row.role === 'driver' || row.application_state ? { state: captainState, available: captainAvailable } : null,
     shop: row.shop_id == null ? null : { id: Number(row.shop_id), name: row.shop_name, state: row.shop_state } };
 }

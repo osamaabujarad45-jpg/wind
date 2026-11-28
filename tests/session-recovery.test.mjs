@@ -676,4 +676,23 @@ console.log('Session recovery: failed removal keeps the recovery record, 401 alw
   await disabling; await replacement;
   assert.deepEqual(requests, [['/push/subscribe', 'second'], ['/push/subscribe', 'second'], ['/push/subscribe', 'second'], ['/push/subscribe', 'third'], ['/push/unsubscribe', 'third']]);
   assert.deepEqual(unsubscribed, ['third', 'third']);
+
+  // A reply that lands after a profile switch reads as 401 on the client; the status the server sent decides.
+  saved.delete('wind.webPushBinding');
+  unsubscribed.length = 0;
+  bindError = null;
+  await refreshPush('en');
+  bindError = Object.assign(new ApiError('session_changed', 401), { servedStatus: 503 });
+  await assert.rejects(refreshPush('en'), /session_changed/);
+  assert.deepEqual(unsubscribed, [], 'a server fault served during a profile switch keeps the endpoint');
+
+  bindError = new ApiError('invalid_input', 400);
+  await assert.rejects(refreshPush('en'), /invalid_input/);
+  assert.deepEqual(unsubscribed, ['fourth'], 'a definite refusal retires the endpoint');
+  assert.equal(saved.has('wind.webPushBinding'), false, 'the record leaves with the endpoint it described');
+
+  subscription.endpoint = 'https://fcm.googleapis.com/fcm/send/synthetic-2';
+  bindError = new ApiError('network');
+  await assert.rejects(refreshPush('en'), /network/);
+  assert.deepEqual(unsubscribed, ['fourth'], 'a lost reply keeps the new endpoint after an earlier refusal');
 }

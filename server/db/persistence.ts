@@ -6,7 +6,7 @@ import { logServerError } from '../domain/diagnostics.ts';
 export type Row = Record<string, any>;
 export type WriteResult = { changes: number | bigint; lastInsertRowid: number | bigint };
 type Effect = () => void | Promise<void>;
-type Owner = { envelope?: boolean; savepoints?: { name: string; effects: number }[]; client?: PoolClient; clientFailure?: Error; clientError?: (error: Error) => void; release?: () => void; active: boolean; closed: boolean; pending: Effect[]; committed: Effect[]; memo: Map<string, Promise<unknown>> };
+type Owner = { envelope?: boolean; savepoints?: { name: string; effects: number }[]; rollbackOnly?: { error: unknown }; client?: PoolClient; clientFailure?: Error; clientError?: (error: Error) => void; release?: () => void; active: boolean; closed: boolean; pending: Effect[]; committed: Effect[]; memo: Map<string, Promise<unknown>> };
 export type PersistenceOptions = {
   sqlite?: DatabaseSync; connectionString?: string; pool?: PoolConfig;
   poolSize?: number; acquireTimeoutMs?: number; statementTimeoutMs?: number; lockTimeoutMs?: number;
@@ -49,6 +49,7 @@ export class Persistence {
   private readonly sqlite?: DatabaseSync;
   private readonly owners = new AsyncLocalStorage<Owner | undefined>();
   private sqliteTail: Promise<void> = Promise.resolve();
+  private sqliteFailure?: Error;
   private readonly acquireTimeout: number;
 
   constructor(options: PersistenceOptions) {
@@ -87,7 +88,7 @@ export class Persistence {
     return this.owners.run(owner, async () => {
       try { return await work(); }
       finally {
-        try { if (owner.active) await this.exec('ROLLBACK'); }
+        try { await this.rollbackQuietly(owner); }
         finally {
           try { await this.flushEffects(); }
           finally { owner.closed = true; }
@@ -132,6 +133,7 @@ export class Persistence {
       await Promise.race([previous, new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(Object.assign(new Error('SQLite acquisition timeout'), { code: 'DB_ACQUIRE_TIMEOUT' })), this.acquireTimeout);
       })]);
+      if (this.sqliteFailure) throw this.sqliteFailure;
       return release;
     } catch (error) { release(); throw error; }
     finally { clearTimeout(timer); }
@@ -183,11 +185,16 @@ export class Persistence {
       }
       const savepoint = stack.pop();
       if (!savepoint) { if (command === 'ROLLBACK') return; throw new Error('Missing legacy transaction'); }
-      if (command === 'ROLLBACK') {
-        await this.run(`ROLLBACK TO SAVEPOINT ${savepoint.name}`);
-        owner.pending.length = savepoint.effects;
+      try {
+        if (command === 'ROLLBACK') {
+          await this.run(`ROLLBACK TO SAVEPOINT ${savepoint.name}`);
+          owner.pending.length = savepoint.effects;
+        }
+        await this.run(`RELEASE SAVEPOINT ${savepoint.name}`);
+      } catch (error) {
+        owner.rollbackOnly ??= { error };
+        throw error;
       }
-      await this.run(`RELEASE SAVEPOINT ${savepoint.name}`);
       return;
     }
     if (command.startsWith('BEGIN')) {
@@ -208,6 +215,11 @@ export class Persistence {
       return;
     }
     if (!owner.active) { if (command === 'ROLLBACK') return; throw new Error('No owned transaction'); }
+    if (command === 'COMMIT' && owner.rollbackOnly) {
+      const { error } = owner.rollbackOnly;
+      await this.rollbackQuietly(owner);
+      throw error;
+    }
     try {
       if (owner.clientFailure) throw owner.clientFailure;
       if (owner.client) {
@@ -220,14 +232,35 @@ export class Persistence {
     } catch (error) {
       // COMMIT failure has an unknown outcome on connection loss: never replay or publish.
       if (owner.client) this.releaseClient(owner, true);
-      else if (this.sqlite!.isTransaction) this.sqlite!.exec('ROLLBACK');
+      else if (this.sqlite?.isTransaction) {
+        try { this.sqlite.exec('ROLLBACK'); }
+        catch (cause) {
+          // Never lend a connection that may still hold another request's writes.
+          if (this.sqlite.isTransaction) this.sqliteFailure = Object.assign(new Error('SQLite rollback failed', { cause }), { code: 'DB_TRANSACTION_ABORTED' });
+        }
+      }
       throw error;
     } finally {
       owner.pending.length = 0;
       owner.active = false;
+      owner.rollbackOnly = undefined;
       this.releaseClient(owner);
       owner.release?.(); owner.release = undefined;
     }
+  }
+
+  /** Preserve the work error while exec disposes of any unusable connection. */
+  private async rollbackQuietly(owner: Owner) {
+    if (owner.active) try { await this.exec('ROLLBACK'); } catch { return false; }
+    return true;
+  }
+
+  async rollbackAfterError(error: unknown): Promise<never> {
+    const owner = this.owner()!;
+    // A failed legacy release has already invalidated the envelope. Do not roll back its parent savepoint here.
+    if (owner.envelope && owner.rollbackOnly) throw error;
+    if (!await this.rollbackQuietly(owner) && owner.active) owner.rollbackOnly = { error };
+    throw error;
   }
 
   async sqliteModeWrite<T>(work: () => Promise<T>): Promise<T> {
@@ -242,9 +275,11 @@ export class Persistence {
         owner.envelope = false;
         await this.exec('COMMIT');
         return result;
+      } catch (error) {
+        throw owner.rollbackOnly ? owner.rollbackOnly.error : error;
       } finally {
         owner.envelope = false; owner.savepoints = undefined;
-        if (owner.active) await this.exec('ROLLBACK');
+        await this.rollbackQuietly(owner);
       }
     });
   }
@@ -260,8 +295,10 @@ export class Persistence {
       await this.run('RELEASE SAVEPOINT business_mutation');
       return result;
     } catch (error) {
-      await this.run('ROLLBACK TO SAVEPOINT business_mutation');
-      await this.run('RELEASE SAVEPOINT business_mutation');
+      try {
+        await this.run('ROLLBACK TO SAVEPOINT business_mutation');
+        await this.run('RELEASE SAVEPOINT business_mutation');
+      } catch { owner.rollbackOnly ??= { error }; }
       owner.pending.length = effects;
       throw error;
     }
@@ -284,9 +321,10 @@ export class Persistence {
         await this.exec('COMMIT');
         return value;
       } catch (error) {
+        const failure = owner.rollbackOnly ? owner.rollbackOnly.error : error;
         owner.envelope = false;
-        if (this.inTransaction) await this.exec('ROLLBACK');
-        throw error;
+        await this.rollbackQuietly(owner);
+        throw failure;
       } finally { owner.envelope = false; owner.savepoints = undefined; }
     });
   }
@@ -306,6 +344,7 @@ export class Persistence {
     const attempts = options.replaySafe ? Math.min(3, Math.max(1, options.maxAttempts ?? 3)) : 1;
     return this.scope(async () => {
       if (this.inTransaction) throw new Error('Cannot retry a nested transaction');
+      const owner = this.owner()!;
       for (let attempt = 1; ; attempt++) {
         try {
           await this.exec('BEGIN');
@@ -313,8 +352,9 @@ export class Persistence {
           await this.exec('COMMIT');
           return value;
         } catch (error) {
-          if (this.inTransaction) await this.exec('ROLLBACK');
-          if (attempt >= attempts || !['40001', '40P01'].includes((error as { code?: string }).code ?? '')) throw error;
+          const failure = owner.rollbackOnly ? owner.rollbackOnly.error : error;
+          const rolledBack = await this.rollbackQuietly(owner);
+          if (!rolledBack || attempt >= attempts || !['40001', '40P01'].includes((failure as { code?: string } | null)?.code ?? '')) throw failure;
           await new Promise(done => setTimeout(done, 10 * attempt));
         }
       }

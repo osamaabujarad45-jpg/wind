@@ -69,11 +69,12 @@ const profileSchema = () => readFileSync(new URL('./account-profiles.sql', impor
 export function initializeSqliteAccountProfiles(db: DatabaseSync) {
   db.exec('BEGIN IMMEDIATE');
   try {
-    const migrate = !db.prepare('PRAGMA table_info(sessions)').all().some(column => column.name === 'active_mode');
-    if (migrate) db.exec(`
-      ALTER TABLE users ADD COLUMN captain_state TEXT CHECK (captain_state IN ('active','review','paused','closing'));
-      ALTER TABLE sessions ADD COLUMN active_mode TEXT DEFAULT 'personal' CHECK (active_mode IN ('personal','captain','shop'));
-      ALTER TABLE sessions ADD COLUMN mode_revision INTEGER NOT NULL DEFAULT 0 CHECK (mode_revision >= 0);`);
+    const sessionColumns = new Set(db.prepare('PRAGMA table_info(sessions)').all().map(column => column.name));
+    const addState = !db.prepare('PRAGMA table_info(users)').all().some(column => column.name === 'captain_state');
+    const addMode = !sessionColumns.has('active_mode'), addRevision = !sessionColumns.has('mode_revision');
+    if (addState) db.exec("ALTER TABLE users ADD COLUMN captain_state TEXT CHECK (captain_state IN ('active','review','paused','closing'))");
+    if (addMode) db.exec("ALTER TABLE sessions ADD COLUMN active_mode TEXT DEFAULT 'personal' CHECK (active_mode IN ('personal','captain','shop'))");
+    if (addRevision) db.exec('ALTER TABLE sessions ADD COLUMN mode_revision INTEGER NOT NULL DEFAULT 0 CHECK (mode_revision >= 0)');
     if (!db.prepare('PRAGMA table_info(push_subscriptions)').all().some(column => column.name === 'auth_session_hash'))
       db.exec('ALTER TABLE push_subscriptions ADD COLUMN auth_session_hash TEXT REFERENCES sessions(token_hash) ON DELETE CASCADE');
     db.exec(profileSchema());
@@ -83,7 +84,7 @@ export function initializeSqliteAccountProfiles(db: DatabaseSync) {
         DELETE FROM captain_profiles WHERE user_id = NEW.id;
         UPDATE users SET captain_state = NULL WHERE id = NEW.id;
       END;`);
-    if (migrate) {
+    if (addState || addMode || addRevision) {
       const insert = db.prepare(insertProfile);
       const setState = db.prepare(setCaptainState);
       const markSession = db.prepare(markCaptainSession);
@@ -103,15 +104,19 @@ export function initializeSqliteModeSwitching(db: DatabaseSync, shopsEnabled: bo
   db.exec('BEGIN IMMEDIATE');
   try {
     const sessionColumns = new Set(db.prepare('PRAGMA table_info(sessions)').all().map(column => column.name));
-    if (!sessionColumns.has('captain_online_at')) {
-      db.exec(`ALTER TABLE sessions ADD COLUMN captain_online_at INTEGER;
-        ALTER TABLE sessions ADD COLUMN last_activity_at INTEGER;
-        ALTER TABLE merchants ADD COLUMN published_at INTEGER;
-        ALTER TABLE merchant_items ADD COLUMN client_request_id TEXT;
-        CREATE UNIQUE INDEX merchant_items_request ON merchant_items(merchant_id, client_request_id) WHERE client_request_id IS NOT NULL;
-        UPDATE merchants SET published_at = created_at WHERE status <> 'pending';
-        UPDATE merchants SET paused_new = 1 WHERE status = 'pending';`);
-    }
+    if (!sessionColumns.has('captain_online_at')) db.exec('ALTER TABLE sessions ADD COLUMN captain_online_at INTEGER');
+    if (!sessionColumns.has('last_activity_at')) db.exec('ALTER TABLE sessions ADD COLUMN last_activity_at INTEGER');
+    const merchantColumns = new Set(db.prepare('PRAGMA table_info(merchants)').all().map(column => column.name));
+    const activated = !!db.prepare('SELECT 1 FROM settings WHERE key = ?').get(modeActivationKey);
+    const addPublication = !merchantColumns.has('published_at');
+    if (addPublication) db.exec('ALTER TABLE merchants ADD COLUMN published_at INTEGER');
+    // Legacy listings included paused shops. With a partial schema, a paused shop with no timestamp may have never published.
+    db.exec(`UPDATE merchants SET published_at = created_at WHERE published_at IS NULL AND status <> 'pending'
+      ${addPublication && !activated ? '' : 'AND paused_new = 0'};
+      UPDATE merchants SET paused_new = 1 WHERE status = 'pending' AND paused_new = 0;`);
+    const itemColumns = new Set(db.prepare('PRAGMA table_info(merchant_items)').all().map(column => column.name));
+    if (!itemColumns.has('client_request_id')) db.exec('ALTER TABLE merchant_items ADD COLUMN client_request_id TEXT');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS merchant_items_request ON merchant_items(merchant_id, client_request_id) WHERE client_request_id IS NOT NULL');
     const addOfflineReason = `ALTER TABLE sessions ADD COLUMN captain_offline_reason TEXT
       CHECK (captain_offline_reason IN ('idle','ride_due','launch'))`;
     if (!sessionColumns.has('captain_offline_reason')) db.exec(addOfflineReason);
@@ -124,7 +129,7 @@ export function initializeSqliteModeSwitching(db: DatabaseSync, shopsEnabled: bo
     }
     if (!db.prepare('PRAGMA table_info(captain_profiles)').all().some(column => column.name === 'application_id'))
       db.exec('ALTER TABLE captain_profiles ADD COLUMN application_id TEXT');
-    if (!db.prepare('SELECT 1 FROM settings WHERE key = ?').get(modeActivationKey)) {
+    if (!activated) {
       // Shadow mode leaves the old session writers in place. Reconcile those sessions before the policy changes.
       db.exec("UPDATE sessions SET active_mode = 'personal', mode_revision = mode_revision + 1 WHERE active_mode = 'captain'");
       const markSession = db.prepare(markCaptainSession);

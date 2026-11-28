@@ -104,6 +104,7 @@ try {
   await persistence.run('UPDATE users SET phone_verified_at = ? WHERE id = ?', Date.now(), staff.user.id);
   await promote('0599691031');
   const admin = (await login(1)).token;
+  assert.equal((await call('/me', admin)).accountProfile, undefined);
   await call('/admin/users/72', admin, { status: 'blocked' });
   await call('/admin/users/72', admin, { status: 'active' });
   assert.deepEqual({ ...await persistence.one('SELECT status, captain_state, approved_at FROM users WHERE id = 72') },
@@ -379,6 +380,94 @@ try {
   assert.equal(restarted.captainOfflineReason, 'launch');
   await availability(phone, true, resumed.revision);
 
+  // Pause the launch at the write boundary, then move Captain to a second phone.
+  const replacementPhone = (await login(2)).token;
+  const offerOrder = await call('/orders', buyer, requestOrder('parcel', { option: 'small' }), 0);
+  const launchEntered = Promise.withResolvers(), resumeLaunch = Promise.withResolvers();
+  const execute = persistence.exec;
+  persistence.exec = async function(command) {
+    if (command === 'BEGIN IMMEDIATE') {
+      persistence.exec = execute;
+      launchEntered.resolve();
+      await resumeLaunch.promise;
+    }
+    return execute.call(this, command);
+  };
+  const staleLaunch = request('/me?launch=1', phone);
+  try {
+    await Promise.race([launchEntered.promise, staleLaunch.then(() => { throw new Error('Launch missed the write boundary'); })]);
+    await switchTo(phone, 'personal', resumed.revision);
+    const movedCaptain = await switchTo(replacementPhone, 'captain', 0);
+    await availability(replacementPhone, true, movedCaptain.revision);
+    await persistence.run('INSERT INTO order_offers (order_id, driver_id, price, created_at) VALUES (?, ?, ?, ?)',
+      offerOrder.id, application.user.id, 40, Date.now());
+  } finally {
+    persistence.exec = execute;
+    resumeLaunch.resolve();
+  }
+  const launchedMode = (await staleLaunch).body.accountProfile.mode;
+  const currentOnline = (await call('/me', replacementPhone)).accountProfile.captainOnline;
+  const offerKept = !!await persistence.one('SELECT 1 FROM order_offers WHERE order_id=? AND driver_id=?', offerOrder.id, application.user.id);
+  await switchTo(replacementPhone, 'personal', 1);
+
+  // A normal poll can overlap a switch between authentication and profile enrichment.
+  const profileEntered = Promise.withResolvers(), resumeProfile = Promise.withResolvers();
+  persistence.one = async function(sql, ...params) {
+    if (sql.includes('s.active_mode, s.mode_revision, u.role') && params[3] === hash(phone)) {
+      persistence.one = query;
+      profileEntered.resolve();
+      await resumeProfile.promise;
+    }
+    return query.call(this, sql, ...params);
+  };
+  const stalePoll = request('/me', phone);
+  const phoneRevision = resumed.revision + 1;
+  let finalCaptain;
+  try {
+    await Promise.race([profileEntered.promise, stalePoll.then(() => { throw new Error('Poll missed the profile read'); })]);
+    finalCaptain = await switchTo(phone, 'captain', phoneRevision);
+  } finally {
+    persistence.one = query;
+    resumeProfile.resolve();
+  }
+  const { body: polled } = await stalePoll;
+  assert.deepEqual({ launchedMode, currentOnline, offerKept,
+    profileMode: polled.accountProfile.mode, profileRevision: polled.accountProfile.revision, profileRole: polled.accountProfile.role },
+  { launchedMode: 'personal', currentOnline: true, offerKept: true,
+    profileMode: polled.user.accountMode, profileRevision: polled.user.modeRevision, profileRole: polled.user.role });
+
+  // The profile lookup can lose a session, or just stop projecting a profile while its session still exists.
+  for (const revoke of [false, true]) {
+    const reached = Promise.withResolvers(), resume = Promise.withResolvers();
+    persistence.one = async function(sql, ...params) {
+      if (sql.includes('s.active_mode, s.mode_revision, u.role') && params[3] === hash('legacy_applicant')) {
+        reached.resolve();
+        await resume.promise;
+      }
+      return query.call(this, sql, ...params);
+    };
+    const poll = request('/me', 'legacy_applicant');
+    try {
+      await Promise.race([reached.promise, poll.then(() => { throw new Error('Poll missed the profile read'); })]);
+      if (revoke) await call('/auth/logout', 'legacy_applicant', {});
+      else await persistence.run("UPDATE users SET status='blocked' WHERE id=71");
+    } finally {
+      resume.resolve();
+      await poll;
+      persistence.one = query;
+      if (!revoke) await persistence.run("UPDATE users SET status='active' WHERE id=71");
+    }
+    const result = await poll;
+    if (revoke) assert.deepEqual(result, { status: 401, body: { error: 'unauthorized' } });
+    else {
+      assert.equal(result.status, 200);
+      assert.equal(result.body.accountProfile, undefined);
+      assert.equal(result.body.user.status, 'blocked');
+    }
+  }
+  await call(`/orders/${offerOrder.id}/cancel`, buyer, {}, 0);
+  await availability(phone, true, finalCaptain.revision);
+
   const ownParcel = await call('/orders', personal.token, requestOrder('parcel', { option: 'small' }), 0);
   assert.ok(!(await call('/jobs', phone)).some(job => job.id === ownParcel.id));
   await call(`/orders/${ownParcel.id}`, phone, undefined, undefined, 404, 'not_found');
@@ -386,7 +475,7 @@ try {
   const ownRide = await call('/orders', personal.token, requestOrder('ride', { confirmCaptainOffline: true }), 0);
   assert.equal(ownRide.service, 'ride');
   assert.equal((await call('/me', phone)).accountProfile.captainOnline, false);
-  await call('/session/captain/availability', phone, { online: true, expectedRevision: resumed.revision }, undefined, 409, 'captain_ride_due');
+  await call('/session/captain/availability', phone, { online: true, expectedRevision: finalCaptain.revision }, undefined, 409, 'captain_ride_due');
   assert.ok(await persistence.one("SELECT id FROM security_events WHERE actor_id = ? AND action = 'OTHER_SESSIONS_ENDED'", application.user.id));
   assert.ok(await persistence.one("SELECT id FROM security_events WHERE actor_id = ? AND action = 'CAPTAIN_SESSION_ENDED'", application.user.id));
   assert.equal((await call('/me', phone)).user.id, personal.user.id);

@@ -170,6 +170,43 @@ try {
   assert.equal(refundStatus, 'refunded', `the card release must complete before cash: ${refundStatus}`);
   const r2 = await cashLedger.createReceipt(asDriver, refunded.id);
   assert.equal((await cashLedger.collect(asDriver, refunded.id, { amountMinor: r2.dueMinor })).status, 'collected');
+  assert.equal((await pay.query(customer, refunded.id)).status, 'refunded', 'a stale provider capture cannot conflict with valid cash after refund');
+
+  const secondPoll = await f.book();
+  await f.db.run("UPDATE orders SET driver_id=?,status='completed',completed_at=?,commission=1 WHERE id=?", f.d1.user.id, Date.now(), secondPoll.id);
+  const secondPollPrice = Number((await f.db.one('SELECT price_minor FROM orders WHERE id=?', secondPoll.id)).price_minor);
+  const secondPollReceipt = await cashLedger.createReceipt(asDriver, secondPoll.id);
+  await cashLedger.collect(asDriver, secondPoll.id, { amountMinor: secondPollReceipt.dueMinor });
+  await pay.createIntent(customer, secondPoll.id, { amountMinor: secondPollPrice });
+  let polls = 0;
+  provider.query = async id => ({ outcome: ++polls === 1 ? 'pending' : 'captured', providerRef: `fake:${id}` });
+  try {
+    await assert.rejects(pay.query(customer, secondPoll.id), e => e.status === 409 && e.message === 'settlement_conflict');
+    assert.equal(polls, 2, 'the second provider poll must use the same capture gate');
+  } finally { delete provider.query; }
+
+  const inFlight = await f.book();
+  await f.db.run("UPDATE orders SET driver_id=?,status='completed',completed_at=?,commission=1 WHERE id=?", f.d1.user.id, Date.now(), inFlight.id);
+  const inFlightPrice = Number((await f.db.one('SELECT price_minor FROM orders WHERE id=?', inFlight.id)).price_minor);
+  const inFlightIntent = await pay.createIntent(customer, inFlight.id, { amountMinor: inFlightPrice });
+  const queryStarted = Promise.withResolvers(), resumeQuery = Promise.withResolvers();
+  provider.query = async id => {
+    queryStarted.resolve();
+    await resumeQuery.promise;
+    return { outcome: 'captured', providerRef: `fake:${id}` };
+  };
+  const staleQuery = pay.getIntent(customer, inFlight.id);
+  try {
+    await Promise.race([queryStarted.promise, staleQuery.then(() => { throw new Error('Query missed the provider barrier'); })]);
+    await pay.applyProviderEvent({ provider: 'fake', providerEventId: randomUUID(), intentId: inFlightIntent.id, eventType: 'captured' }, 'test-signature');
+    await pay.refund(admin, inFlightIntent.id, inFlightPrice, 'Full refund while querying');
+    const afterRefund = await cashLedger.createReceipt(asDriver, inFlight.id);
+    await cashLedger.collect(asDriver, inFlight.id, { amountMinor: afterRefund.dueMinor });
+  } finally {
+    resumeQuery.resolve();
+    delete provider.query;
+  }
+  assert.equal((await staleQuery).status, 'refunded', 'an in-flight capture response rechecks status under the same lock as the gate');
 
   // T32: partial goods collection remits what was collected, the outstanding stays explicit, repeated
   // commands never double-move, and finance's exception authority closes a disputed COD terminally.

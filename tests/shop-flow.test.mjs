@@ -40,6 +40,7 @@ try {
 
   // ---- the line shows itself only because it is enabled; with shop on, the cash cap defaults to ₪1000 (ADM-12) ----
   const me = await call('/me', { token: customer.token });
+  assert.equal(me.accountProfile, undefined, 'the legacy session does not require a profile');
   assert.ok(me.capabilities.enabledServices.includes('shop'));
   assert.equal(me.settings.driverCashCap, 1000);
   await err('/admin/settings', { token: admin.token, body: { orderCashCeiling: 1001 } }, 409, 'ceiling_above_cap');
@@ -69,6 +70,12 @@ try {
   const labneh = await item({ section: 'Dairy', nameAr: 'لبنة', nameEn: 'Labneh', priceAgorot: 2000 });
   const oil = await item({ section: 'Pantry', nameAr: 'زيت', nameEn: 'Olive oil', priceAgorot: 4000 });
   const hidden = await item({ section: 'Pantry', nameAr: 'سكر', nameEn: 'Sugar', priceAgorot: 300 });
+  await call(`/merchant/items/${hidden.id}`, { token: owner.token, body: { available: false } });
+  const renamed = { section: 'Pantry', nameAr: 'سكر', nameEn: 'Sugar', priceAgorot: 350 };
+  assert.equal((await call(`/merchant/items/${hidden.id}`, { token: owner.token, body: renamed })).available, false, 'editing details leaves a sold-out item sold out');
+  assert.equal((await call(`/merchant/items/${hidden.id}`, { token: owner.token, body: { ...renamed, available: true } })).available, false, 'a stale full edit cannot restock the item');
+  await call(`/merchant/items/${hidden.id}`, { token: owner.token, body: { available: true } });
+  assert.equal((await call(`/merchant/items/${hidden.id}`, { token: owner.token, body: { ...renamed, available: false } })).available, true, 'a stale full edit cannot sell out an item');
   await call(`/merchant/items/${hidden.id}`, { token: owner.token, body: { available: false } });
   const listed = await call(`/shop/merchants/${merchantId}`, { token: customer.token });
   assert.equal(listed.merchant.open, true);
