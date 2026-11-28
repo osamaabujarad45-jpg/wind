@@ -352,8 +352,11 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
     // A booked-ahead order is neither finding nor active: its closed sheet showed a bare grip (A53, 8 Nov).
     assert.ok(header.includes('{!!booked && <Row') && screen.includes("const booked = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor"), 'a closed sheet still says when a booked-ahead order is due');
     assert.ok(screen.includes('{!live && <Txt variant="title">{fill(c.scheduledFor, { t: time(later) })}</Txt>}'), 'and the open sheet does not say it twice');
-    assert.ok(header.includes('<ErrorText>{actionError}</ErrorText>') &&header.includes('c.updatesPaused'), 'over the map, failures sit in the header, always on screen');
-    assert.equal(screen.match(/<ErrorText>\{actionError\}<\/ErrorText>/g).length, 2, 'once over the map, once on the plain screen');
+    // The header's copy may carry a condition (a locked or paused ride drops the old "ask for the PIN"), never a second place.
+    const failures = /<ErrorText>\{[^\n{}]*\bactionError\}<\/ErrorText>/g;
+    assert.ok(header.match(failures)?.length === 1 && header.includes('c.updatesPaused'), 'over the map, failures sit in the header, always on screen');
+    assert.equal(screen.match(failures).length, 2, 'once over the map, once on the plain screen');
+    assert.ok(header.includes("(rideStep(order) === 'locked' || order.safetyHold) && actionError === c.err_wrong_boarding_code ? '' : actionError"), 'only the old PIN request is dropped, and only then');
     const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
     assert.ok(book.includes("on || s === 'parcel' ? '' : '≈ '"), 'the parcel is a standard price, never an estimate'); }
   // The Android entry must choose the renderer from the baked capability plus the stored mode — never

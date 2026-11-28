@@ -991,11 +991,14 @@ if (!only || only.includes('booking-narrow')) {
   const narrowDir = join(root, '.screens', 'narrow');
   mkdirSync(narrowDir, { recursive: true });
   const route = 'from=ramallah&to=nablus';
+  // A fresh waiting order: the captain checks above may already have accepted the first one.
+  const waiting = await smartOrder(layla, { service: 'ride', option: '1', pickupCity: 'bireh', dropoffCity: 'tulkarm',
+    pickupNote: 'مكتبة الجامعة', dropoffNote: 'مدخل السوق' });
   const views = [
     { id: 'book-parcel', path: `/book?service=parcel&${route}`, ready: t => new RegExp(t.request) },
     { id: 'book-ride', path: `/book?service=ride&${route}`, ready: t => new RegExp(t.request) },
     { id: 'book-freight', path: `/book?service=freight&${route}`, ready: t => new RegExp(t.request) },
-    { id: 'order-searching', path: `/order/${searching.id}`, ready: t => t.cancelOrder },
+    { id: 'order-searching', path: `/order/${waiting.id}`, ready: t => t.cancelOrder },
     { id: 'book-parcel-form', path: `/book?service=parcel&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
     { id: 'book-ride-form', path: `/book?service=ride&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
     { id: 'book-freight-form', path: `/book?service=freight&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
