@@ -705,23 +705,41 @@ try {
   await mapOf(recovery).locator('.maplibregl-marker').first().waitFor();
   pass('failed map library download shows fallback and recovers with Retry');
 
-  // An open order puts its sheet over the map, so on a short phone the fallback's Retry has only the strip between
-  // the top bar and the sheet. Playwright refuses a click that another element would receive.
+  // An open order puts its sheet over the map, so the fallback has only the strip between the top bar and the sheet.
   stage = 'map download recovery under the order sheet';
   const coveredId = await booking(customerPage);
   const short = await newPage('en', { width: 360, height: 620 });
   await login(short, '0599000701');
   await short.route('**/vendor/maplibre-*/maplibre-gl.mjs', route => route.abort());
   await short.goto(`${base}/order/${coveredId}`);
-  await button(short, c.retry).click({ trial: true });
-  const retryBox = await button(short, c.retry).boundingBox();
-  assert.ok(retryBox && retryBox.width >= 48 && retryBox.height >= 48, `The full-screen Retry keeps a 48px target: ${JSON.stringify(retryBox)}`);
+  await short.getByText(c.findingTitle, { exact: true }).waitFor();
+  // Only the column's own Retry counts: the map page's centred one shows for a moment before the fallback replaces it.
+  const column = short.getByTestId('route-preview-column');
+  const columnRetry = column.getByRole('button', { name: c.retry, exact: true });
+  await columnRetry.waitFor();
+  // Leave the column less room than its content, so Retry starts out of view and only scrolling brings it in.
+  const room = 104, columnHeight = async () => (await column.boundingBox()).height;
+  const spare = await columnHeight() - room;
+  await short.setViewportSize({ width: 360, height: Math.round(620 - spare) });
+  await until(columnHeight, height => Math.abs(height - room) <= 4, `The fallback column did not shrink to ${room}px from ${spare + room}px`);
+  // Measured without Playwright scrolling anything; `clear` means a tap near any corner lands on the button.
+  const retryNow = () => columnRetry.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    const corners = [[box.left + 4, box.top + 4], [box.right - 4, box.top + 4], [box.left + 4, box.bottom - 4], [box.right - 4, box.bottom - 4]];
+    return { width: box.width, height: box.height, clear: corners.every(([x, y]) => element.contains(document.elementFromPoint(x, y))) };
+  });
+  assert.equal((await retryNow()).clear, false, 'Retry must start out of view, or this stage proves nothing about scrolling');
+  const area = await column.boundingBox();
+  await short.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+  await short.mouse.wheel(0, 600);
+  const reached = await until(retryNow, state => state.clear, 'Scrolling did not bring the whole Retry clear of the order sheet');
+  assert.ok(reached.width >= 48 && reached.height >= 48, `The full-screen Retry keeps a 48px target: ${JSON.stringify(reached)}`);
   await short.unroute('**/vendor/maplibre-*/maplibre-gl.mjs');
-  await button(short, c.retry).click();
+  await columnRetry.click();
   await mapOf(short).locator('.maplibregl-marker').first().waitFor();
-  await short.context().close();
   await call(`/orders/${coveredId}/cancel`, { token: customerToken, body: {} });
-  pass('failed map on a short open order keeps Retry tappable above the sheet and recovers');
+  await short.context().close();
+  pass('failed map on a short open order scrolls Retry clear of the sheet and recovers');
 
   stage = 'Android map bridge';
   const androidMap = await newPage('ar');

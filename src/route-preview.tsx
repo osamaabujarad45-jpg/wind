@@ -69,7 +69,7 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, fill, insets, 
         <View style={[styles.dropoff, { left: b.x - 8, top: b.y - 8 }]} />
       </>}
     </View>
-    {!plain && fill && <ScrollView style={[styles.overlay, uncovered]} contentContainerStyle={styles.column}>
+    {!plain && fill && <ScrollView style={[styles.overlay, uncovered]} contentContainerStyle={styles.column} testID="route-preview-column">
       <View style={styles.words}>
         <Text key={`diagram-${language}`} maxFontSizeMultiplier={maxScale} style={[styles.diagram, { textAlign: align }]}>{c.routeDiagram}</Text>
         {([[styles.pickupMark, pickupTitle], [styles.dropoffMark, dropoffTitle]] as const).map(([mark, title], stop) =>
