@@ -15,7 +15,8 @@ export default function MerchantCatalogue() {
   const { me } = useSession();
   const back = me?.accountProfile?.mode !== 'shop';
   const { data, error, reload } = useApi<{ items: MerchantItem[] }>('/merchant/catalogue');
-  const [editing, setEditing] = useState<MerchantItem | 'new' | null>(null);
+  // Each opening is its own object, so a save that answers late closes only the form that sent it (never a later "new" one).
+  const [editing, setEditing] = useState<{ item: MerchantItem | null } | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [actionError, setActionError] = useState('');
   if (!data) return <Screen><Header title={c.merchantCatalogue} back={back} /><Loading failed={!!error} onRetry={reload} /></Screen>;
@@ -26,16 +27,14 @@ export default function MerchantCatalogue() {
     finally { setBusy(null); }
   }
   const sections = [...new Set(data.items.map(i => i.section))];
-  return <Screen onRefresh={reload} footer={!editing ? <Button title={c.merchantAddItem} icon="add" onPress={() => setEditing('new')} /> : undefined}>
+  // The form gets a fresh scroll view: opened from low in a long list, it must start at its top.
+  return <Screen key={editing ? 'form' : 'list'} onRefresh={reload} footer={!editing ? <Button title={c.merchantAddItem} icon="add" onPress={() => setEditing({ item: null })} /> : undefined}>
     <Header title={c.merchantCatalogue} back={back} />
-    {/* The form edits the item the server has now: a reload refreshes availability under the same key without touching the typed fields. */}
-    {/* A save that answers late closes only the form that sent it. */}
-    {editing && <ItemForm key={editing === 'new' ? 'new' : String(editing.id)}
-      item={editing === 'new' ? null : data.items.find(candidate => candidate.id === editing.id) ?? editing}
+    {editing && <ItemForm item={editing.item}
       onDone={async () => { setEditing(current => current === editing ? null : current); await reload(); }} />}
     {!data.items.length && !editing && <Empty icon="pricetags-outline" title={c.merchantNoItems} body={c.merchantNoItemsBody} />}
     <ErrorText>{actionError}</ErrorText>
-    {/* The form is the whole screen while it is open, so a row's Edit never leaves it out of view above the list. */}
+    {/* The form is the whole screen while it is open. */}
     {!editing && sections.map(section => <Card key={section}>
       <Section title={section} />
       {data.items.filter(i => i.section === section).map(i => <View key={i.id} style={{ borderTopWidth: 1, borderTopColor: palette.line, paddingVertical: 8 }}>
@@ -54,7 +53,7 @@ export default function MerchantCatalogue() {
             {busy === i.id && <ActivityIndicator size="small" color={palette.olive} />}
             <Txt variant="label" style={{ color: i.available ? palette.olive : palette.secondary }}>{i.available ? c.merchantInStock : c.merchantNotInStock}</Txt>
           </Row>
-          <Button size="sm" variant="ghost" title={c.edit} onPress={() => setEditing(i)} />
+          <Button size="sm" variant="ghost" title={c.edit} onPress={() => setEditing({ item: i })} />
         </Row>
         {!i.available && <Txt variant="caption">{c.merchantOutOfStock}</Txt>}
       </View>)}

@@ -102,6 +102,10 @@ assert.match(readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url),
   const admin = readFileSync(new URL('../src/app/admin/index.tsx', import.meta.url), 'utf8');
   assert.match(admin, /\$\{c\.commissionRevenue\} \$\{money\(d\.commission\)\}, \$\{c\.subscriptionRevenue\} \$\{money\(d\.subscriptions\)\}/);
   assert.match(admin, /accessibilityState=\{\{ selected: i === safeSelected \}\}/); // the clamp keeps the reported state in bounds
+  const catalogue = readFileSync(new URL('../src/app/merchant/catalogue.tsx', import.meta.url), 'utf8');
+  assert.match(catalogue, /useState<\{ item: MerchantItem \| null \} \| null>/); // each opening of the form has its own identity
+  assert.match(catalogue, /setEditing\(current => current === editing \? null : current\)/); // a late save closes only its own form
+  assert.match(catalogue, /\.\.\.\(!item && \{ available: true, requestId/); // an edit never sends stock
   const map = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
   assert.match(map, /document\.documentElement\.lang = config\.language === 'ar' \? 'ar' : 'en'/);
   const scene = readFileSync(new URL('../src/scene-map.tsx', import.meta.url), 'utf8');
