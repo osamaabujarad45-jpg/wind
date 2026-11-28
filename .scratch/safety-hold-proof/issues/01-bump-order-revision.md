@@ -6,9 +6,9 @@ Found 28 Nov 2026 by two independent delta reviews of the design branch. The beh
 
 ## Problem
 
-Opening and resolving a safety report changes `safety_incidents` only (`server/main.ts`, `POST /api/orders/:id/sos` and
-`POST /api/admin/incidents/:id/resolve`). The order row, its recovery revision and the boarding PIN revision stay the
-same. So anything gathered before a pause is still accepted after support lifts it:
+Opening and resolving a safety report writes `safety_incidents`, an audit event and notifications
+(`server/main.ts`, `POST /api/orders/:id/sos` and `POST /api/admin/incidents/:id/resolve`), but not the order: its
+recovery revision and the boarding PIN revision stay the same. So anything gathered before a pause is still accepted after support lifts it:
 
 - a typed PIN or delivery code, a door-cash amount and reason, and shop seal checks, still on the captain's screen
   (`src/app/order/[id].tsx`);
