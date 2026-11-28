@@ -89,18 +89,20 @@ export default function OrderScreen() {
     : { driverLocation: shown }) }, [polled, shown, pushed.driverChanged]);
   // The server's attempt ceiling wins over the reason's suggestion (SHIP-08, Sol R2-M6): one recommendation, one primary action.
   const suggested = order?.reattemptAllowed === false ? 'return' : suggestedNextAction(order ? order.exceptionReason : null);
-  const announced = useRef<{ orderId: number; viewerId: number; status: string; proposalId?: string } | null>(null);
+  const announced = useRef<{ orderId: number; viewerId: number; status: string; held: boolean; proposalId?: string } | null>(null);
   useEffect(() => {
     if (!order || !me) return;
     const driver = me.user.role === 'driver' && order.driverId === me.user.id;
     const proposal = (me.user.role === 'customer' || driver) && ['assigned', 'at_pickup', 'in_transit'].includes(order.status) ? order.destinationChange?.id : undefined;
     const before = announced.current;
-    const phase = `${order.status}${order.ride?.arrivedAt != null ? ':arrived' : ''}`;
-    announced.current = { orderId: order.id, viewerId: me.user.id, status: phase, proposalId: proposal };
+    // The words can change while the status does not: a recorded arrival, or support taking the goods (A11Y-04).
+    const phase = `${order.status}${order.ride?.arrivedAt != null ? ':arrived' : ''}${order.supportHasGoods || order.driverTrackingEnded ? ':support' : ''}`;
+    const held = !!order.safetyHold;
+    announced.current = { orderId: order.id, viewerId: me.user.id, status: phase, held, proposalId: proposal };
     if (!before || before.orderId !== order.id || before.viewerId !== me.user.id) return;
     const status = before.status !== phase ? statusText(c, order, driver) : '';
     const destination = proposal && before.proposalId !== proposal ? driver ? c.destinationDriverRequest : c.destinationWaiting : '';
-    const message = [status, destination].filter(Boolean).join(' ');
+    const message = [status, held && !before.held ? c.safetyPaused : '', destination].filter(Boolean).join(' ');
     if (message && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(message);
   }, [order, me, c]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -209,6 +211,9 @@ export default function OrderScreen() {
   // A ride ends with the rider's trip code too, given once they have paid (owner, 23 Nov 2026), like a parcel's delivery code.
   // The server refuses every advance during a safety pause, so no code or PIN is asked for then.
   const needsCode = !order.safetyHold && (rideAction === 'boarding' || order.status === 'in_transit' || (order.status === 'returning' && !order.supportHasGoods));
+  const codeLabel = rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? (order.service === 'shop' ? c.codeFromShop : c.codeFromSender) : order.service === 'ride' ? c.codeFromRider : order.recipientPhone ? c.codeFromRecipient : c.codeFromCustomer;
+  // A part-typed code must never start a command: the recovery path refuses it before sending and the field stayed locked.
+  const codeShort = needsCode && !/^\d{4}$/.test(code);
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
   const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
@@ -483,12 +488,6 @@ export default function OrderScreen() {
           {[`${c.requested} ${time(order.createdAt)}`, order.assignedAt ? `${c.driverAssigned} ${time(order.assignedAt)}` : null,
             order.pickedUpAt ? `${c.in_transit} ${time(order.pickedUpAt)}` : null].filter(Boolean).join(' · ')}
         </Txt>}
-        {order.safetyHold && order.safetyReport?.status !== 'open' && <View accessibilityLiveRegion="polite">
-          <Row gap={6} style={{ marginTop: 6 }}>
-            <Ionicons name="shield-outline" size={16} color={palette.warn} />
-            <Txt variant="caption" style={{ flex: 1, color: palette.warn }}>{c.safetyPaused}</Txt>
-          </Row>
-        </View>}
         {order.exceptionReason && ['on_hold', 'returning'].includes(order.status) &&
           <Txt variant="caption" style={{ marginTop: 4, color: palette.warn }}>{reasonLine(c.exceptionTitle, `reason_${order.exceptionReason}`)}</Txt>}
       </Card>
@@ -658,7 +657,7 @@ export default function OrderScreen() {
         && secondsUntil(waitingEndsAt, now, order.journey) > 0 && <Button title={c.rideGraceExtend} icon="time-outline" variant="outline"
           disabled={!!busy} loading={busy === 'grace'} onPress={() => act('grace', `/orders/${order.id}/ride/grace-extension`, { expectedAssignmentEpoch: order.recovery!.assignmentEpoch })} />}{/* the assignment the rider saw (Sol R2-M2) */}
       {mine && activeStatuses.includes(order.status) && <>
-        {((order.status === 'at_pickup' && order.service !== 'shop') || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">
+        {!order.safetyHold && ((order.status === 'at_pickup' && order.service !== 'shop') || order.status === 'in_transit') && order.service !== 'ride' && <Card tone="muted">
           <Txt variant="title" style={{ marginBottom: 8 }}>{atPickup ? c.pickupProblem : c.reportProblem}</Txt>
           {/* SHIP-17: at the pickup check a damaged parcel is a refusal with its own sub-reason, so `damaged` is not offered there */}
           <FilterChips items={(order.service === 'shop' ? [...shopExceptionReasons] : atPickup ? [...exceptionReasons.filter(k => k !== 'damaged'), pickupRefusal] : exceptionReasons)
@@ -673,7 +672,7 @@ export default function OrderScreen() {
             onPress={() => confirm(atPickup ? c.pickupConfirm : c.reportConfirm, () => act('problem', `/orders/${order.id}/exception`,
               { reason: problem.reason, ...(problem.reason === pickupRefusal && { detail: problem.detail }), note: problem.note.trim(), ...shopProof }, () => setProblem({ reason: 'absent', note: '' })), atPickup ? c.pickupProblem : c.reportProblem, c.no)} />
         </Card>}
-        {(order.status === 'assigned' || atPickup) && <Button title={c.release} variant="ghost" size="sm" loading={busy === 'release'}
+        {!order.safetyHold && (order.status === 'assigned' || atPickup) && <Button title={c.release} variant="ghost" size="sm" loading={busy === 'release'}
           onPress={() => confirm(c.releaseConfirm, () => act('release', `/orders/${order.id}/release`, {}, () => router.back()), c.release, c.no)} />}
       </>}
 
@@ -770,6 +769,12 @@ export default function OrderScreen() {
     {/* In the header, not the body: a closed sheet hides its body, and a refused action must still say why. */}
     <ErrorText>{(rideStep(order) === 'locked' || order.safetyHold) && actionError === c.err_wrong_boarding_code ? '' : actionError}</ErrorText>
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
+    {order.safetyHold && <View accessibilityLiveRegion={Platform.OS === 'web' ? 'polite' : 'none'}>{/* native hears it from the announcement above */}
+      <Row gap={6} style={{ marginBottom: 6 }}>
+        <Ionicons name="shield-outline" size={16} color={palette.warn} />
+        <Txt variant="caption" style={{ flex: 1, color: palette.warn }}>{c.safetyPaused}</Txt>
+      </Row>
+    </View>}
     {codeAtDoor && <View style={{ paddingBottom: 8 }}>{codes}</View>}
     {/* Booked ahead is neither finding nor active: without this the closed sheet is a bare grip. */}
     {!!booked && <Row gap={8} style={{ marginBottom: 4 }}>
@@ -841,7 +846,7 @@ export default function OrderScreen() {
           </>}
         </>}
         {needsCode &&
-          <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? (order.service === 'shop' ? c.codeFromShop : c.codeFromSender) : order.service === 'ride' ? c.codeFromRider : order.recipientPhone ? c.codeFromRecipient : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
+          <Field label={codeLabel} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
             disabled={!!busy || advanceLocked === proofContext} />}
         {needsCode && !busy && advanceLocked === proofContext && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
         {order.status === 'returning' && order.supportHasGoods && <Txt variant="caption">{c.supportHasGoodsDriver}</Txt>}
@@ -850,8 +855,8 @@ export default function OrderScreen() {
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}{/* announced when it appears; the locked button repeats nothing */}
         {order.status !== 'on_hold' && !order.safetyHold && !(order.service === 'shop' && atPickup) && !(order.status === 'returning' && order.supportHasGoods) && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : order.service === 'shop' && order.status === 'returning' ? 'advance_returning_shop' : `advance_${order.status}` as 'advance_assigned']}
-          icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code) || doorStep && !doorReady || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals)}
-          reason={order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals) ? c.shopSealsNeeded : doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? undefined : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
+          icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || codeShort || doorStep && !doorReady || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals)}
+          reason={order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals) ? c.shopSealsNeeded : doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? undefined : codeShort ? codeLabel : c.wait_busy}
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
             : parcelFarKm !== null ? confirm(farFill(c.parcelPickupFarConfirm, c.parcelPickupFarCityConfirm), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
             : act('advance', `/orders/${order.id}/advance`, { code })} />}
