@@ -102,7 +102,8 @@ export default function OrderScreen() {
     if (!before || before.orderId !== order.id || before.viewerId !== me.user.id) return;
     const status = before.status !== phase ? statusText(c, order, driver) : '';
     const destination = proposal && before.proposalId !== proposal ? driver ? c.destinationDriverRequest : c.destinationWaiting : '';
-    const message = [status, held && !before.held ? c.safetyPaused : '', destination].filter(Boolean).join(' ');
+    const reporter = order.safetyReport?.status === 'open'; // they hear it with the receipt, when they send
+    const message = [status, held && !before.held && !reporter ? c.safetyPaused : '', destination].filter(Boolean).join(' ');
     if (message && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(message);
   }, [order, me, c]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -212,8 +213,9 @@ export default function OrderScreen() {
   // The server refuses every advance during a safety pause, so no code or PIN is asked for then.
   const needsCode = !order.safetyHold && (rideAction === 'boarding' || order.status === 'in_transit' || (order.status === 'returning' && !order.supportHasGoods));
   const codeLabel = rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? (order.service === 'shop' ? c.codeFromShop : c.codeFromSender) : order.service === 'ride' ? c.codeFromRider : order.recipientPhone ? c.codeFromRecipient : c.codeFromCustomer;
-  // A part-typed code must never start a command: the recovery path refuses it before sending and the field stayed locked.
-  const codeShort = needsCode && !/^\d{4}$/.test(code);
+  // A part-typed code must never start a command: the recovery path refuses it unsent and the field stayed locked. An empty
+  // one is still sent, as before: the server completes an older ride saved without a code. Boarding needs all four.
+  const codeShort = needsCode && !/^\d{4}$/.test(code) && (code !== '' || rideAction === 'boarding');
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
   const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
@@ -769,7 +771,7 @@ export default function OrderScreen() {
     {/* In the header, not the body: a closed sheet hides its body, and a refused action must still say why. */}
     <ErrorText>{(rideStep(order) === 'locked' || order.safetyHold) && actionError === c.err_wrong_boarding_code ? '' : actionError}</ErrorText>
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
-    {order.safetyHold && <View accessibilityLiveRegion={Platform.OS === 'web' ? 'polite' : 'none'}>{/* native hears it from the announcement above */}
+    {order.safetyHold && <View accessibilityLiveRegion={Platform.OS === 'web' && order.safetyReport?.status !== 'open' ? 'polite' : 'none'}>{/* native, and the web reporter's card, say it elsewhere */}
       <Row gap={6} style={{ marginBottom: 6 }}>
         <Ionicons name="shield-outline" size={16} color={palette.warn} />
         <Txt variant="caption" style={{ flex: 1, color: palette.warn }}>{c.safetyPaused}</Txt>
@@ -903,7 +905,7 @@ function Safety({ order, driver, onChange }: { order: Order; driver: boolean; on
     setBusy(true); setFailure('');
     try {
       onChange(await api<Order>(`/orders/${order.id}/sos`, { kind, note: note.trim() })); haptic.success(); setNote('');
-      AccessibilityInfo.announceForAccessibility(c.safetyReported); // live regions alone are silent on iOS
+      AccessibilityInfo.announceForAccessibility(`${c.safetyReported}. ${c.safetyPaused}`); // live regions alone are silent on iOS
     }
     catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
   }
@@ -919,7 +921,7 @@ function Safety({ order, driver, onChange }: { order: Order; driver: boolean; on
       {emergency.map(([key, number, icon]) => <Button key={key} title={c[key]} trailing={number} icon={icon} variant="danger"
         onPress={() => { Linking.openURL(`tel:${number}`).catch(() => setFailure(c.callUnavailable)); }} />)}
     </View>
-    {report?.status === 'open' ? <View accessibilityLiveRegion="assertive">
+    {report?.status === 'open' ? <View accessibilityLiveRegion={Platform.OS === 'web' ? 'assertive' : 'none'}>{/* native hears the announcement in send() */}
       <Txt variant="title">{c.safetyReported}</Txt>
       <Txt variant="caption" style={{ marginTop: 4 }}>{c.safetyReportedHint}</Txt>
     </View> : <>

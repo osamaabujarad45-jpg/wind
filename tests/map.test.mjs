@@ -358,7 +358,7 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
     assert.ok(header.match(failures)?.length === 1 && header.includes('c.updatesPaused'), 'over the map, failures sit in the header, always on screen');
     assert.equal(screen.match(failures).length, 2, 'once over the map, once on the plain screen');
     // A part-typed code never starts a command: the recovery path refuses it unsent and the field used to stay locked.
-    assert.ok(screen.includes("const codeShort = needsCode && !/^\\d{4}$/.test(code);") && screen.includes("disabled={!!busy || rideAction === 'locked' || codeShort || doorStep && !doorReady"), 'Advance waits for all four digits');
+    assert.ok(screen.includes("const codeShort = needsCode && !/^\\d{4}$/.test(code) && (code !== '' || rideAction === 'boarding');") && screen.includes("disabled={!!busy || rideAction === 'locked' || codeShort || doorStep && !doorReady"), "a part-typed code waits; an empty one is the server's call");
     assert.ok(header.includes("(rideStep(order) === 'locked' || order.safetyHold) && actionError === c.err_wrong_boarding_code ? '' : actionError"), 'only the old PIN request is dropped, and only then');
     const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
     assert.ok(book.includes("on || s === 'parcel' ? '' : '≈ '"), 'the parcel is a standard price, never an estimate'); }
