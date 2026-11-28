@@ -103,7 +103,7 @@ async function signup(page, phone, name, driver = false) {
   await page.goto(base + '/auth');
   await page.getByRole('radio', { name: c.signUp, exact: true }).click();
   await field(page, c.name).fill(name);
-  await field(page, c.email).fill(`${phone}@example.test`);
+  await field(page, c.recoveryEmailOptional).fill(`${phone}@example.test`);
   await field(page, c.phone).fill(phone);
   await field(page, c.password).fill(password);
   if (driver) {
