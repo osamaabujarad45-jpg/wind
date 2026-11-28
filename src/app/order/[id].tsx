@@ -90,6 +90,7 @@ export default function OrderScreen() {
   // The server's attempt ceiling wins over the reason's suggestion (SHIP-08, Sol R2-M6): one recommendation, one primary action.
   const suggested = order?.reattemptAllowed === false ? 'return' : suggestedNextAction(order ? order.exceptionReason : null);
   const announced = useRef<{ orderId: number; viewerId: number; status: string; held: boolean; proposalId?: string } | null>(null);
+  const [heard, setHeard] = useState(''); // the web's live region (announceForAccessibility does nothing there)
   useEffect(() => {
     if (!order || !me) return;
     const driver = me.user.role === 'driver' && order.driverId === me.user.id;
@@ -102,9 +103,12 @@ export default function OrderScreen() {
     if (!before || before.orderId !== order.id || before.viewerId !== me.user.id) return;
     const status = before.status !== phase ? statusText(c, order, driver) : '';
     const destination = proposal && before.proposalId !== proposal ? driver ? c.destinationDriverRequest : c.destinationWaiting : '';
-    const reporter = order.safetyReport?.status === 'open'; // they hear it with the receipt, when they send
-    const message = [status, held && !before.held && !reporter ? c.safetyPaused : '', destination].filter(Boolean).join(' ');
-    if (message && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(message);
+    // The one announcement of a pause, from the order itself, so it is spoken even when the report's reply was lost. The
+    // person who reported also hears that it arrived.
+    const pause = held && !before.held ? order.safetyReport?.status === 'open' ? `${c.safetyReported}. ${c.safetyPaused}` : c.safetyPaused : '';
+    const message = [status, pause, destination].filter(Boolean).join(' ');
+    if (Platform.OS !== 'web') { if (message) AccessibilityInfo.announceForAccessibility(message); }
+    else if (message || before.held && !held) setHeard(message); // a lifted pause empties it, so the next one is new text
   }, [order, me, c]);
   const [busy, setBusy] = useState<string | null>(null);
   const acting = useRef(false); // two taps before a re-render both saw busy === null; accept, cancel and arrive carry no request id
@@ -742,8 +746,9 @@ export default function OrderScreen() {
       <Button title={c.help} variant="ghost" icon="help-circle-outline" onPress={() => router.push({ pathname: '/help', params: { order: orderCode(order.id) } })} />
     </View>
   </>;
+  const announcer = Platform.OS === 'web' ? <View accessibilityLiveRegion="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}><Txt>{heard ? `${heard}\u200b` : ''}</Txt></View> : null;
   // Open work happens on the map: it fills the screen and the rest of the order sits on the sheet over it.
-  if (live) return <View style={{ flex: 1, backgroundColor: palette.paper }}>
+  if (live) return <>{announcer}<View style={{ flex: 1, backgroundColor: palette.paper }}>
     <RouteMap fill pickup={pickup} dropoff={dropoff} focus={nextStop} pickupTitle={from[language]} dropoffTitle={to[language]}
       driver={order.driverLocation} driverTitle={order.driverName} road={road} approach={approach} closed={closed} stale={!!location?.stale}
       insets={{ top: topBar, bottom: peek, ...(side && (rtl ? { left: SIDE_SHEET } : { right: SIDE_SHEET })) }} padding={44} follow={mine} eta={eta && location && !location.stale ? etaChip(eta) : null}
@@ -771,7 +776,7 @@ export default function OrderScreen() {
     {/* In the header, not the body: a closed sheet hides its body, and a refused action must still say why. */}
     <ErrorText>{(rideStep(order) === 'locked' || order.safetyHold) && actionError === c.err_wrong_boarding_code ? '' : actionError}</ErrorText>
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
-    {order.safetyHold && <View accessibilityLiveRegion={Platform.OS === 'web' && order.safetyReport?.status !== 'open' ? 'polite' : 'none'}>{/* native, and the web reporter's card, say it elsewhere */}
+    {order.safetyHold && <View>
       <Row gap={6} style={{ marginBottom: 6 }}>
         <Ionicons name="shield-outline" size={16} color={palette.warn} />
         <Txt variant="caption" style={{ flex: 1, color: palette.warn }}>{c.safetyPaused}</Txt>
@@ -811,9 +816,7 @@ export default function OrderScreen() {
           <Row gap={8} style={{ marginBottom: 4 }}>
             {journeyState[order.status] === 'live' ? <Pulse color={statusTone[order.status].mark} size={8} />
               : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: statusTone[order.status].mark }} />}{/* the state's colour, as on its badge; only live states pulse */}
-            <View style={{ flex: 1 }} accessibilityLiveRegion={Platform.OS === 'web' ? 'polite' : 'none'}>
-              <Txt variant="h2" numberOfLines={2}>{statusText(c, order, mine)}</Txt>
-            </View>
+            <Txt variant="h2" numberOfLines={2} style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
             {eta && location && !location.stale && <Txt variant="display" numberOfLines={1} style={{ color: statusTone[order.status].mark, flexShrink: 0 }}>{etaChip(eta)}</Txt>}
           </Row>
           {isCustomer && boardingPin && !order.safetyHold && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
@@ -876,8 +879,8 @@ export default function OrderScreen() {
       </View></BoundedFooter> : undefined}>
       {body}
     </MapSheet>
-  </View>;
-  return <Screen onRefresh={reload}>
+  </View></>;
+  return <>{announcer}<Screen onRefresh={reload}>
     <Header title={orderCode(order.id)} subtitle={`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`} back right={helpButton} />
     {/* on its own line: beside the title, a long status left the order number no room on narrow screens and at large text */}
     {order.status === 'completed' || finding || activeStatuses.includes(order.status) ? null
@@ -885,7 +888,7 @@ export default function OrderScreen() {
     {/* completed: the banner below already says it, with the time; a second badge one line above only echoes */}
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
     {body}
-  </Screen>;
+  </Screen></>;
 }
 
 // Uber-style safety toolkit: emergency numbers work without Wind's server; a report reaches Wind's safety team.
@@ -905,7 +908,6 @@ function Safety({ order, driver, onChange }: { order: Order; driver: boolean; on
     setBusy(true); setFailure('');
     try {
       onChange(await api<Order>(`/orders/${order.id}/sos`, { kind, note: note.trim() })); haptic.success(); setNote('');
-      AccessibilityInfo.announceForAccessibility(`${c.safetyReported}. ${c.safetyPaused}`); // live regions alone are silent on iOS
     }
     catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
   }
@@ -921,7 +923,7 @@ function Safety({ order, driver, onChange }: { order: Order; driver: boolean; on
       {emergency.map(([key, number, icon]) => <Button key={key} title={c[key]} trailing={number} icon={icon} variant="danger"
         onPress={() => { Linking.openURL(`tel:${number}`).catch(() => setFailure(c.callUnavailable)); }} />)}
     </View>
-    {report?.status === 'open' ? <View accessibilityLiveRegion={Platform.OS === 'web' ? 'assertive' : 'none'}>{/* native hears the announcement in send() */}
+    {report?.status === 'open' ? <View>
       <Txt variant="title">{c.safetyReported}</Txt>
       <Txt variant="caption" style={{ marginTop: 4 }}>{c.safetyReportedHint}</Txt>
     </View> : <>
