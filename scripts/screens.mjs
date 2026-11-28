@@ -684,8 +684,11 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   assert.equal(await offer('البيرة', 'طولكرم').isDisabled(), false);
   assert.equal(await page.getByRole('button', { name: copy.ar.sharingLocation, exact: true }).count(), 0);
   // An order screen holds a long-poll open, so network idle may never come; the click below waits for Accept itself.
+  // As from a job notification: the order opens with its sheet closed, and Accept must be reachable without opening it.
   await page.goto(`http://localhost:${WEB_PORT}/order/${searching.id}`, { waitUntil: 'load' });
+  await page.getByRole('button', { name: copy.ar.sheetExpand, exact: true }).first().waitFor();
   await page.getByRole('button', { name: copy.ar.accept, exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: copy.ar.sheetCollapse, exact: true }).count(), 0, 'accepting did not need the sheet open');
   await page.waitForFunction(() => window.trackingCheck.active.size === 1, null, { timeout: 3000 });
   await page.goto(`http://localhost:${WEB_PORT}/driver/account`, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.trackingCheck.active.size === 1);

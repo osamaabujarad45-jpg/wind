@@ -355,6 +355,10 @@ export default function OrderScreen() {
       </Card>
     </Appear>}
   </>;
+  // A waiting job's one action sits in the sheet's footer: in the body, a closed sheet hid it (and made it inert).
+  const accept = isDriver && order.status === 'searching' ? <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || offlineIdle || !canTake(work.orders, order.service, order, me?.user.vehicle ?? null)}
+    reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : offlineIdle ? c.accept_go_online : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
+    onPress={() => act('accept', `/jobs/${order.id}/accept`)} /> : null;
   const body = <>
     {/* completed: the banner below already says it, with the time; searching and in a trip, the card below heads with the same words; a second badge one line above only echoes */}
 
@@ -634,9 +638,6 @@ export default function OrderScreen() {
     {!live && <ErrorText>{actionError}</ErrorText>}
 
     <View style={{ gap: 8 }}>
-      {isDriver && order.status === 'searching' && <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || offlineIdle || !canTake(work.orders, order.service, order, me?.user.vehicle ?? null)}
-        reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : offlineIdle ? c.accept_go_online : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
-        onPress={() => act('accept', `/jobs/${order.id}/accept`)} />}
 
       {isCustomer && boarding?.locked && ['assigned','at_pickup'].includes(order.status) && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
       {/* The PIN itself is in the sheet header, visible with the sheet closed. */}
@@ -818,7 +819,7 @@ export default function OrderScreen() {
           {mine && !!order.contact && <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />}
         </>}
       </View>}
-      footer={mine && activeStatuses.includes(order.status) ? <BoundedFooter><View style={{ gap: 8 }}>
+      footer={accept ? <BoundedFooter>{accept}</BoundedFooter> : mine && activeStatuses.includes(order.status) ? <BoundedFooter><View style={{ gap: 8 }}>
         {order.shop && order.status === 'in_transit' && <SealToggles order={order} value={seals} onChange={setSeals} />}
         {doorStep && <>
           <Field label={fill(c.doorCollected, { p: money(dueCents / 100) })} icon="cash-outline" value={doorText} keyboardType="decimal-pad" maxLength={10}
