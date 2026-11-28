@@ -69,11 +69,12 @@ const wrapping = inputs.filter(([, tag]) => /\smultiline\b/.test(tag) && !(Numbe
 assert.deepEqual(wrapping, [], `a multiline input needs lineHeight ${inputLine}`);
 assert.ok(inputs.some(([, tag]) => /\smultiline=\{multiline\}/.test(tag)), 'the multiline Field input is being read');
 
-// SRS A11Y-03: the route preview's words scale to 200% and are never positioned over the drawing, where they overlapped.
-const preview = read('src/route-preview.tsx');
-assert.doesNotMatch(preview, /maxFontSizeMultiplier=\{[\d.]+\}|numberOfLines/, 'no lower text cap and no cut-off line in the route preview');
-for (const name of ['words', 'stop', 'label', 'diagram'])
-  assert.doesNotMatch(new RegExp(`\\n  ${name}: \\{[^\\n]*`).exec(preview)?.[0] ?? 'position', /position|(?<![A-Za-z])height:/, `${name} flows with its text`);
+// SRS A11Y-03: the route fallback draws no words (they overlapped, sat under Retry and the sheet, or stopped at
+// 130%). That holds only while every screen that shows a route map names both stops in its own text.
+assert.doesNotMatch(read('src/route-preview.tsx'), /<Text\b|<Txt\b/, 'the route preview draws shapes only');
+const routeScreens = sources.filter(([file, text]) => file.startsWith('src/app/') && (/<RouteMap\b/.test(text) || /<SceneMap\b[^\n]*'route'/.test(text)));
+assert.ok(routeScreens.length >= 3, 'booking, order and tracking show route maps');
+for (const [file, text] of routeScreens) assert.match(text, /<RouteLine\b/, `${file} names both stops in text`);
 
 // No source sets fontWeight.
 const offenders = walk(join(root, 'src')).flatMap(file => readFileSync(file, 'utf8').split('\n')
