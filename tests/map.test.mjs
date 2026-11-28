@@ -338,8 +338,11 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
     assert.ok(sheet.includes('!footer && !open &&') && sheet.includes('16 + (footer ? 0 : padBottom)'), 'open, the navigation-bar inset ends the content instead of leaving a band mid-sheet (A53)'); }
   { // A refused cancel changed nothing on screen: the error sat in the body of a closed sheet (A53).
     const screen = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');
-    const header = screen.slice(screen.indexOf('<MapSheet open={sheetOpen}'), screen.indexOf('{finding && <View style={{ alignItems:'));
+    const header = screen.slice(screen.indexOf('<MapSheet open={sheetShown}'), screen.indexOf('{finding && !accept && <View style={{ alignItems:'));
     assert.ok(header.includes('{codeAtDoor && <View'), 'the handover code stays visible in a closed sheet near the door');
+    assert.ok(screen.includes('footer={accept && dockAccept ?') && screen.includes('{!dockAccept && accept}') && screen.includes('const sheetShown = sheetOpen ?? (!!accept && !dockAccept);'),
+      'a captain sees the money and Accept: docked, or leading a sheet that opens itself on a short upright window');
+    assert.ok(screen.includes("const cashLabel = order.shop && order.shop.state !== 'ready' ?"), 'a shop total that can still change reads as an estimate');
     assert.ok(screen.includes('{!codeAtDoor && codes}'), 'and in the body everywhere else');
     // Booking: a refused retry or offline save reads in the header beside the pending card, not after the last field (review 8 Nov).
     { const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');

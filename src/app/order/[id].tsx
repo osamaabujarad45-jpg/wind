@@ -1,7 +1,7 @@
 // Trip / order screen, Uber pattern: map on top, one status line with a progress bar, the driver card
 // with a call button, the handover code, then the route and receipt details. Same screen for all roles.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Linking, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Linking, Platform, Pressable, Share, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { useReducedMotion, ZoomIn } from '../../motion';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -137,8 +137,9 @@ export default function OrderScreen() {
   const [moving, setMoving] = useState<number | null>(null); // a scheduled parcel's new time while the customer picks it
   const [now, setNow] = useState(Date.now);
   const reduced = useReducedMotion();
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState<boolean | null>(null); // null until the viewer moves the sheet
   const side = useSideSheet();
+  const { height: windowHeight } = useWindowDimensions();
   const [peek, setPeek] = useState(0);
   const [topBar, setTopBar] = useState(0);
   const navigating = !!order && me?.user.role === 'driver' && order.driverId === me.user.id;
@@ -374,9 +375,10 @@ export default function OrderScreen() {
     </Appear>}
   </>;
   // A waiting job's one action sits in the sheet's footer: in the body, a closed sheet hid it (and made it inert).
-  // Weighed goods can change a shop's total until the merchant marks it ready.
-  const cashLabel = order.shop && !order.shop.readyAt ? `${c.cashToCollect} ${c.shopEstimateShort}` : c.cashToCollect;
-  // A job notification opens this screen with the sheet closed: the money shows with the button that takes the job.
+  // A shop's total can change whenever its goods are not ready, also after a pickup problem reopens them.
+  const cashLabel = order.shop && order.shop.state !== 'ready' ? `${c.cashToCollect} ${c.shopEstimateShort}` : c.cashToCollect;
+  // A job notification opens this screen with the sheet closed: the money shows with the button that takes the job. On a
+  // short upright window a docked footer would cover the map, so they lead the sheet's body and the sheet opens itself.
   const accept = isDriver && order.status === 'searching' ? <View style={{ gap: 8 }}>
     <Row gap={12} style={{ alignItems: 'flex-start' }}>{/* side by side: the closed sheet stays short over the map */}
       {([[cashLabel, dueCents / 100], [c.youEarn, captainShare]] as const).map(([label, amount]) => <View key={label} style={{ flex: 1 }}>
@@ -388,7 +390,10 @@ export default function OrderScreen() {
     reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : offlineIdle ? c.accept_go_online : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
     onPress={() => act('accept', `/jobs/${order.id}/accept`)} />
   </View> : null;
+  const dockAccept = side || windowHeight >= 600;
+  const sheetShown = sheetOpen ?? (!!accept && !dockAccept);
   const body = <>
+    {!dockAccept && accept}
     {/* completed: the banner below already says it, with the time; searching and in a trip, the card below heads with the same words; a second badge one line above only echoes */}
 
     {order.status === 'completed' && <Animated.View entering={reduced ? undefined : DONE}>
@@ -781,7 +786,7 @@ export default function OrderScreen() {
         {helpButton}{/* no state badge here: the sheet header names a booked time, and a badge left the order number no room at 280 */}
       </View>}
     </SafeAreaView>
-    <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setPeek} onRefresh={reload}
+    <MapSheet open={sheetShown} onOpenChange={setSheetOpen} onPeek={setPeek} onRefresh={reload}
       header={<View style={{ paddingBottom: 10 }}>
     {/* In the header, not the body: a closed sheet hides its body, and a refused action must still say why. */}
     <ErrorText>{(rideStep(order) === 'locked' || order.safetyHold) && actionError === c.err_wrong_boarding_code ? c.rideBoardingPinWrong : actionError}</ErrorText>
@@ -850,7 +855,7 @@ export default function OrderScreen() {
           {mine && !!order.contact && <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />}
         </>}
       </View>}
-      footer={accept ? <BoundedFooter>{accept}</BoundedFooter> : mine && activeStatuses.includes(order.status) ? <BoundedFooter><View style={{ gap: 8 }}>
+      footer={accept && dockAccept ? <BoundedFooter>{accept}</BoundedFooter> : mine && activeStatuses.includes(order.status) ? <BoundedFooter><View style={{ gap: 8 }}>
         {order.shop && order.status === 'in_transit' && !order.safetyHold && <SealToggles order={order} value={seals} onChange={setSeals} />}
         {doorStep && <>
           <Field label={fill(c.doorCollected, { p: money(dueCents / 100) })} icon="cash-outline" value={doorText} keyboardType="decimal-pad" maxLength={10}

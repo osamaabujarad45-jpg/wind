@@ -762,12 +762,14 @@ try {
   await short.unroute('**/vendor/maplibre-*/maplibre-gl.mjs');
   await columnRetry.click();
   await mapOf(short).locator('.maplibregl-marker').first().waitFor();
-  // A captain's closed sheet also holds the money and Accept: Retry stays reachable at a split-screen height.
+  // At a split-screen height the captain's money and Accept lead an open sheet; closed, it leaves the map room for Retry.
   const captain = await newPage('en', { width: 320, height: 350 });
   await login(captain, '0599000708');
   await captain.route('**/vendor/maplibre-*/maplibre-gl.mjs', route => route.abort());
   await captain.goto(`${base}/order/${coveredId}`);
-  await button(captain, c.accept).waitFor();
+  await button(captain, c.sheetCollapse).waitFor();
+  await button(captain, c.accept).click({ trial: true });
+  await button(captain, c.sheetCollapse).click();
   const held = fallbackOn(captain);
   await held.columnRetry.waitFor();
   await until(held.between, held.placed, 'The captain fallback column never settled between the top bar and the order sheet');
