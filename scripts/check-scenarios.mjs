@@ -717,22 +717,37 @@ try {
   const column = short.getByTestId('route-preview-column');
   const columnRetry = column.getByRole('button', { name: c.retry, exact: true });
   await columnRetry.waitFor();
+  // The sheet's grip is its top edge. The column is settled once it starts under the top bar and ends at that edge;
+  // before the bar and the sheet are measured it still covers the whole screen.
+  const grip = button(short, c.sheetExpand);
+  const between = async () => {
+    const area = await column.boundingBox(), sheet = await grip.boundingBox();
+    return { top: area.y, height: area.height, gap: sheet.y - (area.y + area.height) };
+  };
+  const placed = state => state.top > 0 && Math.abs(state.gap) <= 2;
+  const first = await until(between, placed, 'The fallback column never settled between the top bar and the order sheet');
   // Leave the column less room than its content, so Retry starts out of view and only scrolling brings it in.
-  const room = 104, columnHeight = async () => (await column.boundingBox()).height;
-  const spare = await columnHeight() - room;
-  await short.setViewportSize({ width: 360, height: Math.round(620 - spare) });
-  await until(columnHeight, height => Math.abs(height - room) <= 4, `The fallback column did not shrink to ${room}px from ${spare + room}px`);
-  // Measured without Playwright scrolling anything; `clear` means a tap near any corner lands on the button.
-  const retryNow = () => columnRetry.evaluate(element => {
-    const box = element.getBoundingClientRect();
-    const corners = [[box.left + 4, box.top + 4], [box.right - 4, box.top + 4], [box.left + 4, box.bottom - 4], [box.right - 4, box.bottom - 4]];
-    return { width: box.width, height: box.height, clear: corners.every(([x, y]) => element.contains(document.elementFromPoint(x, y))) };
-  });
-  assert.equal((await retryNow()).clear, false, 'Retry must start out of view, or this stage proves nothing about scrolling');
+  const room = 104;
+  await short.setViewportSize({ width: 360, height: Math.round(620 - (first.height - room)) });
+  await until(between, state => placed(state) && Math.abs(state.height - room) <= 4, `The fallback column did not shrink to ${room}px from ${first.height}px`);
+  // Measured without Playwright scrolling anything. `clear`: the whole button is inside the column and above the
+  // sheet, and a tap at the middle of any side or the centre lands on the button.
+  const retryNow = async () => {
+    const area = await column.boundingBox(), sheetTop = (await grip.boundingBox()).y;
+    const box = await columnRetry.evaluate(element => {
+      const { top, bottom, left, right, width, height } = element.getBoundingClientRect(), x = left + width / 2, y = top + height / 2;
+      const taps = [[x, y], [x, top + 1], [x, bottom - 1], [left + 1, y], [right - 1, y]];
+      return { top, bottom, width, height, hit: taps.every(tap => element.contains(document.elementFromPoint(...tap))) };
+    });
+    const inside = box.top >= area.y - 0.5 && box.bottom <= Math.min(area.y + area.height, sheetTop) + 0.5;
+    return { ...box, sheetTop, columnTop: area.y, columnBottom: area.y + area.height, scrolled: await column.evaluate(element => element.scrollTop), clear: inside && box.hit };
+  };
+  const before = await retryNow();
+  assert.equal(before.clear, false, `Retry must start out of view, or this stage proves nothing about scrolling: ${JSON.stringify(before)}`);
   const area = await column.boundingBox();
   await short.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
   await short.mouse.wheel(0, 600);
-  const reached = await until(retryNow, state => state.clear, 'Scrolling did not bring the whole Retry clear of the order sheet');
+  const reached = await until(retryNow, state => state.scrolled > before.scrolled && state.clear, 'The wheel did not scroll the whole Retry clear of the order sheet');
   assert.ok(reached.width >= 48 && reached.height >= 48, `The full-screen Retry keeps a 48px target: ${JSON.stringify(reached)}`);
   await short.unroute('**/vendor/maplibre-*/maplibre-gl.mjs');
   await columnRetry.click();
