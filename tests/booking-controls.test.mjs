@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
+import { face } from '../src/theme.ts';
 
 // Booking's shared controls: a real 48dp tap target on every control, a nameable choice group,
 // and a route spine that names each end in the reader's own language.
@@ -35,17 +36,17 @@ const between = (source, from, to) => {
 const theme = read('../src/theme.ts');
 const palette = runInNewContext(`(${literal(theme.slice(theme.indexOf('export const palettes')), 'day: {')})`);
 const size = runInNewContext(`(${literal(ui, 'export const size =')})`);
-const styles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const size = ${JSON.stringify(size)};
+const styles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const face = ${JSON.stringify(face)}; const size = ${JSON.stringify(size)};
   const shadow = {}; const headingFont = new Proxy({}, { get: (_, weight) => 'heading-' + String(weight) });
   return (${literal(ui, 'StyleSheet.create(')}); })()`);
-const motion = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const size = ${JSON.stringify(size)};
+const motion = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const face = ${JSON.stringify(face)}; const size = ${JSON.stringify(size)};
   const cubicBezier = () => 'ease'; const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
   return (${literal(ui, 'themedStyles(palette => css.create(')}); })()`);
-const partStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)};
+const partStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const face = ${JSON.stringify(face)};
   return (${literal(parts, 'StyleSheet.create(')}); })()`);
-const bookStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const sheetShadow = {};
+const bookStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const face = ${JSON.stringify(face)}; const sheetShadow = {};
   return (${literal(book, 'StyleSheet.create(')}); })()`);
-const searchStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const theme = { name: 'day', shadow: {} };
+const searchStyles = runInNewContext(`(() => { const palette = ${JSON.stringify(palette)}; const face = ${JSON.stringify(face)}; const theme = { name: 'day', shadow: {} };
   return (${literal(search, 'StyleSheet.create(')}); })()`);
 
 // ---------- the target is a box, not a slop over the neighbour ----------
