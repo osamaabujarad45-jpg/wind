@@ -218,6 +218,11 @@ export default function OrderScreen() {
   // A part-typed code must never start a command: the recovery path refuses it unsent and the field stayed locked. An empty
   // one is still sent, as before: the server completes an older ride saved without a code. Boarding needs all four.
   const codeShort = needsCode && !/^\d{4}$/.test(code) && (code !== '' || rideAction === 'boarding');
+  // The advance button's state, in one place: what is announced is exactly what the button shows.
+  const advanceShown = order.status !== 'on_hold' && !order.safetyHold && !(order.service === 'shop' && order.status === 'at_pickup') && !(order.status === 'returning' && order.supportHasGoods);
+  const advanceDisabled = !!busy || rideAction === 'locked' || codeShort || doorStep && !doorReady || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals);
+  const advanceLoading = busy === 'advance' || busy === 'arrive';
+  const advanceReason = order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals) ? c.shopSealsNeeded : doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? undefined : codeShort ? (code ? c.codeFourDigits : codeLabel) : c.wait_busy;
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
   const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
@@ -853,16 +858,17 @@ export default function OrderScreen() {
           <Field label={codeLabel} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
             disabled={!!busy || advanceLocked === proofContext} />}
         {needsCode && !busy && advanceLocked === proofContext && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
-        <SayWhenShown text={codeShort && code ? c.codeFourDigits : ''} />{/* the button's reason changes while focus stays in the field */}
+        {/* The button's reason changes while focus stays in the code field: said when it becomes the reason shown. */}
+        <SayWhenShown text={advanceShown && advanceDisabled && !advanceLoading && advanceReason === c.codeFourDigits ? c.codeFourDigits : ''} />
         {order.status === 'returning' && order.supportHasGoods && <Txt variant="caption">{c.supportHasGoodsDriver}</Txt>}
         {rideAction === 'arrive' && !order.safetyHold && arrivalFar && <Txt variant="caption">{fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS })}</Txt>}
         {rideAction === 'arrive' && !order.safetyHold && <Txt variant="caption">{c.rideArrivalHint}</Txt>}
         {parcelFarKm !== null && !order.safetyHold && <Txt variant="caption">{farFill(c.parcelPickupFar, c.parcelPickupFarCity)}</Txt>}
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}{/* announced when it appears; the locked button repeats nothing */}
-        {order.status !== 'on_hold' && !order.safetyHold && !(order.service === 'shop' && atPickup) && !(order.status === 'returning' && order.supportHasGoods) && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
+        {advanceShown && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : order.service === 'shop' && order.status === 'returning' ? 'advance_returning_shop' : `advance_${order.status}` as 'advance_assigned']}
-          icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || codeShort || doorStep && !doorReady || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals)}
-          reason={order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals) ? c.shopSealsNeeded : doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? undefined : codeShort ? (code ? c.codeFourDigits : codeLabel) : c.wait_busy}
+          icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={advanceLoading} disabled={advanceDisabled}
+          reason={advanceReason}
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
             : parcelFarKm !== null ? confirm(farFill(c.parcelPickupFarConfirm, c.parcelPickupFarCityConfirm), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
             : act('advance', `/orders/${order.id}/advance`, { code })} />}
@@ -1244,7 +1250,6 @@ function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; rev
   </Card>;
 }
 
-/** A11Y-08 (Sol R2-M2): the waiting clock speaks when it crosses 2 min, 1 min and 30 s, at the end, and when an extension lands. */
 /** Speaks a line once, when it appears or changes: a live region on the web (mounted before the text), an announcement
  * on the phone (announceForAccessibility does nothing on react-native-web). Empty text says nothing. */
 function SayWhenShown({ text }: { text: string }) {
@@ -1252,6 +1257,7 @@ function SayWhenShown({ text }: { text: string }) {
   return Platform.OS === 'web' ? <View accessibilityLiveRegion="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}><Txt>{text}</Txt></View> : null;
 }
 
+/** A11Y-08 (Sol R2-M2): the waiting clock speaks when it crosses 2 min, 1 min and 30 s, at the end, and when an extension lands. */
 function GraceClock({ left, extended }: { left: number; extended: boolean }) {
   const { c } = useCopy();
   const text = left > 0 ? fill(c.rideGrace, { n: left }) : c.rideGraceEnded;
