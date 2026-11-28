@@ -95,12 +95,14 @@ try {
   await login(who.driver, `/order/${ride.id}`);
   checks.push('A53 accepts a leased ride with nonce and capacity revision; driver never receives PIN');
   // Geofence-style cue: ~320 m out (a pace the server's 70 m/s filter accepts) the caption names the distance and
-  // Arrive steps back; back on the pickup the plain hint returns and Arrive leads again.
+  // Arrive steps back; back on the pickup the caption goes and Arrive leads again.
   await page.evaluate(() => { window.__windFix = { latitude: 31.90288, longitude: 35.19 }; });
   await page.getByText(fill(c.rideArrivalFar, { km: '0.3', m: 300 }), { exact: true }).waitFor({ timeout: 30_000 });
+  await page.getByText(c.rideArrivalHint, { exact: true }).waitFor(); // far or near, the captain reads what confirming starts
   await page.screenshot({ path: join(output, 'a53-arrive-far.png') });
   await page.evaluate(() => { window.__windFix = undefined; });
-  await page.getByText(c.rideArrivalHint, { exact: true }).waitFor({ timeout: 30_000 });
+  await page.getByText(fill(c.rideArrivalFar, { km: '0.3', m: 300 }), { exact: true }).waitFor({ state: 'hidden', timeout: 30_000 });
+  await page.getByText(c.rideArrivalHint, { exact: true }).waitFor(); // inside the fence: what confirming does
   checks.push('A53 Arrive cue names the distance outside the 300 m fence and leads again at the pickup');
   await click(c.rideArrive);
   await page.getByText(/Waiting time remaining/).waitFor();
@@ -130,6 +132,9 @@ try {
   await click(c.advance_at_pickup_ride);
   await page.getByRole('button', { name: c.advance_in_transit_ride, exact: true }).waitFor();
   await page.screenshot({ path: join(output, 'a53-ride-underway.png') });
+  const trip = await f.call(`/orders/${ride.id}`, { token: f.customer.token });
+  await page.getByLabel(c.codeFromRider, { exact: true }).fill(trip.handoverCode);
+  await page.getByLabel(c.codeFromRider, { exact: true }).evaluate(input => input.blur());
   await click(c.advance_in_transit_ride);
   await until(async () => (await f.call(`/orders/${ride.id}`, { token: f.customer.token })).status === 'completed', 'ride completion');
   checks.push('A53 confirms arrival, displays grace clock, starts with passenger PIN and completes ride');

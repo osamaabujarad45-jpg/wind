@@ -513,10 +513,14 @@ assert.match(copy.en.err_storage_unavailable, /nothing was sent/);
   // and a locked field looks locked.
   const ui = readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8');
   assert.ok(ui.includes("StyleSheet.flatten(descriptors[key].options.tabBarItemStyle)?.display === 'none'") && ui.includes('if (hidden(route.key)) return null;'), 'TabBar skips hidden routes');
-  assert.ok(ui.includes('state.routes.filter(route => !hidden(route.key)).length >= 7') && ui.includes('dense && { fontSize: 11 }'), 'a seven-tab bar uses the 11 pt floor so one word never splits');
+  assert.ok(ui.includes("const marked = hidden(current.key) ? state.routes.find(route => route.name === 'more')?.key : current.key;"), 'More stays marked on a page reached from it');
   assert.match(ui, /disabled && styles\.inputDisabled/);
   const admin = readFileSync(new URL('../src/app/admin/_layout.tsx', import.meta.url), 'utf8');
-  assert.match(admin, /name="merchants".*href: shop \? undefined : null/, 'Shops is hidden while the shop line is off');
+  assert.match(admin, /name="merchants".*href: shop \? onRail : null/, 'Shops is hidden while the shop line is off, and sits under More on a phone');
+  // Design system: five admin tabs on a phone. Eight split Arabic labels mid-word once the app moved to Readex.
+  for (const name of ['users', 'cash', 'subscriptions', 'settings']) assert.match(admin, new RegExp(`name="${name}".*href: onRail`), `${name} is on the rail, under More on a phone`);
+  const more = readFileSync(new URL('../src/app/admin/more.tsx', import.meta.url), 'utf8');
+  for (const path of ['users', 'cash', 'merchants', 'subscriptions', 'settings']) assert.ok(more.includes(`router.navigate('/admin/${path}')`), `More leads to ${path}`);
   // An Arabic name leading an English line flipped it ("Van · سائق" on the receipt): names in mixed lines are isolated.
   for (const [file, name] of [['../src/app/receipt/[id].tsx', 'order.driverName'], ['../src/app/track/[token].tsx', 'data.driver.firstName'],
     ['../src/admin-assign.tsx', 'd.name'], ['../src/app/admin/cash.tsx', 'entry.userName'], ['../src/app/admin/users.tsx', 'user.name'],

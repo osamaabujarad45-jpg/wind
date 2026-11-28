@@ -66,14 +66,24 @@ for (const path of tsxFiles(srcDir)) {
 }
 
 // 4. Fixed `height:` / `lineHeight:` in the style sheets of the shared kit and the order screen is for icons, dots and bars only.
-// Expressions count as much as literals. Text variants set lineHeight with their size, so they are exempt.
+// Expressions count as much as literals. A lineHeight set together with its fontSize is fine (it
+// scales with the font), so they are exempt.
 const iconOnly = new Set(['iconButton', 'stepperKey', 'listIcon', 'emptyIcon', 'barPill', 'grip', 'send', 'segment']);
 for (const file of ['../src/ui.tsx', '../src/app/order/[id].tsx']) {
-  for (const line of read(file).split('\n')) {
-    const m = /^  (\w+): \{.*(?<![A-Za-z])(height|lineHeight)\s*:/.exec(line);
-    if (m && !iconOnly.has(m[1]) && !/^  (display|h1|h2|title|body|label|caption|micro):/.test(line)) problems.push(`${file}: ${m[1]} pins ${m[2]}: ${line.trim().slice(0, 90)}`);
+  for (const [, name, style] of read(file).matchAll(/\n  (\w+): \{((?:[^{}]|\{[^{}]*\})*)\}/g)) {
+    const pins = /(?<![A-Za-z])(height|lineHeight)\s*:/g;
+    const kinds = [...style.matchAll(pins)].map(m => m[1]);
+    const scalesWithText = !kinds.includes('height') && /\bfontSize:/.test(style);
+    if (kinds.length && !iconOnly.has(name) && !scalesWithText) problems.push(`${file}: ${name} pins ${kinds.join(', ')}: ${style.trim().slice(0, 90)}`);
   }
 }
 
 assert.deepEqual(problems, [], problems.join('\n'));
+// 5. Design review 27 Nov: a long header status left the order number no room, so the right slot is capped and the order's
+// status sits on its own line. react-native-web also paints its own teal on a Switch that is on without activeThumbColor.
+assert.ok(ui.includes('{!!right && <View style={styles.headerRight}>{right}</View>}'), 'the header caps its right slot');
+assert.ok(ui.includes("headerRight: { flexShrink: 1, maxWidth: '55%' }"), 'the right slot shrinks and never takes more than 55%');
+assert.match(read('../src/app/order/[id].tsx'), /<Header title=\{orderCode\(order\.id\)\}.* back right=\{helpButton\} \/>/, 'the order status badge sits under the header, not beside the order number');
+assert.ok(read('../src/app/merchant/catalogue.tsx').includes("Platform.OS === 'web' && { activeThumbColor: palette.card }"), 'the web switch keeps the brand thumb');
+
 console.log('large-text ok');

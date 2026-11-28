@@ -233,7 +233,7 @@ await call(`/admin/merchants/${sweetShop.id}`, boss.token, { status: 'active', m
 const hebron = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Hebron', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(Date.now()).map(x => [x.type, x.value]));
 const nowMinute = Number(hebron.hour) * 60 + Number(hebron.minute), opensAt = Math.ceil((nowMinute + 120) / 30) * 30 % 1440;
 // A failed delivery waiting for support for three days, at the second shop so the bakery's screens stay as they were:
-// Layla's shop card names the hold, and the admin Shops tab lists it (DLV-13, DLV-22). Placed before its hours close it.
+// Layla's order screen names the hold, and the admin Shops tab lists it (DLV-13, DLV-22). Placed before its hours close it.
 const baklava = await call('/merchant/items', sweets.token, { section: 'حلويات', nameAr: 'بقلاوة', nameEn: 'Baklava', priceAgorot: 3000 });
 const shopHold = await call('/orders', layla.token, { service: 'shop', merchantId: sweetShop.id, lines: [{ itemId: baklava.id, qtyMilli: 1000, policy: 'remove' }],
   dropoffCity: 'tulkarm', dropoffPoint: { latitude: 32.3150, longitude: 35.0250 }, dropoffNote: 'عمارة الأمل، الطابق الثالث', contact: layla.user.phone });
@@ -293,7 +293,7 @@ const screens = [
   { id: 'book-send-another', group: 'Customer', name: 'Send another parcel (pickup copied, new recipient)', route: `/book?again=${proofRecovery.id}&keep=pickup`, file: 'src/app/book.tsx', role: 'customer' },
   { id: 'orders', group: 'Customer', name: 'My orders', route: '/orders', file: 'src/app/(customer)/orders.tsx', role: 'customer' },
   { id: 'order-searching', group: 'Customer', name: 'Order · finding a driver', route: `/order/${searching.id}`, file: 'src/app/order/[id].tsx', role: 'customer', motion: true },
-  { id: 'order-scheduled', group: 'Customer', name: 'Parcel · scheduled, changing its time', route: `/order/${scheduled.id}`, file: 'src/app/order/[id].tsx', role: 'customer', clicks: ['changeTime'] },
+  { id: 'order-scheduled', group: 'Customer', name: 'Parcel · scheduled, changing its time', route: `/order/${scheduled.id}`, file: 'src/app/order/[id].tsx', role: 'customer', expand: true, clicks: ['changeTime'] },
   { id: 'order-live', group: 'Customer', name: 'Order · on the way', route: `/order/${inTransit.id}`, file: 'src/app/order/[id].tsx', role: 'rider', fix: true },
   { id: 'order-parcel-live', group: 'Customer', name: 'Parcel · awaiting handover', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'customer' },
   { id: 'track', group: 'Customer', name: 'Public tracking link (recipient, no sign-in)', route: shared.path, shown: '/track/{token}', file: 'src/app/track/[token].tsx', role: null }, // shown: the index must not churn on the random token
@@ -310,7 +310,7 @@ const screens = [
   { id: 'shop-list', group: 'Customer', name: 'Shop delivery · shops in the pilot town', route: '/shop', file: 'src/app/shop/index.tsx', role: 'customer' },
   { id: 'shop-store', group: 'Customer', name: 'Shop · catalogue (weighed items say estimate)', route: `/shop/${bakery.id}`, file: 'src/app/shop/[id].tsx', role: 'customer' },
   { id: 'shop-cart', group: 'Customer', name: 'Shop · checkout and delivery details', route: '/shop/cart', file: 'src/app/shop/cart.tsx', role: 'customer' },
-  { id: 'shop-on-hold', group: 'Customer', name: 'Shop order · on hold after a failed delivery (the card names the hold)', route: `/order/${shopHold.id}`, file: 'src/shop-ui.tsx (ShopCustomerPanel)', role: 'customer' },
+  { id: 'shop-on-hold', group: 'Customer', name: 'Shop order · on hold after a failed delivery (the order header names the hold)', route: `/order/${shopHold.id}`, file: 'src/app/order/[id].tsx, src/shop-ui.tsx (ShopCustomerPanel)', role: 'customer' },
   { id: 'shop-consent', group: 'Customer', name: 'Shop order · the shop asks before a substitution (approve, decline, add time)', route: `/order/${shopConsent.id}`, file: 'src/shop-ui.tsx (ShopCustomerPanel)', role: 'customer' },
   { id: 'merchant-inbox', group: 'Merchant', name: 'Merchant mode · inbox with a new order and its accept clock', route: '/merchant', file: 'src/app/merchant/index.tsx', role: 'merchant' },
   { id: 'merchant-new-order', group: 'Merchant', name: 'Merchant · accept with preparation minutes or decline with a reason', route: `/merchant/order/${shopNew.id}`, file: 'src/app/merchant/order/[id].tsx', role: 'merchant' },
@@ -344,6 +344,7 @@ const screens = [
   { id: 'admin-orders', group: 'Admin', name: 'All orders', route: '/admin/orders', file: 'src/app/admin/orders.tsx', role: 'admin' },
   { id: 'admin-order', group: 'Admin', name: 'Parcel · delivery code recovery', route: `/order/${proofRecovery.id}`, file: 'src/app/order/[id].tsx', role: 'admin' },
   { id: 'admin-users', group: 'Admin', name: 'Users', route: '/admin/users', file: 'src/app/admin/users.tsx', role: 'admin' },
+  { id: 'admin-more', group: 'Admin', name: 'More: the pages that leave the phone tab bar', route: '/admin/more', file: 'src/app/admin/more.tsx', role: 'admin' },
   { id: 'admin-subscriptions', group: 'Admin', name: 'Subscriptions', route: '/admin/subscriptions', file: 'src/app/admin/subscriptions.tsx', role: 'admin' },
   { id: 'admin-settings', group: 'Admin', name: 'Tariffs & settings', route: '/admin/settings', file: 'src/app/admin/settings.tsx', role: 'admin' },
 ].filter(s => !only || only.includes(s.id));
@@ -428,6 +429,8 @@ for (const language of ['ar', 'en']) {
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => console.log(`no network idle on ${screen.route}, capturing anyway`)); // a live screen holds a long-poll open
     await page.waitForTimeout(screen.motion ? 2600 : 1200); // allow the first data and map render
     if (screen.tap) { await page.getByText(screen.tap, { exact: true }).first().click(); await page.waitForTimeout(900); } // literal text, e.g. a seeded name
+    // A collapsed map sheet keeps its body off screen and inert (since 209c4ca4), so open it before using a control in it.
+    if (screen.expand) { await page.getByRole('button', { name: copy[language].sheetExpand, exact: true }).first().click(); await page.waitForTimeout(700); }
     for (const click of screen.clicks ?? []) {
       await page.getByText(copy[language][click], { exact: true }).first().click();
       await page.waitForTimeout(700);
@@ -500,9 +503,11 @@ for (const language of ['ar', 'en']) {
       for (const button of await page.getByRole('button', { name: copy[language].accept, exact: true }).all()) assert.equal(await button.isDisabled(), true);
       assert.ok(await page.getByText(copy[language].accept_go_online, { exact: true }).count() > 0);
     }
+    // A closed sheet's body is inert: includeHidden keeps this "never offered to a customer" check from passing for that reason alone.
     if (screen.id === 'order-parcel-live')
-      assert.equal(await page.getByRole('button', { name: copy[language].proofResetAction, exact: true }).count(), 0);
+      assert.equal(await page.getByRole('button', { name: copy[language].proofResetAction, exact: true, includeHidden: true }).count(), 0);
     if (screen.id === 'admin-order' && language === 'ar') {
+      await page.getByRole('button', { name: copy.ar.sheetExpand, exact: true }).first().click();
       const reset = page.getByRole('button', { name: copy.ar.proofResetAction, exact: true });
       assert.equal(await reset.isDisabled(), true);
       const reason = 'تم التواصل مع المستلم والتحقق منه';
@@ -582,8 +587,8 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   await offer('رام الله', 'البيرة').click();
   await page.waitForURL(`**/order/${testOrder.id}`);
   await page.waitForFunction(() => window.trackingCheck.active.size === 1, null, { timeout: 3000 });
-  await page.getByText(copy.ar.driver_next_assigned, { exact: true }).waitFor();
-  assert.equal(await page.getByText(copy.ar.next_assigned, { exact: true }).count(), 0);
+  await page.getByRole('button', { name: copy.ar.advance_assigned, exact: true }).waitFor(); // the captain's own step…
+  assert.equal(await page.getByText(copy.ar.next_assigned, { exact: true }).count(), 0); // …and not the customer's
   const stationaryPublications = publications;
   await page.waitForTimeout(31_000); // the watcher emits no movement after its initial fix
   assert.ok(publications > stationaryPublications, 'a stationary driver must refresh their GPS fix');
@@ -661,8 +666,8 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   await page.getByRole('button', { name: copy.ar.advance_assigned, exact: true }).click();
   await page.getByText(copy.ar.driver_next_at_pickup, { exact: true }).waitFor();
   await page.getByRole('button', { name: copy.ar.advance_at_pickup, exact: true }).click();
-  await page.getByText(copy.ar.driver_next_in_transit, { exact: true }).waitFor();
-  assert.equal(await page.getByText(copy.ar.next_in_transit, { exact: true }).count(), 0);
+  await page.getByText(copy.ar.driver_next_in_transit_customer, { exact: true }).waitFor(); // this parcel names no recipient
+  assert.equal(await page.getByText(copy.ar.shareHint, { exact: true }).count(), 0); // the customer's share card is not the captain's
   await page.getByRole('button', { name: 'رجوع', exact: true }).click();
   await page.getByRole('button', { name: copy.ar.activeOrder, exact: true }).waitFor();
   for (const button of await page.getByRole('button', { name: copy.ar.accept, exact: true }).all()) assert.equal(await button.isDisabled(), true);
@@ -681,8 +686,17 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   assert.equal(await offer('البيرة', 'طولكرم').isDisabled(), false);
   assert.equal(await page.getByRole('button', { name: copy.ar.sharingLocation, exact: true }).count(), 0);
   // An order screen holds a long-poll open, so network idle may never come; the click below waits for Accept itself.
+  // As from a job notification: the order opens with its sheet closed, and Accept must be reachable without opening it.
   await page.goto(`http://localhost:${WEB_PORT}/order/${searching.id}`, { waitUntil: 'load' });
+  await page.getByRole('button', { name: copy.ar.sheetExpand, exact: true }).first().waitFor();
+  await page.getByRole('button', { name: copy.ar.accept, exact: true }).click({ trial: true });
+  for (const label of [copy.ar.cashToCollect, copy.ar.youEarn]) // the footer's own rows follow the closed body's in the page
+    assert.equal(await page.getByText(label, { exact: true }).last().evaluate(element => {
+      const box = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+    }), true, `${label} shows beside Accept while the sheet is closed`);
   await page.getByRole('button', { name: copy.ar.accept, exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: copy.ar.sheetCollapse, exact: true }).count(), 0, 'accepting did not need the sheet open');
   await page.waitForFunction(() => window.trackingCheck.active.size === 1, null, { timeout: 3000 });
   await page.goto(`http://localhost:${WEB_PORT}/driver/account`, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.trackingCheck.active.size === 1);
@@ -985,15 +999,20 @@ if (!only || only.includes('booking-narrow')) {
   const narrowDir = join(root, '.screens', 'narrow');
   mkdirSync(narrowDir, { recursive: true });
   const route = 'from=ramallah&to=nablus';
+  // A waiting order of its own rider: the captain checks above may have accepted the first one, and a rider may have
+  // only one open ride (ride_already_active).
+  const narrowRider = await register('0599000014', 'ريم ناصر');
+  const waiting = await smartOrder(narrowRider, { service: 'ride', option: '1', pickupCity: 'bireh', dropoffCity: 'tulkarm',
+    pickupNote: 'مكتبة الجامعة', dropoffNote: 'مدخل السوق' });
   const views = [
     { id: 'book-parcel', path: `/book?service=parcel&${route}`, ready: t => new RegExp(t.request) },
     { id: 'book-ride', path: `/book?service=ride&${route}`, ready: t => new RegExp(t.request) },
     { id: 'book-freight', path: `/book?service=freight&${route}`, ready: t => new RegExp(t.request) },
-    { id: 'order-searching', path: `/order/${searching.id}`, ready: t => t.cancelOrder },
+    { id: 'order-searching', path: `/order/${waiting.id}`, who: narrowRider, ready: t => t.cancelOrder },
     { id: 'book-parcel-form', path: `/book?service=parcel&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
     { id: 'book-ride-form', path: `/book?service=ride&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
     { id: 'book-freight-form', path: `/book?service=freight&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
-    { id: 'order-scheduled', path: `/order/${scheduled.id}`, ready: t => t.saveTime, open: t => [t.changeTime] },
+    { id: 'order-scheduled', path: `/order/${scheduled.id}`, ready: t => t.saveTime, open: t => [t.sheetExpand, t.changeTime] },
   ];
   for (const language of ['ar', 'en']) for (const scale of [1, 1.3]) for (const view of views) {
     const t = copy[language], where = `${view.id} ${language} at 360px scale ${scale}`;
@@ -1006,7 +1025,7 @@ if (!only || only.includes('booking-narrow')) {
       localStorage.setItem('language', language);
       localStorage.setItem('onboarded', '1');
       localStorage.setItem('token', token);
-    }, { token: layla.token, language });
+    }, { token: (view.who ?? layla).token, language });
     const page = await context.newPage();
     // A live order holds a long-poll open, so network idle may never come; the ready-button wait below decides.
     await page.goto(`http://localhost:${WEB_PORT}${view.path}`, { waitUntil: 'load' });

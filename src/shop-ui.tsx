@@ -9,8 +9,10 @@ import { handoverExceptions, hhmm, isolate, latinDigits, ltr, minorFromText, typ
 import { currentCart, replaceCart } from './shop-cart';
 import { newRequestId } from './booking';
 import { recoverDriverAction } from './driver-recovery';
+import { statusText } from './copy';
 import { Button, Card, Choices, confirm, ErrorText, Field, fill, haptic, maxScale, Row, Section, Txt, useCopy } from './ui';
 import { useTheme } from './theme-context';
+import { face } from './theme';
 
 const WEIGHT_STEP = 250; // grams
 
@@ -44,7 +46,7 @@ export function QtyControl({ item, qtyMilli, name, onChange }: { item: Pick<Merc
     </Pressable>;
   return <View style={{ flexDirection: row, alignItems: 'center', gap: 6 }}>
     {key(-step, qtyMilli - step < min ? 'trash-outline' : 'remove', qtyMilli - step < min ? c.shopRemove : c.stepperDecrease)}
-    <Text maxFontSizeMultiplier={maxScale} accessibilityLabel={`${name} ${shown}`} style={{ minWidth: 64, textAlign: 'center', fontWeight: '600', color: palette.ink, writingDirection: 'ltr' }}>{shown}</Text>
+    <Text maxFontSizeMultiplier={maxScale} accessibilityLabel={`${name} ${shown}`} style={{ minWidth: 64, textAlign: 'center', fontFamily: face.medium, color: palette.ink, writingDirection: 'ltr' }}>{shown}</Text>
     {key(step, 'add', c.stepperIncrease, qtyMilli + step > max)}
   </View>;
 }
@@ -129,11 +131,11 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
   }
   // After a failed delivery (DLV-20) the order status says where the goods are, not the last shop step.
   const step = order.status === 'cancelled' ? (s.cancelReason ? c[`shopCancel_${s.cancelReason}`] : c.cancelled)
-    : order.status === 'on_hold' || order.status === 'returning' || order.status === 'returned' ? c[order.status]
+    : order.status === 'on_hold' || order.status === 'returning' || order.status === 'returned' ? statusText(c, order)
     : !s.state ? c.shop_requested : order.status === 'completed' ? c.completed : c[`shop_${s.state}`];
   return <Card>
     <Section title={s.merchantName} />
-    <Txt variant="label" accessibilityLabel={step} style={{ marginBottom: 6 }}>{step}</Txt>
+    {step !== statusText(c, order) && <Txt variant="label" style={{ marginBottom: 6 }}>{step}</Txt>}
     {!s.state && order.status === 'requested' && <AcceptClock until={s.acceptDeadline} />}
     {s.change && <Card tone="warn" style={{ marginTop: 8 }}>
       <Txt variant="label" header>{c.shopConsentTitle}</Txt>
@@ -143,7 +145,7 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
       <Txt style={{ marginTop: 4 }}>{fill(c.shopConsentTotal, { r: money(s.change.goodsAfterAgorot / 100) })}</Txt>
       <Txt variant="caption" style={{ marginTop: 4 }}>{consent.left === 0 ? c.shopConsentExpired : fill(c.shopConsentTimer, { t: consent.text })}</Txt>
       <Row style={{ marginTop: 8, flexWrap: 'wrap' }}>
-        <Button title={c.shopApprove} loading={busy === 'approve'} disabled={consent.left === 0} reason={consent.left === 0 ? c.shopConsentExpired : undefined} onPress={() => act('approve', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'approve' })} />
+        <Button title={c.shopApprove} loading={busy === 'approve'} disabled={consent.left === 0} onPress={() => act('approve', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'approve' })} />
         <Button title={c.shopDecline} variant="outline" loading={busy === 'decline'} disabled={consent.left === 0} onPress={() => act('decline', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, decision: 'decline' })} />
         {!s.change.extended && consent.left > 0 && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/orders/${order.id}/shop/consent`, { changeId: s.change!.id, extend: true })} />}
       </Row>

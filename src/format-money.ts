@@ -19,6 +19,6 @@ export function formatMoney(amount: number, language: keyof typeof locales, curr
   const formatter = Number.isInteger(amount) ? whole : decimal;
   const digits = formatter.format(Math.abs(amount));
   const sign = amount < 0 && digits !== formatter.format(0) ? '−' : '';
-  // Keep the currency and amount on the same line.
-  return `${sign}${currency}\u00a0${digits}`;
+  // Keep the sign, currency and amount on the same line: a word joiner stops a break between the minus and the shekel sign.
+  return `${sign && `${sign}\u2060`}${currency}\u00a0${digits}`;
 }

@@ -182,6 +182,11 @@ for (const c of [copy.ar, copy.en]) {
   assert.equal(statusText(c, parcel('assigned'), true), c.driver_assigned);
   assert.equal(statusText(c, parcel('at_pickup'), true), c.driver_at_pickup);
   assert.equal(statusText(c, ride('assigned')), c.assigned_ride);
+  assert.equal(statusText(c, { ...ride('assigned'), ride: { arrivedAt: 1 } }), c.at_pickup_ride, 'arrival recorded while assigned');
+  assert.equal(statusText(c, { ...ride('assigned'), ride: { arrivedAt: 1 } }, true), c.driver_at_pickup_ride);
+  assert.equal(statusText(c, { ...parcel('returning'), service: 'shop' }, true), c.returning_shop, 'a shop return names the shop');
+  assert.equal(statusText(c, { ...parcel('returning'), supportHasGoods: true }, true), c.returning_support, 'no return direction once support has the goods');
+  assert.equal(statusText(c, { ...parcel('returning'), driverTrackingEnded: true }), c.returning_support, 'the sender gets only the tracking flag');
   assert.equal(statusText(c, ride('assigned'), true), c.driver_assigned_ride);
   assert.equal(statusText(c, ride('at_pickup'), true), c.driver_at_pickup_ride);
   assert.equal(statusText(c, ride('in_transit'), true), c.in_transit_ride);

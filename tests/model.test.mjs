@@ -115,6 +115,9 @@ const sheet = runSheet([o(9, 'in_transit', 'ramallah', 'nablus'), o(3, 'assigned
 assert.deepEqual(sheet.map(g => [g.stage, g.city, g.orders.map(x => x.id)]), [
   ['pickup', 'bireh', [8]], ['pickup', 'ramallah', [3]], ['deliver', 'nablus', [2, 5, 9]], ['deliver', 'jenin', [6]], ['return', 'hebron', [4]]]);
 assert.deepEqual(runSheet([]), []);
+assert.deepEqual(runSheet([{ ...o(4, 'returning', 'hebron', 'nablus'), supportHasGoods: true }, o(9, 'returning', 'hebron', 'nablus'),
+  { ...o(2, 'returning', 'ramallah', 'nablus'), supportHasGoods: true }]).map(g => [g.stage, g.orders.map(x => x.id)]),
+  [['return', [9]], ['support', [2, 4]]], 'goods that support holds are no stop on the run');
 console.log('Run sheet checks passed');
 // PROD-06: every delivery-failure type has a next action, and none of them is a cash-variance reason (A11 keeps those).
 assert.deepEqual(Object.keys(exceptionNextAction).sort(), [...exceptionReasons].sort());

@@ -11,6 +11,7 @@ import { codeInput } from '../phone/flow';
 import { useSession, type Me } from '../session';
 import { Appear, Avatar, Badge, Button, Card, ErrorText, Field, FilterChips, fill, haptic, Header, Row, Screen, Txt, useCopy } from '../ui';
 import { themedStyles, useTheme } from '../theme-context';
+import { face } from '../theme';
 
 export default function Profile() {
   const { palette, tones } = useTheme();
@@ -90,8 +91,8 @@ export default function Profile() {
         </Card>
       </Appear>
       <ErrorText>{error}</ErrorText>
-      {saved && !changed && <Txt center variant="caption" style={{ color: palette.forest, fontWeight: '800', marginBottom: 10 }}>{c.nameSaved}</Txt>}
-      <Button title={c.save} icon="checkmark-outline" onPress={save} loading={busy} disabled={!changed} reason={c.profile_unchanged} />
+      {saved && !changed && <Txt center variant="caption" style={{ color: palette.forest, fontFamily: face.semibold, marginBottom: 10 }}>{c.nameSaved}</Txt>}
+      <Button title={c.save} icon="checkmark-outline" onPress={save} loading={busy} disabled={!changed} />
     </Screen>
   </KeyboardAvoidingView>;
 }
@@ -149,10 +150,14 @@ function EmailCard() {
 
   return <Card>
     <Txt variant="label" style={{ marginBottom: 7 }}>{c.email}</Txt>
-    <Row gap={10} style={styles.locked}>
-      <Ionicons name={emailVerifiedAt ? 'checkmark-circle' : 'mail-outline'} size={16} color={emailVerifiedAt ? palette.olive : palette.secondary} />
-      {/* minWidth 0: on the web a flex text will not shrink below an unbreakable address, which pushed the badge past the field edge; it wraps instead */}
-      <Txt variant="title" selectable={!!email} style={{ flex: 1, minWidth: 0, color: palette.secondary }}>{email ?? c.emailNotAdded}</Txt>
+    <Row gap={10} style={[styles.locked, { flexWrap: 'wrap' }]}>
+      {/* One unit, so the icon never sits alone. minWidth 0: on the web a flex text will not shrink below an unbreakable
+          address, which pushed the badge past the field edge. The row wraps, so the badge moves down before the address
+          splits mid-word; only an address wider than the field wraps. */}
+      <Row gap={10} style={{ flexGrow: 1, flexShrink: 1, minWidth: 0, maxWidth: '100%' }}>
+        <Ionicons name={emailVerifiedAt ? 'checkmark-circle' : 'mail-outline'} size={16} color={emailVerifiedAt ? palette.olive : palette.secondary} />
+        <Txt variant="title" selectable={!!email} style={{ flexShrink: 1, minWidth: 0, color: palette.secondary }}>{email ?? c.emailNotAdded}</Txt>
+      </Row>
       {!!email && <View><Badge label={emailVerifiedAt ? c.verified : c.unverified} tone={emailVerifiedAt ? tones.olive : tones.warn} /></View>}
     </Row>
     {!!email && !emailVerifiedAt && changing === null && !action && codeMode && <View style={{ marginTop: 12 }}>

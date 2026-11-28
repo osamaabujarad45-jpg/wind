@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
 import { ApiError, api, useApi } from '../../api';
 import { MerchantControls, MerchantHours, MerchantStatement, merchantStatus, useMerchantStatement } from '../../merchant-settings';
+import { ProfileButton } from '../../profile-switch';
 import { cities, isOpen, licenceExpiryFromText, shopCategories, statusFlow, type Merchant, type Order, type Point, type ShopCategory } from '../../model';
 import { registerNativePush } from '../../native-push';
 import PinSheet from '../../pin-sheet';
@@ -35,7 +36,7 @@ export default function MerchantHome() {
   const freshLabel = fresh.length === 1 ? c.merchantNewOrder : fill(c.merchantNewOrders, { n: fresh.length });
 
   return <Screen onRefresh={() => Promise.all([mine.reload(), inbox.reload(), statement.reload()])}>
-    <Header title={merchant.name} back={!shopProfile} subtitle={merchantStatus(merchant, c)} />
+    <Header title={merchant.name} back={!shopProfile} subtitle={merchantStatus(merchant, c)} right={shopProfile ? <ProfileButton /> : undefined} />
     {fresh.length > 0 && <Button title={freshLabel} icon="receipt-outline" onPress={() => router.push(`/merchant/order/${fresh[0].id}`)} />}
     {!shopProfile && <>
       <Stat label={c.merchantOpenOrders} value={String(open.length)} />

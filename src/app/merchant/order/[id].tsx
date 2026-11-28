@@ -59,8 +59,8 @@ export default function MerchantOrder() {
       {clock.left > 0 && <>
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantPrepMinutes}</Txt>
       <Stepper value={prep} min={5} max={120} step={5} label={c.merchantPrepMinutes} onChange={setPrep} />
-      <Button title={c.merchantAccept} icon="checkmark" loading={busy === 'accept'} onPress={() => act('accept', `/merchant/orders/${order.id}/accept`, { prepMinutes: prep })} />
-      {!s.acceptExtended && clock.left > 0 && <Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/merchant/orders/${order.id}/extend`)} />}
+      <View style={{ marginTop: 8 }}><Button title={c.merchantAccept} icon="checkmark" loading={busy === 'accept'} onPress={() => act('accept', `/merchant/orders/${order.id}/accept`, { prepMinutes: prep })} /></View>
+      {!s.acceptExtended && clock.left > 0 && <View style={{ marginTop: 8 }}><Button title={c.shopAddTime} variant="ghost" loading={busy === 'extend'} onPress={() => act('extend', `/merchant/orders/${order.id}/extend`)} /></View>}
       <Txt variant="label" style={{ marginTop: 8 }}>{c.merchantRejectWhy}</Txt>
       <Choices label={c.merchantRejectWhy} value={reject ?? ''} onChange={k => setReject(k || null)} items={merchantRejects.map(k => ({ key: k, label: c[`merchantReject_${k}`] }))} />
       <Button title={c.merchantReject} variant="danger" loading={busy === 'reject'} disabled={!reject} reason={reject ? undefined : c.merchantRejectChoose}

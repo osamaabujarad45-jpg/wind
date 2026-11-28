@@ -40,7 +40,7 @@ export default function Earnings() {
       </Card>
       <Row gap={10} style={{ flexWrap: 'wrap', marginBottom: 12 }}>
         {([[c.week, data.week, 1], [c.allTime, data.all, 2]] as const).map(([title, bucket, index]) =>
-          <Stat key={title} index={index} label={`${title} · ${c.earnedPay}`} value={money(bucket.earnedNet ?? bucket.net)}
+          <Stat key={title} index={index} label={title} value={money(bucket.earnedNet ?? bucket.net)}
             detail={`${fill(c.tripsCount, { n: bucket.jobs })} · ${c.commission} ${money(-bucket.commission)}`} />)}
       </Row>
     </>}

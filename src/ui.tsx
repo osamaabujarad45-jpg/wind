@@ -15,7 +15,7 @@ import { formatMoney } from './format-money';
 import { ApiError, errorCode } from './api';
 import { useSession } from './session';
 import { ltr, type OrderStatus } from './model';
-import { journeyState, palettes, type JourneyState, type StateLook } from './theme';
+import { face, journeyState, palettes, type JourneyState, type StateLook } from './theme';
 import { themedStyles, themeKits, useTheme } from './theme-context';
 
 // The Day palette, shared with the Souq app (client/src/styles/index.css): same ground, ink, forest, lime and clay. Values live in
@@ -171,10 +171,11 @@ export function Header({ title, back = false, right, subtitle }: { title: string
     {back && <IconButton icon={row === 'row-reverse' ? 'arrow-forward' : 'arrow-back'} label={c.back}
       onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />}
     <View style={{ flex: 1 }}>
-      <Txt variant="h1" header numberOfLines={1}>{title}</Txt>
+      <Txt variant="h1" header numberOfLines={2}>{title}</Txt>
       {!!subtitle && <Txt variant="caption" numberOfLines={1}>{subtitle}</Txt>}
     </View>
-    {right}
+    {/* Capped, so a long status or link can never squeeze the title away (the order number vanished on a shop consent). */}
+    {!!right && <View style={styles.headerRight}>{right}</View>}
   </View>;
 }
 
@@ -200,18 +201,20 @@ export function Row({ children, style, gap = 10 }: { children: React.ReactNode; 
 }
 
 // Headings are Readex Pro (Arabic and Latin drawn together; the Arabic extension of Lexend, made for quick reading).
-// One family per weight file, so no fontWeight: Android would fake-bold an already bold face. Body stays the system font.
-export const headingFont = { bold: 'ReadexPro-Bold', semibold: 'ReadexPro-SemiBold' } as const;
+// Every role names a Readex Pro file (theme.ts `face`); weights follow the Wind design system (600 is the strongest in text).
+// Line heights are about 1.75x the size: Readex draws the dots under a final ي half an em below the baseline, so a tighter
+// line cut them off wherever a label is line-limited, and "حسابي" read "حسابى" (render check, 27 Nov).
+export const headingFont = { bold: face.bold, semibold: face.semibold } as const;
 const useTextVariants = themedStyles(palette => ({
   // Design review 17 Nov: the floor was 11 px and nothing was bigger than 21, so ETA, prices and shares had no weight.
-  display: { fontSize: 28, lineHeight: 34, fontFamily: headingFont.bold, color: palette.ink, fontVariant: ['tabular-nums'] }, // ETA, amounts, earnings
-  h1: { fontSize: 22, lineHeight: 30, fontFamily: headingFont.bold, color: palette.ink },
-  h2: { fontSize: 18, lineHeight: 25, fontFamily: headingFont.semibold, color: palette.ink },
-  title: { fontSize: 16, lineHeight: 22, fontWeight: '700', color: palette.ink },
-  body: { fontSize: 15, lineHeight: 22, color: palette.secondary },
-  label: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: palette.ink },
-  caption: { fontSize: 13, lineHeight: 18, color: palette.secondary },
-  micro: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: palette.secondary }, // faint fell to 4.1–4.3:1 on muted and pale cards
+  display: { fontSize: 28, lineHeight: 48, fontFamily: face.semibold, color: palette.ink, fontVariant: ['tabular-nums'] }, // ETA, amounts, earnings
+  h1: { fontSize: 22, lineHeight: 38, fontFamily: face.semibold, color: palette.ink },
+  h2: { fontSize: 18, lineHeight: 31, fontFamily: headingFont.semibold, color: palette.ink },
+  title: { fontSize: 16, lineHeight: 28, fontFamily: face.semibold, color: palette.ink },
+  body: { fontSize: 15, lineHeight: 26, fontFamily: face.regular, color: palette.secondary },
+  label: { fontSize: 14, lineHeight: 24, fontFamily: face.medium, color: palette.ink },
+  caption: { fontSize: 13, lineHeight: 23, fontFamily: face.regular, color: palette.secondary },
+  micro: { fontSize: 12, lineHeight: 22, fontFamily: face.medium, color: palette.secondary }, // faint fell to 4.1–4.3:1 on muted and pale cards
 } satisfies Record<string, TextStyle>));
 type TextVariant = 'display' | 'h1' | 'h2' | 'title' | 'body' | 'label' | 'caption' | 'micro';
 
@@ -277,7 +280,7 @@ export function Avatar({ name, size: s = 44, tone = 'forest' }: { name: string; 
     style={{ width: s, height: s, borderRadius: s / 2, backgroundColor: t[0], alignItems: 'center', justifyContent: 'center' }}>
     {/* A contact known only by phone number gets a person, not its first digit. */}
     {/^[+\d٠-٩]/.test(name.trim()) ? <Ionicons name="person" size={s * 0.45} color={t[1]} />
-      : <Text allowFontScaling={false} style={{ color: t[1], fontSize: s * 0.42, fontWeight: '800' }}>{name.trim().slice(0, 1) || '•'}</Text>}
+      : <Text allowFontScaling={false} style={{ color: t[1], fontSize: s * 0.42, fontFamily: face.semibold }}>{name.trim().slice(0, 1) || '•'}</Text>}
   </View>;
 }
 
@@ -309,7 +312,8 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   const styles = useStyles();
   const { row } = useCopy();
   const tone = {
-    primary: { bg: palette.forest, fg: palette.onFill }, soft: { bg: palette.olivePale, fg: palette.olive },
+    // `soft` (the second choice) is an outline: its pale fill read as disabled, and several together looked equal.
+    primary: { bg: palette.forest, fg: palette.onFill }, soft: { bg: palette.card, fg: palette.ink },
     danger: { bg: palette.card, fg: palette.error }, ghost: { bg: 'transparent', fg: palette.secondary }, // danger is an error outline: a pale fill vanished on pale cards
     outline: { bg: palette.card, fg: palette.ink },
   }[variant];
@@ -321,7 +325,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
   const off = !!disabled && !loading;
   const look = off ? { bg: palette.muted, fg: palette.secondary } : tone; // solid, never dashed: a dashed edge read as an empty drop zone
   const press = <Press accessibilityLabel={label ?? (trailing ? `${title} ${trailing}` : title)} onPress={onPress} disabled={disabled || loading} dim={false}
-    accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: look.bg, flexDirection: row }, off ? styles.buttonOff : variant === 'outline' ? styles.outline : variant === 'danger' && styles.dangerEdge,
+    accessibilityState={{ busy: !!loading }} style={[styles.button, small && styles.buttonSmall, { backgroundColor: look.bg, flexDirection: row }, off ? styles.buttonOff : variant === 'outline' || variant === 'soft' ? styles.outline : variant === 'danger' && styles.dangerEdge,
       trailing ? { justifyContent: 'space-between' } : null]}>
     <View style={{ flexDirection: row, alignItems: 'center', gap: 7, flexShrink: 1 }}>
       {loading ? <ActivityIndicator size="small" color={look.fg} /> : icon && <Ionicons name={icon} size={small ? 16 : 18} color={look.fg}
@@ -510,7 +514,7 @@ export function Field({ label, value, onChangeText, onBlur, placeholder, hint, m
         multiline={multiline} keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoComplete={autoComplete} autoCorrect={autoCorrect} textAlign={inputAlign}
         onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType ?? (onSubmitEditing ? 'go' : undefined)} onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); onBlur?.(); }}
         onContentSizeChange={multiline ? e => setTextHeight(Math.ceil(e.nativeEvent.contentSize.height)) : undefined}
-        autoCapitalize="none" /* measured: onContentSizeChange re-reads the height on every font change, and maxHeight caps it */ style={[styles.input, { textAlign: inputAlign }, disabled && { color: palette.secondary }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
+        autoCapitalize="none" /* measured: onContentSizeChange re-reads the height on every font change, and maxHeight caps it */ style={[styles.input, multiline && { lineHeight: 28 }, { textAlign: inputAlign }, disabled && { color: palette.secondary }, keyboardType === 'phone-pad' && { writingDirection: 'ltr' }, multiline && { minHeight: 70, maxHeight: 160, textAlignVertical: 'top', paddingTop: 12 }, multiline && textHeight > 0 && { height: textHeight }]} />
       {/* Android: a drag that starts on an unfocused field never reaches the page ScrollView, because ReactEditText keeps
           the touch whenever the field reports any scroll range (right-aligned text, or a line taller than the box at a large
           font scale; A53). Until focus this layer takes the touch, so the page scrolls; a tap focuses with the cursor at the end. */}
@@ -554,10 +558,14 @@ export function Badge({ label, status, tone, icon }: { label: string; status?: O
   const state = status ? journeyState[status] : undefined;
   const glyph = icon ?? (state ? stateIcon[state] : undefined);
   const { row } = useCopy(); // the live dot or state icon leads the label in both languages
-  return <View style={[styles.badge, { backgroundColor: t.bg, flexDirection: row }, !!t.edge && { borderWidth: 1, borderColor: t.edge, paddingVertical: 2 }]}>
-    {state === 'live' && <Pulse color={t.fg} size={6} />}
-    {glyph && <Ionicons name={glyph} size={12} color={t.fg} />}
-    <Text maxFontSizeMultiplier={maxScale} style={[styles.badgeText, { color: t.fg }]}>{label}</Text>
+  // A filled pill is kept for what needs the eye now (live, problem). Waiting, attention and finished are an icon and their
+  // word in the state's plain-surface colour (theme.ts `mark`): every state in a pill read as decoration (wind-design §3).
+  const quiet = state && state !== 'live' && state !== 'problem' && 'mark' in t ? (t as { mark: string }).mark : undefined;
+  const fg = quiet ?? t.fg;
+  return <View style={[styles.badge, { flexDirection: row }, quiet ? styles.badgeQuiet : { backgroundColor: t.bg }, !quiet && !!t.edge && { borderWidth: 1, borderColor: t.edge, paddingVertical: 2 }]}>
+    {state === 'live' && <Pulse color={fg} size={6} />}
+    {glyph && <Ionicons name={glyph} size={12} color={fg} />}
+    <Text maxFontSizeMultiplier={maxScale} style={[styles.badgeText, { color: fg }]}>{label}</Text>
   </View>;
 }
 
@@ -574,21 +582,23 @@ export function ListGroup({ children }: { children: React.ReactNode }) {
   </View>;
 }
 
-export function ListRow({ icon, label, value, onPress, tone = 'olive', danger, action }: {
+export function ListRow({ icon, label, value, onPress, danger, action, below, expanded }: {
   icon: IconName; label: string; value?: string; onPress: () => void; tone?: keyof typeof tones; danger?: boolean;
   action?: boolean; // does something here (sign out) instead of opening a page: no chevron
+  below?: boolean; // the value is a state line ("Current · Online · Open orders: 3"): it sits under the label
+  expanded?: boolean; // the row opens and closes something under the list
 }) {
-  const { palette, tones } = useTheme();
+  const { palette } = useTheme();
   const styles = useStyles();
   const { row, rtl, align, language } = useCopy();
   const { fontScale } = useWindowDimensions();
-  const stacked = !!value && fontScale > wrapAbove;
-  const t = danger ? tones.error : tones[tone];
-  return <Press accessibilityLabel={value ? `${label}: ${value}` : label} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
-    <View style={[styles.listIcon, { backgroundColor: t.bg }]}><Ionicons name={icon} size={iconSize.md} color={t.fg} /></View>
+  const stacked = !!value && (!!below || fontScale > wrapAbove);
+  return <Press accessibilityLabel={value ? `${label}: ${value}` : label} accessibilityState={expanded === undefined ? undefined : { expanded }} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
+    {/* no tile behind the icon: tiles mark a service line only (wind-design §3) */}
+    <View style={styles.listIcon}><Ionicons name={icon} size={iconSize.lg} color={danger ? palette.error : palette.secondary} /></View>
     <View style={[styles.listCopy, stacked ? { gap: 2 } : { flexDirection: row, alignItems: 'center', gap: 12 }]}>
       <Text key={language} maxFontSizeMultiplier={maxScale} numberOfLines={linesFor(1, fontScale)}
-        style={[styles.listLabel, !stacked && { flex: 1 }, { textAlign: align }, danger && { color: palette.error, fontWeight: '700' }]}>{label}</Text>
+        style={[styles.listLabel, !stacked && { flex: 1 }, { textAlign: align }, danger && { color: palette.error, fontFamily: face.semibold }]}>{label}</Text>
       {!!value && <Text maxFontSizeMultiplier={maxScale} style={[styles.listValue, stacked && { textAlign: align }]}>{value}</Text>}
     </View>
     {!danger && !action && <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={16} color={palette.faint} />}
@@ -668,26 +678,27 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { row, language } = useCopy();
   // expo-router gives `href: null` screens (and its internal routes) this style; the default bar hides them, so this one must too.
   const hidden = (key: string) => StyleSheet.flatten(descriptors[key].options.tabBarItemStyle)?.display === 'none';
-  // Seven tabs (admin with the shop line on) leave ~55 pt each: one Arabic word (مستخدمون) split mid-word at 12 pt. 11 pt is the floor.
-  const dense = state.routes.filter(route => !hidden(route.key)).length >= 7;
+  // A page reached from More has no tab of its own on a phone: More stays marked as the place you are in.
+  const current = state.routes[state.index];
+  const marked = hidden(current.key) ? state.routes.find(route => route.name === 'more')?.key : current.key;
   return <SafeAreaView edges={['bottom']} style={styles.bar}><View style={[styles.barRow, { flexDirection: row }]}>
     {state.routes.map((route, index) => {
       const { options } = descriptors[route.key];
       if (hidden(route.key)) return null;
-      const focused = state.index === index;
-      const color = focused ? palette.forest : palette.secondary;
+      const focused = state.index === index, here = route.key === marked;
+      const color = here ? palette.forest : palette.secondary;
       const label = String(options.title ?? route.name);
-      return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={label} aria-selected={focused}
+      return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={options.tabBarBadge ? `${label}, ${options.tabBarBadge}` : label} aria-selected={here}
         onPress={() => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) { haptic.tap(); navigation.navigate(route.name, route.params); }
         }} style={styles.barItem}>
         {/* remount on focus: Fabric on Android drops borderRadius when only backgroundColor changes on a borderless view (A53, RN 0.86) */}
-        <View key={focused ? 'on' : 'off'} style={[styles.barPill, focused && { backgroundColor: palette.lime, borderColor: palette.forest }]}>{/* lime alone is 1.1:1 on white: the forest edge carries it in sun */}
+        <View key={here ? 'on' : 'off'} style={[styles.barPill, here && { backgroundColor: palette.lime, borderColor: palette.forest }]}>{/* lime alone is 1.1:1 on white: the forest edge carries it in sun */}
           {options.tabBarIcon?.({ focused, color, size: 21 })}
           {!!options.tabBarBadge && <View style={styles.barBadge}><Text maxFontSizeMultiplier={maxScale} /* A11Y-03: 200%; the badge's minWidth grows with it */ style={styles.barBadgeText}>{options.tabBarBadge}</Text></View>}
         </View>
-        <Text key={language} maxFontSizeMultiplier={maxScale} /* A11Y-03: 200%; two lines in the shared bar, which grows (minHeight) */ style={[styles.barText, dense && { fontSize: 11 }, { color }, focused && { fontWeight: '800' }]} numberOfLines={2}>{label}</Text>
+        <Text key={language} maxFontSizeMultiplier={maxScale} /* A11Y-03: 200%; two lines in the shared bar, which grows (minHeight) */ style={[styles.barText, { color }, here && { fontFamily: face.semibold }]} numberOfLines={2}>{label}</Text>
       </Pressable>;
     })}
   </View></SafeAreaView>;
@@ -721,7 +732,7 @@ export function SideRail({ state, descriptors, navigation, title }: BottomTabBar
           style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [styles.railItem, { flexDirection: row },
             focused ? { backgroundColor: palette.olivePale } : (hovered || pressed) && { backgroundColor: palette.paper }]}>
           {options.tabBarIcon?.({ focused, color, size: 20 })}
-          <Text maxFontSizeMultiplier={maxScale} numberOfLines={1} style={[styles.railText, { color, textAlign: align }, focused && { fontWeight: '800' }]}>{label}</Text>
+          <Text maxFontSizeMultiplier={maxScale} numberOfLines={1} style={[styles.railText, { color, textAlign: align }, focused && { fontFamily: face.semibold }]}>{label}</Text>
           {!!options.tabBarBadge && <View style={styles.railCount}><Text maxFontSizeMultiplier={maxScale} style={styles.railCountText}>{options.tabBarBadge}</Text></View>}
         </Pressable>;
       })}
@@ -758,6 +769,7 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   content: { paddingHorizontal: size.gutter, paddingTop: 8, paddingBottom: 28 },
   footer: { paddingHorizontal: size.gutter, paddingTop: 10, paddingBottom: 8, backgroundColor: palette.card, borderTopWidth: 1, borderTopColor: palette.hair },
   header: { alignItems: 'center', gap: 10, marginBottom: 14, minHeight: size.control },
+  headerRight: { flexShrink: 1, maxWidth: '55%' },
   iconButton: { width: size.control, height: size.control, borderRadius: size.control / 2, alignItems: 'center', justifyContent: 'center' },
   card: { backgroundColor: palette.card, borderRadius: size.radius, padding: 14, marginBottom: 12 },
   button: { minHeight: size.control, borderRadius: size.control / 2, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, gap: 8 },
@@ -765,17 +777,17 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   outline: { borderWidth: 1, borderColor: palette.field },
   dangerEdge: { borderWidth: 1, borderColor: palette.error },
   buttonOff: { borderWidth: 1, borderColor: palette.line },
-  buttonText: { fontSize: 15, fontWeight: '700' },
+  buttonText: { fontSize: 15, lineHeight: 26, fontFamily: face.semibold },
   choices: { gap: 8, marginBottom: 6 },
   tabTrack: { backgroundColor: palette.muted, borderRadius: 14, padding: 4, gap: 4 }, // Choices tabs: the sunken track
   tab: { borderWidth: 0, backgroundColor: 'transparent', minHeight: 44 },
-  choiceText: { color: palette.ink, fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  choiceText: { color: palette.ink, fontSize: 14, lineHeight: 24, fontFamily: face.semibold, textAlign: 'center' },
   stepper: { alignItems: 'center', gap: 4, backgroundColor: palette.muted, borderRadius: 12, padding: 3, alignSelf: 'flex-start' }, // hugs its keys instead of a full-width bar
   stepperKey: { width: size.control, height: size.control, borderRadius: 12, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
-  stepperValue: { minWidth: 28, textAlign: 'center', fontSize: 15, fontWeight: '800', color: palette.ink },
+  stepperValue: { minWidth: 28, textAlign: 'center', fontSize: 15, fontFamily: face.semibold, color: palette.ink },
   chip: { paddingHorizontal: 14, minHeight: size.control, borderRadius: size.control / 2, backgroundColor: palette.card, justifyContent: 'center', borderWidth: 1, borderColor: palette.field },
   chipOn: { backgroundColor: palette.forest, borderColor: palette.forest },
-  chipText: { fontSize: 14, fontWeight: '700', color: palette.ink },
+  chipText: { fontSize: 14, lineHeight: 24, fontFamily: face.semibold, color: palette.ink },
   field: { marginBottom: 12 },
   codeCell: { flex: 1, minHeight: 56, maxWidth: 56, borderRadius: 12, borderWidth: 1, borderColor: palette.field, backgroundColor: palette.card, alignItems: 'center', justifyContent: 'center' },
   codeCellActive: { borderColor: palette.forest, borderWidth: 2 },
@@ -785,32 +797,33 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   inputFocused: { borderColor: palette.forest, borderWidth: 2, paddingHorizontal: 11, paddingVertical: 0 }, // 2px focus ring; the padding keeps the text and the height still
   inputError: { borderColor: palette.error, backgroundColor: palette.errorPale },
   inputDisabled: { borderColor: palette.dash, backgroundColor: palette.muted }, // a locked field must not look typeable (A53 walk, 18 Nov)
-  fieldError: { flex: 1, color: palette.error, fontSize: 13, fontWeight: '700' },
-  input: { flex: 1, minHeight: size.control, paddingVertical: 10, color: palette.ink, fontSize: 16 },
-  error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, fontWeight: '700', marginBottom: 10, overflow: 'hidden', textAlign: 'center' },
-  badge: { alignItems: 'center', gap: 5, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 99, alignSelf: 'flex-start', maxWidth: '100%' },
-  badgeText: { fontSize: 12, fontWeight: '800', flexShrink: 1 }, // a long English status wraps inside its card instead of running past it
+  fieldError: { flex: 1, color: palette.error, fontSize: 13, lineHeight: 23, fontFamily: face.semibold },
+  input: { fontFamily: face.regular, flex: 1, minHeight: size.control, paddingVertical: 10, color: palette.ink, fontSize: 16 },
+  error: { color: palette.error, backgroundColor: palette.errorPale, padding: 10, borderRadius: 12, fontSize: 13, lineHeight: 23, fontFamily: face.semibold, marginBottom: 10, overflow: 'hidden', textAlign: 'center' },
+  badge: { alignItems: 'center', gap: 5, paddingVertical: 1, paddingHorizontal: 8, borderRadius: 99, alignSelf: 'flex-start', maxWidth: '100%' },
+  badgeQuiet: { paddingHorizontal: 0 },
+  badgeText: { fontSize: 12, lineHeight: 21, fontFamily: face.semibold, flexShrink: 1 }, // a long English status wraps inside its card instead of running past it
   group: { backgroundColor: palette.card, borderRadius: size.radius, overflow: 'hidden', marginBottom: 12 },
   groupDivider: { borderTopWidth: 1, borderTopColor: palette.hair },
   listRow: { alignItems: 'center', gap: 12, minHeight: size.row, paddingHorizontal: 14, paddingVertical: 6 },
   listIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   listCopy: { flex: 1, minWidth: 0 },
-  listLabel: { fontSize: 15, fontWeight: '600', color: palette.ink },
-  listValue: { fontSize: 13, color: palette.secondary },
+  listLabel: { fontSize: 15, lineHeight: 26, fontFamily: face.medium, color: palette.ink },
+  listValue: { fontFamily: face.regular, fontSize: 13, lineHeight: 23, color: palette.secondary },
   empty: { alignItems: 'center', gap: 8, paddingVertical: 32, paddingHorizontal: 10 },
   emptyIcon: { width: 56, height: 56, borderRadius: 18, backgroundColor: palette.olivePale, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
   rail: { width: 248 /* admin-rail token (theme.ts sizes.adminRail) */, backgroundColor: palette.card, borderEndWidth: 1, borderEndColor: palette.hair, paddingHorizontal: 12, paddingVertical: 16 },
   railBrand: { alignItems: 'center', gap: 10, paddingHorizontal: 8, paddingBottom: 18 },
-  railTitle: { fontSize: 16, fontWeight: '800', color: palette.ink, flexShrink: 1 },
+  railTitle: { fontSize: 16, lineHeight: 28, fontFamily: face.semibold, color: palette.ink, flexShrink: 1 },
   railItem: { alignItems: 'center', gap: 10, minHeight: 44, paddingHorizontal: 10, borderRadius: 10 },
-  railText: { flex: 1, fontSize: 14, fontWeight: '600' },
+  railText: { flex: 1, fontSize: 14, lineHeight: 24, fontFamily: face.medium },
   railCount: { minWidth: 22, minHeight: 22, borderRadius: 11, backgroundColor: palette.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  railCountText: { color: palette.onFill, fontSize: 12, fontWeight: '800' },
+  railCountText: { color: palette.onFill, fontSize: 12, fontFamily: face.semibold },
   bar: { backgroundColor: palette.card, borderTopWidth: 1, borderTopColor: palette.hair, width: '100%' },
   barRow: { maxWidth: 640, width: '100%', alignSelf: 'center', paddingHorizontal: 8, paddingTop: 6, paddingBottom: 4 },
   barItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 50, gap: 3 },
   barPill: { width: 54, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'transparent' },
-  barText: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  barText: { fontSize: 12, lineHeight: 22, fontFamily: face.medium, textAlign: 'center' },
   barBadge: { position: 'absolute', top: -3, right: 6, minWidth: 16, minHeight: 16, borderRadius: 8, backgroundColor: palette.warn, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  barBadgeText: { color: palette.onFill, fontSize: 12, fontWeight: '800' }, // 5.7:1 on clayInk; clay itself is too light for text
+  barBadgeText: { color: palette.onFill, fontSize: 12, fontFamily: face.semibold }, // 5.7:1 on clayInk; clay itself is too light for text
 }));

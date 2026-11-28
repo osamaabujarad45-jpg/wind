@@ -1,7 +1,7 @@
 // The shop's catalogue (DLV-01, MER-02): sections, items, prices in shekels (stored as agorot), sold by weight, and the
 // out-of-stock switch, which is the edit a busy shop makes most often.
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Switch, View } from 'react-native';
+import { ActivityIndicator, Platform, Switch, View } from 'react-native';
 import { api, useApi } from '../../api';
 import { minorFromText, type MerchantItem } from '../../model';
 import { newRequestId } from '../../command-id';
@@ -46,11 +46,14 @@ export default function MerchantCatalogue() {
           <Row gap={8} style={{ minHeight: 44 }}>
             <Switch value={i.available} onValueChange={() => toggle(i)} disabled={busy === i.id || !!editing} hitSlop={8}
               accessibilityLabel={fill(c.merchantStockOf, { item: language === 'ar' ? i.nameAr : i.nameEn })} accessibilityState={{ busy: busy === i.id }}
-              trackColor={{ true: palette.olive, false: palette.field }} thumbColor={palette.card} />
+              trackColor={{ true: palette.olive, false: palette.field }} thumbColor={palette.card}
+              // react-native-web ignores thumbColor while the switch is on and paints its own teal
+              {...(Platform.OS === 'web' && { activeThumbColor: palette.card })} />
             {busy === i.id && <ActivityIndicator size="small" color={palette.olive} />}
             <Txt variant="label" style={{ color: i.available ? palette.olive : palette.secondary }}>{i.available ? c.merchantInStock : c.merchantNotInStock}</Txt>
           </Row>
-          <Button size="sm" variant="ghost" title={c.edit} disabled={!!editing && (editing === 'new' || editing.id !== i.id)} reason={c.wait_busy} onPress={() => setEditing(i)} />
+          {/* One form at a time: while it is open the rows offer no second Edit, so no reason has to be written under each. */}
+          {!editing && <Button size="sm" variant="ghost" title={c.edit} onPress={() => setEditing(i)} />}
         </Row>
         {!i.available && <Txt variant="caption">{c.merchantOutOfStock}</Txt>}
       </View>)}

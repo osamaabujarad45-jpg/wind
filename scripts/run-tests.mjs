@@ -7,6 +7,8 @@ const suites = [
   "journey-contracts.test.mjs",
   "runtime-config.test.mjs",
   "large-text.test.mjs",
+  "design-budget.test.mjs",
+  "type-face.test.mjs",
   "design-theme.test.mjs",
   "brand-mark.test.mjs",
   "theme-context.test.mjs",

@@ -7,6 +7,7 @@ import { currentMapMode, useMapMode } from './map-mode';
 import RoutePreview, { type PinMapProps, type RouteMapProps } from './route-preview';
 import { maxScale, useCopy } from './ui';
 import { useTheme } from './theme-context';
+import { face } from './theme';
 
 /** One owner for provider attempts: each attempt mounts the Google or the platform's baseline map fresh, and
  * renderers never retry or revive a failed policy attempt. Pass route or pin; google/baseline draw that kind. */
@@ -48,16 +49,17 @@ export function MapProviderBoundary({ platform, route, pin, google: Google, base
       onChange={point => { if (current()) callbacks.current?.onChange(point); }} />;
   }
   const props = route ?? pin;
+  const column = !!route && !!route.fill; // the full-screen route fallback carries Retry in its own column
   return <View style={[props?.fill ? StyleSheet.absoluteFill : { height: props?.height ?? 220, width: '100%' }, { backgroundColor: palette.mapWash }]}>
-    {route && <RoutePreview {...route} />}
-    <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+    {route && <RoutePreview {...route} onRetry={column ? () => retryMapProviders(choice.key) : undefined} />}
+    {!column && <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
       <Pressable accessibilityRole="button" onPress={() => retryMapProviders(choice.key)}
         style={{ minHeight: 48, minWidth: 48, padding: 12, backgroundColor: palette.card, borderRadius: 12, transform: [
           { translateX: ((props?.insets?.left ?? 0) - (props?.insets?.right ?? 0)) / 2 },
           { translateY: ((props?.insets?.top ?? 0) - (props?.insets?.bottom ?? 0)) / 2 },
         ] }}>
-        <Text maxFontSizeMultiplier={maxScale}>{c.retry}</Text>
+        <Text maxFontSizeMultiplier={maxScale} style={{ fontFamily: face.medium }}>{c.retry}</Text>
       </Pressable>
-    </View>
+    </View>}
   </View>;
 }

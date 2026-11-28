@@ -13,7 +13,7 @@ import { mapReadyMs } from './runtime-config';
 import { Car } from './route-map.native';
 import { maxScale, useCopy } from './ui';
 import { themedStyles, useTheme } from './theme-context';
-import { palettes } from './theme';
+import { face, palettes } from './theme';
 // Google draws its map in the day style whatever the app theme, so what is drawn on the map keeps the Day colours.
 const onMap = palettes.day;
 
@@ -66,13 +66,14 @@ export default function RouteMap(props: RouteMapProps) {
     return () => clearTimeout(timer);
   }, [ready, failed, attempt]);
   // A provider failure unmounts the map: its overlays go with it, and no Google content lingers anywhere.
+  const retry = () => { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); };
   if (failed) return <View style={props.fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
-    <RoutePreview {...props} />
-    <View style={[StyleSheet.absoluteFill, styles.cover]}>
-      <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
-        <Text maxFontSizeMultiplier={maxScale}>{c.retry}</Text>
+    <RoutePreview {...props} onRetry={props.fill ? retry : undefined} />
+    {!props.fill && <View style={[StyleSheet.absoluteFill, styles.cover]}>
+      <Pressable onPress={retry} accessibilityRole="button" style={styles.retry}>
+        <Text maxFontSizeMultiplier={maxScale} style={{ fontFamily: face.medium }}>{c.retry}</Text>
       </Pressable>
-    </View>
+    </View>}
   </View>;
   return <View style={props.fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
@@ -129,7 +130,7 @@ export function PinMap({ center, onChange, onGesture, onFail, onReady, height = 
   }, [ready, attempt]);
   if (failed) return <View style={{ height, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.mapWash }}>
     <Pressable onPress={() => { setReady(false); setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
-      <Text maxFontSizeMultiplier={maxScale}>{c.retry}</Text>
+      <Text maxFontSizeMultiplier={maxScale} style={{ fontFamily: face.medium }}>{c.retry}</Text>
     </Pressable>
   </View>;
   return <View style={{ height, width: '100%' }}>

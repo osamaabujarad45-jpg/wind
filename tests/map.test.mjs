@@ -338,8 +338,15 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
     assert.ok(sheet.includes('!footer && !open &&') && sheet.includes('16 + (footer ? 0 : padBottom)'), 'open, the navigation-bar inset ends the content instead of leaving a band mid-sheet (A53)'); }
   { // A refused cancel changed nothing on screen: the error sat in the body of a closed sheet (A53).
     const screen = readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url), 'utf8');
-    const header = screen.slice(screen.indexOf('<MapSheet open={sheetOpen}'), screen.indexOf('{finding && <View style={{ alignItems:'));
+    const header = screen.slice(screen.indexOf('<MapSheet open={sheetShown}'), screen.indexOf('{finding && !accept && <View style={{ alignItems:'));
     assert.ok(header.includes('{codeAtDoor && <View'), 'the handover code stays visible in a closed sheet near the door');
+    assert.ok(screen.includes('footer={accept && dockAccept ?') && screen.includes('{!dockAccept && accept}') && screen.includes('const sheetShown = sheetOpen ?? (!!accept && !dockAccept);'),
+      'a captain sees the money and Accept: docked, or leading a sheet that opens itself on a short upright window');
+    assert.ok(screen.includes("const cashLabel = order.shop && order.shop.state !== 'ready' ?"), 'a shop total that can still change reads as an estimate');
+    assert.ok(screen.includes('const shortUpright = !side && windowHeight < 640;') && screen.includes('{!(shortUpright && accept) && <Txt variant="micro"'),
+      'a short waiting job drops the top card\'s service line, so the map fallback keeps room for Retry at 200% text; every other viewer keeps it');
+    assert.ok(screen.includes('{shortUpright && <Txt variant="label">{order.service === \'ride\' ? fill(order.shared ? c.jobSharedSeats : c.jobPrivateRide'),
+      'and beside Accept it then names the service, with a shared ride and its seats');
     assert.ok(screen.includes('{!codeAtDoor && codes}'), 'and in the body everywhere else');
     // Booking: a refused retry or offline save reads in the header beside the pending card, not after the last field (review 8 Nov).
     { const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
@@ -352,8 +359,17 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
     // A booked-ahead order is neither finding nor active: its closed sheet showed a bare grip (A53, 8 Nov).
     assert.ok(header.includes('{!!booked && <Row') && screen.includes("const booked = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor"), 'a closed sheet still says when a booked-ahead order is due');
     assert.ok(screen.includes('{!live && <Txt variant="title">{fill(c.scheduledFor, { t: time(later) })}</Txt>}'), 'and the open sheet does not say it twice');
-    assert.ok(header.includes('<ErrorText>{actionError}</ErrorText>') &&header.includes('c.updatesPaused'), 'over the map, failures sit in the header, always on screen');
-    assert.equal(screen.match(/<ErrorText>\{actionError\}<\/ErrorText>/g).length, 2, 'once over the map, once on the plain screen');
+    // The header's copy may carry a condition (a locked or paused ride drops the old "ask for the PIN"), never a second place.
+    // Any ErrorText whose expression mentions the action error counts, however it is wrapped.
+    const failures = /<ErrorText>\s*\{(?:(?!<\/ErrorText>)[\s\S])*?\bactionError\b(?:(?!<\/ErrorText>)[\s\S])*<\/ErrorText>/g;
+    assert.ok(header.match(failures)?.length === 1 && header.includes('c.updatesPaused'), 'over the map, failures sit in the header, always on screen');
+    assert.equal(screen.match(failures).length, 2, 'once over the map, once on the plain screen');
+    // A part-typed code never starts a command: the recovery path refuses it unsent and the field used to stay locked.
+    assert.ok(screen.includes("const codeShort = needsCode && !/^\\d{4}$/.test(code) && (code !== '' || rideAction === 'boarding');") && screen.includes("const advanceDisabled = !!busy || rideAction === 'locked' || codeShort || doorStep && !doorReady") && screen.includes('disabled={advanceDisabled}'), "a part-typed code waits; an empty one is the server's call");
+    assert.ok(screen.includes('reason={advanceReason}') && screen.includes("<SayWhenShown text={advanceShown && advanceDisabled && !advanceLoading && advanceReason === c.codeFourDigits ? c.codeFourDigits : ''} />"), 'only the reason the button shows is announced');
+    assert.ok(screen.includes("codeShort ? (code ? c.codeFourDigits : codeLabel)") && screen.includes("(!order.safetyHold || order.status === 'on_hold') && !goodsWithSupport"), 'a short code says four digits; a held order keeps its custody line during a pause');
+    // During a pause or lock a refused PIN is still said (A11Y-04), without asking the captain to ask for it again.
+    assert.ok(header.includes("(rideStep(order) === 'locked' || order.safetyHold) && actionError === c.err_wrong_boarding_code ? c.rideBoardingPinWrong : actionError"), 'only the request for the PIN is dropped, and only then');
     const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
     assert.ok(book.includes("on || s === 'parcel' ? '' : '≈ '"), 'the parcel is a standard price, never an estimate'); }
   // The Android entry must choose the renderer from the baked capability plus the stored mode — never
