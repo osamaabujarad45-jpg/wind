@@ -359,6 +359,7 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
     assert.equal(screen.match(failures).length, 2, 'once over the map, once on the plain screen');
     // A part-typed code never starts a command: the recovery path refuses it unsent and the field used to stay locked.
     assert.ok(screen.includes("const codeShort = needsCode && !/^\\d{4}$/.test(code) && (code !== '' || rideAction === 'boarding');") && screen.includes("disabled={!!busy || rideAction === 'locked' || codeShort || doorStep && !doorReady"), "a part-typed code waits; an empty one is the server's call");
+    assert.ok(screen.includes("codeShort ? (code ? c.codeFourDigits : codeLabel)") && screen.includes("(!order.safetyHold || order.status === 'on_hold') && !goodsWithSupport"), 'a short code says four digits; a held order keeps its custody line during a pause');
     // During a pause or lock a refused PIN is still said (A11Y-04), without asking the captain to ask for it again.
     assert.ok(header.includes("(rideStep(order) === 'locked' || order.safetyHold) && actionError === c.err_wrong_boarding_code ? c.rideBoardingPinWrong : actionError"), 'only the request for the PIN is dropped, and only then');
     const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');

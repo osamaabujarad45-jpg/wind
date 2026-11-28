@@ -227,7 +227,7 @@ export default function OrderScreen() {
   const goodsWithSupport = !!mine && goodsTaken; // nothing left to return or drive to
   // No next step during a safety pause. A shop customer prepares and hands over nothing; a rider with a PIN already reads
   // "after checking the vehicle and driver"; a rider whose captain has arrived is not told to wait for them.
-  const next = (isCustomer || mine) && !order.safetyHold && !goodsWithSupport
+  const next = (isCustomer || mine) && (!order.safetyHold || order.status === 'on_hold') && !goodsWithSupport
     && !(isCustomer && (arrived || order.service === 'shop' && ['assigned', 'at_pickup'].includes(order.status) || order.status === 'at_pickup' && !!boardingPin))
     && nextHint;
   const rideNoShow = mine && order.service === 'ride' && !!order.ride && !order.safetyHold
@@ -860,7 +860,7 @@ export default function OrderScreen() {
         {order.status !== 'on_hold' && !order.safetyHold && !(order.service === 'shop' && atPickup) && !(order.status === 'returning' && order.supportHasGoods) && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : order.service === 'shop' && order.status === 'returning' ? 'advance_returning_shop' : `advance_${order.status}` as 'advance_assigned']}
           icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || codeShort || doorStep && !doorReady || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals)}
-          reason={order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals) ? c.shopSealsNeeded : doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? undefined : codeShort ? codeLabel : c.wait_busy}
+          reason={order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals) ? c.shopSealsNeeded : doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? undefined : codeShort ? (code ? c.codeFourDigits : codeLabel) : c.wait_busy}
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
             : parcelFarKm !== null ? confirm(farFill(c.parcelPickupFarConfirm, c.parcelPickupFarCityConfirm), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
             : act('advance', `/orders/${order.id}/advance`, { code })} />}
