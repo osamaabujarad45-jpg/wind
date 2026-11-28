@@ -72,6 +72,7 @@ assert.ok(inputs.some(([, tag]) => /\smultiline=\{multiline\}/.test(tag)), 'the 
 // SRS A11Y-03: the route fallback draws no words (they overlapped, sat under Retry and the sheet, or stopped at
 // 130%). That holds only while every screen that shows a route map names both stops in its own text.
 assert.doesNotMatch(read('src/route-preview.tsx'), /<Text\b|<Txt\b/, 'the route preview draws shapes only');
+assert.match(read('src/route-preview.tsx'), /top: insets\?\.top \?\? 0, bottom: insets\?\.bottom \?\? 0, left: insets\?\.left \?\? 0, right: insets\?\.right \?\? 0/, 'the drawing stays clear of the full-screen map chrome');
 const routeScreens = sources.filter(([file, text]) => file.startsWith('src/app/') && (/<RouteMap\b/.test(text) || /<SceneMap\b[^\n]*'route'/.test(text)));
 assert.ok(routeScreens.length >= 3, 'booking, order and tracking show route maps');
 for (const [file, text] of routeScreens) assert.match(text, /<RouteLine\b/, `${file} names both stops in text`);
