@@ -737,13 +737,14 @@ try {
     const box = await columnRetry.evaluate(element => {
       const { top, bottom, left, right, width, height } = element.getBoundingClientRect(), x = left + width / 2, y = top + height / 2;
       const taps = [[x, y], [x, top + 1], [x, bottom - 1], [left + 1, y], [right - 1, y]];
-      return { top, bottom, width, height, hit: taps.every(tap => element.contains(document.elementFromPoint(...tap))) };
+      return { top, bottom, left, right, width, height, hit: taps.every(tap => element.contains(document.elementFromPoint(...tap))) };
     });
-    const inside = box.top >= area.y - 0.5 && box.bottom <= Math.min(area.y + area.height, sheetTop) + 0.5;
+    const inside = box.left >= area.x - 0.5 && box.right <= area.x + area.width + 0.5
+      && box.top >= area.y - 0.5 && box.bottom <= Math.min(area.y + area.height, sheetTop) + 0.5;
     return { ...box, sheetTop, columnTop: area.y, columnBottom: area.y + area.height, scrolled: await column.evaluate(element => element.scrollTop), clear: inside && box.hit };
   };
   const before = await retryNow();
-  assert.equal(before.clear, false, `Retry must start out of view, or this stage proves nothing about scrolling: ${JSON.stringify(before)}`);
+  assert.ok(before.bottom > before.columnBottom + 0.5, `Retry must start below the visible column, or this stage proves nothing about scrolling: ${JSON.stringify(before)}`);
   const area = await column.boundingBox();
   await short.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
   await short.mouse.wheel(0, 600);
