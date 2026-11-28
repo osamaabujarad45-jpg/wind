@@ -99,6 +99,38 @@ async function login(page, identifier) {
   await button(page, c.signIn).click();
   await page.waitForURL(url => !url.pathname.startsWith('/auth'));
 }
+// The full-screen map fallback on an open order. The sheet's grip is its top edge; Playwright's own scrolling is never
+// used to measure. Only the column's Retry counts: the map page's centred one shows for a moment before the fallback.
+function fallbackOn(page) {
+  const column = page.getByTestId('route-preview-column');
+  const columnRetry = column.getByRole('button', { name: c.retry, exact: true });
+  const grip = button(page, c.sheetExpand);
+  const between = async () => {
+    const area = await column.boundingBox(), sheet = await grip.boundingBox();
+    return { top: area.y, height: area.height, gap: sheet.y - (area.y + area.height) };
+  };
+  // Settled once it starts under the top bar and ends at the sheet; before both are measured it covers the screen.
+  const placed = state => state.top > 0 && Math.abs(state.gap) <= 2;
+  // `clear`: all of Retry is inside the column and above the sheet, and a tap at the middle of any side or the centre
+  // lands on it.
+  const retryNow = async () => {
+    const area = await column.boundingBox(), sheetTop = (await grip.boundingBox()).y;
+    const box = await columnRetry.evaluate(element => {
+      const { top, bottom, left, right, width, height } = element.getBoundingClientRect(), x = left + width / 2, y = top + height / 2;
+      const taps = [[x, y], [x, top + 1], [x, bottom - 1], [left + 1, y], [right - 1, y]];
+      return { top, bottom, left, right, width, height, hit: taps.every(tap => element.contains(document.elementFromPoint(...tap))) };
+    });
+    const inside = box.left >= area.x - 0.5 && box.right <= area.x + area.width + 0.5
+      && box.top >= area.y - 0.5 && box.bottom <= Math.min(area.y + area.height, sheetTop) + 0.5;
+    return { ...box, sheetTop, columnTop: area.y, columnBottom: area.y + area.height, scrolled: await column.evaluate(element => element.scrollTop), clear: inside && box.hit };
+  };
+  const wheel = async () => {
+    const area = await column.boundingBox();
+    await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+    await page.mouse.wheel(0, 600);
+  };
+  return { column, columnRetry, between, placed, retryNow, wheel };
+}
 async function signup(page, phone, name, driver = false) {
   await page.goto(base + '/auth');
   await page.getByRole('radio', { name: c.signUp, exact: true }).click();
@@ -713,18 +745,8 @@ try {
   await short.route('**/vendor/maplibre-*/maplibre-gl.mjs', route => route.abort());
   await short.goto(`${base}/order/${coveredId}`);
   await short.getByText(c.findingTitle, { exact: true }).waitFor();
-  // Only the column's own Retry counts: the map page's centred one shows for a moment before the fallback replaces it.
-  const column = short.getByTestId('route-preview-column');
-  const columnRetry = column.getByRole('button', { name: c.retry, exact: true });
+  const { column, columnRetry, between, placed, retryNow, wheel } = fallbackOn(short);
   await columnRetry.waitFor();
-  // The sheet's grip is its top edge. The column is settled once it starts under the top bar and ends at that edge;
-  // before the bar and the sheet are measured it still covers the whole screen.
-  const grip = button(short, c.sheetExpand);
-  const between = async () => {
-    const area = await column.boundingBox(), sheet = await grip.boundingBox();
-    return { top: area.y, height: area.height, gap: sheet.y - (area.y + area.height) };
-  };
-  const placed = state => state.top > 0 && Math.abs(state.gap) <= 2;
   const first = await until(between, placed, 'The fallback column never settled between the top bar and the order sheet');
   // A column shorter than the stop names, so all of Retry starts out of view and only scrolling brings it in; it is
   // still taller than the button and the padding under it.
@@ -732,29 +754,27 @@ try {
   assert.ok(height > 320, `The shortened screen must stay portrait, or the sheet moves to the side: ${height}px`);
   await short.setViewportSize({ width: 320, height });
   await until(between, state => placed(state) && Math.abs(state.height - room) <= 4, `The fallback column did not shrink to ${room}px from ${first.height}px`);
-  // Measured without Playwright scrolling anything. `clear`: the whole button is inside the column and above the
-  // sheet, and a tap at the middle of any side or the centre lands on the button.
-  const retryNow = async () => {
-    const area = await column.boundingBox(), sheetTop = (await grip.boundingBox()).y;
-    const box = await columnRetry.evaluate(element => {
-      const { top, bottom, left, right, width, height } = element.getBoundingClientRect(), x = left + width / 2, y = top + height / 2;
-      const taps = [[x, y], [x, top + 1], [x, bottom - 1], [left + 1, y], [right - 1, y]];
-      return { top, bottom, left, right, width, height, hit: taps.every(tap => element.contains(document.elementFromPoint(...tap))) };
-    });
-    const inside = box.left >= area.x - 0.5 && box.right <= area.x + area.width + 0.5
-      && box.top >= area.y - 0.5 && box.bottom <= Math.min(area.y + area.height, sheetTop) + 0.5;
-    return { ...box, sheetTop, columnTop: area.y, columnBottom: area.y + area.height, scrolled: await column.evaluate(element => element.scrollTop), clear: inside && box.hit };
-  };
   const before = await retryNow();
   assert.ok(before.top >= before.columnBottom - 0.5, `All of Retry must start below the visible column, or this stage proves nothing about scrolling: ${JSON.stringify(before)}`);
-  const area = await column.boundingBox();
-  await short.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
-  await short.mouse.wheel(0, 600);
+  await wheel();
   const reached = await until(retryNow, state => state.scrolled > before.scrolled && state.clear, 'The wheel did not scroll the whole Retry clear of the order sheet');
   assert.ok(reached.width >= 48 && reached.height >= 48, `The full-screen Retry keeps a 48px target: ${JSON.stringify(reached)}`);
   await short.unroute('**/vendor/maplibre-*/maplibre-gl.mjs');
   await columnRetry.click();
   await mapOf(short).locator('.maplibregl-marker').first().waitFor();
+  // A captain's closed sheet also holds the money and Accept: Retry stays reachable at a split-screen height.
+  const captain = await newPage('en', { width: 320, height: 350 });
+  await login(captain, '0599000708');
+  await captain.route('**/vendor/maplibre-*/maplibre-gl.mjs', route => route.abort());
+  await captain.goto(`${base}/order/${coveredId}`);
+  await button(captain, c.accept).waitFor();
+  const held = fallbackOn(captain);
+  await held.columnRetry.waitFor();
+  await until(held.between, held.placed, 'The captain fallback column never settled between the top bar and the order sheet');
+  await held.wheel();
+  await until(held.retryNow, state => state.clear, 'A captain on a short screen cannot reach Retry')
+    .catch(async error => assert.fail(`${error.message}: ${JSON.stringify(await held.retryNow())}`));
+  await captain.context().close();
   await call(`/orders/${coveredId}/cancel`, { token: customerToken, body: {} });
   await short.context().close();
   pass('failed map on a short open order scrolls Retry clear of the sheet and recovers');

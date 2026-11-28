@@ -524,6 +524,9 @@ for (const times of [[10, 100, 600], [400, 600]]) {
   assert.ok(look.minHeight >= 48 && look.minWidth >= 48, 'the full-screen Retry must carry a 48dp box');
   assert.notEqual(column.props.scrollEnabled, false, 'a short screen reaches Retry by scrolling the column');
   retry.props.onPress(); assert.equal(retried, 1);
+  const spoken = () => all(h.tree).filter(node => String(node.props?.accessibilityLabel).includes('Pickup name')).length;
+  assert.equal(spoken(), 0, 'the full screen reads the stops from the words alone');
+  h.render(h.exports.default, route); assert.equal(spoken(), 1, 'a card is read from its drawing');
   for (const props of [{ ...route }, { ...route, fill: true, plain: true }]) {
     h.render(h.exports.default, props);
     assert.equal(all(h.tree).some(node => node.type === 'Text' || node.type === 'Pressable'), false, 'cards and the loading placeholder draw shapes only');

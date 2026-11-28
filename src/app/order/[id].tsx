@@ -380,10 +380,12 @@ export default function OrderScreen() {
   // A waiting job's one action sits in the sheet's footer: in the body, a closed sheet hid it (and made it inert).
   // A job notification opens this screen with the sheet closed: the money shows with the button that takes the job.
   const accept = isDriver && order.status === 'searching' ? <View style={{ gap: 8 }}>
-    <View>
-      <Detail label={c.cashToCollect} value={money(dueCents / 100)} strong />
-      <Detail label={c.youEarn} value={money(captainShare)} strong />
-    </View>
+    <Row gap={12} style={{ alignItems: 'flex-start' }}>{/* side by side: the closed sheet stays short over the map */}
+      {([[c.cashToCollect, dueCents / 100], [c.youEarn, captainShare]] as const).map(([label, amount]) => <View key={label} style={{ flex: 1 }}>
+        <Txt variant="caption">{label}</Txt>
+        <Txt variant="title">{money(amount)}</Txt>
+      </View>)}
+    </Row>
     <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || offlineIdle || !canTake(work.orders, order.service, order, me?.user.vehicle ?? null)}
     reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : offlineIdle ? c.accept_go_online : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
     onPress={() => act('accept', `/jobs/${order.id}/accept`)} />
@@ -799,9 +801,10 @@ export default function OrderScreen() {
       <Txt variant="h2" numberOfLines={2} style={{ flex: 1 }}>{fill(c.scheduledFor, { t: time(booked) })}</Txt>
     </Row>}
     {finding && <View style={{ alignItems: 'center', paddingBottom: 8 }}>
-      <Radar color={palette.forest} size={64}>
+      {/* The wait is the sender's: a captain or admin keeps the room for the map and the action. */}
+      {isCustomer && <Radar color={palette.forest} size={64}>
         <ServiceIcon service={order.service} size={28} />
-      </Radar>
+      </Radar>}
       <Txt variant="title" center style={{ marginTop: 4 }}>{c.findingTitle}</Txt>
       {/* Addressed to the sender; a driver or admin viewing the same order reads the title only. */}
       {isCustomer && (order.dispatch?.state === 'exhausted' || !!order.scheduledFor && now > order.scheduledFor) && <Txt center variant="caption" style={{ marginTop: 4, maxWidth: 300 }}>{order.dispatch?.state === 'exhausted' ? c.dispatchExhausted : c.scheduledMissed}</Txt>}

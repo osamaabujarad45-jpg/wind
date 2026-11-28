@@ -43,7 +43,8 @@ export type PinMapProps = { center: Point; onChange: (point: Point) => void; onG
 // In a card it draws shapes only: the card's screen names both stops below it (RouteLine). On a full-screen map those
 // names are in a sheet that may be closed, so the words show here too, with Retry, in one column that fills only what
 // the top bar and the sheet leave uncovered. Text scales to 200% (SRS A11Y-03); if the room is too small the column
-// scrolls, so nothing overlaps or hides under the sheet. A screen reader hears the route from the drawing.
+// scrolls, so nothing overlaps or hides under the sheet. A screen reader hears the route once: from a card's drawing,
+// or from the full screen's words.
 // `plain` is the placeholder behind a loading map, so it announces nothing.
 export default function RoutePreview({ pickupTitle, dropoffTitle, fill, insets, plain = false, onRetry }: RouteMapProps & { plain?: boolean; onRetry?: () => void }) {
   const styles = useStyles();
@@ -54,6 +55,8 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, fill, insets, 
   const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   // What the app's chrome leaves uncovered of a full-screen map; the whole card otherwise.
   const uncovered = { top: insets?.top ?? 0, bottom: insets?.bottom ?? 0, left: insets?.left ?? 0, right: insets?.right ?? 0 };
+  // One readable copy of the route: the drawing's label on a card, the words themselves on a full screen.
+  const labelled = !plain && !fill;
   return <View style={styles.preview}>
     <View style={[styles.road, { top: '22%', left: -20, right: -20, height: 10 }]} />
     <View style={[styles.road, { top: -20, bottom: -20, left: '36%', width: 8 }]} />
@@ -61,8 +64,8 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, fill, insets, 
     <View style={[styles.road, { top: -20, bottom: -20, left: '71%', width: 6, opacity: 0.5 }]} />
     {/* The route is drawn inside what the app's chrome leaves uncovered: on a full-screen map, between the top bar and the sheet. */}
     <View style={[styles.drawing, uncovered]} onLayout={e => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
-      accessible={!plain} accessibilityRole={plain ? undefined : 'image'}
-      accessibilityLabel={plain ? undefined : `${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}`}>
+      accessible={labelled} accessibilityRole={labelled ? 'image' : undefined}
+      accessibilityLabel={labelled ? `${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}` : undefined}>
       {w > 0 && h > 0 && <>
         <View style={[styles.line, { left: mid.x - len / 2, top: mid.y - 2, width: len, transform: [{ rotate: `${angle}rad` }] }]} />
         <View style={[styles.pickup, { left: a.x - 8, top: a.y - 8 }]} />
