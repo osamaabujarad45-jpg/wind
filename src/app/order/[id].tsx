@@ -800,8 +800,7 @@ export default function OrderScreen() {
       <Ionicons name="calendar-outline" size={18} color={palette.olive} />
       <Txt variant="h2" numberOfLines={2} style={{ flex: 1 }}>{fill(c.scheduledFor, { t: time(booked) })}</Txt>
     </Row>}
-    {finding && <View style={{ alignItems: 'center', paddingBottom: 8 }}>
-      {/* The wait is the sender's: a captain or admin keeps the room for the map and the action. */}
+    {finding && !accept && <View style={{ alignItems: 'center', paddingBottom: 8 }}>{/* the wait is the sender's: a captain's sheet is the money and Accept */}
       {isCustomer && <Radar color={palette.forest} size={64}>
         <ServiceIcon service={order.service} size={28} />
       </Radar>}
