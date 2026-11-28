@@ -46,7 +46,7 @@ Each slice is one reviewable change, based on the committed F5. Each ends with t
 ## Where it stands (28 November)
 
 - Done: slices 0–2; admin five tabs with More; profile switcher entry points and states; captions that repeated a title, card or button cut across the live order, captain, shop, profile and earnings screens; state-correct wording for shop returns, support takeovers and safety pauses; a captain can accept a waiting order without opening the sheet.
-- Measured: screen text went from 9,555 to 9,412 words (Arabic and English together). Most of what is left on the screens checked is required text (codes, cash, safety, consent), so the next visible gain is layout, not more cuts.
+- Measured: screen text went from 9,555 to 9,447 words (Arabic and English together). Most of what is left on the screens checked is required text (codes, cash, safety, consent), so the next visible gain is layout, not more cuts.
 - Open: the layout work in slices 3–8 (for example, the shop cart's main button should set the missing delivery pin), the design-system artifact update, and a phone check on a new APK (the fonts are embedded at build time).
 - Server follow-ups found by review, in `.scratch/`: profile-updates, takeover-public-track; app follow-up: order-announcements.
 

@@ -189,6 +189,7 @@ export default function OrderScreen() {
     : (c as Record<string, string | undefined>)[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}`];
   const live = order.status === 'searching' || activeStatuses.includes(order.status);
   const rate = me.plan === 'pro' ? me.settings.proCommission : me.settings.commission;
+  const captainShare = order.price - (order.commission ?? commissionOn(order.price, rate));
   const resetReason = proofReset.id === id ? proofReset.reason : '';
   const decisionReason = decision.id === id ? decision.reason : '';
   const disputeReason = dispute.id === id ? dispute.reason : '';
@@ -353,7 +354,7 @@ export default function OrderScreen() {
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
             <Txt variant="title">{order.service === 'ride' ? c.tripCode : c.handoverCode}</Txt>
-            <Txt variant="caption">{order.service === 'ride' ? c.tripCodeHint : c.handoverHint}</Txt>
+            <Txt variant="caption">{order.service === 'ride' ? c.tripCodeHint : codeFromRecipient ? c.handoverHintRecipient : c.handoverHint}</Txt>{/* SHIP-05: the owner passes it to a named recipient */}
           </View>
           <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${order.service === 'ride' ? c.tripCode : c.handoverCode} ${order.handoverCode.split('').join(' ')}`}>
             {order.handoverCode.split('').map((d, i) => <CodeDigit key={i} digit={d} />)}
@@ -377,9 +378,16 @@ export default function OrderScreen() {
     </Appear>}
   </>;
   // A waiting job's one action sits in the sheet's footer: in the body, a closed sheet hid it (and made it inert).
-  const accept = isDriver && order.status === 'searching' ? <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || offlineIdle || !canTake(work.orders, order.service, order, me?.user.vehicle ?? null)}
+  // A job notification opens this screen with the sheet closed: the money shows with the button that takes the job.
+  const accept = isDriver && order.status === 'searching' ? <View style={{ gap: 8 }}>
+    <View>
+      <Detail label={c.cashToCollect} value={money(dueCents / 100)} strong />
+      <Detail label={c.youEarn} value={money(captainShare)} strong />
+    </View>
+    <Button title={c.accept} icon="checkmark-circle-outline" loading={busy === 'accept'} disabled={!!busy || !work.known || offlineIdle || !canTake(work.orders, order.service, order, me?.user.vehicle ?? null)}
     reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : offlineIdle ? c.accept_go_online : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
-    onPress={() => act('accept', `/jobs/${order.id}/accept`)} /> : null;
+    onPress={() => act('accept', `/jobs/${order.id}/accept`)} />
+  </View> : null;
   const body = <>
     {/* completed: the banner below already says it, with the time; searching and in a trip, the card below heads with the same words; a second badge one line above only echoes */}
 
@@ -553,7 +561,7 @@ export default function OrderScreen() {
           {order.discount > 0 && <Detail label={c.promoDiscount} value={money(-order.discount)} />}
           {order.discount > 0 && !isAdmin && !cancelled && !returned && <Detail label={isDriver ? c.cashToCollect : c.youPayCash} value={money(order.price - order.discount)} strong />}
           {isCustomer && returned && !order.shop && <Detail label={c.youPayCash} value={money(0)} strong />}
-          {isDriver && !cancelled && !returned && <Detail label={c.youEarn} value={money(order.price - (order.commission ?? commissionOn(order.price, rate)))} strong />}
+          {isDriver && !cancelled && !returned && <Detail label={c.youEarn} value={money(captainShare)} strong />}
           {isAdmin && order.commission != null && <Detail label={c.commission} value={money(order.commission)} />}
           {order.collected && (isAdmin || isDriver) && <Detail label={c.doorCollectedShort} value={money(order.collected.cents / 100)} />}
           {order.collected?.reason && (isAdmin || isDriver) && <Detail label={c.doorReasonShort} value={c[`variance_${order.collected.reason}`]} />}

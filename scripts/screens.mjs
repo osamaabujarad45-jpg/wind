@@ -689,6 +689,12 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   // As from a job notification: the order opens with its sheet closed, and Accept must be reachable without opening it.
   await page.goto(`http://localhost:${WEB_PORT}/order/${searching.id}`, { waitUntil: 'load' });
   await page.getByRole('button', { name: copy.ar.sheetExpand, exact: true }).first().waitFor();
+  await page.getByRole('button', { name: copy.ar.accept, exact: true }).click({ trial: true });
+  for (const label of [copy.ar.cashToCollect, copy.ar.youEarn]) // the footer's own rows follow the closed body's in the page
+    assert.equal(await page.getByText(label, { exact: true }).last().evaluate(element => {
+      const box = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+    }), true, `${label} shows beside Accept while the sheet is closed`);
   await page.getByRole('button', { name: copy.ar.accept, exact: true }).click();
   assert.equal(await page.getByRole('button', { name: copy.ar.sheetCollapse, exact: true }).count(), 0, 'accepting did not need the sheet open');
   await page.waitForFunction(() => window.trackingCheck.active.size === 1, null, { timeout: 3000 });
