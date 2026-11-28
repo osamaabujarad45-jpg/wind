@@ -519,7 +519,11 @@ for (const times of [[10, 100, 600], [400, 600]]) {
     'words and Retry stay between the top bar and the sheet, and scroll if that is too small');
   const inside = all(column);
   assert.deepEqual(inside.filter(node => node.type === 'Text').map(node => node.props.children).filter(text => text === 'Pickup name' || text === 'Dropoff name'), ['Pickup name', 'Dropoff name']);
-  inside.find(node => node.type === 'Pressable').props.onPress(); assert.equal(retried, 1);
+  const retry = inside.find(node => node.type === 'Pressable');
+  const look = Object.assign({}, ...[retry.props.style].flat(Infinity).filter(Boolean));
+  assert.ok(look.minHeight >= 48 && look.minWidth >= 48, 'the full-screen Retry must carry a 48dp box');
+  assert.notEqual(column.props.scrollEnabled, false, 'a short screen reaches Retry by scrolling the column');
+  retry.props.onPress(); assert.equal(retried, 1);
   for (const props of [{ ...route }, { ...route, fill: true, plain: true }]) {
     h.render(h.exports.default, props);
     assert.equal(all(h.tree).some(node => node.type === 'Text' || node.type === 'Pressable'), false, 'cards and the loading placeholder draw shapes only');

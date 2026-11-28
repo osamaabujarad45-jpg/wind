@@ -705,6 +705,24 @@ try {
   await mapOf(recovery).locator('.maplibregl-marker').first().waitFor();
   pass('failed map library download shows fallback and recovers with Retry');
 
+  // An open order puts its sheet over the map, so on a short phone the fallback's Retry has only the strip between
+  // the top bar and the sheet. Playwright refuses a click that another element would receive.
+  stage = 'map download recovery under the order sheet';
+  const coveredId = await booking(customerPage);
+  const short = await newPage('en', { width: 360, height: 620 });
+  await login(short, '0599000701');
+  await short.route('**/vendor/maplibre-*/maplibre-gl.mjs', route => route.abort());
+  await short.goto(`${base}/order/${coveredId}`);
+  await button(short, c.retry).click({ trial: true });
+  const retryBox = await button(short, c.retry).boundingBox();
+  assert.ok(retryBox && retryBox.width >= 48 && retryBox.height >= 48, `The full-screen Retry keeps a 48px target: ${JSON.stringify(retryBox)}`);
+  await short.unroute('**/vendor/maplibre-*/maplibre-gl.mjs');
+  await button(short, c.retry).click();
+  await mapOf(short).locator('.maplibregl-marker').first().waitFor();
+  await short.context().close();
+  await call(`/orders/${coveredId}/cancel`, { token: customerToken, body: {} });
+  pass('failed map on a short open order keeps Retry tappable above the sheet and recovers');
+
   stage = 'Android map bridge';
   const androidMap = await newPage('ar');
   await androidMap.emulateMedia({ reducedMotion: 'no-preference' });

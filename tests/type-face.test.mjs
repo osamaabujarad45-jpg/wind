@@ -69,8 +69,9 @@ const wrapping = inputs.filter(([, tag]) => /\smultiline\b/.test(tag) && !(Numbe
 assert.deepEqual(wrapping, [], `a multiline input needs lineHeight ${inputLine}`);
 assert.ok(inputs.some(([, tag]) => /\smultiline=\{multiline\}/.test(tag)), 'the multiline Field input is being read');
 
-// SRS A11Y-03: the route fallback draws no words (they overlapped, sat under Retry and the sheet, or stopped at
-// 130%). That holds only while every screen that shows a route map names both stops in its own text.
+// SRS A11Y-03: a compact route fallback draws shapes only (its words overlapped, sat under Retry or stopped at 130%);
+// the full-screen one shows the stop names in a column between the top bar and the sheet. The cards stay wordless only
+// while every screen that shows a route map names both stops in its own text.
 const previewSource = read('src/route-preview.tsx');
 assert.ok(previewSource.includes('{!plain && fill && <ScrollView style={[styles.overlay, uncovered]}'), 'only the full-screen fallback shows words, bounded by the bar and the sheet');
 assert.doesNotMatch(previewSource, /maxFontSizeMultiplier=\{[\d.]+\}|numberOfLines/, 'the fallback words scale to 200% and are never cut to a line');
