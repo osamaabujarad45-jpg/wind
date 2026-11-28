@@ -177,7 +177,8 @@ export default function OrderScreen() {
   const step = steps.indexOf(['on_hold', 'returning'].includes(order.status) ? 'in_transit' : order.status);
   // a ride under way needs no step, for rider or driver: the bar shows it, and help sits at the foot.
   // Steps speak to the customer or the assigned driver; an admin is neither.
-  const nextHint = mine && order.status === 'returning' && order.service === 'shop' ? c.driver_next_returning_shop
+  const nextHint = mine && order.service === 'shop' && order.status === 'in_transit' ? c.driver_next_in_transit_shop
+    : mine && order.status === 'returning' && order.service === 'shop' ? c.driver_next_returning_shop
     : (c as Record<string, string | undefined>)[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}`];
   const live = order.status === 'searching' || activeStatuses.includes(order.status);
   const rate = me.plan === 'pro' ? me.settings.proCommission : me.settings.commission;

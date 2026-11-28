@@ -59,7 +59,8 @@ export default function Profiles() {
   // "Current · Online": which profile is in use, then what is happening in it.
   const rowState = (mode: AccountMode, ...state: (string | undefined)[]) =>
     [profile.mode === mode ? c.profileInUse : undefined, ...state].filter(Boolean).join(' · ') || undefined;
-  const captainState = profile.captain ? profile.mode === 'captain' && profile.captainOnline ? c.captainOnline : captainStateLabel(c, profile.captain.state) : undefined;
+  const captainState = !profile.captain ? undefined : profile.captain.state === 'approved' && profile.mode === 'captain'
+    ? profile.captainOnline ? c.captainOnline : c.captainOffline : captainStateLabel(c, profile.captain.state);
   async function select(mode: AccountMode, agreed = false) {
     if (!profile || sending.current) return;
     setError(''); setNotice('');

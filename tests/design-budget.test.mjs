@@ -33,10 +33,13 @@ assert.deepEqual(overBudget({ 'src/a.tsx': { explanations: 2, words: 31, reasons
 assert.deepEqual(overBudget({ 'src/new.tsx': { ...newFileBudget, keys: [] } }, {}), []);
 assert.equal(overBudget({ 'src/new.tsx': { explanations: 1, words: 10, reasons: 1, keys: [] } }, {}).length, 1);
 
-// The ratchet only goes down, and drops files that no longer carry any.
+// The ratchet only goes down; a file cut to nothing stays at zero, and a deleted file drops out.
 assert.deepEqual(ratchet({ 'src/a.tsx': { explanations: 5, words: 9, reasons: 1 }, 'src/b.tsx': { explanations: 0, words: 0, reasons: 0 } },
   { 'src/a.tsx': { explanations: 2, words: 30, reasons: 4 }, 'src/b.tsx': { explanations: 3, words: 9, reasons: 3 } }),
-{ 'src/a.tsx': { explanations: 2, words: 9, reasons: 1 } });
+{ 'src/a.tsx': { explanations: 2, words: 9, reasons: 1 }, 'src/b.tsx': { explanations: 0, words: 0, reasons: 0 } });
+assert.deepEqual(ratchet({}, { 'src/gone.tsx': { explanations: 1, words: 9, reasons: 0 } }), {});
+// A caption cut to zero cannot come back under the new-file allowance.
+assert.equal(overBudget({ 'src/b.tsx': { explanations: 1, words: 9, reasons: 0, keys: ['x'] } }, ratchet({ 'src/b.tsx': { explanations: 0, words: 0, reasons: 0 } }, held)).length, 2);
 
 // The catalogue is walked by the English keys, so both languages must define the same ones.
 const { copy } = await import('../src/copy.ts');

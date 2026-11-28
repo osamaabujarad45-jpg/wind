@@ -47,12 +47,13 @@ export function overBudget(current, budget) {
 export const catalogueOver = (current, budget) => Object.keys(current).filter(kind => current[kind] > budget[kind])
   .map(kind => ({ file: 'catalogue', kind, now: current[kind], allowed: budget[kind], keys: [] }));
 
-/** The budget after cutting text: each number is the lower of the old one and today's; files without text drop out. */
+/** The budget after cutting text: each number is the lower of the old one and today's. A file that now has none keeps a
+ *  zero entry (a missing one would get the new-file allowance back); only files that no longer exist drop out. */
 export function ratchet(current, budget) {
   return Object.fromEntries(Object.entries(current).sort(([a], [b]) => a.localeCompare(b)).map(([file, now]) => {
     const old = budget[file] ?? newFileBudget;
     return [file, Object.fromEntries(kinds.map(kind => [kind, Math.min(old[kind], now[kind])]))];
-  }).filter(([, value]) => kinds.some(kind => value[kind])));
+  }));
 }
 
 export async function scan(root) {

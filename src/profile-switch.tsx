@@ -38,10 +38,12 @@ export function ProfileButton() {
   </View>;
 }
 
+/** Nothing for an approved captain: Online or Offline is known only for the session working in Captain mode. */
 export function captainStateLabel(c: Copy, state: CaptainProfileState) {
-  return state === 'approved' ? c.captainOffline : c[`profileState_${state}`];
+  return state === 'approved' ? undefined : c[`profileState_${state}`];
 }
 
+/** Nothing for an approved shop: "Active" read as taking orders even while the owner had paused new ones. */
 export function shopStateLabel(c: Copy, state: NonNullable<ProfilePreview['shop']>['state']) {
-  return state === 'active' ? c.profileState_active : state === 'paused' ? c.profileState_paused : c.profileState_under_review;
+  return state === 'active' ? undefined : state === 'paused' ? c.profileState_paused : c.profileState_under_review;
 }

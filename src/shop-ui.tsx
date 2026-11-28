@@ -131,7 +131,7 @@ export function ShopCustomerPanel({ order, onChange }: { order: Order; onChange:
   }
   // After a failed delivery (DLV-20) the order status says where the goods are, not the last shop step.
   const step = order.status === 'cancelled' ? (s.cancelReason ? c[`shopCancel_${s.cancelReason}`] : c.cancelled)
-    : order.status === 'on_hold' || order.status === 'returning' || order.status === 'returned' ? c[order.status]
+    : order.status === 'on_hold' || order.status === 'returning' || order.status === 'returned' ? statusText(c, order)
     : !s.state ? c.shop_requested : order.status === 'completed' ? c.completed : c[`shop_${s.state}`];
   return <Card>
     <Section title={s.merchantName} />

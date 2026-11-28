@@ -1,6 +1,6 @@
 {
   "catalogue": {
-    "copyWords": 15458,
+    "copyWords": 15470,
     "pushWords": 566,
     "workerWords": 406
   },
@@ -15,9 +15,29 @@
       "words": 96,
       "reasons": 0
     },
+    "src/app/(customer)/_layout.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/app/(customer)/account.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
     "src/app/(customer)/index.tsx": {
       "explanations": 3,
       "words": 57,
+      "reasons": 0
+    },
+    "src/app/(customer)/orders.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/app/admin/_layout.tsx": {
+      "explanations": 0,
+      "words": 0,
       "reasons": 0
     },
     "src/app/admin/approvals.tsx": {
@@ -39,6 +59,11 @@
       "explanations": 1,
       "words": 18,
       "reasons": 3
+    },
+    "src/app/admin/more.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
     },
     "src/app/admin/orders.tsx": {
       "explanations": 6,
@@ -75,6 +100,16 @@
       "words": 915,
       "reasons": 3
     },
+    "src/app/driver/_layout.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/app/driver/account.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
     "src/app/driver/earnings.tsx": {
       "explanations": 6,
       "words": 119,
@@ -95,6 +130,16 @@
       "words": 165,
       "reasons": 0
     },
+    "src/app/merchant/_layout.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/app/merchant/account.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
     "src/app/merchant/catalogue.tsx": {
       "explanations": 4,
       "words": 40,
@@ -110,9 +155,14 @@
       "words": 154,
       "reasons": 2
     },
+    "src/app/merchant/shop.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
     "src/app/order/[id].tsx": {
-      "explanations": 94,
-      "words": 2064,
+      "explanations": 95,
+      "words": 2076,
       "reasons": 16
     },
     "src/app/profile.tsx": {
@@ -123,6 +173,11 @@
     "src/app/profiles.tsx": {
       "explanations": 3,
       "words": 49,
+      "reasons": 0
+    },
+    "src/app/receipt/[id].tsx": {
+      "explanations": 0,
+      "words": 0,
       "reasons": 0
     },
     "src/app/roads.tsx": {
@@ -160,10 +215,20 @@
       "words": 25,
       "reasons": 0
     },
+    "src/custody.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
     "src/destination-change.tsx": {
       "explanations": 9,
       "words": 159,
       "reasons": 7
+    },
+    "src/driver-map.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
     },
     "src/driver-offer-clock.tsx": {
       "explanations": 2,
@@ -180,6 +245,11 @@
       "words": 45,
       "reasons": 0
     },
+    "src/driver-work.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
     "src/freight-details.tsx": {
       "explanations": 10,
       "words": 206,
@@ -190,10 +260,50 @@
       "words": 40,
       "reasons": 0
     },
+    "src/google-map.web.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/install-link.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/intro.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/map-page.native.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/map-page.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/map-provider-boundary.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/map-sheet.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
     "src/merchant-settings.tsx": {
       "explanations": 5,
       "words": 148,
       "reasons": 1
+    },
+    "src/motion.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
     },
     "src/native-push-row.tsx": {
       "explanations": 3,
@@ -225,9 +335,19 @@
       "words": 343,
       "reasons": 1
     },
+    "src/profile-switch.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
     "src/road.tsx": {
       "explanations": 1,
       "words": 17,
+      "reasons": 0
+    },
+    "src/route-map.android.tsx": {
+      "explanations": 0,
+      "words": 0,
       "reasons": 0
     },
     "src/route-map.native.tsx": {
@@ -235,14 +355,44 @@
       "words": 40,
       "reasons": 0
     },
+    "src/route-map.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/route-preview.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/scene-map.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
+    "src/session.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
     "src/shop-ui.tsx": {
       "explanations": 16,
       "words": 291,
       "reasons": 4
     },
+    "src/theme-context.tsx": {
+      "explanations": 0,
+      "words": 0,
+      "reasons": 0
+    },
     "src/trip-search.tsx": {
       "explanations": 3,
       "words": 64,
+      "reasons": 0
+    },
+    "src/ui.tsx": {
+      "explanations": 0,
+      "words": 0,
       "reasons": 0
     }
   }
