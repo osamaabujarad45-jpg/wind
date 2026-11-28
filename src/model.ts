@@ -468,20 +468,21 @@ export function isolate(text: string): string {
 }
 
 // Run sheet (SPEC-run-sheet.md): a courier's active orders as courier companies print them, by stage then city.
-export type RunStage = 'pickup' | 'deliver' | 'return';
-export function runSheet<T extends Pick<Order, 'id' | 'status' | 'pickupCity' | 'dropoffCity'>>(orders: T[]) {
-  const stageOf = (o: T): RunStage | null => o.status === 'assigned' || o.status === 'at_pickup' ? 'pickup'
+export type RunStage = 'pickup' | 'deliver' | 'return' | 'support';
+export function runSheet<T extends Pick<Order, 'id' | 'status' | 'pickupCity' | 'dropoffCity' | 'supportHasGoods'>>(orders: T[]) {
+  // Once support has taken a returning order's goods there is nowhere to take them: listed last, with no city to head to.
+  const stageOf = (o: T): RunStage | null => o.status === 'returning' && o.supportHasGoods ? 'support' : o.status === 'assigned' || o.status === 'at_pickup' ? 'pickup'
     : o.status === 'in_transit' || o.status === 'on_hold' ? 'deliver' : o.status === 'returning' ? 'return' : null;
   const groups = new Map<string, { stage: RunStage; city: CityId; orders: T[] }>();
   for (const o of orders) {
     const stage = stageOf(o);
     if (!stage) continue;
     const at = stage === 'deliver' ? o.dropoffCity : o.pickupCity; // returns go back to the sender's pickup
-    const key = `${stage}:${at}`;
+    const key = stage === 'support' ? stage : `${stage}:${at}`;
     if (!groups.has(key)) groups.set(key, { stage, city: at, orders: [] });
     groups.get(key)!.orders.push(o);
   }
-  const rank: Record<RunStage, number> = { pickup: 0, deliver: 1, return: 2 };
+  const rank: Record<RunStage, number> = { pickup: 0, deliver: 1, return: 2, support: 3 };
   return [...groups.values()]
     .map(g => ({ ...g, orders: g.orders.sort((a, b) => a.id - b.id) }))
     .sort((a, b) => rank[a.stage] - rank[b.stage] || b.orders.length - a.orders.length || a.city.localeCompare(b.city));

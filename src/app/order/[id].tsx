@@ -95,9 +95,10 @@ export default function OrderScreen() {
     const driver = me.user.role === 'driver' && order.driverId === me.user.id;
     const proposal = (me.user.role === 'customer' || driver) && ['assigned', 'at_pickup', 'in_transit'].includes(order.status) ? order.destinationChange?.id : undefined;
     const before = announced.current;
-    announced.current = { orderId: order.id, viewerId: me.user.id, status: order.status, proposalId: proposal };
+    const phase = `${order.status}${order.ride?.arrivedAt != null ? ':arrived' : ''}`;
+    announced.current = { orderId: order.id, viewerId: me.user.id, status: phase, proposalId: proposal };
     if (!before || before.orderId !== order.id || before.viewerId !== me.user.id) return;
-    const status = before.status !== order.status ? statusText(c, order, driver) : '';
+    const status = before.status !== phase ? statusText(c, order, driver) : '';
     const destination = proposal && before.proposalId !== proposal ? driver ? c.destinationDriverRequest : c.destinationWaiting : '';
     const message = [status, destination].filter(Boolean).join(' ');
     if (message && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(message);
@@ -190,7 +191,7 @@ export default function OrderScreen() {
   const parcelFarKm = mine ? parcelPickupFarKm(order, now) : null;
   const farFill = (pinned: string, cityLevel: string) => parcelFarKm === null ? '' // no pin: the distance is to the city centre
     : order.pickupPoint ? fill(pinned, { km: kmLabel(parcelFarKm) }) : fill(cityLevel, { km: kmLabel(parcelFarKm), city: from[language] });
-  const doorStep = !!mine && order.status === 'in_transit' && (order.service === 'parcel' || order.service === 'shop');
+  const doorStep = !!mine && !order.safetyHold && order.status === 'in_transit' && (order.service === 'parcel' || order.service === 'shop');
   // A shop door collects the goods and both fees (DLV-15); a parcel door the fare less its discount.
   const dueCents = order.service === 'shop' && order.shop ? order.shop.cashAgorot : Math.round((order.price - order.discount) * 100);
   const shopProof = order.service === 'shop' && order.status === 'in_transit' ? { seals: sealsBody(order, seals) } : {};
@@ -203,7 +204,8 @@ export default function OrderScreen() {
   const doorReady = doorValid && varianceAllowed(collectedCents, dueCents, doorDiffers ? doorOwn.reason : null);
   const doorProof = doorStep && doorReady ? { collectedCents, ...(doorDiffers && doorOwn.reason ? { varianceReason: doorOwn.reason } : {}) } : {};
   // A ride ends with the rider's trip code too, given once they have paid (owner, 23 Nov 2026), like a parcel's delivery code.
-  const needsCode = rideAction === 'boarding' || order.status === 'in_transit' || (order.status === 'returning' && !order.supportHasGoods);
+  // The server refuses every advance during a safety pause, so no code or PIN is asked for then.
+  const needsCode = !order.safetyHold && (rideAction === 'boarding' || order.status === 'in_transit' || (order.status === 'returning' && !order.supportHasGoods));
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
   const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
@@ -761,7 +763,7 @@ export default function OrderScreen() {
     <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setPeek} onRefresh={reload}
       header={<View style={{ paddingBottom: 10 }}>
     {/* In the header, not the body: a closed sheet hides its body, and a refused action must still say why. */}
-    <ErrorText>{rideStep(order) === 'locked' && actionError === c.err_wrong_boarding_code ? '' : actionError}</ErrorText>
+    <ErrorText>{(rideStep(order) === 'locked' || order.safetyHold) && actionError === c.err_wrong_boarding_code ? '' : actionError}</ErrorText>
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
     {codeAtDoor && <View style={{ paddingBottom: 8 }}>{codes}</View>}
     {/* Booked ahead is neither finding nor active: without this the closed sheet is a bare grip. */}
