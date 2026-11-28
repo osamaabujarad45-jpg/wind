@@ -708,7 +708,7 @@ try {
   // An open order puts its sheet over the map, so the fallback has only the strip between the top bar and the sheet.
   stage = 'map download recovery under the order sheet';
   const coveredId = await booking(customerPage);
-  const short = await newPage('en', { width: 360, height: 620 });
+  const short = await newPage('en', { width: 320, height: 620 }); // narrow, so the shortened screen below stays portrait
   await login(short, '0599000701');
   await short.route('**/vendor/maplibre-*/maplibre-gl.mjs', route => route.abort());
   await short.goto(`${base}/order/${coveredId}`);
@@ -726,9 +726,11 @@ try {
   };
   const placed = state => state.top > 0 && Math.abs(state.gap) <= 2;
   const first = await until(between, placed, 'The fallback column never settled between the top bar and the order sheet');
-  // Leave the column less room than its content, so Retry starts out of view and only scrolling brings it in.
-  const room = 104;
-  await short.setViewportSize({ width: 360, height: Math.round(620 - (first.height - room)) });
+  // A column shorter than the stop names, so all of Retry starts out of view and only scrolling brings it in; it is
+  // still taller than the button and the padding under it.
+  const room = 72, height = Math.round(620 - (first.height - room));
+  assert.ok(height > 320, `The shortened screen must stay portrait, or the sheet moves to the side: ${height}px`);
+  await short.setViewportSize({ width: 320, height });
   await until(between, state => placed(state) && Math.abs(state.height - room) <= 4, `The fallback column did not shrink to ${room}px from ${first.height}px`);
   // Measured without Playwright scrolling anything. `clear`: the whole button is inside the column and above the
   // sheet, and a tap at the middle of any side or the centre lands on the button.
@@ -744,7 +746,7 @@ try {
     return { ...box, sheetTop, columnTop: area.y, columnBottom: area.y + area.height, scrolled: await column.evaluate(element => element.scrollTop), clear: inside && box.hit };
   };
   const before = await retryNow();
-  assert.ok(before.bottom > before.columnBottom + 0.5, `Retry must start below the visible column, or this stage proves nothing about scrolling: ${JSON.stringify(before)}`);
+  assert.ok(before.top >= before.columnBottom - 0.5, `All of Retry must start below the visible column, or this stage proves nothing about scrolling: ${JSON.stringify(before)}`);
   const area = await column.boundingBox();
   await short.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
   await short.mouse.wheel(0, 600);
