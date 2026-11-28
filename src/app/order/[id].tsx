@@ -41,6 +41,10 @@ import {
 import { themedStyles, useTheme } from '../../theme-context';
 
 const DONE = ZoomIn.duration(300);
+// A safety report's spoken receipt, once per report: the order screen (from the order) and a report form whose screen has
+// closed can both learn of it. The first to claim it speaks.
+const spokenReceipts = new Set<number>();
+const claimReceipt = (orderId: number) => !spokenReceipts.has(orderId) && !!spokenReceipts.add(orderId);
 const steps = statusFlow.slice(1); // assigned → completed
 
 // Exact pins open turn-by-turn directions; without one, a search for the landmark is the best we can do.
@@ -106,11 +110,12 @@ export default function OrderScreen() {
     const destination = proposal && before.proposalId !== proposal ? driver ? c.destinationDriverRequest : c.destinationWaiting : '';
     // The one announcement of a pause or of the viewer's own report, from the order itself, so it is spoken even when the
     // report's reply was lost. A second reporter hears their receipt although the order was already paused.
-    const pause = reported && !before.reported ? `${c.safetyReported}. ${c.safetyPaused}` : held && !before.held ? c.safetyPaused : '';
+    const pause = reported && !before.reported ? claimReceipt(order.id) ? `${c.safetyReported}. ${c.safetyPaused}` : '' : held && !before.held ? c.safetyPaused : '';
+    if (before.reported && !reported) spokenReceipts.delete(order.id); // resolved: a later report is a new receipt
     const message = [status, pause, destination].filter(Boolean).join(' ');
     if (Platform.OS !== 'web') { if (message) AccessibilityInfo.announceForAccessibility(message); }
-    // A lifted pause or a withdrawn destination request empties it, so the same words later are new text.
-    else if (message || before.held && !held || before.proposalId && !proposal) setHeard(message);
+    // A lifted pause, a resolved report or a withdrawn destination request empties it, so the same words later are new text.
+    else if (message || before.held && !held || before.reported && !reported || before.proposalId && !proposal) setHeard(message);
   }, [order, me, c]);
   const [busy, setBusy] = useState<string | null>(null);
   const acting = useRef(false); // two taps before a re-render both saw busy === null; accept, cancel and arrive carry no request id
@@ -910,9 +915,10 @@ function Safety({ order, driver, onChange }: { order: Order; driver: boolean; on
   useEffect(() => { gone.current = false; return () => { gone.current = true; }; }, []);
   async function send() {
     setBusy(true); setFailure('');
+    spokenReceipts.delete(order.id); // a new report
     try {
       onChange(await api<Order>(`/orders/${order.id}/sos`, { kind, note: note.trim() })); haptic.success(); setNote('');
-      if (gone.current && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(`${c.safetyReported}. ${c.safetyPaused}`);
+      if (gone.current && Platform.OS !== 'web' && claimReceipt(order.id)) AccessibilityInfo.announceForAccessibility(`${c.safetyReported}. ${c.safetyPaused}`);
     }
     catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
   }
