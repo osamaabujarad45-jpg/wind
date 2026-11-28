@@ -28,7 +28,10 @@ export default function MerchantCatalogue() {
   const sections = [...new Set(data.items.map(i => i.section))];
   return <Screen onRefresh={reload} footer={!editing ? <Button title={c.merchantAddItem} icon="add" onPress={() => setEditing('new')} /> : undefined}>
     <Header title={c.merchantCatalogue} back={back} />
-    {editing && <ItemForm item={editing === 'new' ? null : editing} onDone={async () => { setEditing(null); await reload(); }} />}
+    {/* The form edits the item the server has now: a reload refreshes availability under the same key without touching the typed fields. */}
+    {editing && <ItemForm key={editing === 'new' ? 'new' : String(editing.id)}
+      item={editing === 'new' ? null : data.items.find(candidate => candidate.id === editing.id) ?? editing}
+      onDone={async () => { setEditing(null); await reload(); }} />}
     {!data.items.length && !editing && <Empty icon="pricetags-outline" title={c.merchantNoItems} body={c.merchantNoItemsBody} />}
     <ErrorText>{actionError}</ErrorText>
     {sections.map(section => <Card key={section}>
@@ -41,13 +44,13 @@ export default function MerchantCatalogue() {
         {/* The state, as a switch: a button labelled "Out of stock" on an item in stock read as the item's state (design review 17 Nov). */}
         <Row style={{ marginTop: 4, justifyContent: 'space-between' }}>
           <Row gap={8} style={{ minHeight: 44 }}>
-            <Switch value={i.available} onValueChange={() => toggle(i)} disabled={busy === i.id} hitSlop={8}
+            <Switch value={i.available} onValueChange={() => toggle(i)} disabled={busy === i.id || !!editing} hitSlop={8}
               accessibilityLabel={fill(c.merchantStockOf, { item: language === 'ar' ? i.nameAr : i.nameEn })} accessibilityState={{ busy: busy === i.id }}
               trackColor={{ true: palette.olive, false: palette.field }} thumbColor={palette.card} />
             {busy === i.id && <ActivityIndicator size="small" color={palette.olive} />}
             <Txt variant="label" style={{ color: i.available ? palette.olive : palette.secondary }}>{i.available ? c.merchantInStock : c.merchantNotInStock}</Txt>
           </Row>
-          <Button size="sm" variant="ghost" title={c.edit} onPress={() => setEditing(i)} />
+          <Button size="sm" variant="ghost" title={c.edit} disabled={!!editing && (editing === 'new' || editing.id !== i.id)} reason={c.wait_busy} onPress={() => setEditing(i)} />
         </Row>
         {!i.available && <Txt variant="caption">{c.merchantOutOfStock}</Txt>}
       </View>)}
@@ -74,7 +77,7 @@ function ItemForm({ item, onDone }: { item: MerchantItem | null; onDone: () => v
       if (!item) requestId.current ??= newRequestId();
       await api(item ? `/merchant/items/${item.id}` : '/merchant/items', { section: section.trim(), nameAr: nameAr.trim(), nameEn: nameEn.trim(),
         priceAgorot, byWeight, available: item?.available ?? true, ...(!item && { requestId: requestId.current }) });
-      onDone();
+      await onDone();
     } catch (e) { setError(err(e)); }
     finally { setBusy(false); }
   }

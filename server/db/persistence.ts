@@ -87,7 +87,8 @@ export class Persistence {
     return this.owners.run(owner, async () => {
       try { return await work(); }
       finally {
-        try { if (owner.active) await this.exec('ROLLBACK'); }
+        // A failed rollback is secondary: the work's own failure is what the caller must see.
+        try { if (owner.active) try { await this.exec('ROLLBACK'); } catch { /* ignored */ } }
         finally {
           try { await this.flushEffects(); }
           finally { owner.closed = true; }
@@ -220,7 +221,8 @@ export class Persistence {
     } catch (error) {
       // COMMIT failure has an unknown outcome on connection loss: never replay or publish.
       if (owner.client) this.releaseClient(owner, true);
-      else if (this.sqlite!.isTransaction) this.sqlite!.exec('ROLLBACK');
+      // A failed rollback is secondary: the COMMIT failure is what the caller must see.
+      else if (this.sqlite!.isTransaction) try { this.sqlite!.exec('ROLLBACK'); } catch { /* ignored */ }
       throw error;
     } finally {
       owner.pending.length = 0;
@@ -244,7 +246,8 @@ export class Persistence {
         return result;
       } finally {
         owner.envelope = false; owner.savepoints = undefined;
-        if (owner.active) await this.exec('ROLLBACK');
+        // A failed rollback is secondary: the work's own failure is what the caller must see.
+        try { if (owner.active) await this.exec('ROLLBACK'); } catch { /* ignored */ }
       }
     });
   }
@@ -260,8 +263,8 @@ export class Persistence {
       await this.run('RELEASE SAVEPOINT business_mutation');
       return result;
     } catch (error) {
-      await this.run('ROLLBACK TO SAVEPOINT business_mutation');
-      await this.run('RELEASE SAVEPOINT business_mutation');
+      // A failed restore is secondary: the caller must see the failure that forced the rollback.
+      try { await this.run('ROLLBACK TO SAVEPOINT business_mutation'); await this.run('RELEASE SAVEPOINT business_mutation'); } catch { /* ignored */ }
       owner.pending.length = effects;
       throw error;
     }
@@ -285,7 +288,8 @@ export class Persistence {
         return value;
       } catch (error) {
         owner.envelope = false;
-        if (this.inTransaction) await this.exec('ROLLBACK');
+        // A failed rollback is secondary: the caller must see the work failure.
+        try { if (this.inTransaction) await this.exec('ROLLBACK'); } catch { /* ignored */ }
         throw error;
       } finally { owner.envelope = false; owner.savepoints = undefined; }
     });
@@ -313,7 +317,8 @@ export class Persistence {
           await this.exec('COMMIT');
           return value;
         } catch (error) {
-          if (this.inTransaction) await this.exec('ROLLBACK');
+          // A failed rollback is secondary: the caller must see the work failure.
+          try { if (this.inTransaction) await this.exec('ROLLBACK'); } catch { /* ignored */ }
           if (attempt >= attempts || !['40001', '40P01'].includes((error as { code?: string }).code ?? '')) throw error;
           await new Promise(done => setTimeout(done, 10 * attempt));
         }

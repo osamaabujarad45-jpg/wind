@@ -60,6 +60,7 @@ export class Payments {
   private driver(actor: Actor, order: Row) { if (actor.role !== 'admin' && !(actor.role === 'driver' && actor.id === Number(order.driver_id))) this.fail(403, 'forbidden'); }
   async createIntent(actor: Actor, orderId: number, body: Row) {
     const provider = await this.providerGate(); const order = await this.order(actor, orderId); this.owner(actor, order);
+    if (['cancelled', 'returned'].includes(order.status)) this.fail(409, 'order_not_payable'); // card settles a completed order after the trip (T31); cancelled money would need a refund
     if (!Number.isSafeInteger(body.amountMinor) || body.amountMinor <= 0) this.fail(400, 'invalid_amount');
     if (Number(order.price_minor) !== body.amountMinor) this.fail(409, 'amount_mismatch');
     const id = randomUUID(), now = Date.now(), ref = `order:${orderId}:payment`;
@@ -74,6 +75,8 @@ export class Payments {
    * the card money stands (a full refund releases the order back to cash), and the per-order advisory lock
    * makes a concurrent capture/cash race pick exactly one winner. */
   private async settlementGate(orderId: number, direction: 'card' | 'cash') {
+    const order = await this.db.one('SELECT status FROM orders WHERE id=?', orderId);
+    if (order && ['cancelled', 'returned'].includes(order.status)) this.fail(409, 'order_not_payable'); // a completed order still settles by card below
     if (this.db.backend === 'postgres') await this.db.run("SELECT pg_advisory_xact_lock(hashtextextended('wind_settlement:' || ?, 0))", orderId);
     if (direction === 'card') {
       const cash = await this.db.one('SELECT collected_minor FROM cash_receipts WHERE order_id=?', orderId);
@@ -84,7 +87,7 @@ export class Payments {
     }
   }
   async getIntent(actor: Actor, orderId: number) { const provider = await this.providerGate(); const order = await this.order(actor, orderId); this.owner(actor, order); const intent = await this.db.one('SELECT * FROM payment_intents WHERE order_id=?', orderId) ?? null; if (!intent || intent.status !== 'pending') return intent; const result = await provider.query(String(intent.id)); if (result.outcome === 'captured') { await this.tx(async () => { await this.settlementGate(orderId, 'card'); await this.db.run("UPDATE payment_intents SET status=?,provider_ref=?,updated_at=? WHERE id=?::uuid AND status='pending'", result.outcome, result.providerRef, Date.now(), intent.id); }); } else if (['failed','voided'].includes(result.outcome)) await this.db.run("UPDATE payment_intents SET status=?,provider_ref=?,updated_at=? WHERE id=?::uuid AND status='pending'", result.outcome, result.providerRef, Date.now(), intent.id); return await this.db.one('SELECT * FROM payment_intents WHERE id=?::uuid', intent.id); }
-  async query(actor: Actor, orderId: number) { const provider = await this.providerGate(); const intent = await this.getIntent(actor, orderId) ?? this.fail(404, 'not_found'); const result = await provider.query(String(intent.id)); if (['captured','failed','voided'].includes(result.outcome)) await this.db.run("UPDATE payment_intents SET status=?,provider_ref=?,updated_at=? WHERE id=?::uuid AND status='pending'", result.outcome, result.providerRef, Date.now(), intent.id); return (await this.db.one('SELECT * FROM payment_intents WHERE id=?::uuid', intent.id))!; }
+  async query(actor: Actor, orderId: number) { const provider = await this.providerGate(); const intent = await this.getIntent(actor, orderId) ?? this.fail(404, 'not_found'); const result = await provider.query(String(intent.id)); if (result.outcome === 'captured') { await this.tx(async () => { await this.settlementGate(orderId, 'card'); await this.db.run("UPDATE payment_intents SET status=?,provider_ref=?,updated_at=? WHERE id=?::uuid AND status='pending'", result.outcome, result.providerRef, Date.now(), intent.id); }); } else if (['failed','voided'].includes(result.outcome)) await this.db.run("UPDATE payment_intents SET status=?,provider_ref=?,updated_at=? WHERE id=?::uuid AND status='pending'", result.outcome, result.providerRef, Date.now(), intent.id); return (await this.db.one('SELECT * FROM payment_intents WHERE id=?::uuid', intent.id))!; }
   async applyProviderEvent(event: Row, signature?: string) {
     if (!(await this.verify(event, signature))) this.fail(401, 'invalid_signature');
     await this.providerGate();

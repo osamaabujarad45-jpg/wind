@@ -10,7 +10,7 @@ import { PushRow } from '../../parts';
 import { NativePushRow } from '../../native-push-row';
 import { pushSupported } from '../../push';
 import { isolate, ltr, type Order, type OrderStatus } from '../../model';
-import { Appear, Badge, Card, ErrorText, Header, ListGroup, Loading, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
+import { Appear, Badge, Card, Empty, ErrorText, Header, ListGroup, Loading, Press, Row, Screen, Stat, Txt, useCopy } from '../../ui';
 import { fill } from '../../copy';
 import { themedStyles, useTheme } from '../../theme-context';
 
@@ -126,9 +126,11 @@ function ProfitChart({ daily }: { daily: Stats['daily'] }) {
   const { c, money, row, language } = useCopy();
   const reduced = useReducedMotion();
   const [selected, setSelected] = useState(daily.length - 1);
+  if (!daily.length) return <Card><Txt variant="title">{c.last14}</Txt><Empty icon="stats-chart-outline" title={c.noOrders} /></Card>;
+  const safeSelected = Math.min(Math.max(selected, 0), daily.length - 1);
   const max = Math.max(1, ...daily.map(d => d.commission + d.subscriptions));
   const day = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(language === 'ar' ? 'ar-PS-u-nu-latn' : 'en-GB', { day: 'numeric', month: 'short' });
-  const pick = daily[selected];
+  const pick = daily[safeSelected];
 
   return <Card>
     <Txt variant="title">{c.last14}</Txt>
@@ -145,8 +147,8 @@ function ProfitChart({ daily }: { daily: Stats['daily'] }) {
         {daily.map((d, i) => {
           const total = d.commission + d.subscriptions;
           return <Pressable key={d.date} style={styles.hit} onPress={() => setSelected(i)} hitSlop={4}
-            accessibilityRole="button" accessibilityLabel={`${day(d.date)}: ${c.commissionRevenue} ${money(d.commission)}, ${c.subscriptionRevenue} ${money(d.subscriptions)}`} accessibilityState={{ selected: i === selected }}>
-            <Animated.View style={[styles.column, { height: `${Math.max(total / max * 100, total ? 3 : 0)}%`, opacity: i === selected ? 1 : 0.75 },
+            accessibilityRole="button" accessibilityLabel={`${day(d.date)}: ${c.commissionRevenue} ${money(d.commission)}, ${c.subscriptionRevenue} ${money(d.subscriptions)}`} accessibilityState={{ selected: i === safeSelected }}>
+            <Animated.View style={[styles.column, { height: `${Math.max(total / max * 100, total ? 3 : 0)}%`, opacity: i === safeSelected ? 1 : 0.75 },
               !reduced && { animationName: GROW, animationDuration: '450ms', animationDelay: `${i * 25}ms`, animationTimingFunction: EASE_OUT, animationFillMode: 'backwards' }]}>
               {d.subscriptions > 0 && <View style={[styles.segment, styles.top, { flex: d.subscriptions, backgroundColor: SERIES.subscriptions }]} />}
               {d.commission > 0 && <View style={[styles.segment, !d.subscriptions && styles.top, { flex: d.commission, backgroundColor: SERIES.commission }]} />}

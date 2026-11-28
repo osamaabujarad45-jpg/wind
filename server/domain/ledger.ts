@@ -166,6 +166,7 @@ export class Ledger {
     await this.gate(); return this.tx(async () => {
       const order = await this.order(actor, orderId, true);
       if (actor.role !== 'admin' && (actor.role !== 'driver' || actor.id !== Number(order.driver_id))) this.fail(403, 'forbidden');
+      if (['cancelled', 'returned'].includes(order.status) && body?.action !== 'return') this.fail(409, 'receipt_unavailable'); // returning collected cash stays open: it is the safe direction
       if (body?.action === 'return') {
         if (Object.keys(body).some(k => k !== 'action')) this.fail(400, 'invalid_input');
         const receipt = (await this.db.one('SELECT * FROM cash_receipts WHERE order_id=? FOR UPDATE', orderId)) ?? this.fail(404, 'not_found');

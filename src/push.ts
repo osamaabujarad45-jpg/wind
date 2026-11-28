@@ -40,7 +40,8 @@ async function bind(subscription: PushSubscription, token: string, lang: 'ar' | 
     // A profile switch can discard a successful reply while the browser session keeps the same credential.
     const accepted = error instanceof ApiError && error.message === 'session_changed' && (error as { servedStatus?: number }).servedStatus === 200;
     if (!accepted) {
-      if (previous !== null && previous !== receipt) await subscription.unsubscribe();
+      // A stale binding (the receipt belongs to another session) unsubscribes on any failure, and a definite server rejection (4xx) does too; transport/5xx failures can succeed on retry.
+      if ((previous !== null && previous !== receipt) || (error instanceof ApiError && typeof error.status === 'number' && error.status >= 400 && error.status < 500)) await subscription.unsubscribe();
       throw error;
     }
   }

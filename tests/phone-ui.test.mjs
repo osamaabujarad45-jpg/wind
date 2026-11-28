@@ -101,7 +101,7 @@ assert.match(readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url),
   assert.match(sheet, /accessibilityState=\{\{ expanded: open \}\} aria-expanded=\{open\} style=\{styles\.gripArea\}/);
   const admin = readFileSync(new URL('../src/app/admin/index.tsx', import.meta.url), 'utf8');
   assert.match(admin, /\$\{c\.commissionRevenue\} \$\{money\(d\.commission\)\}, \$\{c\.subscriptionRevenue\} \$\{money\(d\.subscriptions\)\}/);
-  assert.match(admin, /accessibilityState=\{\{ selected: i === selected \}\}/);
+  assert.match(admin, /accessibilityState=\{\{ selected: i === safeSelected \}\}/); // the clamp keeps the reported state in bounds
   const map = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
   assert.match(map, /document\.documentElement\.lang = config\.language === 'ar' \? 'ar' : 'en'/);
   const scene = readFileSync(new URL('../src/scene-map.tsx', import.meta.url), 'utf8');

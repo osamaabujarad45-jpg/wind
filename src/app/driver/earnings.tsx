@@ -58,7 +58,7 @@ function CashCard() {
   const [busy, setBusy] = useState<number | null>(null);
   const [failure, setFailure] = useState('');
   const [shown, setShown] = useState(10); // the ledger is longer than the screen: it grows on request
-  if (!data) return null;
+  if (!data) return <Loading failed={!!error} onRetry={reload} />;
   const lines = cashLines(c, data);
   async function decide(entry: CashEntry, decision: 'confirm' | 'dispute') {
     setBusy(entry.id); setFailure('');

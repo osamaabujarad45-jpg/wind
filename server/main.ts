@@ -1416,14 +1416,16 @@ route('POST', '/api/auth/logout', async ({ user, req }) => {
 });
 route('GET', '/api/me', async ({ user, query, req }) => {
   const token = bearer(req);
-  if (accountModes) return emailTransaction(async () => {
-    const current = await authenticate(req, false) ?? fail(401, 'unauthorized');
-    const sessionHash = sha(token!);
-    if (current.accountMode === 'captain' && query.get('launch') === '1')
-      await setCaptainOffline(persistence, current.id, await captainOfflineReason(persistence, current.id, sessionHash, Date.now(), true));
-    return me(current, query.get('payroll') === '1', sessionHash);
+  if (!accountModes) return me(user, query.get('payroll') === '1', token && sha(token));
+  const current = await authenticate(req, false) ?? fail(401, 'unauthorized');
+  // only the launch reset writes, so plain polls skip the write lock
+  if (current.accountMode !== 'captain' || query.get('launch') !== '1')
+    return me(current, query.get('payroll') === '1', sha(token!));
+  return emailTransaction(async () => {
+    const locked = await authenticate(req, false) ?? fail(401, 'unauthorized');
+    await setCaptainOffline(persistence, locked.id, await captainOfflineReason(persistence, locked.id, sha(token!), Date.now(), true));
+    return me(locked, query.get('payroll') === '1', sha(token!));
   });
-  return me(user, query.get('payroll') === '1', token && sha(token));
 });
 
 async function changeSessionMode({ user, body, req }: Pick<Ctx, 'body' | 'req'> & { user: { id: number } }) {
@@ -4425,6 +4427,7 @@ route('POST', '/api/subscriptions', async ({ user, req }) => {
 // Admin
 route('POST', '/api/admin/orders/:id/proof-reset', async ({ user, params, body }) => {
   need(user, 'admin');
+  needStaff(await staffActor(persistence, user), fail, 'support');
   const reason = text(body.reason, 500);
   if (reason.length < 5) fail(400, 'invalid_input');
   const order = (await getOrder(Number(params[0]), user));
@@ -4823,6 +4826,7 @@ async function resetVerification(adminId: number, target: Row, body: Row) {
 // No SMS provider yet: support verifies the caller, resets, and reads the temporary password out to them.
 route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) => {
   need(user, 'admin');
+  needStaff(await staffActor(persistence, user), fail, 'support');
   (await limit(identityKey('support-password', user.id), 20, 60 * 60_000));
   const target = (await one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
   const verification = await resetVerification(user.id, target, body);
@@ -4849,6 +4853,7 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) =>
 const supportTarget = async (id: unknown) => (await one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(id))) ?? fail(404, 'not_found');
 route('POST', '/api/admin/users/:id/identity-code', async ({ user, params }) => {
   need(user, 'admin');
+  needStaff(await staffActor(persistence, user), fail, 'support');
   const target = (await supportTarget(params[0]));
   if (!await recoveryEmailVerified(persistence, target)) fail(409, 'email_not_verified');
   if (!await (await reserveEmailCode(target, 'support'))()) fail(409, 'user_changed');
@@ -4856,6 +4861,7 @@ route('POST', '/api/admin/users/:id/identity-code', async ({ user, params }) => 
 });
 route('POST', '/api/admin/users/:id/identity-check', async ({ user, params, body }) => {
   need(user, 'admin');
+  needStaff(await staffActor(persistence, user), fail, 'support');
   const target = (await supportTarget(params[0]));
   if (!await recoveryEmailVerified(persistence, target)) fail(409, 'email_not_verified');
   (await useCode(target, 'support', body.code));

@@ -13,7 +13,7 @@ try {
   const config = join(directory, 'tsconfig.json');
   writeFileSync(config, JSON.stringify({
     extends: join(root, 'tsconfig.json'),
-    exclude: ['node_modules', '.expo', '.artifacts', 'android', 'ios', 'server', 'expo-env.d.ts'].map(name => join(root, name)),
+    exclude: ['node_modules', '.expo', '.artifacts', 'android', 'ios', 'server', 'expo-env.d.ts', 'research_notes', '.scratch', 'dist', 'vendor'].map(name => join(root, name)),
   }));
   execFileSync(process.execPath, [require.resolve('typescript/bin/tsc'), '--noEmit', '--project', config], {
     cwd: root, stdio: 'inherit', timeout: 60_000, windowsHide: true,
