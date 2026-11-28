@@ -1001,7 +1001,7 @@ try {
   await pricePage.reload();
   await pricePage.getByText(c.findingTitle, { exact: true }).waitFor();
   assert.equal(await pricePage.getByText(c.dispatchExhausted, { exact: true }).count(), 0);
-  assert.equal(await pricePage.getByText(c.scheduledMissed, { exact: true }).count(), 0, 'no overdue warning before the pickup time');
+  assert.equal(await pricePage.getByText(c.scheduledMissed, { exact: true }).count(), 0, 'no overdue warning on an order that was never scheduled');
   await pricePage.unroute(orderPath);
   pass('price refusals and missed scheduled pickups show the right guidance');
   assert.deepEqual(errors, [], 'Unhandled browser errors');

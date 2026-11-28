@@ -9,7 +9,8 @@ counts only notices marked `waiting`, and a notice is marked only when its link 
 shop order that arrives while its owner is in Personal mode, with the push missed, shows no dot and no Account badge.
 
 Wanted: mark a notice waiting when it is created for a user whose session is in another mode (or derive the count from
-current work, e.g. open shop orders), with a server test. The app already shows whatever `updates.count` says.
+current work, e.g. open shop orders), with a server test. Cover an owner in Personal mode with no push
+subscription: notices are created on the push delivery path today. The app already shows whatever `updates.count` says.
 
 ## Owner
 
