@@ -784,7 +784,7 @@ export default function OrderScreen() {
         <IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} tone="muted" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />
         <View style={{ flex: 1 }}>
           <Txt variant="title" numberOfLines={1}>{orderCode(order.id)}</Txt>
-          {!shortUpright && <Txt variant="micro" numberOfLines={1}>{`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`}</Txt>}{/* the details name the service too */}
+          {!(shortUpright && accept) && <Txt variant="micro" numberOfLines={1}>{`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`}</Txt>}{/* a short window's Accept block says it instead */}
         </View>
         {helpButton}{/* no state badge here: the sheet header names a booked time, and a badge left the order number no room at 280 */}
       </View>}

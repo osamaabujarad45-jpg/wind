@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { chromium } from 'playwright';
 import { copy } from '../src/copy.ts';
+import { orderCode } from '../src/model.ts';
 import { apiCaller } from '../tests/support/api.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -757,6 +758,9 @@ try {
   await short.route('**/vendor/maplibre-*/maplibre-gl.mjs', route => route.abort());
   await short.goto(`${base}/order/${coveredId}`);
   await short.getByText(c.findingTitle, { exact: true }).waitFor();
+  // The top card names the service under the order number, also on a short window, unless Accept says it.
+  const topCard = page => page.getByText(orderCode(coveredId), { exact: true }).locator('xpath=..');
+  await topCard(short).getByText(c.parcel, { exact: true }).waitFor();
   const { column, columnRetry, between, placed, retryNow, wheel } = fallbackOn(short);
   await columnRetry.waitFor();
   const first = await until(between, placed, 'The fallback column never settled between the top bar and the order sheet');
@@ -781,6 +785,7 @@ try {
   await captain.goto(`${base}/order/${coveredId}`);
   await button(captain, c.sheetCollapse).waitFor();
   await button(captain, c.accept).click({ trial: true });
+  assert.equal(await topCard(captain).getByText(c.parcel, { exact: true }).count(), 0, 'A short waiting job leaves the service line to its Accept block');
   await button(captain, c.sheetCollapse).click();
   const held = fallbackOn(captain);
   await held.columnRetry.waitFor();
