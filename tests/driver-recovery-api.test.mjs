@@ -87,7 +87,8 @@ try {
     const current = await call(`/orders/${booked.id}?recoveryProtocol=1`, { token: driver.token });
     const stamp = Date.now();
     return { ...body, requestId: randomUUID(), expectedStatus: current.status, expectedAssignedAt: current.assignedAt,
-      expectedVersion: current.recovery.version, attemptCreatedAt: stamp, attemptExpiresAt: stamp + 60_000, ...(code ? { code } : {}) };
+      expectedVersion: current.recovery.version, expectedProofVersion: current.proofVersion ?? null,
+      attemptCreatedAt: stamp, attemptExpiresAt: stamp + 60_000, ...(code ? { code } : {}) };
   };
   await call(`/orders/${booked.id}/advance`, { token: driver.token, body: await attempt() });
   const proof = db.prepare('SELECT handover_code FROM orders WHERE id=?').get(booked.id).handover_code;
@@ -95,6 +96,34 @@ try {
   await call(`/orders/${booked.id}/advance`, { token: driver.token, body: wrong, expect: 400 });
   await call(`/orders/${booked.id}/advance`, { token: driver.token, body: wrong, expect: 400 });
   assert.equal(db.prepare('SELECT failures FROM proof_attempts WHERE order_id=?').get(booked.id).failures, 1, 'replayed rejection counts once');
+
+  const report = () => call(`/orders/${booked.id}/sos`, { token: customer.token, body: { kind: 'other' } });
+  const resolve = async () => {
+    const [incident] = await call('/admin/incidents', { token: admin.token });
+    assert.equal(incident.status, 'open');
+    return call(`/admin/incidents/${incident.id}/resolve`, { token: admin.token, body: { resolution: 'Synthetic safety check closed' } });
+  };
+  await report();
+  await resolve();
+  assert.equal((await call(`/orders/${booked.id}/advance`, { token: driver.token, body })).status, 'in_transit', 'a legacy committed receipt survives a hold');
+  let reportedBetweenReads = false;
+  persistence.one = async function(sql, ...params) {
+    const row = await originalOne.call(this, sql, ...params);
+    if (!reportedBetweenReads && sql.includes('FROM orders o JOIN users') && params[0] === booked.id) {
+      reportedBetweenReads = true;
+      assert.equal(row.safety_open, 0);
+      assert.ok(row.safety_latest > 0);
+      await report();
+    }
+    return row;
+  };
+  let decorated;
+  try { decorated = await call(`/orders/${booked.id}?recoveryProtocol=1&journeyProtocol=1`, { token: driver.token }); }
+  finally { persistence.one = originalOne; }
+  assert.ok(reportedBetweenReads);
+  assert.equal(decorated.safetyHold, true);
+  assert.equal('proofVersion' in decorated, false, 'the journey response drops the previous proof when authorization sees an open hold');
+  await resolve();
   const corrected = await call(`/orders/${booked.id}/advance`, { token: driver.token, body: await attempt(proof) });
   assert.equal(corrected.status, 'completed', 'fresh corrected proof completes immediately without a polling interval');
   console.log('Driver receipt privacy, legacy compatibility, exact replay, expiry and reassignment API fences passed');

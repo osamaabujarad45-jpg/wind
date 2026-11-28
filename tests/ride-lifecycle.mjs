@@ -75,7 +75,21 @@ try {
     assert.equal((await advance(f, who.driver.token, booked.id, 'at_pickup', { boardingCode: wrongFor(code) }, 400)).error, 'wrong_boarding_code');
   assert.equal(Number((await f.db.one('SELECT failures FROM ride_boarding_attempts WHERE order_id=?', booked.id)).failures), 4);
   assert.equal(await f.db.one('SELECT failures FROM proof_attempts WHERE order_id=?', booked.id), undefined, 'boarding attempts never touch the parcel proof counter');
-  const started = await advance(f, who.driver.token, booked.id, 'at_pickup', { boardingCode: code });
+  const boardingView = () => f.call(`/orders/${booked.id}?journeyProtocol=1`, { token: who.driver.token });
+  const boarding = await boardingView();
+  await f.call(`/orders/${booked.id}/sos`, { token: f.customer.token, body: { kind: 'other' } });
+  const stopped = await boardingView();
+  const [incident] = await f.call('/admin/incidents', { token: f.admin.token });
+  await f.call(`/admin/incidents/${incident.id}/resolve`, { token: f.admin.token, body: { resolution: 'Checked both sides' } });
+  const resumed = await boardingView();
+  const oldProof = { boardingCode: code, expectedPinRevision: boarding.journey.boarding.pinRevision, expectedProofVersion: boarding.proofVersion ?? null };
+  assert.equal((await advance(f, who.driver.token, booked.id, 'at_pickup', oldProof, 409)).error, 'order_changed');
+  assert.equal((await advance(f, who.driver.token, booked.id, 'at_pickup', { ...oldProof, expectedProofVersion: resumed.proofVersion }, 409)).error, 'boarding_challenge_changed');
+  assert.ok(stopped.journey.boarding.pinRevision > boarding.journey.boarding.pinRevision);
+  assert.ok(resumed.journey.boarding.pinRevision > stopped.journey.boarding.pinRevision);
+  assert.equal((await f.db.one('SELECT failures FROM ride_boarding_attempts WHERE order_id=?', booked.id)).failures, 4, 'stale proof neither spends nor resets attempts');
+  const started = await advance(f, who.driver.token, booked.id, 'at_pickup', { boardingCode: code,
+    expectedProofVersion: resumed.proofVersion, expectedPinRevision: resumed.journey.boarding.pinRevision });
   assert.equal(started.status, 'in_transit', 'the correct code after four misses still starts the ride');
   assert.equal((await f.call(`/orders/${booked.id}`, { token: f.customer.token })).ride.boardingCode, undefined,
     'the customer no longer receives the PIN once boarding is complete');
@@ -83,8 +97,8 @@ try {
   // The rider's trip code ends the ride once they have paid (owner, 23 Nov 2026); boarding used its own PIN above.
   const tripCode = (await f.call(`/orders/${booked.id}`, { token: f.customer.token })).handoverCode;
   assert.match(tripCode, /^\d{4}$/, 'a ride carries a trip code for its owner');
-  assert.equal((await advance(f, who.driver.token, booked.id, 'in_transit', {}, 400)).error, 'wrong_code', 'a ride cannot end without the trip code');
-  const completionRequest = { requestId: randomUUID(), expectedStatus: 'in_transit', code: tripCode };
+  assert.equal((await advance(f, who.driver.token, booked.id, 'in_transit', { expectedProofVersion: started.proofVersion }, 400)).error, 'wrong_code', 'a ride cannot end without the trip code');
+  const completionRequest = { requestId: randomUUID(), expectedStatus: 'in_transit', expectedProofVersion: started.proofVersion, code: tripCode };
   const completed = await f.call(`/orders/${booked.id}/advance`, { token: who.driver.token, body: completionRequest });
   assert.equal(completed.status, 'completed');
   assert.equal(completed.ride.arrivedAt, arrived.ride.arrivedAt);

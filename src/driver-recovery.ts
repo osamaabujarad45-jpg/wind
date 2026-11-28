@@ -36,12 +36,13 @@ export function recoverDriverAction(actorId: number, order: Order, action?: Driv
       saved = null; earlier = false; // nothing was reconciled ahead of this action, so it simply goes ahead
     }
     if (!saved) {
-      // A definite refusal advances recovery metadata without changing status.
-      // Bind a new intent to a fresh snapshot, never the screen's last poll.
+      // Refresh the recovery envelope while keeping the proof tied to the snapshot the Captain saw.
       const fresh = await api<Order>(`/orders/${order.id}?recoveryProtocol=1&capacityProtocol=1&journeyProtocol=1`);
       if (!valid()) throw new ApiError('session_changed', 401);
       if (!fresh.recovery || fresh.driverId !== actorId || fresh.status !== order.status || fresh.assignedAt !== order.assignedAt
         || fresh.recovery.assignmentEpoch !== order.recovery.assignmentEpoch) throw new ApiError('order_changed', 409);
+      if (fresh.safetyHold) throw new ApiError('safety_hold', 409);
+      if (fresh.proofVersion !== order.proofVersion) throw new ApiError('order_changed', 409);
       if (action === 'shop/handover' && (fresh.shop?.state !== 'ready' || fresh.shop.readySnapshotId !== payload.expectedReadySnapshotId))
         throw new ApiError('order_changed', 409);
       if (payload.code && order.journey?.boarding?.pinRevision !== fresh.journey?.boarding?.pinRevision) throw new ApiError('boarding_challenge_changed', 409);

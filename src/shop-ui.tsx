@@ -197,9 +197,10 @@ export function ShopHandover({ order, onChange, onReload }: { order: Order; onCh
         if (result.state !== 'applied') throw new ApiError('driver_command_pending', 409);
         if ('order' in result && result.order) onChange(result.order); else await onReload();
       } else {
-        const key = JSON.stringify([order.id, order.assignedAt, input]);
+        const key = JSON.stringify([order.id, order.assignedAt, order.proofVersion, input]);
         if (attempt.current?.key !== key) attempt.current = { key, id: newRequestId() };
         onChange(await api<Order>(`/orders/${order.id}/shop/handover`, { expectedStatus: 'at_pickup', requestId: attempt.current.id,
+          expectedProofVersion: order.proofVersion ?? null,
           ...(s.readySnapshotId !== undefined && { expectedAssignedAt: order.assignedAt ?? null }), ...input }));
       }
       attempt.current = null;

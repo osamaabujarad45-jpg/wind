@@ -192,36 +192,45 @@ try {
   assert.equal(order.status, 'assigned');
   assert.equal(order.commission, commissionOn(10, defaultSettings.commission), 'commission is on the delivery fee only');
   assert.equal(order.shop.pickupCode, null);
-  const advance = (expectedStatus, extra = {}) => call(`/orders/${order.id}/advance`, { token: captain.token, body: { expectedStatus, requestId: randomUUID(), ...extra } });
+  const advance = (expectedStatus, extra = {}, expect = 200) => call(`/orders/${order.id}/advance`, { token: captain.token, body: {
+    expectedStatus, expectedProofVersion: order.proofVersion ?? null, requestId: randomUUID(), ...extra }, expect });
+  const handoverBody = (code) => ({ expectedStatus: 'at_pickup', expectedProofVersion: order.proofVersion ?? null,
+    requestId: randomUUID(), code, check: { result: 'ok' } });
+  const captainView = () => call(`/orders/${order.id}`, { token: captain.token });
   order = await advance('assigned');
   assert.equal(order.status, 'at_pickup');
   await err(`/orders/${order.id}/advance`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID() } }, 409, 'use_shop_handover');
 
+  const pickup = handoverBody(pickupCode);
   const held = await call(`/orders/${order.id}/sos`, { token: customer.token, body: { kind: 'other' } });
   assert.equal(held.safetyHold, true);
-  const pickup = { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } };
-  await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: pickup }, 409, 'safety_hold');
-  const beforeResolution = await call(`/orders/${order.id}`, { token: captain.token });
+  await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: handoverBody(pickupCode) }, 409, 'safety_hold');
+  const beforeResolution = await captainView();
   assert.equal(beforeResolution.shop.state, 'ready');
   assert.equal(beforeResolution.status, 'at_pickup');
   assert.equal(Number((await one('SELECT COUNT(*) AS n FROM shop_handover_checks WHERE order_id = ?', order.id)).n), 0);
   const incident = (await call('/admin/incidents', { token: admin.token })).find(row => row.orderId === order.id);
   assert.ok(incident);
   await call(`/admin/incidents/${incident.id}/resolve`, { token: admin.token, body: { resolution: 'Synthetic safety check resolved' } });
+  await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: pickup }, 409, 'order_changed');
+  order = await captainView();
+  assert.equal(order.shop.readySnapshotId, beforeResolution.shop.readySnapshotId, 'the packing snapshot did not change during the hold');
 
   // ---- pickup code: five misses lock it, on its own counter; the reset is audited ----
-  for (let i = 0; i < 5; i++) await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: '0000', check: { result: 'ok' } } }, 400, 'wrong_code');
-  await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } } }, 409, 'proof_locked');
+  for (let i = 0; i < 5; i++) await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: handoverBody('0000') }, 400, 'wrong_code');
+  await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: handoverBody(pickupCode) }, 409, 'proof_locked');
   assert.equal(Number((await one('SELECT COUNT(*) n FROM proof_attempts WHERE order_id = ?', order.id)).n), 0, 'the delivery code counter is untouched');
   await call(`/admin/orders/${order.id}/shop/reset-pickup`, { token: admin.token, body: { reason: 'Shop confirmed the captain at the counter' } });
   assert.equal(Number((await one("SELECT COUNT(*) n FROM security_events WHERE order_id = ? AND action = 'SHOP_PICKUP_RESET'", order.id)).n), 1);
+  order = await captainView();
 
   // ---- a handover exception reopens preparing; the shop fixes it and marks ready again (DLV-13) ----
-  order = await call(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), check: { result: 'exception', exception: 'missing_item' } } });
+  order = await call(`/orders/${order.id}/shop/handover`, { token: captain.token, body: {
+    expectedStatus: 'at_pickup', expectedProofVersion: order.proofVersion, requestId: randomUUID(), check: { result: 'exception', exception: 'missing_item' } } });
   assert.equal(order.shop.state, 'preparing');
   assert.equal(order.shop.handoverException, 'missing_item');
   assert.equal(order.status, 'at_pickup');
-  await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' } } }, 409, 'exception_open');
+  await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: handoverBody(pickupCode) }, 409, 'exception_open');
   // Inside the owner-set 10 minutes the shop fixes it: support can neither cancel for it nor remove a line, and it is not on the stuck list.
   await err(`/admin/orders/${order.id}/shop/cancel`, { token: admin.token, body: { action: 'cancel_handover_exception', note: 'Synthetic early decision' } }, 409, 'cancel_refused');
   await err(`/admin/orders/${order.id}/shop/lines/${breadLine}/remove`, { token: admin.token, body: {} }, 409, 'handover_not_overdue');
@@ -262,7 +271,7 @@ try {
   order = await call(`/orders/${order.id}`, { token: captain.token });
   assert.ok(Number.isSafeInteger(order.shop.readySnapshotId));
   assert.notEqual(order.shop.readySnapshotId, priorSnapshot);
-  const confirmedPacking = { expectedStatus: 'at_pickup', requestId: randomUUID(), code: pickupCode, check: { result: 'ok' },
+  const confirmedPacking = { ...handoverBody(pickupCode),
     expectedAssignedAt: order.assignedAt, expectedReadySnapshotId: order.shop.readySnapshotId };
   await err(`/orders/${order.id}/shop/handover`, { token: captain.token, body: { ...confirmedPacking, requestId: randomUUID(),
     expectedReadySnapshotId: order.shop.readySnapshotId - 1 } }, 409, 'order_changed');
@@ -275,10 +284,19 @@ try {
   // ---- delivery: seals first, then the code and the door cash: goods + delivery fee + service fee (DLV-14/15) ----
   const goods = 1000 + 2000, due = goods + 1000 + 200;
   const deliveryCode = (await call(`/orders/${order.id}`, { token: customer.token })).handoverCode;
-  await err(`/orders/${order.id}/advance`, { token: captain.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), code: deliveryCode, collectedCents: due } }, 400, 'invalid_input');
-  await err(`/orders/${order.id}/advance`, { token: captain.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), code: deliveryCode,
-    seals: [{ no: 1, intact: true }], collectedCents: due - 100 } }, 400, 'invalid_input');
-  order = await advance('in_transit', { code: deliveryCode, seals: [{ no: 1, intact: true }], collectedCents: due });
+  const delivery = { code: deliveryCode, seals: [{ no: 1, intact: true }], collectedCents: due };
+  const staleDelivery = { ...delivery, expectedProofVersion: order.proofVersion };
+  await call(`/orders/${order.id}/sos`, { token: captain.token, body: { kind: 'other' } });
+  const safety = (await call('/admin/incidents', { token: admin.token })).find(row => row.orderId === order.id && row.status === 'open');
+  await call(`/admin/incidents/${safety.id}/resolve`, { token: admin.token, body: { resolution: 'Synthetic delivery pause resolved' } });
+  order = await captainView();
+  assert.equal((await advance('in_transit', staleDelivery, 409)).error, 'order_changed');
+  assert.equal(Number((await one('SELECT COUNT(*) n FROM shop_seals WHERE order_id = ?', order.id)).n), 0);
+  const advancePath = `/orders/${order.id}/advance`;
+  const atDoor = { expectedStatus: 'in_transit', expectedProofVersion: order.proofVersion, code: deliveryCode };
+  await err(advancePath, { token: captain.token, body: { ...atDoor, requestId: randomUUID(), collectedCents: due } }, 400, 'invalid_input');
+  await err(advancePath, { token: captain.token, body: { ...atDoor, requestId: randomUUID(), seals: delivery.seals, collectedCents: due - 100 } }, 400, 'invalid_input');
+  order = await advance('in_transit', delivery);
   assert.equal(order.status, 'completed');
   assert.equal(Number((await one('SELECT COUNT(*) n FROM shop_seals WHERE order_id = ?', order.id)).n), 1);
   assert.equal(Number((await one('SELECT door_expected_cents d FROM orders WHERE id = ?', order.id)).d), due);
