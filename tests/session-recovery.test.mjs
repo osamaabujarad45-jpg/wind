@@ -598,14 +598,18 @@ console.log('Session recovery: failed removal keeps the recovery record, 401 alw
 {
   const pushSource = ts.transpileModule(readFileSync(new URL('../src/push.ts', import.meta.url), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  let token = 'first', tail = Promise.resolve(), bindError = null, afterPermission = null, beforeUnsubscribe = null;
+  let token = 'first', tail = Promise.resolve(), bindError = null, unsubscribeError = null, afterPermission = null, beforeUnsubscribe = null;
   const saved = new Map();
-  const requests = [], unsubscribed = [];
+  const requests = [], bindAttempts = [], unsubscribed = [];
   const subscription = {
     endpoint: 'https://fcm.googleapis.com/fcm/send/synthetic',
     options: {},
     toJSON() { return { endpoint: this.endpoint, keys: {} }; },
-    async unsubscribe() { unsubscribed.push(token); return true; },
+    async unsubscribe() {
+      if (unsubscribeError) throw unsubscribeError;
+      unsubscribed.push(token);
+      return true;
+    },
   };
   const registration = { pushManager: { getSubscription: async () => subscription } };
   const storage = {
@@ -616,10 +620,13 @@ console.log('Session recovery: failed removal keeps the recovery record, 401 alw
   const modules = {
     'react-native': { Platform: { OS: 'web' } },
     './api-client': { apiSessionCredential: () => token },
-    './api': { ApiError, storage, api: async path => {
+    './api': { ApiError, storage, api: async (path, body) => {
       requests.push([path, token]);
       if (path === '/push/unsubscribe' && beforeUnsubscribe) { beforeUnsubscribe.started(); await beforeUnsubscribe.promise; }
-      if (path === '/push/subscribe' && bindError) throw bindError;
+      if (path === '/push/subscribe') {
+        bindAttempts.push([body.bindSession, saved.has('wind.webPushBinding')]);
+        if (bindError) throw bindError;
+      }
       return { key: 'AA' };
     } },
   };
@@ -629,7 +636,7 @@ console.log('Session recovery: failed removal keeps the recovery record, 401 alw
     navigator: { serviceWorker: { getRegistration: async () => registration, register: noop, ready: Promise.resolve(registration) } },
   };
   runInNewContext(pushSource, context);
-  const { enablePush, disablePush, refreshPush } = context.exports;
+  const { enablePush, disablePush, dropLocalPush, refreshPush } = context.exports;
   afterPermission = gate();
   const enabling = enablePush('en');
   await afterPermission.entered;
@@ -638,12 +645,23 @@ console.log('Session recovery: failed removal keeps the recovery record, 401 alw
   await assert.rejects(enabling, /session_changed/);
   assert.deepEqual(requests, [], 'a permission reply cannot enable push for the account that replaced it');
 
+  bindError = new ApiError('network');
+  await assert.rejects(refreshPush('en'), /network/);
+  assert.deepEqual(unsubscribed, [], 'an existing legacy subscription survives its first renewal failure');
+  assert.deepEqual(bindAttempts, [[true, true]], 'the browser records its fingerprint before asking for a session-specific bind');
+
   bindError = Object.assign(new ApiError('session_changed', 401), { servedStatus: 200 });
   await refreshPush('en');
   assert.deepEqual(unsubscribed, [], 'a profile revision change preserves a successful same-token bind');
   bindError = new ApiError('network');
   await assert.rejects(refreshPush('en'), /network/);
   assert.deepEqual(unsubscribed, [], 'temporary failure preserves a binding already confirmed for this token');
+
+  unsubscribeError = new Error('browser refused unsubscribe');
+  await assert.rejects(storage.exclusive(dropLocalPush), /browser refused unsubscribe/);
+  assert.equal(saved.has('wind.webPushBinding'), true, 'a failed unsubscribe leaves the previous binding on record');
+  unsubscribeError = null;
+
   await storage.exclusive(async () => { token = 'third'; });
   await assert.rejects(refreshPush('en'), /network/);
   assert.deepEqual(unsubscribed, ['third'], 'a failed rebind retires the endpoint when ownership changed');
@@ -656,6 +674,6 @@ console.log('Session recovery: failed removal keeps the recovery record, 401 alw
   assert.equal(token, 'third', 'settings unsubscribe and token replacement share the lock');
   beforeUnsubscribe.resolve();
   await disabling; await replacement;
-  assert.deepEqual(requests, [['/push/subscribe', 'second'], ['/push/subscribe', 'second'], ['/push/subscribe', 'third'], ['/push/unsubscribe', 'third']]);
+  assert.deepEqual(requests, [['/push/subscribe', 'second'], ['/push/subscribe', 'second'], ['/push/subscribe', 'second'], ['/push/subscribe', 'third'], ['/push/unsubscribe', 'third']]);
   assert.deepEqual(unsubscribed, ['third', 'third']);
 }

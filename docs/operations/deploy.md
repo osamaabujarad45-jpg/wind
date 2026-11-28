@@ -328,7 +328,7 @@ The provider rehearsal must confirm that the admin account import rejects duplic
 
 Keep `WIND_PROFILE_SWITCHING=0` for the first deployment. Compare the existing role to the profile preview with `WIND_PROFILE_SHADOW=1`. Before activating profile switching, publish the reviewed signed client, verify the install link and the old-client update screen on the A53, and rehearse the activation and rollback on isolated SQLite copies.
 
-SQLite binds new browser notifications to the session that registered them, including during the shadow deployment. Existing registrations show a generic update until the browser opens Wind and renews its subscription.
+SQLite binds browser notifications to the session that registers them from the updated client, including during the shadow deployment. Older clients keep their subscriptions and show a generic update until the browser opens the updated Wind client and renews its subscription.
 
 For activation on the Israel host, hold ingress and take a verified checkpoint of the stopped database. Set `WIND_PROFILE_SWITCHING=1` and `WIND_MIN_CLIENT_BUILD=10107` or later, then restart the reviewed release. Check Personal booking, Captain work and cash, and the Shop inbox before lifting the hold. Any automatic fallback from that point must support activated profiles and use the same mode configuration. Review the same compatibility before starting or restoring a Docker container.
 

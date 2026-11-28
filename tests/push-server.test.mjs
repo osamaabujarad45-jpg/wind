@@ -51,7 +51,8 @@ const call = apiCaller(() => base, realFetch);
 const advance = (token, order, extra = {}) => call(`/orders/${order.id}/advance`, { token, body: { expectedStatus: order.status, requestId: randomUUID(), ...extra } });
 const browserKeys = () => {
   const jwk = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).publicKey.export({ format: 'jwk' });
-  return { p256dh: Buffer.concat([Buffer.from([4]), b(jwk.x), b(jwk.y)]).toString('base64url'), auth: Buffer.alloc(16, 7).toString('base64url') };
+  return { p256dh: Buffer.concat([Buffer.from([4]), b(jwk.x), b(jwk.y)]).toString('base64url'),
+    auth: Buffer.alloc(16, 7).toString('base64url'), bindSession: true };
 };
 // A browser whose private key the test keeps, so it can read the kind of each push it was sent (RFC 8291 §3.4).
 const AUTH = Buffer.alloc(16, 7);
@@ -208,9 +209,9 @@ try {
   await call(`/admin/users/${courier.user.id}/approve`, { token: admin.token, body: {} });
   const courierBrowser = ownBrowser(), senderBrowser = ownBrowser(), adminBrowser = ownBrowser();
   const browsers = new Map([[fcm('h'), courierBrowser], [fcm('c'), senderBrowser], [fcm('a'), adminBrowser]]);
-  await call('/push/subscribe', { token: courier.token, body: { endpoint: fcm('h'), ...courierBrowser.keys } });
-  await call('/push/subscribe', { token: customer.token, body: { endpoint: fcm('c'), ...senderBrowser.keys } });
-  await call('/push/subscribe', { token: admin.token, body: { endpoint: fcm('a'), ...adminBrowser.keys } });
+  await call('/push/subscribe', { token: courier.token, body: { endpoint: fcm('h'), ...courierBrowser.keys, bindSession: true } });
+  await call('/push/subscribe', { token: customer.token, body: { endpoint: fcm('c'), ...senderBrowser.keys, bindSession: true } });
+  await call('/push/subscribe', { token: admin.token, body: { endpoint: fcm('a'), ...adminBrowser.keys, bindSession: true } });
   // What each push said, read with the key of the browser it went to. The recipient order inside one fan-out is not part of the contract.
   const heard = () => sent.map(s => [s.url, browsers.get(s.url).read(s.body).kind]);
   const sortedPairs = pairs => pairs.slice().sort((x, y) => (x[0] < y[0] ? -1 : 1));
@@ -246,7 +247,7 @@ try {
   const newcomer = await call('/auth/register', { body: { phone: '0599150009', name: 'Yara', password: 'secret1', role: 'driver', vehicle: 'car' } });
   const newcomerBrowser = ownBrowser();
   browsers.set(fcm('y'), newcomerBrowser);
-  await call('/push/subscribe', { token: newcomer.token, body: { endpoint: fcm('y'), ...newcomerBrowser.keys } });
+  await call('/push/subscribe', { token: newcomer.token, body: { endpoint: fcm('y'), ...newcomerBrowser.keys, bindSession: true } });
   sent.length = 0;
   await call(`/admin/users/${newcomer.user.id}/approve`, { token: admin.token, body: {} });
   await settle();
@@ -331,12 +332,13 @@ try {
     await customerUpdate();
     assert.deepEqual(sent, [], 'another live session does not authorize alerts for an expired browser session');
 
-    // A pre-upgrade registration still reaches that browser with a neutral alert until it can bind again.
-    db.prepare('UPDATE push_subscriptions SET auth_session_hash = NULL WHERE endpoint = ?').run(fcm('c'));
+    // An open legacy tab can renew its registration during deployment and still receives only a neutral alert.
+    await call('/push/subscribe', { token: fresh.token, body: { endpoint: fcm('c'), ...senderBrowser.keys } });
+    assert.equal((await owner()).auth_session_hash, null, 'legacy requests cannot create a session-specific binding');
     await customerUpdate();
     assert.deepEqual(sent.map(s => [s.url, senderBrowser.read(s.body)]),
       [[fcm('c'), { kind: 'account_update', order: 0, url: '/', lang: 'ar' }]]);
-    await call('/push/subscribe', { token: fresh.token, body: { endpoint: fcm('c'), ...senderBrowser.keys } });
+    await call('/push/subscribe', { token: fresh.token, body: { endpoint: fcm('c'), ...senderBrowser.keys, bindSession: true } });
     await customerUpdate();
     assert.deepEqual(heard(), [[fcm('c'), 'message']]);
 
@@ -355,7 +357,7 @@ try {
     const delivery = customerUpdate();
     try {
       await listed;
-      await call('/push/subscribe', { token: courier.token, body: { endpoint: fcm('c'), ...senderBrowser.keys } });
+      await call('/push/subscribe', { token: courier.token, body: { endpoint: fcm('c'), ...senderBrowser.keys, bindSession: true } });
     } finally {
       persistence.all = list;
       release();

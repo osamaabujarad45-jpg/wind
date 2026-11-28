@@ -29,15 +29,18 @@ async function bind(subscription: PushSubscription, token: string, lang: 'ar' | 
   const { endpoint, keys } = subscription.toJSON();
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([token, endpoint, keys?.p256dh, keys?.auth])));
   const receipt = btoa(String.fromCharCode(...new Uint8Array(digest)));
-  const confirmed = await storage.get(BINDING_RECEIPT) === receipt;
+  const previous = await storage.get(BINDING_RECEIPT, true);
+  // Older clients can have a subscription without this record. SQLite sends those subscriptions neutral alerts.
+  // Record the first session before requesting a private binding, even if the response is lost.
+  if (previous === null) await storage.set(BINDING_RECEIPT, receipt, true);
   await check();
-  try { await api('/push/subscribe', { endpoint, p256dh: keys?.p256dh, auth: keys?.auth, lang }); }
+  try { await api('/push/subscribe', { endpoint, p256dh: keys?.p256dh, auth: keys?.auth, lang, bindSession: true }); }
   catch (error) {
     await check();
     // A profile switch can discard a successful reply while the browser session keeps the same credential.
     const accepted = error instanceof ApiError && error.message === 'session_changed' && (error as { servedStatus?: number }).servedStatus === 200;
     if (!accepted) {
-      if (!confirmed) await subscription.unsubscribe();
+      if (previous !== null && previous !== receipt) await subscription.unsubscribe();
       throw error;
     }
   }
@@ -91,7 +94,7 @@ export async function refreshPush(lang: 'ar' | 'en') {
 /** Session teardown holds the token lock. The server removes bound rows when the session ends. */
 export async function dropLocalPush() {
   if (!pushSupported()) return;
-  await (await current().catch(() => null))?.unsubscribe().catch(() => undefined);
+  await (await current())?.unsubscribe();
   await storage.set(BINDING_RECEIPT, null);
 }
 

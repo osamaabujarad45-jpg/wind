@@ -2181,11 +2181,14 @@ route('POST', '/api/push/subscribe', async ({ user, body, req }) => {
   const bind = persistence.backend === 'sqlite';
   const subscribe = async () => {
     if (bind && !await authenticate(req, false)) fail(401, 'unauthorized');
+    // The updated client records local ownership before asking for session-specific alerts. Older tabs
+    // may keep their opt-in and receive neutral alerts without asserting a browser credential.
+    const sessionHash = bind && body.bindSession === true ? sha(bearer(req)!) : null;
     await run(`INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, lang, created_at${bind ? ', auth_session_hash' : ''})
       VALUES (?, ?, ?, ?, ?, ?${bind ? ', ?' : ''})
       ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, lang = excluded.lang,
       created_at = excluded.created_at${bind ? ', auth_session_hash = excluded.auth_session_hash' : ''}`,
-    endpoint, user.id, b64url(key), b64url(auth), body.lang === 'en' ? 'en' : 'ar', Date.now(), ...(bind ? [sha(bearer(req)!)] : []));
+    endpoint, user.id, b64url(key), b64url(auth), body.lang === 'en' ? 'en' : 'ar', Date.now(), ...(bind ? [sessionHash] : []));
     await run('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint NOT IN (SELECT endpoint FROM push_subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 5)', user.id, user.id);
     return { ok: true };
   };

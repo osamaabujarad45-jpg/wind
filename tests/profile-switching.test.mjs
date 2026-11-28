@@ -324,7 +324,7 @@ try {
   const endpoint = browserEndpoint;
   const browser = createECDH('prime256v1');
   browser.generateKeys();
-  const browserSubscription = { endpoint, p256dh: browser.getPublicKey().toString('base64url'), auth: Buffer.alloc(16).toString('base64url') };
+  const browserSubscription = { endpoint, p256dh: browser.getPublicKey().toString('base64url'), auth: Buffer.alloc(16).toString('base64url'), bindSession: true };
   await call('/push/subscribe', buyer, browserSubscription);
   const message = () => call(`/orders/${food.id}/messages`, phone, { body: 'Restaurant delivery update' }, resumed.revision);
   await message();
