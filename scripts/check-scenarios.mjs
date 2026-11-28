@@ -188,8 +188,12 @@ try {
     await page.goto(base + '/help?topic=password');
     await options;
     await page.waitForTimeout(300); // let the answer settle on what the server said
-    await page.getByText(emailReset ? text.a_password : text.a_password_support, { exact: true }).waitFor();
-    assert.equal(await page.getByText(emailReset ? text.a_password_support : text.a_password, { exact: true }).count(), 0, 'Help gives one answer: the email path only where the server can send one');
+    // This mock offers no link proof, so the email path sends a code (help.tsx chooses the same way).
+    const answers = [text.a_password, text.a_password_code, text.a_password_support];
+    const expected = emailReset ? text.a_password_code : text.a_password_support;
+    await page.getByText(expected, { exact: true }).waitFor();
+    for (const other of answers.filter(answer => answer !== expected))
+      assert.equal(await page.getByText(other, { exact: true }).count(), 0, 'Help gives one answer: the email path only where the server can send one');
   }
   pass('recovery guidance matches available methods in Arabic and English');
 
