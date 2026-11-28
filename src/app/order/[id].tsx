@@ -214,7 +214,8 @@ export default function OrderScreen() {
   const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
   // The captain can arrive (and start the waiting clock) while the order is still `assigned`.
   const arrived = order.service === 'ride' && order.status === 'assigned' && (order.ride?.arrivedAt != null || waitingEndsAt != null);
-  const goodsWithSupport = !!mine && order.status === 'returning' && !!order.supportHasGoods; // nothing left to return or drive to
+  const goodsTaken = order.status === 'returning' && !!(order.supportHasGoods || order.driverTrackingEnded); // the sender gets only the tracking flag
+  const goodsWithSupport = !!mine && goodsTaken; // nothing left to return or drive to
   // No next step during a safety pause. A shop customer prepares and hands over nothing; a rider with a PIN already reads
   // "after checking the vehicle and driver"; a rider whose captain has arrived is not told to wait for them.
   const next = (isCustomer || mine) && !order.safetyHold && !goodsWithSupport
@@ -333,7 +334,7 @@ export default function OrderScreen() {
   // Near the door the customer needs this at a glance, so it leaves the sheet's body for the header a closed sheet still shows.
   const codeAtDoor = live && ['in_transit', 'on_hold', 'returning'].includes(order.status);
   const codes = <>
-    {isCustomer && order.handoverCode && live && order.status !== 'returning' && order.status !== 'on_hold' && <Appear index={4}>{/* no captain is coming while support decides (H-10) */}
+    {isCustomer && order.handoverCode && !order.safetyHold && live && order.status !== 'returning' && order.status !== 'on_hold' && <Appear index={4}>{/* no captain is coming while support decides (H-10) */}
       <Card tone="muted">{/* a code to give, not a warning: neutral, like the design system HandoverCode */}
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
@@ -347,7 +348,7 @@ export default function OrderScreen() {
       </Card>
     </Appear>}
 
-    {isCustomer && order.returnCode && <Appear index={4}>
+    {isCustomer && order.returnCode && !goodsTaken && !order.safetyHold && <Appear index={4}>
       <Card tone="muted">
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
@@ -427,7 +428,7 @@ export default function OrderScreen() {
           stale={!!location?.stale} height={live && order.driverLocation ? 300 : undefined} />
       </View></Appear>}
     {live && <>
-        {live && order.driverId && <Row gap={8} style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
+        {live && order.driverId && !order.driverTrackingEnded && <Row gap={8} style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
           {/* The icon follows the fix, not the poll: a dropped request must not make a live car look stale. */}
           <Ionicons name={!location || location.stale || location.reconnecting ? 'time-outline' : 'locate-outline'} size={16} color={location?.stale || location?.reconnecting ? palette.warn : palette.blue} />
           <Txt variant="caption" style={{ flex: 1 }}>{location
@@ -828,7 +829,7 @@ export default function OrderScreen() {
         </>}
       </View>}
       footer={accept ? <BoundedFooter>{accept}</BoundedFooter> : mine && activeStatuses.includes(order.status) ? <BoundedFooter><View style={{ gap: 8 }}>
-        {order.shop && order.status === 'in_transit' && <SealToggles order={order} value={seals} onChange={setSeals} />}
+        {order.shop && order.status === 'in_transit' && !order.safetyHold && <SealToggles order={order} value={seals} onChange={setSeals} />}
         {doorStep && <>
           <Field label={fill(c.doorCollected, { p: money(dueCents / 100) })} icon="cash-outline" value={doorText} keyboardType="decimal-pad" maxLength={10}
             onChangeText={text => setDoor({ context: proofContext, text, reason: null })} disabled={!!busy || advanceLocked === proofContext}

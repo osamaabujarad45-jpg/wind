@@ -3891,12 +3891,12 @@ export function fill(template: string, values: Record<string, string | number>) 
 }
 
 // A status in the order's own words: rides end as a trip, not a delivery; the assigned driver reads it as their own move.
-export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'> & { scheduledFor?: number | null; shop?: { state: string | null } | null; ride?: { arrivedAt?: number | null } | null; supportHasGoods?: boolean }, driver = false, now = Date.now()) => {
+export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'> & { scheduledFor?: number | null; shop?: { state: string | null } | null; ride?: { arrivedAt?: number | null } | null; supportHasGoods?: boolean; driverTrackingEnded?: boolean }, driver = false, now = Date.now()) => {
   if (bookedAhead(o, now)) return c.searching_booked;
   // A shop order stays `requested` while the shop works on it: the shop's own step is the honest status (DLV-09).
   const shopState = o.shop?.state;
   if (o.status === 'requested') return shopState ? (c as Record<string, string>)[`shop_${shopState}`] ?? c.shop_requested : c.shop_requested;
-  if (o.status === 'returning' && o.supportHasGoods) return c.returning_support;
+  if (o.status === 'returning' && (o.supportHasGoods || o.driverTrackingEnded)) return c.returning_support;
   if (o.status === 'returning' && o.service === 'shop') return c.returning_shop;
   const k = c as Record<string, string | undefined>, ride = o.service === 'ride' ? '_ride' : '';
   // A ride captain records arrival while the order is still `assigned`.
