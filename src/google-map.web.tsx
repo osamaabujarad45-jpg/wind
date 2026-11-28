@@ -214,11 +214,11 @@ export default function RouteMap(props: RouteMapProps) {
     </View>}
     <View ref={host} style={StyleSheet.absoluteFill} accessible accessibilityRole="image"
       accessibilityLabel={`${c.routeOnMap}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />
-    {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
+    {failed && <View style={[StyleSheet.absoluteFill, styles.failure, props.fill && { justifyContent: 'flex-end', paddingBottom: (props.insets?.bottom ?? 0) + 12 }]}>
       <View style={StyleSheet.absoluteFill}><RoutePreview {...props} /></View>
       <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); movedRef.current = false; setAttempt(n => n + 1); }} accessibilityRole="button" style={[styles.retry, { transform: [
         { translateX: ((props.insets?.left ?? 0) - (props.insets?.right ?? 0)) / 2 },
-        { translateY: ((props.insets?.top ?? 0) - (props.insets?.bottom ?? 0)) / 2 },
+        { translateY: props.fill ? 0 : ((props.insets?.top ?? 0) - (props.insets?.bottom ?? 0)) / 2 },
       ] }]}>
         <Text maxFontSizeMultiplier={maxScale} style={{ fontFamily: face.medium }}>{c.retry}</Text>
       </Pressable>

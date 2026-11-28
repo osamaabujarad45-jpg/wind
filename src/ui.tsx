@@ -582,17 +582,18 @@ export function ListGroup({ children }: { children: React.ReactNode }) {
   </View>;
 }
 
-export function ListRow({ icon, label, value, onPress, danger, action, below }: {
+export function ListRow({ icon, label, value, onPress, danger, action, below, expanded }: {
   icon: IconName; label: string; value?: string; onPress: () => void; tone?: keyof typeof tones; danger?: boolean;
   action?: boolean; // does something here (sign out) instead of opening a page: no chevron
   below?: boolean; // the value is a state line ("Current · Online · Open orders: 3"): it sits under the label
+  expanded?: boolean; // the row opens and closes something under the list
 }) {
   const { palette } = useTheme();
   const styles = useStyles();
   const { row, rtl, align, language } = useCopy();
   const { fontScale } = useWindowDimensions();
   const stacked = !!value && (!!below || fontScale > wrapAbove);
-  return <Press accessibilityLabel={value ? `${label}: ${value}` : label} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
+  return <Press accessibilityLabel={value ? `${label}: ${value}` : label} accessibilityState={expanded === undefined ? undefined : { expanded }} onPress={onPress} style={[styles.listRow, { flexDirection: row }]}>
     {/* no tile behind the icon: tiles mark a service line only (wind-design §3) */}
     <View style={styles.listIcon}><Ionicons name={icon} size={iconSize.lg} color={danger ? palette.error : palette.secondary} /></View>
     <View style={[styles.listCopy, stacked ? { gap: 2 } : { flexDirection: row, alignItems: 'center', gap: 12 }]}>

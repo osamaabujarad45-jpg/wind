@@ -102,6 +102,7 @@ export default function Profiles() {
     <ListGroup>
       <ListRow below icon="person-circle-outline" label={c.profilePersonal} value={rowState('personal')} onPress={() => select('personal')} />
       {profile.captain && <ListRow below icon="car-outline" label={c.profileCaptain} value={rowState('captain', captainState)}
+        expanded={profile.captain.available ? undefined : statusOpen}
         onPress={() => { if (profile.captain?.available) void select('captain'); else setStatusOpen(open => !open); }} />}
       {!profile.captain && profile.mode === 'personal' && !applying &&
         <ListRow icon="car-outline" label={c.profileApplyCaptain} onPress={() => { setError(''); setApplying(true); }} />}

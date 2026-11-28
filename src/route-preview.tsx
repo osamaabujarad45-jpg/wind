@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import type { Point } from './model';
-import { useCopy } from './ui';
+import { maxScale, useCopy } from './ui';
+import { face } from './theme';
 import { themedStyles } from './theme-context';
 
 /** What the app's own chrome covers at the map's edges, in points: the camera and the pin keep clear of it. */
@@ -39,12 +40,13 @@ export type PinMapProps = { center: Point; onChange: (point: Point) => void; onG
   forceBaseline?: boolean };
 
 // Diagram only: GPS is displayed by the native map, never placed at an invented point on this route.
-// It draws no words: every screen that shows a route names both stops in its own text (RouteLine), which scales to
-// 200% and is never under the Retry button or a sheet (SRS A11Y-03). A screen reader still hears the route here.
+// In a card it draws shapes only: the card's screen names both stops below it (RouteLine). On a full-screen map those
+// names are in a sheet that may be closed, so the words show here too: ordinary text under the top bar that scales to
+// 200% (SRS A11Y-03); the map wrappers put Retry above the sheet, clear of them. A screen reader hears the route.
 // `plain` is the placeholder behind a loading map, so it announces nothing.
-export default function RoutePreview({ pickupTitle, dropoffTitle, insets, plain = false }: RouteMapProps & { plain?: boolean }) {
+export default function RoutePreview({ pickupTitle, dropoffTitle, fill, insets, plain = false }: RouteMapProps & { plain?: boolean }) {
   const styles = useStyles();
-  const { rtl, c } = useCopy();
+  const { rtl, row, align, c, language } = useCopy();
   const [{ w, h }, setBox] = useState({ w: 0, h: 0 });
   const a = { x: w * (rtl ? 0.8 : 0.2), y: h * 0.68 }, b = { x: w * (rtl ? 0.2 : 0.8), y: h * 0.34 };
   const len = Math.hypot(b.x - a.x, b.y - a.y), angle = Math.atan2(b.y - a.y, b.x - a.x);
@@ -56,6 +58,14 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, insets, plain 
     <View style={[styles.road, { top: -20, bottom: -20, left: '36%', width: 8 }]} />
     <View style={[styles.road, { top: '78%', left: -20, right: -20, height: 6, opacity: 0.5 }]} />
     <View style={[styles.road, { top: -20, bottom: -20, left: '71%', width: 6, opacity: 0.5 }]} />
+    {!plain && fill && <View style={[styles.words, { top: (insets?.top ?? 0) + 8, left: (insets?.left ?? 0) + 12, right: (insets?.right ?? 0) + 12 }]}>
+      <Text key={`diagram-${language}`} maxFontSizeMultiplier={maxScale} style={[styles.diagram, { textAlign: align }]}>{c.routeDiagram}</Text>
+      {([[styles.pickupMark, pickupTitle], [styles.dropoffMark, dropoffTitle]] as const).map(([mark, title], stop) =>
+        <View key={`${stop}-${language}`} style={[styles.stop, { flexDirection: row }]}>
+          <View style={mark} />
+          <Text maxFontSizeMultiplier={maxScale} style={[styles.label, { textAlign: align }]}>{title}</Text>
+        </View>)}
+    </View>}
     {/* The route is drawn inside what the app's chrome leaves uncovered: on a full-screen map, between the top bar and the sheet. */}
     <View style={[styles.drawing, { top: insets?.top ?? 0, bottom: insets?.bottom ?? 0, left: insets?.left ?? 0, right: insets?.right ?? 0 }]}
       onLayout={e => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
@@ -72,6 +82,12 @@ const useStyles = themedStyles(palette => StyleSheet.create({
   // It fills whatever slot the map had (a card, a taller tracking map, the full screen), also inside a centring wrapper.
   preview: { alignSelf: 'stretch', width: '100%', height: '100%', minHeight: 156, backgroundColor: palette.mapWash, overflow: 'hidden' },
   drawing: { position: 'absolute' },
+  words: { position: 'absolute', zIndex: 1, backgroundColor: palette.card, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6, gap: 2 },
+  stop: { alignItems: 'center', gap: 8 },
+  pickupMark: { width: 10, height: 10, borderRadius: 5, backgroundColor: palette.olive },
+  dropoffMark: { width: 10, height: 10, borderRadius: 2, backgroundColor: palette.clay },
+  label: { flex: 1, fontSize: 13, lineHeight: 23, fontFamily: face.semibold, color: palette.ink },
+  diagram: { fontSize: 11, lineHeight: 19, fontFamily: face.medium, color: palette.secondary },
   road: { position: 'absolute', backgroundColor: palette.card, opacity: 0.75, borderRadius: 4 },
   line: { position: 'absolute', height: 4, borderRadius: 2, backgroundColor: palette.forest },
   pickup: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },

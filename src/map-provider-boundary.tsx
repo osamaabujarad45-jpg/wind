@@ -51,11 +51,11 @@ export function MapProviderBoundary({ platform, route, pin, google: Google, base
   const props = route ?? pin;
   return <View style={[props?.fill ? StyleSheet.absoluteFill : { height: props?.height ?? 220, width: '100%' }, { backgroundColor: palette.mapWash }]}>
     {route && <RoutePreview {...route} />}
-    <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+    <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }, props?.fill && { justifyContent: 'flex-end', paddingBottom: (props.insets?.bottom ?? 0) + 12 }]}>
       <Pressable accessibilityRole="button" onPress={() => retryMapProviders(choice.key)}
         style={{ minHeight: 48, minWidth: 48, padding: 12, backgroundColor: palette.card, borderRadius: 12, transform: [
           { translateX: ((props?.insets?.left ?? 0) - (props?.insets?.right ?? 0)) / 2 },
-          { translateY: ((props?.insets?.top ?? 0) - (props?.insets?.bottom ?? 0)) / 2 },
+          { translateY: props?.fill ? 0 : ((props?.insets?.top ?? 0) - (props?.insets?.bottom ?? 0)) / 2 },
         ] }}>
         <Text maxFontSizeMultiplier={maxScale} style={{ fontFamily: face.medium }}>{c.retry}</Text>
       </Pressable>

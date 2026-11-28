@@ -77,7 +77,7 @@ function AppleRouteMap(props: RouteMapProps) {
   }, [ready, failed, attempt]);
   if (failed) return <View style={props.fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
     <RoutePreview {...props} />
-    <View style={[StyleSheet.absoluteFill, styles.cover]}>
+    <View style={[StyleSheet.absoluteFill, styles.cover, props.fill && { justifyContent: 'flex-end', paddingBottom: (props.insets?.bottom ?? 0) + 12 }]}>
       <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
         <Text maxFontSizeMultiplier={maxScale} style={{ fontFamily: face.medium }}>{c.retry}</Text>
       </Pressable>

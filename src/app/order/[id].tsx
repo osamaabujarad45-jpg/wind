@@ -182,7 +182,9 @@ export default function OrderScreen() {
   const step = steps.indexOf(['on_hold', 'returning'].includes(order.status) ? 'in_transit' : order.status);
   // a ride under way needs no step, for rider or driver: the bar shows it, and help sits at the foot.
   // Steps speak to the customer or the assigned driver; an admin is neither.
-  const nextHint = mine && order.service === 'shop' && order.status === 'in_transit' ? c.driver_next_in_transit_shop
+  // The delivery code is the recipient's only on a parcel or load that names one; the caption and the field agree.
+  const codeFromRecipient = order.service !== 'shop' && !!order.recipientPhone;
+  const nextHint = mine && order.status === 'in_transit' && order.service !== 'ride' && !codeFromRecipient ? c.driver_next_in_transit_customer
     : mine && order.status === 'returning' && order.service === 'shop' ? c.driver_next_returning_shop
     : (c as Record<string, string | undefined>)[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}`];
   const live = order.status === 'searching' || activeStatuses.includes(order.status);
@@ -212,7 +214,7 @@ export default function OrderScreen() {
   // A ride ends with the rider's trip code too, given once they have paid (owner, 23 Nov 2026), like a parcel's delivery code.
   // The server refuses every advance during a safety pause, so no code or PIN is asked for then.
   const needsCode = !order.safetyHold && (rideAction === 'boarding' || order.status === 'in_transit' || (order.status === 'returning' && !order.supportHasGoods));
-  const codeLabel = rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? (order.service === 'shop' ? c.codeFromShop : c.codeFromSender) : order.service === 'ride' ? c.codeFromRider : order.recipientPhone ? c.codeFromRecipient : c.codeFromCustomer;
+  const codeLabel = rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? (order.service === 'shop' ? c.codeFromShop : c.codeFromSender) : order.service === 'ride' ? c.codeFromRider : codeFromRecipient ? c.codeFromRecipient : c.codeFromCustomer;
   // A part-typed code must never start a command: the recovery path refuses it unsent and the field stayed locked. An empty
   // one is still sent, as before: the server completes an older ride saved without a code. Boarding needs all four.
   const codeShort = needsCode && !/^\d{4}$/.test(code) && (code !== '' || rideAction === 'boarding');
@@ -852,7 +854,7 @@ export default function OrderScreen() {
             disabled={!!busy || advanceLocked === proofContext} />}
         {needsCode && !busy && advanceLocked === proofContext && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
         {order.status === 'returning' && order.supportHasGoods && <Txt variant="caption">{c.supportHasGoodsDriver}</Txt>}
-        {rideAction === 'arrive' && !order.safetyHold && (arrivalFar || arrivalKm === null) && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
+        {rideAction === 'arrive' && !order.safetyHold && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
         {parcelFarKm !== null && !order.safetyHold && <Txt variant="caption">{farFill(c.parcelPickupFar, c.parcelPickupFarCity)}</Txt>}
         {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}{/* announced when it appears; the locked button repeats nothing */}
         {order.status !== 'on_hold' && !order.safetyHold && !(order.service === 'shop' && atPickup) && !(order.status === 'returning' && order.supportHasGoods) && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'

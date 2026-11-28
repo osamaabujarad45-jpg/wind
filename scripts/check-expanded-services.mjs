@@ -101,7 +101,7 @@ try {
   await page.screenshot({ path: join(output, 'a53-arrive-far.png') });
   await page.evaluate(() => { window.__windFix = undefined; });
   await page.getByText(fill(c.rideArrivalFar, { km: '0.3', m: 300 }), { exact: true }).waitFor({ state: 'hidden', timeout: 30_000 });
-  await page.getByText(c.rideArrivalHint, { exact: true }).waitFor({ state: 'hidden' }); // a usable fix inside the fence, not a lost one
+  await page.getByText(c.rideArrivalHint, { exact: true }).waitFor(); // inside the fence: what confirming does
   checks.push('A53 Arrive cue names the distance outside the 300 m fence and leads again at the pickup');
   await click(c.rideArrive);
   await page.getByText(/Waiting time remaining/).waitFor();
