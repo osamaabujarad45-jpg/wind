@@ -23,10 +23,19 @@ commands or open dialogs, and cleared a PIN while the plain send path still held
 
 ## Wanted
 
-The server refuses any advance built before a safety pause: bump the revision that the recovery protocol and the plain
-advance already check (and the boarding PIN revision, or require a fresh proof) when a report is opened or resolved.
-The captain's screen then reloads and asks again, with no client special case. Needs server tests for the recovery path,
-the plain path, the no-code completion and a shop handover.
+The server refuses any advance whose intent started before a safety pause. A revision bump alone is not enough:
+
+- the plain advance sends only `expectedStatus` and, for boarding, the PIN revision; the server checks
+  `expectedVersion` for recovery commands only (`server/main.ts`);
+- the recovery path fetches a fresh order and stamps the command with its new version (`src/driver-recovery.ts`), so a
+  confirmation opened before the pause would still pass;
+- the screen's draft key (`proofContext`) does not include the recovery version.
+
+So each path (plain request, recovery command, typed drafts, open confirmation) has to carry, from the moment the
+captain started the action, a value that a pause changes (a safety or order revision), and the server has to check it.
+Bump the boarding PIN revision too, or require a fresh proof. Needs tests for the recovery path, the plain path, the
+no-code completion opened before the pause, and a shop handover. The client change that sends the original value is
+part of this work.
 
 ## Owner
 

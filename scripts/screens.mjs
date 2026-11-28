@@ -991,14 +991,16 @@ if (!only || only.includes('booking-narrow')) {
   const narrowDir = join(root, '.screens', 'narrow');
   mkdirSync(narrowDir, { recursive: true });
   const route = 'from=ramallah&to=nablus';
-  // A fresh waiting order: the captain checks above may already have accepted the first one.
-  const waiting = await smartOrder(layla, { service: 'ride', option: '1', pickupCity: 'bireh', dropoffCity: 'tulkarm',
+  // A waiting order of its own rider: the captain checks above may have accepted the first one, and a rider may have
+  // only one open ride (ride_already_active).
+  const narrowRider = await register('0599000014', 'ريم ناصر');
+  const waiting = await smartOrder(narrowRider, { service: 'ride', option: '1', pickupCity: 'bireh', dropoffCity: 'tulkarm',
     pickupNote: 'مكتبة الجامعة', dropoffNote: 'مدخل السوق' });
   const views = [
     { id: 'book-parcel', path: `/book?service=parcel&${route}`, ready: t => new RegExp(t.request) },
     { id: 'book-ride', path: `/book?service=ride&${route}`, ready: t => new RegExp(t.request) },
     { id: 'book-freight', path: `/book?service=freight&${route}`, ready: t => new RegExp(t.request) },
-    { id: 'order-searching', path: `/order/${waiting.id}`, ready: t => t.cancelOrder },
+    { id: 'order-searching', path: `/order/${waiting.id}`, who: narrowRider, ready: t => t.cancelOrder },
     { id: 'book-parcel-form', path: `/book?service=parcel&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
     { id: 'book-ride-form', path: `/book?service=ride&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
     { id: 'book-freight-form', path: `/book?service=freight&${route}`, ready: t => new RegExp(t.scheduleRequest), open: t => [t.sheetExpand, t.later] },
@@ -1015,7 +1017,7 @@ if (!only || only.includes('booking-narrow')) {
       localStorage.setItem('language', language);
       localStorage.setItem('onboarded', '1');
       localStorage.setItem('token', token);
-    }, { token: layla.token, language });
+    }, { token: (view.who ?? layla).token, language });
     const page = await context.newPage();
     // A live order holds a long-poll open, so network idle may never come; the ready-button wait below decides.
     await page.goto(`http://localhost:${WEB_PORT}${view.path}`, { waitUntil: 'load' });

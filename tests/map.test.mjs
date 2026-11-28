@@ -353,7 +353,8 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
     assert.ok(header.includes('{!!booked && <Row') && screen.includes("const booked = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor"), 'a closed sheet still says when a booked-ahead order is due');
     assert.ok(screen.includes('{!live && <Txt variant="title">{fill(c.scheduledFor, { t: time(later) })}</Txt>}'), 'and the open sheet does not say it twice');
     // The header's copy may carry a condition (a locked or paused ride drops the old "ask for the PIN"), never a second place.
-    const failures = /<ErrorText>\{[^\n{}]*\bactionError\}<\/ErrorText>/g;
+    // Any ErrorText whose expression mentions the action error counts, however it is wrapped.
+    const failures = /<ErrorText>\{(?:(?!<\/ErrorText>)[^\n])*\bactionError\b(?:(?!<\/ErrorText>)[^\n])*<\/ErrorText>/g;
     assert.ok(header.match(failures)?.length === 1 && header.includes('c.updatesPaused'), 'over the map, failures sit in the header, always on screen');
     assert.equal(screen.match(failures).length, 2, 'once over the map, once on the plain screen');
     assert.ok(header.includes("(rideStep(order) === 'locked' || order.safetyHold) && actionError === c.err_wrong_boarding_code ? '' : actionError"), 'only the old PIN request is dropped, and only then');
