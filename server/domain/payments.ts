@@ -73,10 +73,10 @@ export class Payments {
   }
   /** T31: one settlement authority per order. A card capture and a cash collection exclude each other while
    * the card money stands (a full refund releases the order back to cash), and the per-order advisory lock
-   * makes a concurrent capture/cash race pick exactly one winner. */
+   * makes a concurrent capture/cash race pick exactly one winner. New intents are refused for dead orders in
+   * createIntent; recording a capture the provider already made must stay open on a cancelled/returned order
+   * (it is the safe, refundable direction — like the ledger's cash return), so no order-status check lives here. */
   private async settlementGate(orderId: number, direction: 'card' | 'cash') {
-    const order = await this.db.one('SELECT status FROM orders WHERE id=?', orderId);
-    if (order && ['cancelled', 'returned'].includes(order.status)) this.fail(409, 'order_not_payable'); // a completed order still settles by card below
     if (this.db.backend === 'postgres') await this.db.run("SELECT pg_advisory_xact_lock(hashtextextended('wind_settlement:' || ?, 0))", orderId);
     if (direction === 'card') {
       const cash = await this.db.one('SELECT collected_minor FROM cash_receipts WHERE order_id=?', orderId);
