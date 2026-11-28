@@ -1,6 +1,6 @@
 # Design direction, 27 November 2026
 
-Status: **in progress on the recommended direction**. The owner has the four-screen proof and can change the direction at any point; work stays on its own branch until reviewed. Rules for daily work: [`.agents/skills/wind-design/SKILL.md`](../../.agents/skills/wind-design/SKILL.md).
+Status: **type, primitives and the first round of text cuts delivered (28 November)**; layout redesign of the remaining screens is open (see *Where it stands*). The owner has the four-screen proof and can change the direction at any point. Rules for daily work: [`.agents/skills/wind-design/SKILL.md`](../../.agents/skills/wind-design/SKILL.md).
 
 The owner's brief: too much text on screen; the app reads as generated; use the design system and design-taste skills; make it look like professional human design; keep it matched to the new profile flows; no conflicting or wasted work.
 
@@ -42,6 +42,13 @@ Each slice is one reviewable change, based on the committed F5. Each ends with t
 | 6 | Shop: consent and cart, then the merchant tabs | |
 | 7 | Profile switcher, account, orders | Builds on `feat/profile-switcher-1127` |
 | 8 | Admin, then update the design-system artifact to match | |
+
+## Where it stands (28 November)
+
+- Done: slices 0–2; admin five tabs with More; profile switcher entry points and states; captions that repeated a title, card or button cut across the live order, captain, shop, profile and earnings screens; state-correct wording for shop returns, support takeovers and safety pauses; a captain can accept a waiting order without opening the sheet.
+- Measured: screen text went from 9,555 to 9,412 words (Arabic and English together). Most of what is left on the screens checked is required text (codes, cash, safety, consent), so the next visible gain is layout, not more cuts.
+- Open: the layout work in slices 3–8 (for example, the shop cart's main button should set the missing delivery pin), the design-system artifact update, and a phone check on a new APK (the fonts are embedded at build time).
+- Server follow-ups found by review, in `.scratch/`: profile-updates, takeover-public-track; app follow-up: order-announcements.
 
 ## Who owns what
 
