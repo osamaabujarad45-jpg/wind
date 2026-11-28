@@ -351,37 +351,35 @@ export default function OrderScreen() {
   const codes = <>
     {isCustomer && order.handoverCode && !order.safetyHold && live && order.status !== 'returning' && order.status !== 'on_hold' && <Appear index={4}>{/* no captain is coming while support decides (H-10) */}
       <Card tone="muted">{/* a code to give, not a warning: neutral, like the design system HandoverCode */}
-        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-          <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
-            <Txt variant="title">{order.service === 'ride' ? c.tripCode : c.handoverCode}</Txt>
-            <Txt variant="caption">{order.service === 'ride' ? c.tripCodeHint : codeFromRecipient ? c.handoverHintRecipient : c.handoverHint}</Txt>{/* SHIP-05: the owner passes it to a named recipient */}
-          </View>
+        <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <Txt variant="title" style={{ flexGrow: 1 }}>{order.service === 'ride' ? c.tripCode : c.handoverCode}</Txt>
           <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${order.service === 'ride' ? c.tripCode : c.handoverCode} ${order.handoverCode.split('').join(' ')}`}>
             {order.handoverCode.split('').map((d, i) => <CodeDigit key={i} digit={d} />)}
           </View>
-        </Row>
+        </Row>{/* the digits before the hint: a long line or large text never pushes the code down */}
+        <Txt variant="caption" style={{ marginTop: 6 }}>{order.service === 'ride' ? c.tripCodeHint : codeFromRecipient ? c.handoverHintRecipient : c.handoverHint}</Txt>{/* SHIP-05: the owner passes it to a named recipient */}
       </Card>
     </Appear>}
 
     {isCustomer && order.returnCode && !goodsTaken && !order.safetyHold && <Appear index={4}>
       <Card tone="muted">
-        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-          <View style={{ flexGrow: 1, flexBasis: 150, gap: 2 }}>
-            <Txt variant="title">{c.returnCode}</Txt>
-            <Txt variant="caption">{c.returnHint}</Txt>
-          </View>
+        <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <Txt variant="title" style={{ flexGrow: 1 }}>{c.returnCode}</Txt>
           <View style={[styles.code, { flexDirection: 'row' /* ltr: code digits read left to right */ }]} accessible accessibilityLabel={`${c.returnCode} ${order.returnCode.split('').join(' ')}`}>
             {order.returnCode.split('').map((d, i) => <CodeDigit key={i} digit={d} />)}
           </View>
-        </Row>
+        </Row>{/* the digits before the hint: a long line or large text never pushes the code down */}
+        <Txt variant="caption" style={{ marginTop: 6 }}>{c.returnHint}</Txt>
       </Card>
     </Appear>}
   </>;
   // A waiting job's one action sits in the sheet's footer: in the body, a closed sheet hid it (and made it inert).
+  // Weighed goods can change a shop's total until the merchant marks it ready.
+  const cashLabel = order.shop && !order.shop.readyAt ? `${c.cashToCollect} ${c.shopEstimateShort}` : c.cashToCollect;
   // A job notification opens this screen with the sheet closed: the money shows with the button that takes the job.
   const accept = isDriver && order.status === 'searching' ? <View style={{ gap: 8 }}>
     <Row gap={12} style={{ alignItems: 'flex-start' }}>{/* side by side: the closed sheet stays short over the map */}
-      {([[c.cashToCollect, dueCents / 100], [c.youEarn, captainShare]] as const).map(([label, amount]) => <View key={label} style={{ flex: 1 }}>
+      {([[cashLabel, dueCents / 100], [c.youEarn, captainShare]] as const).map(([label, amount]) => <View key={label} style={{ flex: 1 }}>
         <Txt variant="caption">{label}</Txt>
         <Txt variant="title">{money(amount)}</Txt>
       </View>)}
