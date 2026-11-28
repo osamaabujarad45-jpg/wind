@@ -786,7 +786,7 @@ try {
   await held.columnRetry.waitFor();
   await until(held.between, held.placed, 'The captain fallback column never settled between the top bar and the order sheet');
   await held.wheel();
-  const heldClear = what => until(held.retryNow, state => state.clear, what)
+  const heldClear = what => until(held.retryNow, state => state.clear && state.width >= 48 && state.height >= 48, what)
     .catch(async error => assert.fail(`${error.message}: ${JSON.stringify(await held.retryNow())}`));
   await heldClear('A captain on a short screen cannot reach Retry');
   // The tightest case: a booked job, whose time stays in the closed sheet, at 200% text (SRS A11Y-03).
@@ -798,6 +798,16 @@ try {
   await until(held.between, held.placed, 'The doubled-text fallback column never settled between the top bar and the order sheet');
   await held.wheel();
   await heldClear('A captain with a booked job at 200% text cannot reach Retry');
+  // The same job at the shortest height that docks the money and Accept under the map.
+  await captain.setViewportSize({ width: 320, height: 640 });
+  await captain.reload();
+  await button(captain, c.accept).click({ trial: true });
+  assert.equal(await button(captain, c.sheetCollapse).count(), 0, 'A taller window docks Accept under a closed sheet');
+  await captain.getByText(new RegExp(`^${c.scheduledFor.split('{')[0]}`)).first().waitFor();
+  await doubleText(captain);
+  await until(held.between, held.placed, 'The docked fallback column never settled between the top bar and the order sheet');
+  await held.wheel();
+  await heldClear('A captain with a docked footer, a booked job and 200% text cannot reach Retry');
   await captain.context().close();
   await call(`/orders/${coveredId}/cancel`, { token: customerToken, body: {} });
   await short.context().close();

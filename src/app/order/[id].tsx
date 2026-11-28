@@ -375,11 +375,14 @@ export default function OrderScreen() {
     </Appear>}
   </>;
   // A waiting job's one action sits in the sheet's footer: in the body, a closed sheet hid it (and made it inert).
+  const shortUpright = !side && windowHeight < 640; // split screen and small windows: the map keeps what room there is
   // A shop's total can change whenever its goods are not ready, also after a pickup problem reopens them.
   const cashLabel = order.shop && order.shop.state !== 'ready' ? `${c.cashToCollect} ${c.shopEstimateShort}` : c.cashToCollect;
   // A job notification opens this screen with the sheet closed: the money shows with the button that takes the job. On a
   // short upright window a docked footer would cover the map, so they lead the sheet's body and the sheet opens itself.
   const accept = isDriver && order.status === 'searching' ? <View style={{ gap: 8 }}>
+    {/* Without the top card's service line, what is being taken on is said here, with a shared ride's seats. */}
+    {shortUpright && <Txt variant="label">{order.service === 'ride' ? fill(order.shared ? c.jobSharedSeats : c.jobPrivateRide, { n: order.option }) : c[order.service]}</Txt>}
     <Row gap={12} style={{ alignItems: 'flex-start' }}>{/* side by side: the closed sheet stays short over the map */}
       {([[cashLabel, dueCents / 100], [c.youEarn, captainShare]] as const).map(([label, amount]) => <View key={label} style={{ flex: 1 }}>
         <Txt variant="caption">{label}</Txt>
@@ -390,7 +393,6 @@ export default function OrderScreen() {
     reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : offlineIdle ? c.accept_go_online : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
     onPress={() => act('accept', `/jobs/${order.id}/accept`)} />
   </View> : null;
-  const shortUpright = !side && windowHeight < 600; // split screen and small windows: the map keeps what room there is
   const dockAccept = !shortUpright;
   const sheetShown = sheetOpen ?? (!!accept && !dockAccept);
   const body = <>

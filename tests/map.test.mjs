@@ -343,8 +343,10 @@ assert.ok(!backtracks([[35.2, 32.0], [35.2, 32.0]]), 'too short to judge');
     assert.ok(screen.includes('footer={accept && dockAccept ?') && screen.includes('{!dockAccept && accept}') && screen.includes('const sheetShown = sheetOpen ?? (!!accept && !dockAccept);'),
       'a captain sees the money and Accept: docked, or leading a sheet that opens itself on a short upright window');
     assert.ok(screen.includes("const cashLabel = order.shop && order.shop.state !== 'ready' ?"), 'a shop total that can still change reads as an estimate');
-    assert.ok(screen.includes('const shortUpright = !side && windowHeight < 600;') && screen.includes('{!shortUpright && <Txt variant="micro"'),
+    assert.ok(screen.includes('const shortUpright = !side && windowHeight < 640;') && screen.includes('{!shortUpright && <Txt variant="micro"'),
       'a short upright window drops the top card\'s service line, so the map fallback keeps room for Retry at 200% text');
+    assert.ok(screen.includes('{shortUpright && <Txt variant="label">{order.service === \'ride\' ? fill(order.shared ? c.jobSharedSeats : c.jobPrivateRide'),
+      'and beside Accept it then names the service, with a shared ride and its seats');
     assert.ok(screen.includes('{!codeAtDoor && codes}'), 'and in the body everywhere else');
     // Booking: a refused retry or offline save reads in the header beside the pending card, not after the last field (review 8 Nov).
     { const book = readFileSync(new URL('../src/app/book.tsx', import.meta.url), 'utf8');
