@@ -1043,13 +1043,21 @@ async function startSession(userId: number) {
   return { token, ...await me(await userInMode(account, mode, mode === 'personal' ? 0 : 1), false, sessionHash) };
 }
 
-async function me(user: User, payroll = false, sessionHash?: string) {
+async function me(user: User, payroll = false, sessionHash?: string, confirmSession = false) {
   const rideOfferSeconds = user.role === 'driver' ? await dispatch.offerSeconds(user.id) : undefined;
   const offerRecoveryEmail = user.role === 'customer' && !user.email && (emailReady || firebaseEmail.resetEnabled)
     && !!await one("SELECT 1 FROM orders WHERE customer_id = ? AND status = 'completed' LIMIT 1", user.id);
   const shadow = process.env.WIND_PROFILE_SHADOW === '1';
   const profiles = sessionHash && (shadow || accountModes)
     ? await previewProfiles(persistence, user, sessionHash, enabledServices.includes('shop'), accountModes) : undefined;
+  if (confirmSession && sessionHash && !profiles) {
+    // A missing profile can also mean a live admin or a just-blocked account. Check the session itself.
+    const now = Date.now();
+    const current = await one(`SELECT u.status FROM sessions s JOIN users u ON u.id = s.user_id
+      WHERE s.token_hash = ? AND s.user_id = ? AND s.created_at > ? AND COALESCE(s.last_seen_at, s.created_at) > ?`,
+      sessionHash, user.id, now - SESSION_DAYS * DAY, now - SESSION_IDLE_DAYS * DAY) ?? fail(401, 'unauthorized');
+    user = { ...user, status: current.status };
+  }
   if (profiles && shadow) console.info(JSON.stringify({ category: 'profile_shadow', mode: profiles.mode,
     roleMatches: profiles.role === user.role, captainAvailable: profiles.captain?.available ?? false }));
   const accountProfile = accountModes && profiles ? { ...profiles,
@@ -1416,17 +1424,17 @@ route('POST', '/api/auth/logout', async ({ user, req }) => {
 });
 route('GET', '/api/me', async ({ user, query, req }) => {
   const token = bearer(req);
-  if (!accountModes) return me(user, query.get('payroll') === '1', token && sha(token));
+  if (!accountModes) return me(user, query.get('payroll') === '1', token && sha(token), true);
   const sessionHash = sha(token!);
   const current = await authenticate(req, false) ?? fail(401, 'unauthorized');
   // only the launch reset writes, so plain polls skip the write lock
   if (current.accountMode !== 'captain' || query.get('launch') !== '1')
-    return me(current, query.get('payroll') === '1', sessionHash);
+    return me(current, query.get('payroll') === '1', sessionHash, true);
   return emailTransaction(async () => {
     const locked = await authenticate(req, false) ?? fail(401, 'unauthorized');
     if (locked.accountMode === 'captain')
       await setCaptainOffline(persistence, locked.id, await captainOfflineReason(persistence, locked.id, sessionHash, Date.now(), true));
-    return me(locked, query.get('payroll') === '1', sessionHash);
+    return me(locked, query.get('payroll') === '1', sessionHash, true);
   });
 });
 
@@ -4824,12 +4832,16 @@ async function resetVerification(adminId: number, target: Row, body: Row) {
   return { method: 'attested', note };
 }
 
+const supportTarget = async (id: unknown, lock = false) => (await one(`SELECT * FROM users WHERE id = ? AND role != 'admin'
+  AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'${lock && persistence.backend === 'postgres' ? ' FOR NO KEY UPDATE' : ''}`,
+  Number(id))) ?? fail(404, 'not_found');
+
 // No SMS provider yet: support verifies the caller, resets, and reads the temporary password out to them.
-route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) => {
+route('POST', '/api/admin/users/:id/password', async ({ user, params, body, req }) => {
   need(user, 'admin');
   needStaff(await staffActor(persistence, user), fail, 'support');
   (await limit(identityKey('support-password', user.id), 20, 60 * 60_000));
-  const target = (await one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(params[0]))) ?? fail(404, 'not_found');
+  const target = await supportTarget(params[0]);
   const verification = await resetVerification(user.id, target, body);
   const password = randomBytes(12).toString('base64url');
   const hashed = await hashPassword(password);
@@ -4837,6 +4849,9 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) =>
   await persistence.atomic({ id: user.id, correlationId: randomUUID() }, () =>
     emailTransaction(async () => {
       needStaff(await staffActor(persistence, user, true), fail, 'support');
+      await supportTarget(target.id, true);
+      // Recheck after the target row wait, then pin the session through the credential write.
+      if (!await authenticate(req, false, persistence.backend === 'postgres')) fail(401, 'unauthorized');
       // The password the check was bound to, or two requests racing one proof would both win.
       if (!(await run('UPDATE users SET password = ? WHERE id = ? AND password = ?', hashed, target.id, target.password)).changes) fail(409, 'identity_check_required');
       (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
@@ -4849,7 +4864,6 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) =>
 });
 
 // Caller identity for support: a one-time code goes to the account's verified email; the caller reads it back.
-const supportTarget = async (id: unknown) => (await one("SELECT * FROM users WHERE id = ? AND role != 'admin' AND phone NOT LIKE 'deleted-%' AND phone NOT LIKE 'partner:%'", Number(id))) ?? fail(404, 'not_found');
 route('POST', '/api/admin/users/:id/identity-code', async ({ user, params }) => {
   need(user, 'admin');
   needStaff(await staffActor(persistence, user), fail, 'support');

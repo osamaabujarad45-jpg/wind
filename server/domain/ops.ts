@@ -20,7 +20,8 @@ export async function staffActor(db: Persistence, actor: Actor, lock = false): P
   if (lock && !db.inTransaction) throw new Error('Locking staff authority requires a transaction');
   const scoped = await opsAvailable(db);
   if (!scoped && !lock) return actor;
-  const row = await db.one(`SELECT role,status${scoped ? ',staff_role' : ''} FROM users WHERE id=?${lock && db.backend === 'postgres' ? ' FOR UPDATE' : ''}`, actor.id);
+  // Freeze the role through the write while allowing audit foreign keys to reference this staff row.
+  const row = await db.one(`SELECT role,status${scoped ? ',staff_role' : ''} FROM users WHERE id=?${lock && db.backend === 'postgres' ? ' FOR SHARE' : ''}`, actor.id);
   return row && (!lock || row.status !== 'blocked')
     ? { ...actor, role: row.role, status: row.status, staff_role: row.staff_role }
     : { ...actor, role: '', staff_role: null };

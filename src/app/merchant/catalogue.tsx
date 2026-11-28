@@ -2,7 +2,7 @@
 // out-of-stock switch, which is the edit a busy shop makes most often.
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Switch, View } from 'react-native';
-import { api, useApi } from '../../api';
+import { api, ApiError, useApi } from '../../api';
 import { minorFromText, type MerchantItem } from '../../model';
 import { newRequestId } from '../../command-id';
 import { useSession } from '../../session';
@@ -30,7 +30,7 @@ export default function MerchantCatalogue() {
   // The form gets a fresh scroll view: opened from low in a long list, it must start at its top.
   return <Screen key={editing ? 'form' : 'list'} onRefresh={reload} footer={!editing ? <Button title={c.merchantAddItem} icon="add" onPress={() => setEditing({ item: null })} /> : undefined}>
     <Header title={c.merchantCatalogue} back={back} />
-    {editing && <ItemForm item={editing.item}
+    {editing && <ItemForm item={editing.item} available={data.items.find(i => i.id === editing.item?.id)?.available}
       onDone={async () => { setEditing(current => current === editing ? null : current); await reload(); }} />}
     {!data.items.length && !editing && <Empty icon="pricetags-outline" title={c.merchantNoItems} body={c.merchantNoItemsBody} />}
     <ErrorText>{actionError}</ErrorText>
@@ -61,7 +61,7 @@ export default function MerchantCatalogue() {
   </Screen>;
 }
 
-function ItemForm({ item, onDone }: { item: MerchantItem | null; onDone: () => void }) {
+function ItemForm({ item, available, onDone }: { item: MerchantItem | null; available?: boolean; onDone: () => void }) {
   const { c, err } = useCopy();
   const [section, setSection] = useState(item?.section ?? '');
   const [nameAr, setNameAr] = useState(item?.nameAr ?? '');
@@ -77,10 +77,11 @@ function ItemForm({ item, onDone }: { item: MerchantItem | null; onDone: () => v
   async function save() {
     setBusy(true); setError('');
     try {
+      if (item && available === undefined) throw new ApiError('not_found');
       if (!item) requestId.current ??= newRequestId();
       await api(item ? `/merchant/items/${item.id}` : '/merchant/items', { section: section.trim(), nameAr: nameAr.trim(), nameEn: nameEn.trim(),
-        // Stock belongs to the row's switch. An edit leaves it out, so an old snapshot cannot put a sold-out item back on sale.
-        priceAgorot, byWeight, ...(!item && { available: true, requestId: requestId.current }) });
+        // Older servers write stock on edits, so echo the current catalogue value for rollback compatibility.
+        priceAgorot, byWeight, available: item ? available : true, ...(!item && { requestId: requestId.current }) });
       await onDone();
     } catch (e) { setError(err(e)); }
     finally { setBusy(false); }

@@ -105,7 +105,8 @@ assert.match(readFileSync(new URL('../src/app/order/[id].tsx', import.meta.url),
   const catalogue = readFileSync(new URL('../src/app/merchant/catalogue.tsx', import.meta.url), 'utf8');
   assert.match(catalogue, /useState<\{ item: MerchantItem \| null \} \| null>/); // each opening of the form has its own identity
   assert.match(catalogue, /setEditing\(current => current === editing \? null : current\)/); // a late save closes only its own form
-  assert.match(catalogue, /\.\.\.\(!item && \{ available: true, requestId/); // an edit never sends stock
+  assert.match(catalogue, /available=\{data\.items\.find\(.*editing\.item\?\.id\)\?\.available\}/); // use the current catalogue snapshot
+  assert.match(catalogue, /priceAgorot, byWeight, available: item \? available : true,/); // include stock for older servers
   const map = readFileSync(new URL('../public/map.html', import.meta.url), 'utf8');
   assert.match(map, /document\.documentElement\.lang = config\.language === 'ar' \? 'ar' : 'en'/);
   const scene = readFileSync(new URL('../src/scene-map.tsx', import.meta.url), 'utf8');
@@ -252,6 +253,35 @@ for (const [input, expected] of [
       assert.equal(confirmation.body.current, 'Synthetic-password-123');
       assert.ok(find(renderEmail(), node => node.type === 'Badge' && node.props.label === c.verified));
     }
+  });
+
+  await test('Catalogue edit preserves typed details and sends refreshed stock to an older API', async () => {
+    c = copy.en;
+    const item = { id: 1, section: 'Pantry', nameAr: 'سكر', nameEn: 'Sugar', priceAgorot: 350, byWeight: false, available: true };
+    let items = [item];
+    const edits = [];
+    Object.assign(modules, {
+      '../../api': { ApiError, useApi: () => ({ data: { items }, reload: async () => {} }),
+        api: async (path, body) => { edits.push({ path, body: JSON.parse(JSON.stringify(body)) }); } },
+      '../../command-id': { newRequestId: newId }, '../../model': model, '../../session': modules['../session'],
+      '../../ui': { ...modules['../ui'], Section: 'Section', useCopy: () => ({ c, language: 'en', money: String, err: String }) },
+      ...themeModules('../../'),
+    });
+    const Catalogue = load('merchant/catalogue');
+    const catalogueState = [], formState = [];
+    const renderCatalogue = () => { slots = catalogueState; cursor = 0; return Catalogue(); };
+    const renderItemForm = () => {
+      const form = find(renderCatalogue(), node => node.type?.name === 'ItemForm');
+      slots = formState; cursor = 0;
+      return form.type(form.props);
+    };
+    button(renderCatalogue(), c.edit).onPress();
+    find(renderItemForm(), node => node.type === 'Field' && node.props.label === c.merchantNameEn).props.onChangeText('Typed name');
+    items = [{ ...item, nameEn: 'Refreshed name', available: false }];
+    await button(renderItemForm(), c.save).onPress();
+    assert.deepEqual(edits, [{ path: '/merchant/items/1', body: {
+      section: item.section, nameAr: item.nameAr, nameEn: 'Typed name', priceAgorot: item.priceAgorot, byWeight: false, available: false,
+    } }]);
   });
 }
 

@@ -1,5 +1,6 @@
 // Admin revocation and attribution over HTTP, using an isolated SQLite database.
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 import { createServer } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -95,34 +96,56 @@ try {
   subscribe(driver);
   const attestation = 'Checked the synthetic recovery evidence';
   await forbidden(`/admin/users/${driver.user.id}/password`, { attestation });
-  const resetEntered = Promise.withResolvers(), resumeReset = Promise.withResolvers();
-  const execute = persistence.exec;
-  persistence.exec = async function(command) {
-    if (command === 'BEGIN IMMEDIATE') {
+  async function atResetWrite(target, token, change) {
+    const resetEntered = Promise.withResolvers(), resumeReset = Promise.withResolvers();
+    const execute = persistence.exec;
+    persistence.exec = async function(command) {
+      if (command === 'BEGIN IMMEDIATE') {
+        persistence.exec = execute;
+        resetEntered.resolve();
+        await resumeReset.promise;
+      }
+      return execute.call(this, command);
+    };
+    const heldReset = fetch(`http://127.0.0.1:${server.address().port}/api/admin/users/${target.user.id}/password`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ attestation }), signal: AbortSignal.timeout(8_000),
+    });
+    try {
+      await Promise.race([resetEntered.promise, heldReset.then(() => { throw new Error('Reset missed the write boundary'); })]);
+      await change();
+    } finally {
+      resumeReset.resolve();
       persistence.exec = execute;
-      resetEntered.resolve();
-      await resumeReset.promise;
+      await heldReset;
     }
-    return execute.call(this, command);
-  };
-  const heldReset = fetch(`http://127.0.0.1:${server.address().port}/api/admin/users/${driver.user.id}/password`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${admin.token}` },
-    body: JSON.stringify({ attestation }),
-  });
-  try {
-    await Promise.race([resetEntered.promise, heldReset.then(() => { throw new Error('Reset missed the write boundary'); })]);
-    db.prepare("UPDATE users SET role='customer' WHERE id=?").run(admin.user.id);
-    resumeReset.resolve();
     const response = await heldReset;
-    assert.equal(response.status, 403, 'a lost admin role must prevent a reset after hashing');
-    assert.deepEqual(await response.json(), { error: 'forbidden' });
+    return { status: response.status, error: (await response.json()).error };
+  }
+  const role = (id, next) => db.prepare('UPDATE users SET role=? WHERE id=?').run(next, id);
+  try {
+    assert.deepEqual(await atResetWrite(driver, admin.token, () => role(admin.user.id, 'customer')), { status: 403, error: 'forbidden' });
     assert.equal(subscriptions(driver), 1);
     await call('/me', { token: driver.token });
-  } finally {
-    resumeReset.resolve();
-    persistence.exec = execute;
-    db.prepare("UPDATE users SET role='admin' WHERE id=?").run(admin.user.id);
-  }
+  } finally { role(admin.user.id, 'admin'); }
+
+  const readPassword = account => db.prepare('SELECT password FROM users WHERE id=?').get(account.user.id).password;
+  await test('SQLite support reset refuses a newly promoted target', async () => {
+    const target = await register();
+    const original = readPassword(target);
+    const result = await atResetWrite(target, admin.token, () => promote(target.user.phone));
+    assert.deepEqual(result, { status: 404, error: 'not_found' });
+    assert.equal(readPassword(target), original);
+  });
+  await test('SQLite support reset refuses a signed-out caller', async () => {
+    const target = await register();
+    const original = readPassword(target);
+    const result = await atResetWrite(target, admin.token, () => call('/auth/logout', { token: admin.token, body: {} }));
+    assert.deepEqual(result, { status: 401, error: 'unauthorized' });
+    assert.equal(readPassword(target), original);
+    await call('/me', { token: target.token });
+  });
+  admin.token = (await call('/auth/login', { body: { phone: phones[0], password } })).token;
   const reset = await call(`/admin/users/${driver.user.id}/password`, { token: admin.token, body: { attestation } });
   assert.equal(subscriptions(driver), 0, 'support reset removes browser alerts');
   await call('/me', { token: driver.token, expect: 401 });

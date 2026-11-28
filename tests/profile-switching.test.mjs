@@ -104,6 +104,7 @@ try {
   await persistence.run('UPDATE users SET phone_verified_at = ? WHERE id = ?', Date.now(), staff.user.id);
   await promote('0599691031');
   const admin = (await login(1)).token;
+  assert.equal((await call('/me', admin)).accountProfile, undefined);
   await call('/admin/users/72', admin, { status: 'blocked' });
   await call('/admin/users/72', admin, { status: 'active' });
   assert.deepEqual({ ...await persistence.one('SELECT status, captain_state, approved_at FROM users WHERE id = 72') },
@@ -434,6 +435,36 @@ try {
     profileMode: polled.accountProfile.mode, profileRevision: polled.accountProfile.revision, profileRole: polled.accountProfile.role },
   { launchedMode: 'personal', currentOnline: true, offerKept: true,
     profileMode: polled.user.accountMode, profileRevision: polled.user.modeRevision, profileRole: polled.user.role });
+
+  // The profile lookup can lose a session, or just stop projecting a profile while its session still exists.
+  for (const revoke of [false, true]) {
+    const reached = Promise.withResolvers(), resume = Promise.withResolvers();
+    persistence.one = async function(sql, ...params) {
+      if (sql.includes('s.active_mode, s.mode_revision, u.role') && params[3] === hash('legacy_applicant')) {
+        reached.resolve();
+        await resume.promise;
+      }
+      return query.call(this, sql, ...params);
+    };
+    const poll = request('/me', 'legacy_applicant');
+    try {
+      await Promise.race([reached.promise, poll.then(() => { throw new Error('Poll missed the profile read'); })]);
+      if (revoke) await call('/auth/logout', 'legacy_applicant', {});
+      else await persistence.run("UPDATE users SET status='blocked' WHERE id=71");
+    } finally {
+      resume.resolve();
+      await poll;
+      persistence.one = query;
+      if (!revoke) await persistence.run("UPDATE users SET status='active' WHERE id=71");
+    }
+    const result = await poll;
+    if (revoke) assert.deepEqual(result, { status: 401, body: { error: 'unauthorized' } });
+    else {
+      assert.equal(result.status, 200);
+      assert.equal(result.body.accountProfile, undefined);
+      assert.equal(result.body.user.status, 'blocked');
+    }
+  }
   await call(`/orders/${offerOrder.id}/cancel`, buyer, {}, 0);
   await availability(phone, true, finalCaptain.revision);
 

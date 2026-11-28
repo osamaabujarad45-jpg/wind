@@ -63,6 +63,8 @@ export class Payments {
     if (this.db.inTransaction) this.fail(409, 'payment_in_transaction');
     const id = randomUUID(), now = Date.now(), ref = `order:${orderId}:payment`;
     const prior = await this.tx(async () => {
+      // Account deletion takes the user row before scrubbing orders. Acquire the intent's FK lock in that order.
+      if (!await this.db.one("SELECT id FROM users WHERE id=? AND status <> 'blocked' FOR KEY SHARE", actor.id)) this.fail(401, 'unauthorized');
       const order = await this.order(actor, orderId, true);
       this.owner(actor, order);
       if (['cancelled', 'returned'].includes(order.status)) this.fail(409, 'order_not_payable');

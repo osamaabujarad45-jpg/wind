@@ -35,10 +35,12 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
     // Idempotency preserves a completed decision, never a revoked permission to its private result.
     // Read after the advisory-lock wait so a role change during that wait is observed too.
     const actor = await db.one('SELECT role,status,approved_at FROM users WHERE id=?',user.id) ?? fail(401,'unauthorized');
-    // The caller's session was validated before the lock wait; a revocation or
-    // idle/absolute expiry during that wait must not receive the stored result.
-    if (policy.sessionHash && !await db.one('SELECT 1 FROM sessions WHERE token_hash=? AND user_id=? AND created_at>? AND COALESCE(last_seen_at,created_at)>?',
-      policy.sessionHash, user.id, Date.now() - SESSION_DAYS * SESSION_DAY_MS, Date.now() - SESSION_IDLE_DAYS * SESSION_DAY_MS)) fail(401,'unauthorized');
+    const proofReset = /^\/api\/admin\/orders\/\d+\/proof-reset$/.test(path);
+    const proofResetActor = proofReset ? await staffActor(db, { id: user.id, role: actor.role, status: actor.status }, true) : undefined;
+    // Check the session after both the advisory wait and any staff row wait.
+    const now = Date.now();
+    if (policy.sessionHash && !await db.one(`SELECT 1 FROM sessions WHERE token_hash=? AND user_id=? AND created_at>? AND COALESCE(last_seen_at,created_at)>?${proofReset ? ' FOR KEY SHARE' : ''}`,
+      policy.sessionHash, user.id, now - SESSION_DAYS * SESSION_DAY_MS, now - SESSION_IDLE_DAYS * SESSION_DAY_MS)) fail(401,'unauthorized');
     const driverAction = /^\/api\/jobs\//.test(path) || /^\/api\/orders\/\d+\/(?:advance|release|exception)$/.test(path);
     const customerAction = path === '/api/orders' || /^\/api\/orders\/\d+\/offers\/\d+\/accept$/.test(path);
     if ((path.startsWith('/api/admin/') && actor.role !== 'admin')
@@ -48,8 +50,7 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
       fail(403,actor.status === 'pending' ? 'pending_approval' : 'blocked');
     if (driverAction && policy.requirePermanentDriverApproval && !actor.approved_at) fail(403,'pending_approval');
     if (/^\/api\/admin\/cash\/(?:adjustment|remittance|\d+\/resolve)$/.test(path)) needStaff(await staffActor(db, { id: user.id, role: actor.role, status: actor.status }), fail, 'finance');
-    if (/^\/api\/admin\/orders\/\d+\/proof-reset$/.test(path))
-      needStaff(await staffActor(db, { id: user.id, role: actor.role, status: actor.status }, true), fail, 'support');
+    if (proofResetActor) needStaff(proofResetActor, fail, 'support');
     if (saved.payload_hash !== hash) fail(409, 'idempotency_conflict');
     const response = JSON.parse(saved.response);
     const target = /^\/api\/(?:orders|jobs|admin\/orders)\/(\d+)(?:\/|$)/.exec(path);
