@@ -70,10 +70,11 @@ for (const path of tsxFiles(srcDir)) {
 // scales with the font), so they are exempt.
 const iconOnly = new Set(['iconButton', 'stepperKey', 'listIcon', 'emptyIcon', 'barPill', 'grip', 'send', 'segment']);
 for (const file of ['../src/ui.tsx', '../src/app/order/[id].tsx']) {
-  for (const line of read(file).split('\n')) {
-    const m = /^  (\w+): \{.*(?<![A-Za-z])(height|lineHeight)\s*:/.exec(line);
-    const scalesWithText = m?.[2] === 'lineHeight' && /\bfontSize:/.test(line) && !/(?<![A-Za-z])height\s*:/.test(line);
-    if (m && !iconOnly.has(m[1]) && !scalesWithText) problems.push(`${file}: ${m[1]} pins ${m[2]}: ${line.trim().slice(0, 90)}`);
+  for (const [, name, style] of read(file).matchAll(/\n  (\w+): \{((?:[^{}]|\{[^{}]*\})*)\}/g)) {
+    const pins = /(?<![A-Za-z])(height|lineHeight)\s*:/g;
+    const kinds = [...style.matchAll(pins)].map(m => m[1]);
+    const scalesWithText = !kinds.includes('height') && /\bfontSize:/.test(style);
+    if (kinds.length && !iconOnly.has(name) && !scalesWithText) problems.push(`${file}: ${name} pins ${kinds.join(', ')}: ${style.trim().slice(0, 90)}`);
   }
 }
 

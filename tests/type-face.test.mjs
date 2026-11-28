@@ -52,6 +52,31 @@ const missing = sources.flatMap(([file, text]) => [...text.matchAll(/\n\s*(\w+):
   .map(m => `${file}:${at(text, m.index) + 1} ${m[1]}`));
 assert.deepEqual(missing, [], 'set lineHeight with fontSize (wind-design §5)');
 
+// What counts is the pair that renders. A size written over a named style keeps that style's line height…
+const overridden = sources.flatMap(([file, text]) => [...text.matchAll(/style=\{\[([\s\S]*?)\]\}/g)].flatMap(m => {
+  const size = /\bfontSize: (\d+)/.exec(m[1]), own = /\blineHeight: (\d+)/.exec(m[1]);
+  const named = [...m[1].matchAll(/\bstyles\.(\w+)/g)].map(([, name]) => new RegExp(`\\n\\s*${name}: \\{[^{}]*?\\blineHeight: (\\d+)`).exec(text)).filter(Boolean);
+  const line = own ?? named.at(-1);
+  return size && line && Number(line[1]) < Math.ceil(Number(size[1]) * 1.7) ? [`${file}:${at(text, m.index)} size ${size[1]} on line ${line[1]}`] : [];
+}));
+assert.deepEqual(overridden, [], 'a size override needs its own line height (1.7x)');
+// …and a one-line input's exemption does not cover a wrapping one: it sets its line height where it turns multiline.
+// (An attribute follows the tag name; `RefObject<TextInput | null>` is a type, not a tag.)
+const inputs = sources.flatMap(([file, text]) => [...text.matchAll(/<TextInput\s+(?=[A-Za-z{])[\s\S]*?\/>/g)].map(m => [`${file}:${at(text, m.index)}`, m[0]]));
+const wrapping = inputs.filter(([, tag]) => /\smultiline\b/.test(tag) && !(Number(/multiline && \{ lineHeight: (\d+)/.exec(tag)?.[1]) >= 28)).map(([where]) => where);
+assert.deepEqual(wrapping, [], 'a multiline input of size 16 needs lineHeight 28');
+assert.ok(inputs.some(([, tag]) => /\smultiline=\{multiline\}/.test(tag)), 'the multiline Field input is being read');
+
+// The route preview is a fixed 156: its heading must end above the drop-off label, and the pickup label inside it.
+const preview = read('src/route-preview.tsx');
+const stops = /y: h \* ([\d.]+) \}, b = \{[^}]*y: h \* ([\d.]+)/.exec(preview), height = Number(/const h = (\d+)/.exec(preview)?.[1]);
+const drop = Number(/top: b\.y - (\d+)/.exec(preview)?.[1]), under = Number(/top: a\.y \+ (\d+)/.exec(preview)?.[1]);
+const [labelLine, headLine] = ['label', 'diagram'].map(name => Number(new RegExp(`\\n  ${name}: \\{[^\\n]*lineHeight: (\\d+)`).exec(preview)?.[1]));
+const headTop = Number(/\n  diagram: \{[^\n]*?top: (\d+)/.exec(preview)?.[1]);
+assert.equal(preview.split('maxFontSizeMultiplier={1.3}').length - 1, 3, 'heading and both stop labels share the 1.3 cap');
+assert.ok(headTop + headLine * 1.3 <= height * Number(stops[2]) - drop, 'the heading overlaps the drop-off label');
+assert.ok(height * Number(stops[1]) + under + labelLine * 1.3 <= height, 'the pickup label leaves the preview');
+
 // No source sets fontWeight.
 const offenders = walk(join(root, 'src')).flatMap(file => readFileSync(file, 'utf8').split('\n')
   .map((line, i) => /\bfontWeight\s*:/.test(line) ? `${relative(root, file).replace(/\\/g, '/')}:${i + 1}` : null).filter(Boolean));

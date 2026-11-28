@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { Point } from './model';
-import { maxScale, useCopy } from './ui';
+import { useCopy } from './ui';
 import { themedStyles } from './theme-context';
 import { face } from './theme';
 
@@ -47,7 +47,9 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false 
   const { rtl, c, language } = useCopy();
   const [w, setW] = useState(0);
   const h = 156;
-  const a = { x: w * (rtl ? 0.8 : 0.2), y: h * 0.68 }, b = { x: w * (rtl ? 0.2 : 0.8), y: h * 0.34 };
+  // The heading ends by y 33 at the labels' 1.3 cap: the drop-off label (36 above its stop) starts under it, and the
+  // pickup label (12 below its stop) still ends inside the 156.
+  const a = { x: w * (rtl ? 0.8 : 0.2), y: h * 0.72 }, b = { x: w * (rtl ? 0.2 : 0.8), y: h * 0.48 };
   const len = Math.hypot(b.x - a.x, b.y - a.y), angle = Math.atan2(b.y - a.y, b.x - a.x);
   const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   return <View style={[styles.preview, plain && styles.fill]} onLayout={e => setW(e.nativeEvent.layout.width)} accessible={!plain}
@@ -56,7 +58,7 @@ export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false 
     <View style={[styles.road, { top: -20, bottom: -20, left: '36%', width: 8 }]} />
     <View style={[styles.road, { top: h * 0.78, left: -20, right: -20, height: 6, opacity: 0.5 }]} />
     <View style={[styles.road, { top: -20, bottom: -20, left: '71%', width: 6, opacity: 0.5 }]} />
-    {!plain && <Text maxFontSizeMultiplier={maxScale} style={styles.diagram}>{c.routeDiagram}</Text>}
+    {!plain && <Text maxFontSizeMultiplier={1.3} /* map heading in a fixed 156px preview */ style={styles.diagram}>{c.routeDiagram}</Text>}
     {w > 0 && <>
       <View style={[styles.line, { left: mid.x - len / 2, top: mid.y - 2, width: len, transform: [{ rotate: `${angle}rad` }] }]} />
       <View style={[styles.pickup, { left: a.x - 8, top: a.y - 8 }]} />
