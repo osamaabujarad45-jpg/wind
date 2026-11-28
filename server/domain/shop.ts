@@ -227,8 +227,9 @@ export function registerShop(route: Register, deps: ShopDeps) {
     } else {
       const i = itemInput(body);
       if (i.price < 1) fail(400, 'invalid_input');
-      await db.run(`UPDATE merchant_items SET section = ?, name_ar = ?, name_en = ?, price_agorot = ?, by_weight = ?, available = ?, updated_at = ? WHERE id = ?`,
-        i.section, i.nameAr, i.nameEn, i.price, i.byWeight ? 1 : 0, i.available ? 1 : 0, Date.now(), item.id);
+      // An edit that says nothing about stock leaves it as it is (the app sends stock only from its switch).
+      await db.run(`UPDATE merchant_items SET section = ?, name_ar = ?, name_en = ?, price_agorot = ?, by_weight = ?, available = COALESCE(?, available), updated_at = ? WHERE id = ?`,
+        i.section, i.nameAr, i.nameEn, i.price, i.byWeight ? 1 : 0, body.available === undefined ? null : i.available ? 1 : 0, Date.now(), item.id);
     }
     return itemView((await db.one('SELECT * FROM merchant_items WHERE id = ?', item.id))!);
   });

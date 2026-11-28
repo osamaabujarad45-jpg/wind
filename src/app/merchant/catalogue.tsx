@@ -29,12 +29,14 @@ export default function MerchantCatalogue() {
   return <Screen onRefresh={reload} footer={!editing ? <Button title={c.merchantAddItem} icon="add" onPress={() => setEditing('new')} /> : undefined}>
     <Header title={c.merchantCatalogue} back={back} />
     {/* The form edits the item the server has now: a reload refreshes availability under the same key without touching the typed fields. */}
+    {/* A save that answers late closes only the form that sent it. */}
     {editing && <ItemForm key={editing === 'new' ? 'new' : String(editing.id)}
       item={editing === 'new' ? null : data.items.find(candidate => candidate.id === editing.id) ?? editing}
-      onDone={async () => { setEditing(null); await reload(); }} />}
+      onDone={async () => { setEditing(current => current === editing ? null : current); await reload(); }} />}
     {!data.items.length && !editing && <Empty icon="pricetags-outline" title={c.merchantNoItems} body={c.merchantNoItemsBody} />}
     <ErrorText>{actionError}</ErrorText>
-    {sections.map(section => <Card key={section}>
+    {/* The form is the whole screen while it is open, so a row's Edit never leaves it out of view above the list. */}
+    {!editing && sections.map(section => <Card key={section}>
       <Section title={section} />
       {data.items.filter(i => i.section === section).map(i => <View key={i.id} style={{ borderTopWidth: 1, borderTopColor: palette.line, paddingVertical: 8 }}>
         <Row style={{ justifyContent: 'space-between' }}>
@@ -44,7 +46,7 @@ export default function MerchantCatalogue() {
         {/* The state, as a switch: a button labelled "Out of stock" on an item in stock read as the item's state (design review 17 Nov). */}
         <Row style={{ marginTop: 4, justifyContent: 'space-between' }}>
           <Row gap={8} style={{ minHeight: 44 }}>
-            <Switch value={i.available} onValueChange={() => toggle(i)} disabled={busy === i.id || !!editing} hitSlop={8}
+            <Switch value={i.available} onValueChange={() => toggle(i)} disabled={busy === i.id} hitSlop={8}
               accessibilityLabel={fill(c.merchantStockOf, { item: language === 'ar' ? i.nameAr : i.nameEn })} accessibilityState={{ busy: busy === i.id }}
               trackColor={{ true: palette.olive, false: palette.field }} thumbColor={palette.card}
               // react-native-web ignores thumbColor while the switch is on and paints its own teal
@@ -52,8 +54,7 @@ export default function MerchantCatalogue() {
             {busy === i.id && <ActivityIndicator size="small" color={palette.olive} />}
             <Txt variant="label" style={{ color: i.available ? palette.olive : palette.secondary }}>{i.available ? c.merchantInStock : c.merchantNotInStock}</Txt>
           </Row>
-          {/* One form at a time: while it is open the rows offer no second Edit, so no reason has to be written under each. */}
-          {!editing && <Button size="sm" variant="ghost" title={c.edit} onPress={() => setEditing(i)} />}
+          <Button size="sm" variant="ghost" title={c.edit} onPress={() => setEditing(i)} />
         </Row>
         {!i.available && <Txt variant="caption">{c.merchantOutOfStock}</Txt>}
       </View>)}
@@ -79,7 +80,8 @@ function ItemForm({ item, onDone }: { item: MerchantItem | null; onDone: () => v
     try {
       if (!item) requestId.current ??= newRequestId();
       await api(item ? `/merchant/items/${item.id}` : '/merchant/items', { section: section.trim(), nameAr: nameAr.trim(), nameEn: nameEn.trim(),
-        priceAgorot, byWeight, available: item?.available ?? true, ...(!item && { requestId: requestId.current }) });
+        // Stock belongs to the row's switch. An edit leaves it out, so an old snapshot cannot put a sold-out item back on sale.
+        priceAgorot, byWeight, ...(!item && { available: true, requestId: requestId.current }) });
       await onDone();
     } catch (e) { setError(err(e)); }
     finally { setBusy(false); }

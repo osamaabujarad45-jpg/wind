@@ -70,6 +70,10 @@ try {
   const oil = await item({ section: 'Pantry', nameAr: 'زيت', nameEn: 'Olive oil', priceAgorot: 4000 });
   const hidden = await item({ section: 'Pantry', nameAr: 'سكر', nameEn: 'Sugar', priceAgorot: 300 });
   await call(`/merchant/items/${hidden.id}`, { token: owner.token, body: { available: false } });
+  const renamed = { section: 'Pantry', nameAr: 'سكر', nameEn: 'Sugar', priceAgorot: 350 };
+  assert.equal((await call(`/merchant/items/${hidden.id}`, { token: owner.token, body: renamed })).available, false, 'editing details leaves a sold-out item sold out');
+  assert.equal((await call(`/merchant/items/${hidden.id}`, { token: owner.token, body: { ...renamed, available: true } })).available, true, 'an edit that names the stock still sets it');
+  await call(`/merchant/items/${hidden.id}`, { token: owner.token, body: { available: false } });
   const listed = await call(`/shop/merchants/${merchantId}`, { token: customer.token });
   assert.equal(listed.merchant.open, true);
   assert.ok(!listed.items.some(i => i.id === hidden.id), 'an unavailable item is not offered');

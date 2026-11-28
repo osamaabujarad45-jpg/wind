@@ -25,6 +25,12 @@ function ownedSubscription<T>(token: string | null, work: (check: () => Promise<
   });
 }
 
+/** The record goes with its endpoint: left behind, it would mark the next one as another session's. */
+async function retire(subscription: PushSubscription) {
+  await subscription.unsubscribe();
+  await storage.set(BINDING_RECEIPT, null, true);
+}
+
 async function bind(subscription: PushSubscription, token: string, lang: 'ar' | 'en', check: () => Promise<void>) {
   const { endpoint, keys } = subscription.toJSON();
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([token, endpoint, keys?.p256dh, keys?.auth])));
@@ -38,10 +44,13 @@ async function bind(subscription: PushSubscription, token: string, lang: 'ar' | 
   catch (error) {
     await check();
     // A profile switch can discard a successful reply while the browser session keeps the same credential.
-    const accepted = error instanceof ApiError && error.message === 'session_changed' && (error as { servedStatus?: number }).servedStatus === 200;
+    const served = (error as { servedStatus?: number }).servedStatus;
+    const accepted = error instanceof ApiError && error.message === 'session_changed' && served === 200;
     if (!accepted) {
       // A stale binding (the receipt belongs to another session) unsubscribes on any failure, and a definite server rejection (4xx) does too; transport/5xx failures can succeed on retry.
-      if ((previous !== null && previous !== receipt) || (error instanceof ApiError && typeof error.status === 'number' && error.status >= 400 && error.status < 500)) await subscription.unsubscribe();
+      // A reply that lands after a profile switch is reported as 401: only the status the server sent says what it decided.
+      const status = served ?? (error instanceof ApiError ? error.status : undefined);
+      if ((previous !== null && previous !== receipt) || (status !== undefined && status >= 400 && status < 500)) await retire(subscription);
       throw error;
     }
   }
@@ -71,7 +80,7 @@ export async function enablePush(lang: 'ar' | 'en'): Promise<PushState> {
     // A subscription made for an older server key cannot be used any more.
     const old = subscription?.options.applicationServerKey;
     if (subscription && old && btoa(String.fromCharCode(...new Uint8Array(old))) !== btoa(raw)) {
-      await subscription.unsubscribe();
+      await retire(subscription);
       await check();
       subscription = null;
     }

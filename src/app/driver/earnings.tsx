@@ -58,7 +58,8 @@ function CashCard() {
   const [busy, setBusy] = useState<number | null>(null);
   const [failure, setFailure] = useState('');
   const [shown, setShown] = useState(10); // the ledger is longer than the screen: it grows on request
-  if (!data) return <Loading failed={!!error} onRetry={reload} />;
+  // A failed first load names the card and the fault: a lone Retry under the earnings would not say what is missing.
+  if (!data) return error ? <Card><Txt variant="micro">{c.cashSettlement}</Txt><ErrorText>{err(error)}</ErrorText><Loading failed onRetry={reload} /></Card> : <Loading />;
   const lines = cashLines(c, data);
   async function decide(entry: CashEntry, decision: 'confirm' | 'dispute') {
     setBusy(entry.id); setFailure('');
