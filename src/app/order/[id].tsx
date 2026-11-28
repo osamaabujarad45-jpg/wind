@@ -74,14 +74,14 @@ export default function OrderScreen() {
   const { time } = useFormat();
   const { data: polled, error, reload, setData } = useApi<Order>(`/orders/${id}?capacityProtocol=1&recoveryProtocol=1&liveProtocol=1`, effectiveRuntime().values.orderRefreshMs);
   // The driver's position comes over the live push as soon as it is stored; the 4 s poll carries everything else.
-  const pushed = useLiveFix<NonNullable<Order['driverLocation']>>(polled?.driverId && activeStatuses.includes(polled.status) ? `/orders/${id}/live?driver=${polled.driverId}${polled.assignmentEpoch == null ? '' : `&assignment=${polled.assignmentEpoch}`}` : null); // A→B→A restarts the watch (Sol R3-M3)
+  const pushed = useLiveFix<NonNullable<Order['driverLocation']>>(polled?.driverId && !polled.driverTrackingEnded && activeStatuses.includes(polled.status) ? `/orders/${id}/live?driver=${polled.driverId}${polled.assignmentEpoch == null ? '' : `&assignment=${polled.assignmentEpoch}`}` : null); // A→B→A restarts the watch (Sol R3-M3)
   // The server stops sending a fix after 120 s; keep the last one seen for this order and assignment so the map shows
   // it faded as "last known" instead of dropping the car (a reload, another order or another driver starts without it).
   const fresh = polled && pushed.value !== undefined ? newerFix(pushed.value, polled.driverLocation) : polled?.driverLocation;
   const assignment = polled && `${polled.id}:${polled.driverId}:${polled.assignmentEpoch ?? polled.assignedAt ?? ''}`; // A→B→A is a new assignment (Sol M5)
   const [kept, setKept] = useState<{ assignment: string; fix?: NonNullable<Order['driverLocation']> }>();
   if (assignment && (kept?.assignment !== assignment || (fresh && fresh !== kept?.fix))) setKept({ assignment, fix: fresh ?? undefined });
-  const shown = fresh ?? (polled && kept?.assignment === assignment && activeStatuses.includes(polled.status) ? kept?.fix : null) ?? null;
+  const shown = polled?.driverTrackingEnded ? null : fresh ?? (polled && kept?.assignment === assignment && activeStatuses.includes(polled.status) ? kept?.fix : null) ?? null;
   // A reassignment invalidates the snapshot's driver: hide the old car and name
   // even while the refresh that brings the new driver is failing.
   const order = useMemo(() => polled && { ...polled, ...(pushed.driverChanged
@@ -108,7 +108,7 @@ export default function OrderScreen() {
   const focusRevision = useRef(0);
   useFocusEffect(useCallback(() => { focusRevision.current++; return () => { focusRevision.current++; }; }, []));
   const [actionError, setActionError] = useState('');
-  const proofContext = `${id}:${me?.user.id}:${polled?.driverId}:${polled?.assignedAt}:${polled?.recovery?.assignmentEpoch}:${polled?.journey?.boarding?.pinRevision}:${polled?.ride?.boardingLocked}:${polled?.status}`;
+  const proofContext = `${id}:${me?.user.id}:${polled?.driverId}:${polled?.assignedAt}:${polled?.recovery?.assignmentEpoch}:${polled?.journey?.boarding?.pinRevision}:${polled?.ride?.boardingLocked}:${polled?.status}:${polled?.safetyHold}:${polled?.proofVersion}`;
   const [proofInput, setProofInput] = useState({ context: proofContext, value: '' });
   if (proofInput.context !== proofContext) setProofInput({ context: proofContext, value: '' });
   const code = proofInput.context === proofContext ? proofInput.value : '';
@@ -120,8 +120,10 @@ export default function OrderScreen() {
   const advanceAttempt = useRef<{ orderId: number; body: AdvanceRequest } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
   const [problem, setProblem] = useState<{ reason: ExceptionReason | 'wrong_or_missing_item' | typeof pickupRefusal; detail?: PickupRefusalDetail; note: string }>({ reason: 'absent', note: '' });
-  const [seals, setSeals] = useState<Record<number, boolean>>({}); // shop: each sealed package intact or broken (DLV-14)
-  const problemAttempt = useRef<{ orderId: number; status: string; requestId: string } | null>(null);
+  const [sealProof, setSealProof] = useState<{ context: string; checks: Record<number, boolean> }>({ context: proofContext, checks: {} });
+  const seals = sealProof.context === proofContext ? sealProof.checks : {};
+  const setSeals = (checks: Record<number, boolean>) => setSealProof({ context: proofContext, checks });
+  const problemAttempt = useRef<{ orderId: number; status: string; proofVersion?: number; requestId: string } | null>(null);
   useDriverRecovery(polled, me?.user.id, !error && me?.user.role === 'driver' && !busy,
     reload, next => { setData(next); work.update(next); }, () => { setAdvanceLocked(null); advanceAttempt.current = null; problemAttempt.current = null; });
   const [decision, setDecision] = useState({ id, reason: '' });
@@ -237,7 +239,7 @@ export default function OrderScreen() {
     const noCode = key === 'advance' && (body as { noCode?: boolean }).noCode === true;
     try {
       if (mine && order.recovery && (key === 'advance' || key === 'problem')) {
-        if (key === 'advance') setAdvanceLocked(order.status);
+        if (key === 'advance') setAdvanceLocked(proofContext);
         const result = await recoverDriverAction(me!.user.id, order, key === 'advance' ? 'advance' : 'exception',
           key === 'advance' ? { ...(noCode ? { noCode: true as const } : needsCode && code ? { code } : {}), ...doorProof, ...shopProof } : { reason: problem.reason as ExceptionReason, ...(problem.reason === pickupRefusal && { detail: problem.detail }), note: problem.note.trim(), ...shopProof },
           () => apiSessionRevision() === session && focusRevision.current === focus);
@@ -267,15 +269,16 @@ export default function OrderScreen() {
         body = { ...lease, ...capacityCommand(order), position };
       }
       if (key === 'advance') {
-        setAdvanceLocked(order.status);
+        setAdvanceLocked(proofContext);
         const attempt = advanceAttempt.current = advanceRequest(advanceAttempt.current, order.id,
-          { expectedStatus: order.status, code: noCode || !needsCode ? '' : code, ...(noCode && { noCode: true as const }), ...doorProof, ...shopProof, ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) }, newRequestId);
+          { expectedStatus: order.status, expectedProofVersion: order.proofVersion ?? null, code: noCode || !needsCode ? '' : code,
+            ...(noCode && { noCode: true as const }), ...doorProof, ...shopProof, ...(boarding ? { expectedPinRevision: boarding.pinRevision } : {}) }, newRequestId);
         body = attempt.body;
       }
       if (key === 'problem') { // one request id per order, so a lost acknowledgement replays instead of failing
-        if (problemAttempt.current?.orderId !== order.id || problemAttempt.current.status !== order.status)
-          problemAttempt.current = { orderId: order.id, status: order.status, requestId: newRequestId() };
-        body = { ...body, requestId: problemAttempt.current.requestId, expectedStatus: order.status };
+        if (problemAttempt.current?.orderId !== order.id || problemAttempt.current.status !== order.status || problemAttempt.current.proofVersion !== order.proofVersion)
+          problemAttempt.current = { orderId: order.id, status: order.status, proofVersion: order.proofVersion, requestId: newRequestId() };
+        body = { ...body, requestId: problemAttempt.current.requestId, expectedStatus: order.status, expectedProofVersion: order.proofVersion ?? null };
       }
       if (key.startsWith('offer')) body = { ...body, ...capacityCommand(order) };
       const next = await api<Order | { ok: true }>(path, body);
@@ -297,9 +300,9 @@ export default function OrderScreen() {
         await Promise.all([reload(), work.reload()]);
         if (apiSessionRevision() !== session || focusRevision.current !== focus) return;
       }
-      // A rejected proof is a recorded decision and advances the recovery revision.
-      // Keep actions busy until the next attempt can bind to a fresh authorized snapshot.
-      if (mine && order.recovery && e instanceof ApiError && e.status && e.status < 500 && ![401, 408, 429].includes(e.status)) {
+      // Reload the order before the next proof attempt when its snapshot has changed.
+      if (mine && e instanceof ApiError && (e.message === 'order_changed' || e.message === 'safety_hold'
+        || order.recovery && e.status && e.status < 500 && ![401, 408, 429].includes(e.status))) {
         await reload();
         if (apiSessionRevision() !== session || focusRevision.current !== focus) return;
       }
@@ -632,7 +635,7 @@ export default function OrderScreen() {
     </Card>}
 
     {order.shop && isCustomer && <ShopCustomerPanel order={order} onChange={setData} />}
-    {order.shop && mine && atPickup && !order.safetyHold && <ShopHandover key={`${order.id}:${order.shop.readySnapshotId ?? ''}`} order={order} onChange={setData} onReload={reload} />}
+    {order.shop && mine && atPickup && !order.safetyHold && <ShopHandover key={`${order.id}:${order.shop.readySnapshotId ?? ''}:${order.proofVersion ?? ''}`} order={order} onChange={setData} onReload={reload} />}
     {order.shop && isAdmin && <ShopAdminPanel order={order} onChange={setData} />}
     {isAdmin && order.pickupPayReview && <PickupPayReviewCard key={order.id} orderId={order.id} fareCents={Math.round(order.price * 100)} review={order.pickupPayReview} onDone={reload} />}
     {isAdmin && order.blockReview && <BlockReviewCard order={order} review={order.blockReview} me={me!.user.id} now={now} onDone={reload} />}
@@ -828,18 +831,18 @@ export default function OrderScreen() {
         {order.shop && order.status === 'in_transit' && <SealToggles order={order} value={seals} onChange={setSeals} />}
         {doorStep && <>
           <Field label={fill(c.doorCollected, { p: money(dueCents / 100) })} icon="cash-outline" value={doorText} keyboardType="decimal-pad" maxLength={10}
-            onChangeText={text => setDoor({ context: proofContext, text, reason: null })} disabled={!!busy || advanceLocked === order.status}
+            onChangeText={text => setDoor({ context: proofContext, text, reason: null })} disabled={!!busy || advanceLocked === proofContext}
             error={doorText.trim() && !doorValid ? c.doorInvalid : undefined} />
           {doorDiffers && <>
             <Txt variant="label">{c.doorReasonShort}</Txt>{/* names the chips; the button's reason below says to pick one */}
             <FilterChips label={c.doorReasonShort} items={doorReasons.map(key => ({ key, label: c[`variance_${key}`] }))} value={doorOwn.reason ?? ('' as VarianceReason)}
-              disabled={!!busy || advanceLocked === order.status} onChange={reason => setDoor({ context: proofContext, text: doorOwn.text, reason })} />
+              disabled={!!busy || advanceLocked === proofContext} onChange={reason => setDoor({ context: proofContext, text: doorOwn.text, reason })} />
           </>}
         </>}
         {needsCode &&
           <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? (order.service === 'shop' ? c.codeFromShop : c.codeFromSender) : order.service === 'ride' ? c.codeFromRider : order.recipientPhone ? c.codeFromRecipient : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
-            disabled={!!busy || advanceLocked === order.status} />}
-        {needsCode && !busy && advanceLocked === order.status && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
+            disabled={!!busy || advanceLocked === proofContext} />}
+        {needsCode && !busy && advanceLocked === proofContext && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
         {order.status === 'returning' && order.supportHasGoods && <Txt variant="caption">{c.supportHasGoodsDriver}</Txt>}
         {rideAction === 'arrive' && !order.safetyHold && (arrivalFar || arrivalKm === null) && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
         {parcelFarKm !== null && !order.safetyHold && <Txt variant="caption">{farFill(c.parcelPickupFar, c.parcelPickupFarCity)}</Txt>}

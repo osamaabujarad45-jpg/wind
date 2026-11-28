@@ -5,7 +5,8 @@ export type DriverAction = 'advance' | 'exception' | 'shop/handover';
 type HandoverCheck = { result: 'ok' } | { result: 'exception'; exception: HandoverException };
 export type DriverCommand = { schemaVersion: 1; actorId: number; orderId: number; action: DriverAction; requestId: string;
   createdAt: number; expiresAt: number; expectedStatus: OrderStatus; expectedAssignedAt: number | null;
-  expectedVersion?: number; expectedAssignmentEpoch?: number; expectedPinRevision?: number; payload: { code?: string; noCode?: true; reason?: string; detail?: PickupRefusalDetail; note?: string; collectedCents?: number; varianceReason?: VarianceReason; seals?: { no: number; intact: boolean }[];
+  expectedVersion?: number; expectedAssignmentEpoch?: number; expectedPinRevision?: number; expectedProofVersion?: number | null;
+  payload: { code?: string; noCode?: true; reason?: string; detail?: PickupRefusalDetail; note?: string; collectedCents?: number; varianceReason?: VarianceReason; seals?: { no: number; intact: boolean }[];
     check?: HandoverCheck; expectedReadySnapshotId?: number } };
 export type DriverReceipt = { schemaVersion: 1; orderId: number; requestId: string; state: 'unknown' | 'applied' | 'rejected'; error?: string; httpStatus?: number };
 export type CommandIO = { read: () => Promise<unknown>; write: (command: DriverCommand | null) => Promise<void>;
@@ -21,6 +22,7 @@ export function readDriverCommand(raw: unknown): DriverCommand | null {
     || !integer(c.createdAt) || !integer(c.expiresAt) || c.expiresAt <= c.createdAt || c.expiresAt - c.createdAt > 60 * 60_000
     || !activeStatuses.includes(c.expectedStatus) || !(c.expectedAssignedAt === null || integer(c.expectedAssignedAt))
     || (c.expectedVersion !== undefined && (!integer(c.expectedVersion) || c.expectedVersion < 1))
+    || (c.expectedProofVersion != null && (!integer(c.expectedProofVersion) || c.expectedProofVersion < 1))
     || (c.expectedAssignmentEpoch !== undefined && !integer(c.expectedAssignmentEpoch))
     || (c.expectedPinRevision !== undefined && !integer(c.expectedPinRevision))
     || !c.payload || typeof c.payload !== 'object' || Array.isArray(c.payload)
@@ -42,27 +44,31 @@ export function readDriverCommand(raw: unknown): DriverCommand | null {
 export function newDriverCommand(actorId: number, order: Order, action: DriverAction, payload: DriverCommand['payload'], now: number, ttl: number): DriverCommand {
   if (order.driverId !== actorId || !order.recovery) throw new Error('driver_recovery_unavailable');
   return readDriverCommand({ schemaVersion: 1, actorId, orderId: order.id, action, requestId: newRequestId(), createdAt: now, expiresAt: now + ttl,
-    expectedStatus: order.status, expectedAssignedAt: order.assignedAt ?? null,
+    expectedStatus: order.status, expectedAssignedAt: order.assignedAt ?? null, expectedProofVersion: order.proofVersion ?? null,
     ...(order.recovery.version != null ? { expectedVersion: order.recovery.version } : {}),
     ...(order.recovery.assignmentEpoch != null ? { expectedAssignmentEpoch: order.recovery.assignmentEpoch } : {}),
     ...(order.journey?.boarding && payload.code ? { expectedPinRevision: order.journey.boarding.pinRevision } : {}), payload })!;
 }
 export const driverCommandBody = (c: DriverCommand) => ({ ...c.payload, requestId: c.requestId, recoveryProtocol: 1,
   expectedStatus: c.expectedStatus, expectedAssignedAt: c.expectedAssignedAt, attemptCreatedAt: c.createdAt, attemptExpiresAt: c.expiresAt,
+  ...(c.expectedProofVersion !== undefined ? { expectedProofVersion: c.expectedProofVersion } : {}),
   ...(c.expectedVersion !== undefined ? { expectedVersion: c.expectedVersion } : {}),
   ...(c.expectedPinRevision !== undefined ? { expectedPinRevision: c.expectedPinRevision } : {}),
   ...(c.expectedAssignmentEpoch !== undefined ? { expectedAssignmentEpoch: c.expectedAssignmentEpoch } : {}) });
-export type AdvanceRequest = { requestId: string; expectedStatus: string; code: string; noCode?: true; expectedPinRevision?: number; collectedCents?: number; varianceReason?: VarianceReason; seals?: { no: number; intact: boolean }[] };
+export type AdvanceRequest = { requestId: string; expectedStatus: string; code: string; noCode?: true; expectedPinRevision?: number; expectedProofVersion?: number | null;
+  collectedCents?: number; varianceReason?: VarianceReason; seals?: { no: number; intact: boolean }[] };
 /** Screen-held advance (no saved recovery): a lost acknowledgement replays the same request; a new status, code
  * or rotated PIN is a new one, so a retry never pairs an old code with the new revision. */
 export function advanceRequest(cached: { orderId: number; body: AdvanceRequest } | null, orderId: number,
   proof: Omit<AdvanceRequest, 'requestId'>, newId: () => string) {
   return cached?.orderId === orderId && cached.body.expectedStatus === proof.expectedStatus && cached.body.code === proof.code && cached.body.noCode === proof.noCode
+    && cached.body.expectedProofVersion === proof.expectedProofVersion
     && cached.body.expectedPinRevision === proof.expectedPinRevision && cached.body.collectedCents === proof.collectedCents
     && cached.body.varianceReason === proof.varianceReason && JSON.stringify(cached.body.seals) === JSON.stringify(proof.seals) ? cached : { orderId, body: { requestId: newId(), ...proof } };
 }
 export const commandMatches = (c: DriverCommand, actorId: number, order: Order) => c.actorId === actorId && c.orderId === order.id && order.driverId === actorId
   && c.expectedStatus === order.status && c.expectedAssignedAt === (order.assignedAt ?? null)
+  && (c.expectedProofVersion ?? null) === (order.proofVersion ?? null)
   && (c.expectedVersion === undefined || c.expectedVersion === order.recovery?.version)
   && (c.expectedAssignmentEpoch === undefined || c.expectedAssignmentEpoch === order.recovery?.assignmentEpoch)
   && (c.payload.expectedReadySnapshotId === undefined || c.payload.expectedReadySnapshotId === order.shop?.readySnapshotId)

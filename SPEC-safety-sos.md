@@ -15,7 +15,9 @@ assigned driver — need this during any active order (assigned → returning).
    A repeat report by the same person while theirs is open returns the open one (no duplicates).
 3. **Order freeze:** while any report on an order is open, the driver cannot advance it
    (`409 safety_hold`) — no pickup/delivery/return can be closed out over an open safety report.
-   Cancel rules are unchanged.
+   Opening and resolving a report also advances the order revision. A Captain who missed the
+   pause must refresh and gather proof again before advancing. A pending boarding PIN gets a new
+   revision and keeps its existing code and attempt counter. Cancel rules are unchanged.
 4. **Admin:** dashboard shortcut with the open count; Orders → "Safety" lists open reports first
    with reporter role/name/phone, the other party's phone, kind, note, age, location (opens maps)
    and the order link. Resolve needs a ≥5-char note and lifts the freeze.
@@ -33,6 +35,14 @@ assigned driver — need this during any active order (assigned → returning).
 Order gains `safetyHold: boolean` (parties + admin) and `safetyReport: {status, kind, resolution} | null`
 (reporter only; admin sees reports via the incidents list). Stats gain `openIncidents`.
 
+The assigned Captain receives `proofVersion` for an active order after its safety hold ends. Advance,
+exception and shop handover requests carry `expectedProofVersion` from the snapshot used to collect
+the proof or open the confirmation. The current client sends `null` before the first report. A stale
+snapshot gets `409 order_changed`, including when the status stayed the same. A wrong-code retry
+keeps the same safety proof version. An older build that
+omits the field gets `426 client_update_required` after the hold is resolved. A previously committed
+request still replays its receipt.
+
 Table `safety_incidents` (additive, `user_version` stays 3); partial unique index on
 `(order_id, reporter_id) WHERE status = 'open'`. Audit rows `SAFETY_REPORTED` / `SAFETY_RESOLVED`.
 
@@ -48,8 +58,10 @@ Table `safety_incidents` (additive, `user_version` stays 3); partial unique inde
 
 `tests/safety.test.mjs`: customer and driver can report; stranger/other driver 404; searching/finished 409;
 invalid kind/note 400; duplicate returns same open report; advance blocked with `safety_hold` then works
-after resolve; reporter sees status, other party sees only `safetyHold`; admin list contents incl. phones and
-location; resolve twice 409; non-admin 403; stats count; audit rows written.
+after resolve with fresh proof; older plain and queued advances are refused; reporter sees status, other
+party sees a neutral hold; admin list includes phones and location; resolve twice 409; non-admin 403;
+stats count; audit rows written. The ride and shop suites cover a stale boarding PIN, ending a ride
+without a code, shop pickup and sealed delivery.
 
 ## Boundaries
 

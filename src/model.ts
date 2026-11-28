@@ -228,6 +228,7 @@ export type Order = {
   returnCode: string | null; exceptionReason: ExceptionReason | typeof pickupRefusal | null; exceptionDetail: PickupRefusalDetail | null; dispute: Dispute | null; sharing: boolean; scheduledFor: number | null; discount: number;
   reattemptAllowed?: boolean; // SHIP-08, admin view of a held parcel or freight order
   supportHasGoods?: boolean; // a returning order whose goods support took from this captain (admin and the captain only)
+  driverTrackingEnded?: true; // the Captain is no longer carrying the return, even though the assignment is retained
   supportReturnRequired?: true; // only support can confirm office intake (admin only)
   pickupPayReview?: { reason: ExceptionReason | typeof pickupRefusal | 'support_cancelled' | 'customer_cancelled' | 'partner_cancelled';
     rate: number; drivenKm: number | null; originKm?: number | null; currentKm?: number | null; suggestedCents?: number | null;
@@ -236,6 +237,7 @@ export type Order = {
   assignmentEpoch?: number; // negotiated live tracking
   blockReview?: { dueAt: number; tripPayCents: number; decidedAt: number | null; cleared: boolean | null; paidCents: number | null; blockedBy: number }; // DRV-17, admin only
   safetyHold: boolean; safetyReport: { status: 'open' | 'resolved'; kind: SafetyKind; resolution: string | null } | null;
+  proofVersion?: number; // assigned Captain's proof version after a safety hold resolves
   createdAt: number; updatedAt: number;
   assignedAt?: number | null; pickedUpAt?: number | null; completedAt?: number | null; // status timeline
   customerName?: string; driverName?: string; driverPhone?: string; driverVehicle?: Vehicle | null;

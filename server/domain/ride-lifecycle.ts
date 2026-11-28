@@ -89,6 +89,11 @@ export class RideLifecycle {
   private async noteIssued(id: number, now: number) {
     if (await this.metadataAvailable()) await this.db.run('UPDATE ride_lifecycle SET pin_issued_at=?,pin_verified_at=NULL,pin_revision=pin_revision+1,previous_boarding_code=NULL WHERE order_id=?', now, id);
   }
+  async invalidateBoardingProof(orderId: number) {
+    if (!(await this.metadataAvailable())) return;
+    await this.db.run(`UPDATE ride_lifecycle SET pin_revision=pin_revision+1
+      WHERE order_id=? AND boarding_required=1 AND pin_verified_at IS NULL AND boarding_code IS NOT NULL`, orderId);
+  }
   async boardingInfo(id: number, viewer: { id: number; role: string }, order: Row): Promise<Journey['boarding']> {
     if (!(await this.metadataAvailable())) return undefined;
     const row = await this.db.one('SELECT * FROM ride_lifecycle WHERE order_id=?', id);

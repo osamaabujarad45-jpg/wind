@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
-import { advanceRequest, earlierOutcome, newDriverCommand, otherOrderNotice, readDriverCommand, driverCommandBody, resumeDriverCommand, settleOtherOrder } from '../src/driver-command.ts';
+import * as driverCommands from '../src/driver-command.ts';
 import { copy } from '../src/copy.ts';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import ts from 'typescript';
+const { advanceRequest, earlierOutcome, newDriverCommand, otherOrderNotice, readDriverCommand, driverCommandBody, resumeDriverCommand, settleOtherOrder } = driverCommands;
 // The saved command is shared between tabs, so the whole recovery runs under its own lock (not the session's: a 401 inside takes that one).
 const recovery = readFileSync(new URL('../src/driver-recovery.ts', import.meta.url), 'utf8');
 assert.match(recovery, /storage\.exclusive\(async[\s\S]*'wind\.driver\.command'\)/);
@@ -69,9 +72,37 @@ assert.equal(driverCommandBody(noCodeCommand).noCode, true);
 assert.throws(() => readDriverCommand({ ...noCodeCommand, payload: { noCode: true, code: '1234' } }), /invalid_pending_command/);
 assert.throws(() => readDriverCommand({ ...noCodeCommand, payload: { noCode: false } }), /invalid_pending_command/);
 assert.throws(() => readDriverCommand({ ...noCodeCommand, action: 'exception', payload: { noCode: true, reason: 'absent', note: '' } }), /invalid_pending_command/);
-const noCodeAttempt = advanceRequest(null, 5, { expectedStatus: 'in_transit', code: '', noCode: true }, () => 'id-1');
+const noCodeProof = { expectedStatus: 'in_transit', code: '', noCode: true };
+const noCodeAttempt = advanceRequest(null, 5, noCodeProof, () => 'id-1');
 assert.equal(noCodeAttempt.body.noCode, true);
 assert.notEqual(advanceRequest(noCodeAttempt, 5, { expectedStatus: 'in_transit', code: '' }, () => 'id-2').body.requestId, 'id-1', 'a code attempt is a new request');
+assert.equal(advanceRequest(noCodeAttempt, 5, { ...noCodeProof, expectedProofVersion: 8 }, () => 'after-pause').body.requestId, 'after-pause');
+{
+  const resumed = { ...order, recovery: { ...order.recovery, version: 8 }, proofVersion: 4 };
+  const writes = [], requests = [];
+  const dependencies = {
+    './api': { ApiError: Error, api: async (path, body) => {
+      requests.push({ path, body });
+      if (path.includes('?')) return resumed;
+      if (path.includes('/actions/')) return { orderId: order.id, requestId: path.split('/').at(-1), schemaVersion: 1, state: 'unknown' };
+      return { ...resumed, status: 'completed' };
+    } },
+    './api-client': { apiSessionRevision: () => 1, serverOffset: () => 0 },
+    './driver-command': driverCommands,
+    './recovery-storage': { recoveryStorage: { read: async () => null, write: async (_key, value) => { writes.push(value); } } },
+    './runtime-config': { effectiveRuntime: () => ({ values: { commandMaxAgeMs: 60_000 } }) },
+    './storage': { storage: { exclusive: work => work() } },
+  };
+  const exports = {};
+  runInNewContext(ts.transpileModule(recovery, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
+    { exports, require: name => dependencies[name] });
+  await assert.rejects(exports.recoverDriverAction(9, order, 'advance', { noCode: true }), /order_changed/);
+  assert.equal(requests.length, 1, 'the old confirmation may read the current order');
+  assert.equal(writes.length, 0, 'but it cannot save an intent using the current revision');
+  assert.equal((await exports.recoverDriverAction(9, resumed, 'advance', { noCode: true })).state, 'applied');
+  assert.equal(writes[0].expectedProofVersion, 4);
+  assert.equal(requests.at(-1).body.expectedProofVersion, 4);
+}
 let saved = structuredClone(command), sends = 0, valid = true;
 const receipt = state => ({ schemaVersion: 1, orderId: 5, requestId: command.requestId, state });
 const io = { read: async () => saved, write: async c => { saved = c; }, valid: () => valid,

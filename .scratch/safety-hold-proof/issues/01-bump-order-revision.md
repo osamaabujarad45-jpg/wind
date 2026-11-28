@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 
 # A safety pause must invalidate proof gathered before it
 
@@ -42,3 +42,5 @@ part of this work.
 Server lane (the F5 session under the 27 Nov split).
 
 ## Comments
+
+28 Nov: fixed by the server lane in d03b1695 (proof snapshot version on every advance path; see SPEC-safety-sos.md), merged into the design branch.

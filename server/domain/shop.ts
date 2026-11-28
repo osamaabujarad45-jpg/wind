@@ -47,7 +47,7 @@ export type ShopDeps = {
   journal: (orderId: number, driverId: number, kind: 'collection' | 'trip', amounts: { goods?: number; service?: number; over?: number; trip?: number }) => Promise<unknown>;
   /** main.ts's replayable driver command envelope: a lost acknowledgement replays the stored outcome. */
   driverCommand: (user: User, id: number, body: Row, apply: (user: User, id: number, input: Row) => Promise<Order>) => Promise<unknown>;
-  safetyFree: (orderId: number) => Promise<void>;
+  safetyFree: (orderId: number, proof: Row) => Promise<void>;
 };
 
 const MINUTE = 60_000, DAY = 86_400_000;
@@ -855,7 +855,7 @@ export function registerShop(route: Register, deps: ShopDeps) {
     const s = await shopRow(id);
     if (r.service !== 'shop' || !s || r.driver_id !== user.id) fail(409, 'cannot_advance');
     if (body.expectedStatus !== r.status || r.status !== 'at_pickup') fail(409, 'order_changed');
-    await deps.safetyFree(id);
+    await deps.safetyFree(id, body);
     if (s!.handover_exception && s!.merchant_state !== 'ready') fail(409, 'exception_open');
     if (s!.merchant_state !== 'ready') fail(409, 'not_ready');
     if ((deps.profileModes || body.expectedReadySnapshotId !== undefined) &&
