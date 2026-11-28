@@ -188,7 +188,13 @@ try {
   assert.equal(job2.status, 'in_transit');
   assert.equal((await call(`/orders/${parcelOrder.id}/advance`, { token: ahmad.token, body: { expectedStatus: 'assigned', requestId: randomUUID(), noCode: true }, expect: 400 })).error,
     'invalid_input', 'only a ride ends without its code');
-  job2 = await advance(ahmad.token, job2, { noCode: true });
+  const confirmation = { noCode: true, expectedProofVersion: job2.proofVersion ?? null };
+  await call(`/orders/${job2.id}/sos`, { token: omar.token, body: { kind: 'other' } });
+  const [incident] = await call('/admin/incidents', { token: admin.token });
+  await call(`/admin/incidents/${incident.id}/resolve`, { token: admin.token, body: { resolution: 'Checked both sides' } });
+  assert.equal((await advance(ahmad.token, job2, confirmation, 409)).error, 'order_changed', 'the confirmation opened before the pause cannot end the ride');
+  job2 = await call(`/orders/${job2.id}`, { token: ahmad.token });
+  job2 = await advance(ahmad.token, job2, { noCode: true, expectedProofVersion: job2.proofVersion });
   assert.equal(job2.status, 'completed');
 
   // Restaurants open: a customer applies as a restaurant in the shop town.

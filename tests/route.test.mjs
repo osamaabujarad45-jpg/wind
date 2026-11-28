@@ -177,6 +177,26 @@ try {
   }
   mode = 'ok';
 
+  // The return initially tracks the captain; after support takes the box, all live views drop that leg.
+  for (const expectedStatus of ['assigned', 'at_pickup'])
+    await call(`/orders/${order.id}/advance`, { token: driver.token, body: { expectedStatus, requestId: randomUUID() } });
+  await call(`/orders/${order.id}/exception`, { token: driver.token, body: { expectedStatus: 'in_transit', requestId: randomUUID(), reason: 'absent' } });
+  const resolve = (action) => call(`/admin/orders/${order.id}/resolve`, { token: admin.token, body: { action, reason: 'Synthetic custody case' } });
+  await resolve('return');
+  assert.ok((await call(`/track/${token}/eta`)).minutes > 0, 'the returning captain has an ETA before takeover');
+  assert.ok((await call(`/orders/${order.id}`, { token: customer.token })).driverLocation);
+  await resolve('support_takeover');
+  assert.deepEqual(await call(`/track/${token}/eta`), { minutes: null });
+  assert.deepEqual(await call(`/track/${token}/eta?journeyProtocol=1&driver=${currentRef}&status=returning`), { minutes: null });
+  const tracking = await call(`/track/${token}`);
+  assert.deepEqual([tracking.status, tracking.driver, tracking.driverLocation], ['returning', null, null]);
+  assert.ok(!('supportHasGoods' in tracking));
+  const sender = await call(`/orders/${order.id}?liveProtocol=1`, { token: customer.token });
+  assert.deepEqual([sender.driverId, sender.driverLocation, sender.driverTrackingEnded, sender.supportHasGoods], [driver.user.id, null, true, undefined]);
+  assert.deepEqual(await call(`/orders/${order.id}/live?driver=${sender.driverId}&assignment=${sender.assignmentEpoch}`, { token: customer.token }),
+    { driverLocation: null, driverKey: null, driverChanged: true });
+  assert.deepEqual(await call(`/track/${token}/live?driver=${currentRef}`), { driverLocation: null, driverKey: null, driverChanged: true });
+
   // Checkpoint-aware routing (SPEC-checkpoint-routing.md). Closed checkpoints without a position ('Far', 'Huwwara' above)
   // cannot steer routing: the fastest route stands.
   const trip = (lat) => `/route?from=${lat},35.2034&to=32.2211,35.2544`;

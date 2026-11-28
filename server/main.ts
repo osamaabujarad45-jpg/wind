@@ -337,7 +337,7 @@ const activeLoad = async (driverId: number) => ((await all(`SELECT service, shar
 const orderSelect = `SELECT o.*, c.name customer_name, d.name driver_name, d.phone driver_phone, d.vehicle driver_vehicle, d.plate driver_plate,
   l.lat loc_lat, l.lng loc_lng, l.updated_at loc_at, l.heading loc_heading, l.accuracy loc_accuracy, od.status dispute_status, od.reason dispute_reason, od.resolution dispute_resolution,
   (SELECT p.code FROM promo_codes p WHERE p.id = od.credit_promo_id) dispute_credit_code, (SELECT p.amount FROM promo_codes p WHERE p.id = od.credit_promo_id) dispute_credit_amount,
-  (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id) safety_count,
+  (SELECT MAX(si.id) FROM safety_incidents si WHERE si.order_id = o.id) safety_latest,
   (SELECT COUNT(*) FROM safety_incidents si WHERE si.order_id = o.id AND si.status = 'open') safety_open,
   EXISTS(SELECT 1 FROM orders x WHERE x.driver_id = o.driver_id AND x.id <> o.id AND x.status IN (${activeSql})) shared_run
   FROM orders o JOIN users c ON c.id = o.customer_id LEFT JOIN users d ON d.id = o.driver_id
@@ -350,9 +350,10 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
   const personal = viewer.id === r.customer_id && (!viewer.accountMode || viewer.accountMode === 'personal');
   const owner = viewer.role === 'admin' || personal;
   const assigned = viewer.id === r.driver_id && (!viewer.accountMode || viewer.accountMode === 'captain');
-  const custody = (viewer.role === 'admin' || assigned) && r.status === 'returning' && r.service !== 'ride'
+  const custody = (owner || assigned) && r.status === 'returning' && r.service !== 'ride'
     ? await returnCustody(persistence, r) : null;
-  const live = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
+  const driverTrackingEnded = custody?.supportHasGoods === true;
+  const live = !driverTrackingEnded && activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
   const partyPhones = (owner || assigned) && (activeStatuses.includes(r.status) || r.status === 'searching' || r.status === 'requested' || Date.now() - r.updated_at <= DAY);
   const dispatchInfo = await dispatch.summary(r.id, viewer.role === 'driver' ? viewer.id : undefined);
   const rideInfo = await rideLifecycle.summary(r.id, viewer, r);
@@ -388,19 +389,22 @@ async function toOrder(r: Row, viewer: User, cards?: JobCardData): Promise<Order
     ...(r.collected_cents != null && (assigned || viewer.role === 'admin') && { collected: { cents: r.collected_cents as number, reason: r.variance_reason ?? null } }),
     // Both parties learn the order is paused; only the reporter sees their own report.
     safetyHold: (owner || assigned) && r.safety_open > 0,
+    ...(assigned && activeStatuses.includes(r.status) && r.safety_latest != null && !(r.safety_open > 0)
+      && { proofVersion: Number(r.safety_latest) }),
     // SHIP-08: a parcel or freight delivery failure may be reattempted twice; a support hold is not a delivery attempt.
     ...(viewer.role === 'admin' && r.status === 'on_hold' && (r.service === 'parcel' || r.service === 'freight') && exceptionReasons.includes(r.exception_reason)
       && { reattemptAllowed: (await orderDeliveryAttempts(r.id)) < 3 }),
     // Support took the goods from this assignment's captain mid-return (CUSTODY_TAKEN): the captain's return code no longer closes
     // the order, and only office intake by support remains (Sol recheck of PR #101, HIGH 1).
-    ...(custody && { supportHasGoods: custody.supportHasGoods }),
+    ...(custody && (viewer.role === 'admin' || assigned) && { supportHasGoods: custody.supportHasGoods }),
     ...(viewer.role === 'admin' && custody && (custody.supportHasGoods || custody.custodyBlocked) && { supportReturnRequired: true }),
+    ...(driverTrackingEnded && { driverTrackingEnded: true }),
     // DRV-17: support sees a courier block's review on the order it ended.
     ...(viewer.role === 'admin' && ['cancelled', 'returning', 'returned'].includes(r.status) && await blockReviewsAvailable()
       && await (async () => { const b = await one('SELECT * FROM courier_block_reviews WHERE order_id = ?', r.id); return b ? { blockReview: blockReviewView(b) } : {}; })()),
     ...(viewer.role === 'admin' && r.status === 'cancelled' && shippingOrder(r)
       && await (async () => { const review = await pickupReview(r.id); return review && currentPickupReview(r, review) ? { pickupPayReview: review } : {}; })()),
-    safetyReport: r.safety_count > 0 && viewer.role !== 'admin' && (owner || assigned)
+    safetyReport: r.safety_latest != null && viewer.role !== 'admin' && (owner || assigned)
       ? (await one('SELECT status, kind, resolution FROM safety_incidents WHERE order_id = ? AND reporter_id = ? ORDER BY id DESC LIMIT 1', r.id, viewer.id)) as Order['safetyReport'] ?? null
       : null,
     dispute: owner && r.dispute_status ? { status: r.dispute_status, reason: r.dispute_reason, resolution: r.dispute_resolution ?? null,
@@ -2862,7 +2866,8 @@ route('GET', '/api/orders/:id/live', async ({ user, params, query, req }) => {
     const o = await getOrder(Number(params[0]), viewer, true);
     // Counted after the lookup: a stranger polling must not write to the database.
     if (!limited) { (await limit(identityKey('order-live', user.id), 2400, 10 * 60_000)); limited = true; }
-    return { orderId: o.id, driverId: o.driverId, driverKey: o.driverId == null ? null : String(o.driverId), assignmentEpoch: o.assignmentEpoch, fix: o.driverLocation ?? null };
+    return { orderId: o.id, driverId: o.driverId, driverKey: o.driverId == null || o.driverTrackingEnded ? null : String(o.driverId),
+      assignmentEpoch: o.assignmentEpoch, fix: o.driverLocation ?? null };
   }, query, req, true));
 });
 
@@ -2977,12 +2982,14 @@ async function trackView(token: string) {
   const r = (await one(`${orderSelect} WHERE o.share_token_hash = ?`, sha(token))) ?? fail(404, 'not_found');
   const open = r.status === 'requested' || r.status === 'searching' || activeStatuses.includes(r.status);
   if (!open && Date.now() - r.updated_at > SHARE_GRACE) fail(404, 'not_found');
-  const fresh = activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
+  const supportHasGoods = r.status === 'returning' && r.service !== 'ride' && (await returnCustody(persistence, r)).supportHasGoods;
+  const driver = r.driver_id && open && !supportHasGoods ? { firstName: String(r.driver_name ?? '').trim().split(/\s+/)[0], vehicle: r.driver_vehicle ?? null,
+    ref: shareDriverRef(token, r) } : null; // opaque per link: tells a reassignment apart, names no one
+  const fresh = driver && activeStatuses.includes(r.status) && r.loc_lat != null && Date.now() - r.loc_at <= 120_000;
   return { orderId: r.id, driverId: r.driver_id as number | null, row: r, view: {
     orderCode: orderCode(r.id), status: r.status, service: r.service, pickupCity: r.pickup_city, dropoffCity: r.dropoff_city,
     updatedAt: r.updated_at, scheduledFor: r.scheduled_for ?? null, // the recipient's page says booked ahead, as the sender's does
-    driver: r.driver_id && open ? { firstName: String(r.driver_name ?? '').trim().split(/\s+/)[0], vehicle: r.driver_vehicle ?? null,
-      ref: shareDriverRef(token, r) } : null, // opaque per link: tells a reassignment apart, names no one
+    driver,
     driverLocation: fresh ? { latitude: r.loc_lat, longitude: r.loc_lng, updatedAt: r.loc_at, heading: r.loc_heading ?? null } : null,
   } };
 }
@@ -3044,16 +3051,28 @@ route('POST', '/api/admin/disputes/:id/resolve', async ({ user, params, body }) 
 // Safety (SPEC-safety-sos.md): either party of a live trip can alert Wind's safety team. An open report
 // freezes the driver's steps until an administrator resolves it; the reporter stays anonymous to the other party.
 const safetyKinds = ['unsafe_driving', 'harassment', 'accident', 'threat', 'other'];
-const safetyFree = async (orderId: number) => {
-  if ((await one("SELECT id FROM safety_incidents WHERE order_id = ? AND status = 'open'", orderId))) fail(409, 'safety_hold');
+const safetyFree = async (orderId: number, proof?: Row) => {
+  const hold = (await one(`SELECT MAX(id) latest, COUNT(*) FILTER (WHERE status = 'open') open_count
+    FROM safety_incidents WHERE order_id = ?`, orderId))!;
+  if (hold.open_count > 0) fail(409, 'safety_hold');
+  if (!proof) return;
+  // A settled hold keeps its proof version through other order edits, including a wrong-code retry.
+  const current = hold.latest == null ? null : Number(hold.latest);
+  if (current !== null && proof.expectedProofVersion === undefined) fail(426, 'client_update_required');
+  if (proof.expectedProofVersion !== undefined && proof.expectedProofVersion !== current) fail(409, 'order_changed');
 };
+async function invalidateSafetyProof(order: Row) {
+  // The order row is locked by both incident transitions and each proof write.
+  await run('UPDATE orders SET version = version + 1 WHERE id = ?', order.id);
+  if (order.service === 'ride' && ['assigned', 'at_pickup'].includes(order.status)) await rideLifecycle.invalidateBoardingProof(order.id);
+}
 route('POST', '/api/orders/:id/sos', async ({ user, params, body }) => {
   if (!safetyKinds.includes(body.kind)) fail(400, 'invalid_input');
   const note = text(body.note, 300, false);
   const orderId = Number(params[0]);
   await persistence.exec('BEGIN IMMEDIATE');
   try {
-    const r = (await one(`SELECT o.id, o.status, o.customer_id, o.driver_id, l.lat, l.lng, l.updated_at loc_at
+    const r = (await one(`SELECT o.id, o.status, o.service, o.customer_id, o.driver_id, l.lat, l.lng, l.updated_at loc_at
       FROM orders o LEFT JOIN driver_locations l ON l.driver_id = o.driver_id AND l.updated_at >= COALESCE(o.assigned_at, 0)
       WHERE o.id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE OF o' : ''}`, orderId)) ?? fail(404, 'not_found');
     const role = r.customer_id === user.id && (!user.accountMode || user.accountMode === 'personal') ? 'customer'
@@ -3065,6 +3084,7 @@ route('POST', '/api/orders/:id/sos', async ({ user, params, body }) => {
       const fresh = r.lat != null && Date.now() - r.loc_at <= 10 * 60_000;
       const id = Number((await run(`INSERT INTO safety_incidents (order_id, reporter_id, reporter_role, kind, note, lat, lng, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, r.id, user.id, role, body.kind, note, fresh ? r.lat : null, fresh ? r.lng : null, Date.now())).lastInsertRowid);
+      await invalidateSafetyProof(r);
       await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'SAFETY_REPORTED', ?, ?)`,
         user.id, r.id, JSON.stringify({ incident: id, kind: body.kind }), Date.now());
       await queuePush(await adminIds(), 'safety', r.id, '/admin/orders');
@@ -3091,12 +3111,14 @@ route('POST', '/api/admin/incidents/:id/resolve', async ({ user, params, body })
   const incident = (await one('SELECT * FROM safety_incidents WHERE id = ?', Number(params[0]))) ?? fail(404, 'not_found');
   (await persistence.exec('BEGIN IMMEDIATE'));
   try {
+    const order = (await one(`SELECT id, service, status, customer_id, driver_id FROM orders WHERE id = ?${persistence.backend === 'postgres' ? ' FOR UPDATE' : ''}`,
+      incident.order_id))!;
     if (!(await run("UPDATE safety_incidents SET status = 'resolved', resolution = ?, resolved_by = ?, resolved_at = ? WHERE id = ? AND status = 'open'",
       resolution, user.id, Date.now(), incident.id)).changes) fail(409, 'cannot_resolve');
+    await invalidateSafetyProof(order);
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'SAFETY_RESOLVED', ?, ?)`,
       user.id, incident.order_id, JSON.stringify({ incident: incident.id, resolution }), Date.now()));
-    const parties = (await one('SELECT customer_id, driver_id FROM orders WHERE id = ?', incident.order_id))!;
-    await queuePush([parties.customer_id, parties.driver_id], 'support', incident.order_id); // the frozen driver may continue
+    await queuePush([order.customer_id, order.driver_id], 'support', incident.order_id); // the frozen driver may continue
     (await persistence.exec('COMMIT'));
   } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
   return { ok: true };
@@ -3477,7 +3499,7 @@ async function advanceOrder(user: User, id: number, body: Row, requestId: string
   if (r.service === 'ride' && next === 'completed' && r.handover_code && oldCaptainApp) fail(426, 'client_update_required'); // D-7: it cannot ask for the code
   if ((next !== 'completed' || (r.service !== 'parcel' && r.service !== 'shop')) && (body.collectedCents !== undefined || body.varianceReason !== undefined)) fail(400, 'invalid_input'); // A11: the parcel fee, or a shop order's goods and fees
   await shop.beforeAdvance(r, next, body, user.id);
-  (await safetyFree(r.id));
+  await safetyFree(r.id, body);
   const now = Date.now();
   await rideLifecycle.guardAdvance(r, user.id, next, body.boardingCode !== undefined ? body.boardingCode : body.code, body.expectedPinRevision);
   if (next === 'completed' || next === 'returned') {
@@ -3532,7 +3554,7 @@ async function reportException(user: User, id: number, body: Row) {
   const refusal = body.reason === pickupRefusal;
   if (refusal && (r.status !== 'at_pickup' || !['parcel', 'freight'].includes(r.service))) fail(409, 'cannot_report');
   await shop.guardCaptainExit(r, 'exception');
-  (await safetyFree(r.id));
+  await safetyFree(r.id, body);
   if (body.expectedStatus !== r.status) fail(409, 'order_changed');
   const now = Date.now();
   if (r.status === 'at_pickup') {
@@ -3678,7 +3700,12 @@ async function driverCommand(user: User, id: number, body: Row, apply: (user: Us
             // SQLite gained assignment_epoch in this release; installed captain apps there never send it, so it binds only when sent.
             || (metadata.assignmentEpoch !== null && (persistence.backend === 'postgres' || input.expectedAssignmentEpoch !== undefined)
               && input.expectedAssignmentEpoch !== metadata.assignmentEpoch)
-            || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion !== metadata.version) fail(409, 'order_changed');
+            || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion !== metadata.version) {
+            // Older apps need the upgrade response even when the hold already invalidated their recovery envelope.
+            if (input.expectedProofVersion === undefined && current.driver_id === user.id && activeStatuses.includes(current.status))
+              await safetyFree(id, input);
+            fail(409, 'order_changed');
+          }
         }
         result = (await apply(user, id, input, requestId));
       }
@@ -4060,12 +4087,12 @@ registerGoogleRouteRoutes(route, googleRoutes, { fail, limit, budgetKey: id => i
 // Public trip page: minutes and road lines from the fresh driver fix to the next stop's city (it never sees exact pins).
 route('GET', '/api/track/([a-f0-9]{64})/eta', async ({ params, query }) => {
   const token = params[0]!, hash = sha(token);
-  const { row: r } = await trackView(token); // validate the link and reuse the same snapshot
+  const { row: r, view } = await trackView(token); // validate the link and reuse the same snapshot
   (await limit(identityKey('track-eta', hash), 300, 10 * 60_000)); // after one lookup (a made-up token leaves no row)
-  const driverKey = r.driver_id ? shareDriverRef(token, r) : null;
+  const driverKey = view.driver?.ref ?? null;
   if (query.has('driver') && query.get('driver') !== driverKey) return { minutes: null };
   if (query.has('status') && query.get('status') !== r.status) return { minutes: null };
-  if (!activeStatuses.includes(r.status) || r.loc_lat == null || Date.now() - r.loc_at > 120_000) return { minutes: null };
+  if (!view.driverLocation) return { minutes: null };
   // The age of the fix the estimate starts from: a two-minute-old position is not a two-minute-old answer.
   const fixAgeSeconds = Math.max(0, Math.round((Date.now() - r.loc_at) / 1000));
   // The road state is read once for this request: three routes and the delay flag all use it.
@@ -5145,7 +5172,8 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
         if (!value || typeof value !== 'object' || !('service' in value) || !('id' in value)) return value;
         if ('journey' in value) return value; // already projected in its detail or cursor snapshot
         const authorized = await getOrder(Number((value as Order).id), viewer, false, 'recovery' in value);
-        return journeyOrder(persistence, rideLifecycle, { ...value as Order, ...authorized, offers: authorized.offers }, viewer);
+        return journeyOrder(persistence, rideLifecycle, { ...value as Order, ...authorized, offers: authorized.offers,
+          proofVersion: authorized.proofVersion, driverTrackingEnded: authorized.driverTrackingEnded }, viewer);
       };
       // A card accepted or released between the page read and this snapshot drops out of the list instead of
       // failing the whole page; a single order still answers 404. ponytail: one re-read per card (pages are small),

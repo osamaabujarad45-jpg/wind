@@ -15,8 +15,9 @@ await new Promise(resolve => server.listen(0, resolve));
 const base = `http://127.0.0.1:${server.address().port}/api`;
 
 const call = apiCaller(() => base);
+const proof = (order, extra = {}) => ({ expectedStatus: order.status, expectedProofVersion: order.proofVersion ?? null, requestId: randomUUID(), ...extra });
 const advance = (token, order, extra = {}, expect = 200) =>
-  call(`/orders/${order.id}/advance`, { token, body: { expectedStatus: order.status, requestId: randomUUID(), ...extra }, expect });
+  call(`/orders/${order.id}/advance`, { token, body: proof(order, extra), expect });
 
 try {
   const admin = await call('/auth/register', { body: { phone: '0599500001', name: 'Admin', password: 'secret1' } });
@@ -41,12 +42,19 @@ try {
   for (const body of [{ kind: 'nope' }, { kind: 'other', note: 'x'.repeat(301) }, {}])
     await call(`/orders/${order.id}/sos`, { token: customer.token, body, expect: 400 });
 
+  const captainView = () => call(`/orders/${order.id}?recoveryProtocol=1`, { token: driver.token });
+  const beforeHold = await captainView(), createdAt = Date.now();
+  const pending = proof(beforeHold, { recoveryProtocol: 1, expectedAssignedAt: beforeHold.assignedAt,
+    expectedVersion: beforeHold.recovery.version, expectedAssignmentEpoch: beforeHold.recovery.assignmentEpoch,
+    attemptCreatedAt: createdAt, attemptExpiresAt: createdAt + 60_000 });
   const reported = await call(`/orders/${order.id}/sos`, { token: customer.token, body: { kind: 'harassment', note: ' Rude messages ' } });
+  const opened = await captainView();
   assert.equal(reported.safetyHold, true);
   assert.deepEqual(reported.safetyReport, { status: 'open', kind: 'harassment', resolution: null });
   const again = await call(`/orders/${order.id}/sos`, { token: customer.token, body: { kind: 'threat' } });
   assert.equal(again.safetyReport.kind, 'harassment'); // repeat returns the open report
   assert.equal(db.prepare('SELECT COUNT(*) n FROM safety_incidents').get().n, 1);
+  assert.equal((await captainView()).recovery.version, opened.recovery.version, 'a duplicate report leaves the revision alone');
 
   // The other party sees a neutral hold, never the report.
   const driverView = await call(`/orders/${order.id}`, { token: driver.token });
@@ -86,8 +94,23 @@ try {
   const list = await call('/admin/incidents', { token: admin.token });
   assert.equal(list[0].status, 'open'); // open first
   await call(`/admin/incidents/${list[0].id}/resolve`, { token: admin.token, body: { resolution: 'Driver safe' } });
-  assert.equal((await call(`/orders/${order.id}`, { token: driver.token })).safetyHold, false);
-  order = await advance(driver.token, order); // unfrozen
+  const resumed = await captainView();
+  assert.equal(resumed.safetyHold, false);
+  assert.equal((await advance(driver.token, beforeHold, {}, 409)).error, 'order_changed', 'the plain advance still carries the pre-hold snapshot');
+  const send = (body, expect = 200) => call(`/orders/${order.id}/advance`, { token: driver.token, body, expect });
+  assert.equal((await send(pending, 409)).error, 'order_changed', 'a queued advance expires across the pause');
+  assert.equal((await send({ ...pending, requestId: randomUUID(), expectedVersion: resumed.recovery.version }, 409)).error,
+    'order_changed', 'refreshing only the recovery envelope cannot make captured proof current');
+  const legacyPending = { ...pending, requestId: randomUUID() };
+  delete legacyPending.expectedProofVersion;
+  assert.equal((await send(legacyPending, 426)).error, 'client_update_required', 'an installed recovery request also receives the upgrade prompt');
+  assert.equal((await send({ requestId: randomUUID(), expectedStatus: resumed.status }, 426)).error, 'client_update_required');
+  assert.ok(opened.recovery.version > beforeHold.recovery.version);
+  assert.ok(resumed.recovery.version > opened.recovery.version);
+  assert.ok(Number.isSafeInteger(resumed.proofVersion));
+  assert.equal(opened.proofVersion, undefined, 'proof is unavailable during a hold');
+  assert.equal(after.proofVersion, undefined, 'the rider does not receive the Captain proof version');
+  order = await advance(driver.token, resumed);
   assert.equal(order.status, 'at_pickup');
 
   const audit = db.prepare("SELECT action FROM security_events WHERE order_id = ? AND action LIKE 'SAFETY_%' ORDER BY id").all(order.id).map(r => r.action);
@@ -95,7 +118,11 @@ try {
   assert.equal((await call('/admin/stats', { token: admin.token })).openIncidents, 0);
 
   // A frozen in-transit order cannot be put on hold either; resolving lifts it.
-  order = await advance(driver.token, order);
+  const pickedUp = proof(order);
+  order = await send(pickedUp);
+  const { handoverCode } = await call(`/orders/${order.id}`, { token: customer.token });
+  const cash = { code: handoverCode, collectedCents: Math.round((order.price - order.discount) * 100) };
+  const oldDoor = proof(order, cash);
   await call(`/orders/${order.id}/sos`, { token: driver.token, body: { kind: 'accident' } });
   const exception = await call(`/orders/${order.id}/exception`, { token: driver.token, body: { reason: 'absent', expectedStatus: 'in_transit', requestId: randomUUID() }, expect: 409 });
   assert.equal(exception.error, 'safety_hold');
@@ -103,8 +130,14 @@ try {
   await call(`/admin/incidents/${open.id}/resolve`, { token: admin.token, body: { resolution: 'Minor, all fine' } });
 
   // Finished orders cannot be reported on; the dispute flow covers them.
-  const { handoverCode } = await call(`/orders/${order.id}`, { token: customer.token });
-  await advance(driver.token, order, { code: handoverCode });
+  assert.equal((await send(oldDoor, 409)).error, 'order_changed', 'pre-hold door cash and code cannot finish the order');
+  assert.equal((await send(pickedUp)).status, 'in_transit', 'a committed pre-hold receipt still acknowledges the original action');
+  const beforeResolution = order;
+  order = await captainView();
+  assert.ok(order.proofVersion > beforeResolution.proofVersion, 'a second hold invalidates the previous proof version');
+  assert.equal(order.collected, undefined);
+  const completed = await advance(driver.token, order, cash);
+  assert.equal(completed.collected.cents, cash.collectedCents);
   await call(`/orders/${order.id}/sos`, { token: customer.token, body: { kind: 'other' }, expect: 409 });
 
   console.log('safety: ok');
