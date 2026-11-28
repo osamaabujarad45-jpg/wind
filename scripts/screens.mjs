@@ -310,7 +310,7 @@ const screens = [
   { id: 'shop-list', group: 'Customer', name: 'Shop delivery · shops in the pilot town', route: '/shop', file: 'src/app/shop/index.tsx', role: 'customer' },
   { id: 'shop-store', group: 'Customer', name: 'Shop · catalogue (weighed items say estimate)', route: `/shop/${bakery.id}`, file: 'src/app/shop/[id].tsx', role: 'customer' },
   { id: 'shop-cart', group: 'Customer', name: 'Shop · checkout and delivery details', route: '/shop/cart', file: 'src/app/shop/cart.tsx', role: 'customer' },
-  { id: 'shop-on-hold', group: 'Customer', name: 'Shop order · on hold after a failed delivery (the order header names the hold)', route: `/order/${shopHold.id}`, file: 'src/shop-ui.tsx (ShopCustomerPanel)', role: 'customer' },
+  { id: 'shop-on-hold', group: 'Customer', name: 'Shop order · on hold after a failed delivery (the order header names the hold)', route: `/order/${shopHold.id}`, file: 'src/app/order/[id].tsx, src/shop-ui.tsx (ShopCustomerPanel)', role: 'customer' },
   { id: 'shop-consent', group: 'Customer', name: 'Shop order · the shop asks before a substitution (approve, decline, add time)', route: `/order/${shopConsent.id}`, file: 'src/shop-ui.tsx (ShopCustomerPanel)', role: 'customer' },
   { id: 'merchant-inbox', group: 'Merchant', name: 'Merchant mode · inbox with a new order and its accept clock', route: '/merchant', file: 'src/app/merchant/index.tsx', role: 'merchant' },
   { id: 'merchant-new-order', group: 'Merchant', name: 'Merchant · accept with preparation minutes or decline with a reason', route: `/merchant/order/${shopNew.id}`, file: 'src/app/merchant/order/[id].tsx', role: 'merchant' },

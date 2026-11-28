@@ -163,7 +163,7 @@ async function booking(page, { service = 'parcel', lostResponse = false, schedul
   return Number(new URL(page.url()).pathname.split('/').pop());
 }
 async function advance(page, id, current, next, code) {
-  if (code) await field(page, current === 'returning' ? c.codeFromSender : c.codeFromCustomer).fill(code);
+  if (code) await field(page, current === 'returning' ? c.codeFromSender : c.codeFromRecipient).fill(code); // booked parcels name a recipient
   await button(page, c[`advance_${current}`]).click();
   await atStatus(id, next);
 }
@@ -400,7 +400,7 @@ try {
   // A lost reply holds the typed code so it can replay, and says why the field is locked; the server's answer then frees it.
   const advancePath = apiRoute(`/api/orders/${id}/advance`);
   await driverPage.route(advancePath, route => route.abort());
-  await field(driverPage, c.codeFromCustomer).fill(order.handoverCode === '0000' ? '1111' : '0000');
+  await field(driverPage, c.codeFromRecipient).fill(order.handoverCode === '0000' ? '1111' : '0000');
   await button(driverPage, c.advance_in_transit).click();
   await driverPage.getByText(c.codeHeldForRetry).waitFor();
   await driverPage.unroute(advancePath);
@@ -513,7 +513,8 @@ try {
   await advance(driverPage, rideId, 'assigned', 'at_pickup');
   await button(driverPage, c.advance_at_pickup_ride).click();
   await atStatus(rideId, 'in_transit');
-  assert.equal(await field(driverPage, c.codeFromCustomer).count(), 0, 'Passenger trip must not request a parcel code');
+  for (const label of [c.codeFromCustomer, c.codeFromRecipient])
+    assert.equal(await field(driverPage, label).count(), 0, 'Passenger trip must not request a parcel code');
   const ride = await call(`/orders/${rideId}`, { token: customerToken });
   assert.match(ride.handoverCode, /^\d{4}$/, 'the rider receives a trip code to share after payment');
   await field(driverPage, c.codeFromRider).fill(ride.handoverCode);

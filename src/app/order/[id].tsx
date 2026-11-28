@@ -176,7 +176,8 @@ export default function OrderScreen() {
   const step = steps.indexOf(['on_hold', 'returning'].includes(order.status) ? 'in_transit' : order.status);
   // a ride under way needs no step, for rider or driver: the bar shows it, and help sits at the foot.
   // Steps speak to the customer or the assigned driver; an admin is neither.
-  const nextHint = (c as Record<string, string | undefined>)[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}`];
+  const nextHint = mine && order.status === 'returning' && order.service === 'shop' ? c.driver_next_returning_shop
+    : (c as Record<string, string | undefined>)[`${mine ? 'driver_' : ''}${order.service === 'ride' ? 'ride_' : ''}next_${order.status}`];
   const live = order.status === 'searching' || activeStatuses.includes(order.status);
   const rate = me.plan === 'pro' ? me.settings.proCommission : me.settings.commission;
   const resetReason = proofReset.id === id ? proofReset.reason : '';
@@ -205,8 +206,11 @@ export default function OrderScreen() {
   const needsCode = rideAction === 'boarding' || order.status === 'in_transit' || (order.status === 'returning' && !order.supportHasGoods);
   const boarding = order.journey?.boarding;
   const boardingPin = boarding ? boarding.shouldShow ? boarding.pin : undefined : order.ride?.boardingCode;
-  // A shop customer hands nothing over at pickup; a rider with a PIN already reads "after checking the vehicle and driver".
-  const next = (isCustomer || mine) && !(isCustomer && order.status === 'at_pickup' && (order.service === 'shop' || !!boardingPin)) && nextHint;
+  // A shop customer prepares and hands over nothing; a rider with a PIN already reads "after checking the vehicle and driver";
+  // once support has the goods, the captain has nothing left to return.
+  const next = (isCustomer || mine)
+    && !(isCustomer && (order.service === 'shop' && ['assigned', 'at_pickup'].includes(order.status) || order.status === 'at_pickup' && !!boardingPin))
+    && !(mine && order.status === 'returning' && order.supportHasGoods) && nextHint;
   const waitingEndsAt = order.journey?.waiting?.waitingEndsAt ?? order.ride?.graceUntil;
   const rideNoShow = mine && order.service === 'ride' && !!order.ride && !order.safetyHold
     && ['assigned', 'at_pickup'].includes(order.status) && waitingEndsAt != null
@@ -303,6 +307,9 @@ export default function OrderScreen() {
 
   const location = locationState(order.driverLocation, now);
   const age = location?.ageSeconds ?? 0;
+  // The driver is close: get the parcel ready (Uber tells the rider when the car is around the corner).
+  const nearby = live && isCustomer && !mine && (order.service === 'parcel' || order.service === 'freight') && order.status === 'assigned'
+    && !!order.pickupPoint && !!order.driverLocation && !location?.stale && crowKm(order.pickupPoint, order.driverLocation) * 1000 <= 500;
   const later = bookedAhead(order, now) ? order.scheduledFor! : 0; // booked ahead: the time
   const finding = order.status === 'searching' && !later;
   const searchMinutes = finding ? Math.max(0, Math.floor((now - Math.max(order.createdAt, order.scheduledFor ?? 0)) / 60_000)) : 0;
@@ -422,9 +429,7 @@ export default function OrderScreen() {
           <Ionicons name="layers-outline" size={16} color={palette.olive} />
           <Txt variant="caption" style={{ flex: 1 }}>{order.service === 'ride' ? c.sharedRideRun : c.courierRun}</Txt>
         </Row>}
-        {/* The driver is close: get the parcel ready (Uber tells the rider when the car is around the corner). */}
-        {live && isCustomer && !mine && (order.service === 'parcel' || order.service === 'freight') && order.status === 'assigned' && order.pickupPoint && order.driverLocation && !location?.stale
-          && crowKm(order.pickupPoint, order.driverLocation) * 1000 <= 500 && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
+        {nearby && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Ionicons name="walk-outline" size={16} color={palette.olive} />
           <Txt variant="caption" style={{ flex: 1, color: palette.olive }}>{fill(c.driverNearby, { m: 500 })}</Txt>
         </Row>}
@@ -458,7 +463,7 @@ export default function OrderScreen() {
           <Txt variant="micro">{order.service === 'ride' ? c.pickup_ride : c.pickup}</Txt>
           <Txt variant="micro">{order.service === 'ride' ? c.dropoff_ride : c.dropoff}</Txt>
         </Row>
-        {next && <Txt variant="caption" style={{ marginTop: 10 }}>{next}</Txt>}
+        {next && !nearby && <Txt variant="caption" style={{ marginTop: 10 }}>{next}</Txt>}
         {/* Uber's stage line: the times we actually recorded, nothing inferred. */}
         {(order.assignedAt || order.pickedUpAt) && <Txt variant="caption" style={{ marginTop: 6 }}>
           {[`${c.requested} ${time(order.createdAt)}`, order.assignedAt ? `${c.driverAssigned} ${time(order.assignedAt)}` : null,
@@ -752,7 +757,7 @@ export default function OrderScreen() {
     <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setPeek} onRefresh={reload}
       header={<View style={{ paddingBottom: 10 }}>
     {/* In the header, not the body: a closed sheet hides its body, and a refused action must still say why. */}
-    <ErrorText>{actionError}</ErrorText>
+    <ErrorText>{rideStep(order) === 'locked' && actionError === c.err_wrong_boarding_code ? '' : actionError}</ErrorText>
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
     {codeAtDoor && <View style={{ paddingBottom: 8 }}>{codes}</View>}
     {/* Booked ahead is neither finding nor active: without this the closed sheet is a bare grip. */}
@@ -804,7 +809,7 @@ export default function OrderScreen() {
           {mine && order.status !== 'on_hold' && (() => {
             const toDropoff = order.status === 'in_transit'; // returning goes back to the sender
             const ride = order.service === 'ride';
-            const label = order.status === 'returning' ? c.returnToSender : toDropoff ? (ride ? c.dropoff_ride : c.dropoff) : (ride ? c.pickup_ride : c.pickup);
+            const label = order.status === 'returning' ? (order.service === 'shop' ? c.returnToShop : c.returnToSender) : toDropoff ? (ride ? c.dropoff_ride : c.dropoff) : (ride ? c.pickup_ride : c.pickup);
             return <NextStop label={label} place={(toDropoff ? to : from)[language]} note={toDropoff ? order.dropoffNote : order.pickupNote} dropoff={toDropoff} />;
           })()}
           {mine && !!order.contact && <Person title={c.customer} name={order.customerName ?? ''} phone={order.contact} />}
@@ -823,7 +828,7 @@ export default function OrderScreen() {
           </>}
         </>}
         {needsCode &&
-          <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? c.codeFromSender : order.service === 'ride' ? c.codeFromRider : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
+          <Field label={rideAction === 'boarding' ? c.rideEnterCode : order.status === 'returning' ? (order.service === 'shop' ? c.codeFromShop : c.codeFromSender) : order.service === 'ride' ? c.codeFromRider : order.recipientPhone ? c.codeFromRecipient : c.codeFromCustomer} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
             disabled={!!busy || advanceLocked === order.status} />}
         {needsCode && !busy && advanceLocked === order.status && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
         {order.status === 'returning' && order.supportHasGoods && <Txt variant="caption">{c.supportHasGoodsDriver}</Txt>}
