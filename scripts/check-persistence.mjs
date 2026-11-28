@@ -2,7 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const tests = ['journey.mjs', 'db-persistence.test.mjs', 'db-api.test.mjs', 'pg-dialect.mjs', 'pg-memo.mjs',
+const tests = ['journey.mjs', 'db-persistence.test.mjs', 'persistence-cleanup.test.mjs', 'db-api.test.mjs', 'pg-review-hardening.mjs', 'pg-dialect.mjs', 'pg-memo.mjs',
   'pg-contracts.mjs', 'pg-import.mjs', 'account-profiles.test.mjs', 'parcel-priority.mjs', 'pg-migration-lock.mjs', 'pg-claims.mjs', 'pg-cash.mjs', 'pg-shop.mjs', 'driver-multi-recipient.mjs', 'pg-offers.mjs', 'pg-jobs-pagination.mjs',
   'pg-customer-rating.mjs', 'pg-email.mjs', 'firebase-reset.test.mjs', 'pg-staff-roles.mjs', 'pg-support-inbox.mjs', 'pg-booking-races.mjs', 'database-logging.test.mjs',
   'cross-process-claims.test.mjs', 'runtime-dependencies.test.mjs',
@@ -16,7 +16,7 @@ const filter = process.argv.find(value => value.startsWith('--filter='))?.slice(
 const selected = tests.filter(name => !filter || name.includes(filter));
 if (!selected.length) throw new Error('No persistence tests match the filter');
 for (const test of selected) {
-  const args = ['firebase-reset.test.mjs', 'account-profiles.test.mjs'].includes(test) ? ['--postgres'] : [];
+  const args = ['firebase-reset.test.mjs', 'account-profiles.test.mjs', 'persistence-cleanup.test.mjs'].includes(test) ? ['--postgres'] : [];
   const result = spawnSync(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--disable-warning=ExperimentalWarning',
     fileURLToPath(new URL(`../tests/${test}`, import.meta.url)), ...args], { stdio: 'inherit', windowsHide: true });
   if (result.error) throw result.error;

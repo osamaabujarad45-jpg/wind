@@ -8,7 +8,8 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],
-  "exclude": ["node_modules", ".artifacts", "android", "ios", "server", "research_notes", ".expo", ".scratch", "dist", "vendor"]
+  "exclude": ["node_modules", ".artifacts", "android", "ios", "server", "research_notes", ".scratch", "dist", "vendor"]
 }

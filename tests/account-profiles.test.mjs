@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { initializeSqlite } from '../server/db/sqlite-schema.ts';
+import { initializeSqliteModeSwitching } from '../server/db/account-profiles.ts';
 import { initializePostgres } from '../server/db/postgres-schema.ts';
 import { importSnapshot, readSnapshot } from '../server/migrate.ts';
 import { SESSION_DAY_MS } from '../server/domain/session-policy.ts';
@@ -20,6 +21,19 @@ const now = Date.now();
 const tokenHash = token => createHash('sha256').update(token).digest('hex');
 let runtime, imported;
 try {
+  for (const incomplete of ['ALTER TABLE sessions ADD COLUMN captain_online_at INTEGER', 'ALTER TABLE merchant_items ADD COLUMN client_request_id TEXT']) {
+    const partialSchema = new DatabaseSync(':memory:');
+    try {
+      initializeSqlite(partialSchema);
+      partialSchema.exec(incomplete);
+      initializeSqliteModeSwitching(partialSchema, true);
+      initializeSqliteModeSwitching(partialSchema, true);
+      // The regular initializer still opens the repaired schema.
+      initializeSqlite(partialSchema);
+      assert.ok(partialSchema.prepare("SELECT 1 FROM pragma_table_info('sessions') WHERE name='last_activity_at'").get(), incomplete);
+      assert.ok(partialSchema.prepare("SELECT 1 FROM pragma_index_list('merchant_items') WHERE name='merchant_items_request' AND \"unique\"=1 AND partial=1").get(), incomplete);
+    } finally { partialSchema.close(); }
+  }
   initializeSqlite(source);
   const preProfiles = `
     DROP INDEX sessions_one_captain;

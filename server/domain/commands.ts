@@ -48,6 +48,8 @@ export async function versionedCommand(db: Persistence, user: { id: number } | n
       fail(403,actor.status === 'pending' ? 'pending_approval' : 'blocked');
     if (driverAction && policy.requirePermanentDriverApproval && !actor.approved_at) fail(403,'pending_approval');
     if (/^\/api\/admin\/cash\/(?:adjustment|remittance|\d+\/resolve)$/.test(path)) needStaff(await staffActor(db, { id: user.id, role: actor.role, status: actor.status }), fail, 'finance');
+    if (/^\/api\/admin\/orders\/\d+\/proof-reset$/.test(path))
+      needStaff(await staffActor(db, { id: user.id, role: actor.role, status: actor.status }, true), fail, 'support');
     if (saved.payload_hash !== hash) fail(409, 'idempotency_conflict');
     const response = JSON.parse(saved.response);
     const target = /^\/api\/(?:orders|jobs|admin\/orders)\/(\d+)(?:\/|$)/.exec(path);

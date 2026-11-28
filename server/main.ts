@@ -1185,7 +1185,7 @@ async function emailTransaction<T>(work: () => Promise<T>) {
     const result = await work();
     await persistence.exec('COMMIT');
     return result;
-  } catch (error) { await persistence.exec('ROLLBACK'); throw error; }
+  } catch (error) { return persistence.rollbackAfterError(error); }
 }
 async function recoveryEmailSessionActive(account: Row, sessionHash: string) {
   const now = Date.now();
@@ -1417,14 +1417,16 @@ route('POST', '/api/auth/logout', async ({ user, req }) => {
 route('GET', '/api/me', async ({ user, query, req }) => {
   const token = bearer(req);
   if (!accountModes) return me(user, query.get('payroll') === '1', token && sha(token));
+  const sessionHash = sha(token!);
   const current = await authenticate(req, false) ?? fail(401, 'unauthorized');
   // only the launch reset writes, so plain polls skip the write lock
   if (current.accountMode !== 'captain' || query.get('launch') !== '1')
-    return me(current, query.get('payroll') === '1', sha(token!));
+    return me(current, query.get('payroll') === '1', sessionHash);
   return emailTransaction(async () => {
     const locked = await authenticate(req, false) ?? fail(401, 'unauthorized');
-    await setCaptainOffline(persistence, locked.id, await captainOfflineReason(persistence, locked.id, sha(token!), Date.now(), true));
-    return me(locked, query.get('payroll') === '1', sha(token!));
+    if (locked.accountMode === 'captain')
+      await setCaptainOffline(persistence, locked.id, await captainOfflineReason(persistence, locked.id, sessionHash, Date.now(), true));
+    return me(locked, query.get('payroll') === '1', sessionHash);
   });
 });
 
@@ -4432,13 +4434,12 @@ route('POST', '/api/admin/orders/:id/proof-reset', async ({ user, params, body }
   if (reason.length < 5) fail(400, 'invalid_input');
   const order = (await getOrder(Number(params[0]), user));
   if (!['in_transit', 'returning'].includes(order.status)) fail(409, 'cannot_advance');
-  (await persistence.exec('BEGIN IMMEDIATE'));
-  try {
+  await emailTransaction(async () => {
+    needStaff(await staffActor(persistence, user, true), fail, 'support');
     (await run('DELETE FROM proof_attempts WHERE order_id = ?', order.id));
     (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, ?, 'PROOF_RESET', ?, ?)`, user.id, order.id, JSON.stringify({ reason }), Date.now()));
     await queuePush([order.driverId ?? null], 'support', order.id); // the driver can enter the code again
-    (await persistence.exec('COMMIT'));
-  } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
+  });
   return { ok: true };
 });
 route('GET', '/api/admin/stats', async ({ user }) => {
@@ -4833,9 +4834,9 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) =>
   const password = randomBytes(12).toString('base64url');
   const hashed = await hashPassword(password);
   // Keep the envelope's actor on the journaled security event: the route no longer runs inside it.
-  await persistence.atomic({ id: user.id, correlationId: randomUUID() }, async () => {
-    (await persistence.exec('BEGIN IMMEDIATE'));
-    try {
+  await persistence.atomic({ id: user.id, correlationId: randomUUID() }, () =>
+    emailTransaction(async () => {
+      needStaff(await staffActor(persistence, user, true), fail, 'support');
       // The password the check was bound to, or two requests racing one proof would both win.
       if (!(await run('UPDATE users SET password = ? WHERE id = ? AND password = ?', hashed, target.id, target.password)).changes) fail(409, 'identity_check_required');
       (await run('DELETE FROM sessions WHERE user_id = ?', target.id));
@@ -4843,9 +4844,7 @@ route('POST', '/api/admin/users/:id/password', async ({ user, params, body }) =>
       await clearFirebaseReset(target.id);
       (await run(`INSERT INTO security_events (actor_id, order_id, action, detail, created_at) VALUES (?, NULL, 'SUPPORT_PASSWORD_RESET', ?, ?)`,
         user.id, JSON.stringify({ targetId: target.id, sessionsRevoked: true, verification }), Date.now()));
-      (await persistence.exec('COMMIT'));
-    } catch (error) { (await persistence.exec('ROLLBACK')); throw error; }
-  });
+    }));
   return { password };
 });
 
@@ -5064,7 +5063,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       if (user?.accountMode && target && url.pathname.startsWith('/api/orders/') && !url.pathname.endsWith('/release')
         && ['POST','PATCH','DELETE'].includes(req.method ?? ''))
         await getOrder(Number(target[1]), user);
-      if (persistence.backend === 'postgres' && target && ['POST','PATCH','DELETE'].includes(req.method ?? '')) {
+      if (persistence.backend === 'postgres' && persistence.inTransaction && target && ['POST','PATCH','DELETE'].includes(req.method ?? '')) {
         // Handler-owned authorization/replay ordering is part of the installed-client contract.
         await one('SELECT id FROM orders WHERE id=? FOR UPDATE', Number(target[1]));
       }
@@ -5115,7 +5114,7 @@ export const server = createServer({ maxHeaderSize: 16_384 }, async (req, res) =
       const result = await match.handler({ user: user!, body, params: match.m!.slice(1), query: url.searchParams, req });
       if (boundary) await persistence.exec('COMMIT');
       return result;
-      } catch (error) { if (boundary) await persistence.exec('ROLLBACK'); throw error; }
+      } catch (error) { if (boundary) return persistence.rollbackAfterError(error); throw error; }
     };
     const profileWrite = user?.accountMode && ['POST','PATCH','DELETE'].includes(req.method ?? '')
       && /^\/api\/(?:orders|jobs|location|driver|captain|merchant|roads|subscriptions|promos|me\/places)(?:\/|$)/.test(url.pathname)

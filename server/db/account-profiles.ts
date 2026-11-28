@@ -103,10 +103,8 @@ export function initializeSqliteModeSwitching(db: DatabaseSync, shopsEnabled: bo
   db.exec('BEGIN IMMEDIATE');
   try {
     const sessionColumns = new Set(db.prepare('PRAGMA table_info(sessions)').all().map(column => column.name));
-    if (!sessionColumns.has('captain_online_at')) {
-      db.exec(`ALTER TABLE sessions ADD COLUMN captain_online_at INTEGER;
-        ALTER TABLE sessions ADD COLUMN last_activity_at INTEGER;`);
-    }
+    if (!sessionColumns.has('captain_online_at')) db.exec('ALTER TABLE sessions ADD COLUMN captain_online_at INTEGER');
+    if (!sessionColumns.has('last_activity_at')) db.exec('ALTER TABLE sessions ADD COLUMN last_activity_at INTEGER');
     const merchantColumns = new Set(db.prepare('PRAGMA table_info(merchants)').all().map(column => column.name));
     if (!merchantColumns.has('published_at')) {
       db.exec(`ALTER TABLE merchants ADD COLUMN published_at INTEGER;
@@ -114,10 +112,8 @@ export function initializeSqliteModeSwitching(db: DatabaseSync, shopsEnabled: bo
         UPDATE merchants SET paused_new = 1 WHERE status = 'pending';`);
     }
     const itemColumns = new Set(db.prepare('PRAGMA table_info(merchant_items)').all().map(column => column.name));
-    if (!itemColumns.has('client_request_id')) {
-      db.exec(`ALTER TABLE merchant_items ADD COLUMN client_request_id TEXT;
-        CREATE UNIQUE INDEX IF NOT EXISTS merchant_items_request ON merchant_items(merchant_id, client_request_id) WHERE client_request_id IS NOT NULL;`);
-    }
+    if (!itemColumns.has('client_request_id')) db.exec('ALTER TABLE merchant_items ADD COLUMN client_request_id TEXT');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS merchant_items_request ON merchant_items(merchant_id, client_request_id) WHERE client_request_id IS NOT NULL');
     const addOfflineReason = `ALTER TABLE sessions ADD COLUMN captain_offline_reason TEXT
       CHECK (captain_offline_reason IN ('idle','ride_due','launch'))`;
     if (!sessionColumns.has('captain_offline_reason')) db.exec(addOfflineReason);

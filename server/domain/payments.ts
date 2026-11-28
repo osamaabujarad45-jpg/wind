@@ -54,18 +54,27 @@ export class Payments {
   // G-COD (SRS §G): creating goods COD requires the flag. Existing COD can still be read, collected, remitted and resolved.
   private codWrites() { if (process.env.WIND_GOODS_COD !== 'on') this.fail(409, 'cod_unavailable'); }
   private async providerGate() { await this.gate(); if (!this.provider) this.fail(409, 'payments_unavailable'); return this.provider!; }
-  private async tx<T>(work: () => Promise<T>): Promise<T> { return this.db.scope(async () => { if (this.db.inTransaction) return work(); await this.db.exec('BEGIN'); try { const value = await work(); await this.db.exec('COMMIT'); return value; } catch (e) { if (this.db.inTransaction) await this.db.exec('ROLLBACK'); throw e; } }); }
-  private async order(actor: Actor, id: number) { const row = await this.db.one('SELECT * FROM orders WHERE id=?', id) ?? this.fail(404, 'not_found'); if (actor.role !== 'admin' && actor.id !== Number(row.customer_id) && actor.id !== Number(row.driver_id)) this.fail(403, 'forbidden'); return row; }
+  private async tx<T>(work: () => Promise<T>): Promise<T> { return this.db.scope(async () => { if (this.db.inTransaction) return work(); await this.db.exec('BEGIN'); try { const value = await work(); await this.db.exec('COMMIT'); return value; } catch (error) { return this.db.rollbackAfterError(error); } }); }
+  private async order(actor: Actor, id: number, lock = false) { const row = await this.db.one(`SELECT * FROM orders WHERE id=?${lock ? ' FOR UPDATE' : ''}`, id) ?? this.fail(404, 'not_found'); if (actor.role !== 'admin' && actor.id !== Number(row.customer_id) && actor.id !== Number(row.driver_id)) this.fail(403, 'forbidden'); return row; }
   private owner(actor: Actor, order: Row) { if (actor.role !== 'admin' && !(actor.role === 'customer' && actor.id === Number(order.customer_id))) this.fail(403, 'forbidden'); }
   private driver(actor: Actor, order: Row) { if (actor.role !== 'admin' && !(actor.role === 'driver' && actor.id === Number(order.driver_id))) this.fail(403, 'forbidden'); }
   async createIntent(actor: Actor, orderId: number, body: Row) {
-    const provider = await this.providerGate(); const order = await this.order(actor, orderId); this.owner(actor, order);
-    if (['cancelled', 'returned'].includes(order.status)) this.fail(409, 'order_not_payable'); // card settles a completed order after the trip (T31); cancelled money would need a refund
-    if (!Number.isSafeInteger(body.amountMinor) || body.amountMinor <= 0) this.fail(400, 'invalid_amount');
-    if (Number(order.price_minor) !== body.amountMinor) this.fail(409, 'amount_mismatch');
+    const provider = await this.providerGate();
+    if (this.db.inTransaction) this.fail(409, 'payment_in_transaction');
     const id = randomUUID(), now = Date.now(), ref = `order:${orderId}:payment`;
-    const created = await this.db.one("INSERT INTO payment_intents(id,business_ref,order_id,quote_id,amount_minor,currency,status,provider,actor_id,created_at,updated_at) VALUES(?::uuid,?,?,?::uuid,?,'ILS','pending','fake',?,?,?) ON CONFLICT(business_ref) DO NOTHING RETURNING *", id, ref, orderId, order.quote_id ?? null, body.amountMinor, actor.id, now, now);
-    if (!created) { const prior = (await this.db.one('SELECT * FROM payment_intents WHERE business_ref=?', ref))!; if (Number(prior.amount_minor) !== body.amountMinor) this.fail(409, 'idempotency_conflict'); return prior; }
+    const prior = await this.tx(async () => {
+      const order = await this.order(actor, orderId, true);
+      this.owner(actor, order);
+      if (['cancelled', 'returned'].includes(order.status)) this.fail(409, 'order_not_payable');
+      if (!Number.isSafeInteger(body.amountMinor) || body.amountMinor <= 0) this.fail(400, 'invalid_amount');
+      if (Number(order.price_minor) !== body.amountMinor) this.fail(409, 'amount_mismatch');
+      const created = await this.db.one("INSERT INTO payment_intents(id,business_ref,order_id,quote_id,amount_minor,currency,status,provider,actor_id,created_at,updated_at) VALUES(?::uuid,?,?,?::uuid,?,'ILS','pending','fake',?,?,?) ON CONFLICT(business_ref) DO NOTHING RETURNING *", id, ref, orderId, order.quote_id ?? null, body.amountMinor, actor.id, now, now);
+      if (created) return null;
+      const existing = (await this.db.one('SELECT * FROM payment_intents WHERE business_ref=?', ref))!;
+      if (Number(existing.amount_minor) !== body.amountMinor) this.fail(409, 'idempotency_conflict');
+      return existing;
+    });
+    if (prior) return prior;
     let result: Result; try { result = await provider.create(id, body.amountMinor); } catch { result = { outcome: 'timeout', providerRef: '' }; }
     await this.db.run('INSERT INTO payment_attempts(id,intent_id,provider_ref,outcome,created_at) VALUES(?::uuid,?::uuid,?,?,?)', randomUUID(), id, result.providerRef || null, result.outcome, Date.now());
     await this.db.run("UPDATE payment_intents SET provider_ref=?,status=CASE WHEN status='pending' AND ? IN ('captured','failed','voided') THEN ? ELSE status END,updated_at=? WHERE id=?::uuid", result.providerRef || null, result.outcome, result.outcome, Date.now(), id);
@@ -86,8 +95,32 @@ export class Payments {
       if (card) this.fail(409, 'settlement_conflict');
     }
   }
-  async getIntent(actor: Actor, orderId: number) { const provider = await this.providerGate(); const order = await this.order(actor, orderId); this.owner(actor, order); const intent = await this.db.one('SELECT * FROM payment_intents WHERE order_id=?', orderId) ?? null; if (!intent || intent.status !== 'pending') return intent; const result = await provider.query(String(intent.id)); if (result.outcome === 'captured') { await this.tx(async () => { await this.settlementGate(orderId, 'card'); await this.db.run("UPDATE payment_intents SET status=?,provider_ref=?,updated_at=? WHERE id=?::uuid AND status='pending'", result.outcome, result.providerRef, Date.now(), intent.id); }); } else if (['failed','voided'].includes(result.outcome)) await this.db.run("UPDATE payment_intents SET status=?,provider_ref=?,updated_at=? WHERE id=?::uuid AND status='pending'", result.outcome, result.providerRef, Date.now(), intent.id); return await this.db.one('SELECT * FROM payment_intents WHERE id=?::uuid', intent.id); }
-  async query(actor: Actor, orderId: number) { const provider = await this.providerGate(); const intent = await this.getIntent(actor, orderId) ?? this.fail(404, 'not_found'); const result = await provider.query(String(intent.id)); if (result.outcome === 'captured') { await this.tx(async () => { await this.settlementGate(orderId, 'card'); await this.db.run("UPDATE payment_intents SET status=?,provider_ref=?,updated_at=? WHERE id=?::uuid AND status='pending'", result.outcome, result.providerRef, Date.now(), intent.id); }); } else if (['failed','voided'].includes(result.outcome)) await this.db.run("UPDATE payment_intents SET status=?,provider_ref=?,updated_at=? WHERE id=?::uuid AND status='pending'", result.outcome, result.providerRef, Date.now(), intent.id); return (await this.db.one('SELECT * FROM payment_intents WHERE id=?::uuid', intent.id))!; }
+  private async recordQueryResult(intent: Row, result: Result) {
+    const update = () => this.db.run("UPDATE payment_intents SET status=?,provider_ref=?,updated_at=? WHERE id=?::uuid AND status='pending'",
+      result.outcome, result.providerRef, Date.now(), intent.id);
+    if (result.outcome === 'captured') {
+      await this.tx(async () => {
+        // Match the webhook's lock order. A refund or webhook may have moved the row while the provider was responding.
+        const current = await this.db.one('SELECT status FROM payment_intents WHERE id=?::uuid FOR UPDATE', intent.id);
+        if (current?.status !== 'pending') return;
+        await this.settlementGate(Number(intent.order_id), 'card');
+        await update();
+      });
+    } else if (['failed', 'voided'].includes(result.outcome)) await update();
+    return await this.db.one('SELECT * FROM payment_intents WHERE id=?::uuid', intent.id);
+  }
+  async getIntent(actor: Actor, orderId: number) {
+    const provider = await this.providerGate();
+    this.owner(actor, await this.order(actor, orderId));
+    const intent = await this.db.one('SELECT * FROM payment_intents WHERE order_id=?', orderId) ?? null;
+    if (!intent || intent.status !== 'pending') return intent;
+    return this.recordQueryResult(intent, await provider.query(String(intent.id)));
+  }
+  async query(actor: Actor, orderId: number) {
+    const provider = await this.providerGate();
+    const intent = await this.getIntent(actor, orderId) ?? this.fail(404, 'not_found');
+    return (await this.recordQueryResult(intent, await provider.query(String(intent.id))))!;
+  }
   async applyProviderEvent(event: Row, signature?: string) {
     if (!(await this.verify(event, signature))) this.fail(401, 'invalid_signature');
     await this.providerGate();

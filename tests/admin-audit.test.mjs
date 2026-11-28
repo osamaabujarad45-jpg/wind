@@ -25,7 +25,7 @@ Object.assign(process.env, { NODE_ENV: 'test', DB_PATH: join(dir, 'test.db'), WI
   CLOUDFLARE_EMAIL_TOKEN: 'synthetic-email-token',
   CLOUDFLARE_API_BASE: `http://127.0.0.1:${mailServer.address().port}/client/v4` });
 for (const key of ['WIND_DATABASE_URL', 'DATABASE_URL', 'WIND_POSTGRES_STAGING']) delete process.env[key];
-const { server, shutdown, db, promote, pruneExpired } = await import('../server/main.ts');
+const { server, shutdown, db, persistence, promote, pruneExpired } = await import('../server/main.ts');
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const call = apiCaller(() => `http://127.0.0.1:${server.address().port}/api`);
 const phones = [], names = [], email = 'recovery@wind.example', password = 'Synthetic-Audit-123';
@@ -95,6 +95,34 @@ try {
   subscribe(driver);
   const attestation = 'Checked the synthetic recovery evidence';
   await forbidden(`/admin/users/${driver.user.id}/password`, { attestation });
+  const resetEntered = Promise.withResolvers(), resumeReset = Promise.withResolvers();
+  const execute = persistence.exec;
+  persistence.exec = async function(command) {
+    if (command === 'BEGIN IMMEDIATE') {
+      persistence.exec = execute;
+      resetEntered.resolve();
+      await resumeReset.promise;
+    }
+    return execute.call(this, command);
+  };
+  const heldReset = fetch(`http://127.0.0.1:${server.address().port}/api/admin/users/${driver.user.id}/password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${admin.token}` },
+    body: JSON.stringify({ attestation }),
+  });
+  try {
+    await Promise.race([resetEntered.promise, heldReset.then(() => { throw new Error('Reset missed the write boundary'); })]);
+    db.prepare("UPDATE users SET role='customer' WHERE id=?").run(admin.user.id);
+    resumeReset.resolve();
+    const response = await heldReset;
+    assert.equal(response.status, 403, 'a lost admin role must prevent a reset after hashing');
+    assert.deepEqual(await response.json(), { error: 'forbidden' });
+    assert.equal(subscriptions(driver), 1);
+    await call('/me', { token: driver.token });
+  } finally {
+    resumeReset.resolve();
+    persistence.exec = execute;
+    db.prepare("UPDATE users SET role='admin' WHERE id=?").run(admin.user.id);
+  }
   const reset = await call(`/admin/users/${driver.user.id}/password`, { token: admin.token, body: { attestation } });
   assert.equal(subscriptions(driver), 0, 'support reset removes browser alerts');
   await call('/me', { token: driver.token, expect: 401 });

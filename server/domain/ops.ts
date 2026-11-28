@@ -16,10 +16,14 @@ export async function opsAvailable(db: Persistence) {
   return !!(tables?.cases && tables.migrations && await db.one('SELECT version FROM schema_migrations WHERE version=18'));
 }
 // The public user projection deliberately does not expose staff roles. Read current authority on each action.
-export async function staffActor(db: Persistence, actor: Actor): Promise<Actor> {
-  if (!(await opsAvailable(db))) return actor;
-  const row = await db.one('SELECT role,staff_role FROM users WHERE id=?', actor.id);
-  return row ? { ...actor, role: row.role, staff_role: row.staff_role } : { ...actor, role: '', staff_role: null };
+export async function staffActor(db: Persistence, actor: Actor, lock = false): Promise<Actor> {
+  if (lock && !db.inTransaction) throw new Error('Locking staff authority requires a transaction');
+  const scoped = await opsAvailable(db);
+  if (!scoped && !lock) return actor;
+  const row = await db.one(`SELECT role,status${scoped ? ',staff_role' : ''} FROM users WHERE id=?${lock && db.backend === 'postgres' ? ' FOR UPDATE' : ''}`, actor.id);
+  return row && (!lock || row.status !== 'blocked')
+    ? { ...actor, role: row.role, status: row.status, staff_role: row.staff_role }
+    : { ...actor, role: '', staff_role: null };
 }
 export class Ops {
   private db: Persistence;
