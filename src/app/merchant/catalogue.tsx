@@ -1,7 +1,7 @@
 // The shop's catalogue (DLV-01, MER-02): sections, items, prices in shekels (stored as agorot), sold by weight, and the
 // out-of-stock switch, which is the edit a busy shop makes most often.
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Switch, View } from 'react-native';
+import { ActivityIndicator, Platform, Switch, View } from 'react-native';
 import { api, useApi } from '../../api';
 import { minorFromText, type MerchantItem } from '../../model';
 import { newRequestId } from '../../command-id';
@@ -43,7 +43,9 @@ export default function MerchantCatalogue() {
           <Row gap={8} style={{ minHeight: 44 }}>
             <Switch value={i.available} onValueChange={() => toggle(i)} disabled={busy === i.id} hitSlop={8}
               accessibilityLabel={fill(c.merchantStockOf, { item: language === 'ar' ? i.nameAr : i.nameEn })} accessibilityState={{ busy: busy === i.id }}
-              trackColor={{ true: palette.olive, false: palette.field }} thumbColor={palette.card} />
+              trackColor={{ true: palette.olive, false: palette.field }} thumbColor={palette.card}
+              // react-native-web ignores thumbColor while the switch is on and paints its own teal
+              {...(Platform.OS === 'web' && { activeThumbColor: palette.card })} />
             {busy === i.id && <ActivityIndicator size="small" color={palette.olive} />}
             <Txt variant="label" style={{ color: i.available ? palette.olive : palette.secondary }}>{i.available ? c.merchantInStock : c.merchantNotInStock}</Txt>
           </Row>

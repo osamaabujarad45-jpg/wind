@@ -16,7 +16,7 @@ import {
   Appear, Avatar, Badge, Button, Card, Choices, confirm, ErrorText, Field, FilterChips, fill, Header, haptic, iconSize, ListGroup, ListRow, Press, Row, Screen, Txt, useCopy, type IconName,
 } from './ui';
 import { themeChoices, themedStyles, useTheme } from './theme-context';
-import { lineOf } from './theme';
+import { face, lineOf } from './theme';
 
 // Each service wears its line's accent (theme.ts lines): Ride blue, Send (parcel and freight) olive, Shop berry. Clay now means
 // only the logo pin and the destination; ONE-12: the accent stays on the icon and badge.
@@ -412,7 +412,7 @@ export function PasswordCard() {
   // A row inside a ListGroup; opens in place into the form.
   if (!open) return <View>
     <ListRow icon="key-outline" label={c.changePassword} tone="muted" onPress={() => { setOpen(true); setMessage(''); }} />
-    {!!message && <View accessibilityLiveRegion="polite"><Txt center variant="caption" style={{ color: palette.olive, fontWeight: '800', paddingBottom: 10 }}>{message}</Txt></View>}
+    {!!message && <View accessibilityLiveRegion="polite"><Txt center variant="caption" style={{ color: palette.olive, fontFamily: face.semibold, paddingBottom: 10 }}>{message}</Txt></View>}
   </View>;
   return <Appear style={{ padding: 16 }}>
     <Field label={c.currentPassword} value={current} onChangeText={setCurrent} secureTextEntry autoComplete="password" />
@@ -582,7 +582,7 @@ export function AccountScreen() {
 
 const useStyles = themedStyles(palette => StyleSheet.create({
   helpLinkTarget: { minHeight: 44, justifyContent: 'center' },
-  link: { color: palette.olive, fontWeight: '800', textDecorationLine: 'underline', paddingVertical: 8 },
+  link: { color: palette.olive, fontFamily: face.semibold, textDecorationLine: 'underline', paddingVertical: 8 },
   stop: { alignItems: 'stretch', gap: 10, minHeight: 48 },
   rail: { width: 12, alignItems: 'center', paddingTop: 5 },
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: palette.olive },

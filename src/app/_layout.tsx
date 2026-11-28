@@ -21,6 +21,8 @@ import { ThemeProvider, useTheme } from '../theme-context';
 SplashScreen.preventAutoHideAsync();
 // Native builds embed the heading fonts (expo-font plugin in app.json); the web loads them separately.
 if (Platform.OS === 'web') Font.loadAsync({
+  'ReadexPro-Regular': require('../../assets/fonts/ReadexPro-Regular.ttf'),
+  'ReadexPro-Medium': require('../../assets/fonts/ReadexPro-Medium.ttf'),
   'ReadexPro-Bold': require('../../assets/fonts/ReadexPro-Bold.ttf'),
   'ReadexPro-SemiBold': require('../../assets/fonts/ReadexPro-SemiBold.ttf'),
 }).catch(() => { /* headings fall back to the system font at regular weight: still the largest, darkest text on screen */ });

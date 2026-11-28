@@ -8,6 +8,7 @@ import { QtyControl, todayHours } from '../../shop-ui';
 import { View } from 'react-native';
 import { Button, Card, confirm, Empty, fill, Header, IconButton, Loading, Row, Screen, Section, Txt, useCopy } from '../../ui';
 import { useTheme } from '../../theme-context';
+import { face } from '../../theme';
 
 export default function ShopStore() {
   const { palette } = useTheme();
@@ -30,7 +31,7 @@ export default function ShopStore() {
   return <Screen onRefresh={reload} footer={footer}>
     <Header title={m.name} back subtitle={[m.open ? c.shopOpen : c.shopClosed, fill(c.shopMinimum, { r: money(m.minOrderAgorot / 100) }),
       fill(c.shopDeliveryFee, { r: money(m.deliveryFeeAgorot / 100) })].join(' · ')} />
-    {!m.open && <Card tone="warn"><Txt>{c.shopClosedBody}</Txt>{!!todayHours(m, c) && <Txt style={{ marginTop: 4, fontWeight: '700' }}>{todayHours(m, c)}</Txt>}</Card>}
+    {!m.open && <Card tone="warn"><Txt>{c.shopClosedBody}</Txt>{!!todayHours(m, c) && <Txt style={{ marginTop: 4, fontFamily: face.semibold }}>{todayHours(m, c)}</Txt>}</Card>}
     {!data.items.length && <Empty icon="basket-outline" title={c.shopNoItems} />}
     {sections.map(section => <Card key={section}>
       <Section title={section} />
@@ -41,8 +42,8 @@ export default function ShopStore() {
         // that was the loudest thing on the screen. A weighed price says it is an estimate until the shop weighs it.
         return <Row key={item.id} style={{ justifyContent: 'space-between', paddingVertical: 10, borderTopWidth: 1, borderTopColor: palette.line }}>
           <View style={{ flex: 1, gap: 2 }}>
-            <Txt style={{ color: palette.ink, fontWeight: '600' }}>{name}</Txt>
-            <Txt style={{ color: palette.ink, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
+            <Txt style={{ color: palette.ink, fontFamily: face.medium }}>{name}</Txt>
+            <Txt style={{ color: palette.ink, fontFamily: face.semibold, fontVariant: ['tabular-nums'] }}>
               {item.byWeight ? `${fill(c.shopPerKg, { r: money(item.priceAgorot / 100) })} ${c.shopEstimateShort}` : money(item.priceAgorot / 100)}
             </Txt>
           </View>

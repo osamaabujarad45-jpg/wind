@@ -508,6 +508,32 @@ for (const times of [[10, 100, 600], [400, 600]]) {
   h.unmount();
 }
 
+{
+  const all = (node, out = []) => { if (Array.isArray(node)) node.forEach(child => all(child, out)); else if (node && typeof node === 'object') { out.push(node); all(node.props?.children, out); } return out; };
+  let retried = 0;
+  const h = harness('route-preview.tsx');
+  const route = { pickup: first, dropoff: latest, pickupTitle: 'Pickup name', dropoffTitle: 'Dropoff name' };
+  h.render(h.exports.default, { ...route, fill: true, insets: { top: 90, bottom: 420 }, onRetry: () => { retried++; } });
+  const column = all(h.tree).find(node => node.type === 'ScrollView');
+  assert.deepEqual(plain(Object.assign({}, ...[column.props.style].flat())), { position: 'absolute', top: 90, bottom: 420, left: 0, right: 0 },
+    'words and Retry stay between the top bar and the sheet, and scroll if that is too small');
+  const inside = all(column);
+  assert.deepEqual(inside.filter(node => node.type === 'Text').map(node => node.props.children).filter(text => text === 'Pickup name' || text === 'Dropoff name'), ['Pickup name', 'Dropoff name']);
+  const retry = inside.find(node => node.type === 'Pressable');
+  const look = Object.assign({}, ...[retry.props.style].flat(Infinity).filter(Boolean));
+  assert.ok(look.minHeight >= 48 && look.minWidth >= 48, 'the full-screen Retry must carry a 48dp box');
+  assert.notEqual(column.props.scrollEnabled, false, 'a short screen reaches Retry by scrolling the column');
+  retry.props.onPress(); assert.equal(retried, 1);
+  const spoken = () => all(h.tree).filter(node => String(node.props?.accessibilityLabel).includes('Pickup name')).length;
+  assert.equal(spoken(), 0, 'the full screen reads the stops from the words alone');
+  h.render(h.exports.default, route); assert.equal(spoken(), 1, 'a card is read from its drawing');
+  for (const props of [{ ...route }, { ...route, fill: true, plain: true }]) {
+    h.render(h.exports.default, props);
+    assert.equal(all(h.tree).some(node => node.type === 'Text' || node.type === 'Pressable'), false, 'cards and the loading placeholder draw shapes only');
+  }
+  h.unmount();
+}
+
 for (const kind of ['route', 'pin']) for (const insets of [{ top: 80, bottom: 220 }, { top: 80, left: 340 }, { top: 80, right: 340 }, {}]) for (const fill of [false, true]) {
   const failures = require('../src/map-failures.ts');
   failures.retryMapProviders();
@@ -520,6 +546,14 @@ for (const kind of ['route', 'pin']) for (const insets of [{ top: 80, bottom: 22
   const frame = flatten(h.tree.props.style);
   if (fill) assert.deepEqual(plain(frame), { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#E6ECE3' }, 'exhausted maps must still fill the screen');
   else { assert.equal(frame.height, 280); assert.equal(frame.width, '100%'); }
+  if (kind === 'route' && fill) {
+    assert.equal(find(h.tree, 'Pressable'), undefined, 'the full-screen route fallback keeps Retry in the preview column');
+    const preview = find(h.tree, 'RoutePreview');
+    assert.deepEqual(plain(preview.insets), insets);
+    preview.onRetry(); h.render(); assert.equal(h.tree.type, 'Google');
+    h.unmount(); failures.retryMapProviders(); continue;
+  }
+  if (kind === 'route') assert.equal(find(h.tree, 'RoutePreview').onRetry, undefined);
   const retry = find(h.tree, 'Pressable');
   const look = flatten(retry.style);
   assert.ok(look.minHeight >= 48 && look.minWidth >= 48, 'provider Retry must carry a 48dp box');

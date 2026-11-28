@@ -17,6 +17,7 @@ import { useSession } from './session';
 import { Badge, Button, Card, CodeField, ErrorText, Field, fill, haptic, Row, Txt, useCopy } from './ui';
 import type { CopyKey } from './copy';
 import { themedStyles, useTheme } from './theme-context';
+import { face } from './theme';
 
 type Purpose = 'verify' | 'change';
 type Active = { purpose: Purpose; challengeId: string; phone: string; expiresAt: number; resendAt: number; state: string; attempts: number };
@@ -211,11 +212,11 @@ export function PhoneCard() {
     <Row gap={10} style={styles.locked}>
       <Ionicons name={isVerified ? 'shield-checkmark' : 'call-outline'} size={16} color={isVerified ? palette.olive : palette.secondary} />
       <Txt variant="title" selectable style={[styles.ltr, { flex: 1, color: palette.secondary }]}>{user.phone}</Txt>
-      {badge && <View>{/* Badge aligns itself to the top of a row; this keeps it centred */}<Badge label={badge.label} tone={badge.tone} /></View>}
+      {badge && !featureOff && <View>{/* Badge aligns itself to the top of a row; this keeps it centred */}<Badge label={badge.label} tone={badge.tone} /></View>}
     </Row>
     {/* When the gate is closed, each disabled control already says why; repeating it here only adds noise */}
     {(gate === 'ready' || gate === 'checking') && <Txt variant="caption" style={{ marginTop: 8 }}>{status}</Txt>}
-    {verifiedNow && <Txt variant="caption" style={{ marginTop: 6, color: palette.olive, fontWeight: '700' }}>{c.phone_done_verified}</Txt>}
+    {verifiedNow && <Txt variant="caption" style={{ marginTop: 6, color: palette.olive, fontFamily: face.semibold }}>{c.phone_done_verified}</Txt>}
 
     {/* Phone codes switched off: one line says so, instead of two disabled buttons around it (UI review 23 Nov) */}
     {featureOff && <Txt variant="caption" style={{ marginTop: 8 }}>{reason(blockKey)}</Txt>}

@@ -183,3 +183,7 @@ export const themeChoices: readonly ThemeChoice[] = ['auto', 'day', 'night'];
 /** The theme a choice resolves to: Automatic is Night only for a captain after sunset. */
 export const resolveTheme = (choice: ThemeChoice, captain: boolean, dark: boolean): ThemeName =>
   choice === 'auto' ? (captain && dark ? 'night' : 'day') : choice;
+
+/** Readex Pro, one file per weight, for Arabic and Latin. Text picks a weight by naming a file; no style sets a numeric font weight:
+ *  Android would fake-bold the file, and any Text without a family falls back to the system font (a book Naskh in Arabic). */
+export const face = { regular: 'ReadexPro-Regular', medium: 'ReadexPro-Medium', semibold: 'ReadexPro-SemiBold', bold: 'ReadexPro-Bold' } as const;

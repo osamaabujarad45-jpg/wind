@@ -20,8 +20,10 @@ import { localAlert, useNewIds } from '../../local-alert';
 import { useSession } from '../../session';
 import { DriverSupportCard } from '../../driver-support-card';
 import { OfferClock } from '../../driver-offer-clock';
+import { ProfileButton } from '../../profile-switch';
 import { Button, Card, Empty, ErrorText, Field, FilterChips, fill, haptic, IconButton, iconSize, Loading, Press, Reason, Row, Screen, Txt, useCopy } from '../../ui';
 import { themedStyles, useTheme } from '../../theme-context';
+import { face } from '../../theme';
 
 type JobsPage = { version: 1; jobs: Order[]; nextCursor: string | null };
 
@@ -231,6 +233,7 @@ export default function Jobs() {
       <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', justifyContent: 'space-between', alignItems: 'flex-start' }} pointerEvents="box-none">
         <View style={[styles.title, shadow]}><Txt variant="title" numberOfLines={1}>{c.jobs}{jobs?.length ? ` (${jobs.length})` : ''}</Txt></View>
         <View style={{ gap: 8 }}>
+          <ProfileButton />
           <IconButton icon="trail-sign-outline" label={c.roads} onPress={() => router.push('/roads')} />
           {!presenceOn && !assigned && !locateOn && !permission?.granted && <IconButton icon="locate" label={c.useLocation} onPress={locate} />}
         </View>
@@ -246,7 +249,7 @@ export default function Jobs() {
         {/* Off: the ochre card itself is the warning (a white pill inside it read as a second box, 23 Nov), and the chevron shows it acts. */}
         <Row gap={8} style={[styles.location, located ? { backgroundColor: 'rgba(211,242,122,0.14)' } : styles.locationOff]}>
           <Ionicons name={located ? 'locate' : 'location-outline'} size={16} color={located ? palette.lime : palette.warn} />
-          <Txt variant="caption" style={{ flex: 1, fontWeight: '700', color: located ? palette.lime : palette.warn }}>
+          <Txt variant="caption" style={{ flex: 1, fontFamily: face.semibold, color: located ? palette.lime : palette.warn }}>
             {located ? c.sharingLocation : locating ? c.locationStarting : c.locationOff}
           </Txt>
           {!located && !locating && <Ionicons name={rtl ? 'chevron-back' : 'chevron-forward'} size={16} color={palette.warn} />}

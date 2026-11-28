@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { chromium } from 'playwright';
 import { copy } from '../src/copy.ts';
+import { orderCode } from '../src/model.ts';
 import { apiCaller } from '../tests/support/api.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -99,11 +100,55 @@ async function login(page, identifier) {
   await button(page, c.signIn).click();
   await page.waitForURL(url => !url.pathname.startsWith('/auth'));
 }
+// The full-screen map fallback on an open order. The sheet's grip is its top edge; Playwright's own scrolling is never
+// used to measure. Only the column's Retry counts: the map page's centred one shows for a moment before the fallback.
+function fallbackOn(page) {
+  const column = page.getByTestId('route-preview-column');
+  const columnRetry = column.getByRole('button', { name: c.retry, exact: true });
+  const grip = button(page, c.sheetExpand);
+  const between = async () => {
+    const area = await column.boundingBox(), sheet = await grip.boundingBox();
+    return { top: area.y, height: area.height, gap: sheet.y - (area.y + area.height) };
+  };
+  // Settled once it starts under the top bar and ends at the sheet; before both are measured it covers the screen.
+  const placed = state => state.top > 0 && Math.abs(state.gap) <= 2;
+  // `clear`: all of Retry is inside the column and above the sheet, and a tap at the middle of any side or the centre
+  // lands on it.
+  const retryNow = async () => {
+    const area = await column.boundingBox(), sheetTop = (await grip.boundingBox()).y;
+    const box = await columnRetry.evaluate(element => {
+      const { top, bottom, left, right, width, height } = element.getBoundingClientRect(), x = left + width / 2, y = top + height / 2;
+      const taps = [[x, y], [x, top + 1], [x, bottom - 1], [left + 1, y], [right - 1, y]];
+      return { top, bottom, left, right, width, height, hit: taps.every(tap => element.contains(document.elementFromPoint(...tap))) };
+    });
+    const inside = box.left >= area.x - 0.5 && box.right <= area.x + area.width + 0.5
+      && box.top >= area.y - 0.5 && box.bottom <= Math.min(area.y + area.height, sheetTop) + 0.5;
+    return { ...box, sheetTop, columnTop: area.y, columnBottom: area.y + area.height, scrolled: await column.evaluate(element => element.scrollTop), clear: inside && box.hit };
+  };
+  const wheel = async () => {
+    const area = await column.boundingBox();
+    await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+    await page.mouse.wheel(0, 600);
+  };
+  return { column, columnRetry, between, placed, retryNow, wheel };
+}
+// 200% text as Android's font scale does it: every text element's size and line height double.
+const doubleText = async page => {
+  await page.evaluate(() => {
+    for (const element of document.querySelectorAll('body *')) {
+      if (![...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim())) continue;
+      const computed = getComputedStyle(element);
+      element.style.fontSize = `${parseFloat(computed.fontSize) * 2}px`;
+      if (computed.lineHeight !== 'normal') element.style.lineHeight = `${parseFloat(computed.lineHeight) * 2}px`;
+    }
+  });
+  await page.waitForTimeout(400);
+};
 async function signup(page, phone, name, driver = false) {
   await page.goto(base + '/auth');
   await page.getByRole('radio', { name: c.signUp, exact: true }).click();
   await field(page, c.name).fill(name);
-  await field(page, c.email).fill(`${phone}@example.test`);
+  await field(page, c.recoveryEmailOptional).fill(`${phone}@example.test`);
   await field(page, c.phone).fill(phone);
   await field(page, c.password).fill(password);
   if (driver) {
@@ -163,7 +208,7 @@ async function booking(page, { service = 'parcel', lostResponse = false, schedul
   return Number(new URL(page.url()).pathname.split('/').pop());
 }
 async function advance(page, id, current, next, code) {
-  if (code) await field(page, current === 'returning' ? c.codeFromSender : c.codeFromCustomer).fill(code);
+  if (code) await field(page, current === 'returning' ? c.codeFromSender : c.codeFromRecipient).fill(code); // booked parcels name a recipient
   await button(page, c[`advance_${current}`]).click();
   await atStatus(id, next);
 }
@@ -188,8 +233,12 @@ try {
     await page.goto(base + '/help?topic=password');
     await options;
     await page.waitForTimeout(300); // let the answer settle on what the server said
-    await page.getByText(emailReset ? text.a_password : text.a_password_support, { exact: true }).waitFor();
-    assert.equal(await page.getByText(emailReset ? text.a_password_support : text.a_password, { exact: true }).count(), 0, 'Help gives one answer: the email path only where the server can send one');
+    // This mock offers no link proof, so the email path sends a code (help.tsx chooses the same way).
+    const answers = [text.a_password, text.a_password_code, text.a_password_support];
+    const expected = emailReset ? text.a_password_code : text.a_password_support;
+    await page.getByText(expected, { exact: true }).waitFor();
+    for (const other of answers.filter(answer => answer !== expected))
+      assert.equal(await page.getByText(other, { exact: true }).count(), 0, 'Help gives one answer: the email path only where the server can send one');
   }
   pass('recovery guidance matches available methods in Arabic and English');
 
@@ -400,7 +449,7 @@ try {
   // A lost reply holds the typed code so it can replay, and says why the field is locked; the server's answer then frees it.
   const advancePath = apiRoute(`/api/orders/${id}/advance`);
   await driverPage.route(advancePath, route => route.abort());
-  await field(driverPage, c.codeFromCustomer).fill(order.handoverCode === '0000' ? '1111' : '0000');
+  await field(driverPage, c.codeFromRecipient).fill(order.handoverCode === '0000' ? '1111' : '0000');
   await button(driverPage, c.advance_in_transit).click();
   await driverPage.getByText(c.codeHeldForRetry).waitFor();
   await driverPage.unroute(advancePath);
@@ -513,7 +562,8 @@ try {
   await advance(driverPage, rideId, 'assigned', 'at_pickup');
   await button(driverPage, c.advance_at_pickup_ride).click();
   await atStatus(rideId, 'in_transit');
-  assert.equal(await field(driverPage, c.codeFromCustomer).count(), 0, 'Passenger trip must not request a parcel code');
+  for (const label of [c.codeFromCustomer, c.codeFromRecipient])
+    assert.equal(await field(driverPage, label).count(), 0, 'Passenger trip must not request a parcel code');
   const ride = await call(`/orders/${rideId}`, { token: customerToken });
   assert.match(ride.handoverCode, /^\d{4}$/, 'the rider receives a trip code to share after payment');
   await field(driverPage, c.codeFromRider).fill(ride.handoverCode);
@@ -643,7 +693,7 @@ try {
   await login(switching, '0599000710');
   await button(switching, c.accept).click();
   await switching.waitForFunction(() => window.pendingPermission.length > 0);
-  await switching.getByRole('tab', { name: c.account, exact: true }).click();
+  await switching.getByRole('tab', { name: new RegExp(`^${c.account}(, \\d+)?$`) }).click(); // the name carries a count when one waits
   await button(switching, c.logout).click();
   await switching.waitForURL('**/auth');
   await field(switching, c.identifier).fill('0599000708');
@@ -699,6 +749,74 @@ try {
   await button(recovery, c.retry).click();
   await mapOf(recovery).locator('.maplibregl-marker').first().waitFor();
   pass('failed map library download shows fallback and recovers with Retry');
+
+  // An open order puts its sheet over the map, so the fallback has only the strip between the top bar and the sheet.
+  stage = 'map download recovery under the order sheet';
+  const coveredId = await booking(customerPage);
+  const short = await newPage('en', { width: 320, height: 620 }); // narrow, so the shortened screen below stays portrait
+  await login(short, '0599000701');
+  await short.route('**/vendor/maplibre-*/maplibre-gl.mjs', route => route.abort());
+  await short.goto(`${base}/order/${coveredId}`);
+  await short.getByText(c.findingTitle, { exact: true }).waitFor();
+  // The top card names the service under the order number, also on a short window, unless Accept says it.
+  const topCard = page => page.getByText(orderCode(coveredId), { exact: true }).locator('xpath=..');
+  await topCard(short).getByText(c.parcel, { exact: true }).waitFor();
+  const { column, columnRetry, between, placed, retryNow, wheel } = fallbackOn(short);
+  await columnRetry.waitFor();
+  const first = await until(between, placed, 'The fallback column never settled between the top bar and the order sheet');
+  // A column shorter than the stop names, so all of Retry starts out of view and only scrolling brings it in; it is
+  // still taller than the button and the padding under it.
+  const room = 72, height = Math.round(620 - (first.height - room));
+  assert.ok(height > 320, `The shortened screen must stay portrait, or the sheet moves to the side: ${height}px`);
+  await short.setViewportSize({ width: 320, height });
+  await until(between, state => placed(state) && Math.abs(state.height - room) <= 4, `The fallback column did not shrink to ${room}px from ${first.height}px`);
+  const before = await retryNow();
+  assert.ok(before.top >= before.columnBottom - 0.5, `All of Retry must start below the visible column, or this stage proves nothing about scrolling: ${JSON.stringify(before)}`);
+  await wheel();
+  const reached = await until(retryNow, state => state.scrolled > before.scrolled && state.clear, 'The wheel did not scroll the whole Retry clear of the order sheet');
+  assert.ok(reached.width >= 48 && reached.height >= 48, `The full-screen Retry keeps a 48px target: ${JSON.stringify(reached)}`);
+  await short.unroute('**/vendor/maplibre-*/maplibre-gl.mjs');
+  await columnRetry.click();
+  await mapOf(short).locator('.maplibregl-marker').first().waitFor();
+  // At a split-screen height the captain's money and Accept lead an open sheet; closed, it leaves the map room for Retry.
+  const captain = await newPage('en', { width: 320, height: 350 });
+  await login(captain, '0599000708');
+  await captain.route('**/vendor/maplibre-*/maplibre-gl.mjs', route => route.abort());
+  await captain.goto(`${base}/order/${coveredId}`);
+  await button(captain, c.sheetCollapse).waitFor();
+  await button(captain, c.accept).click({ trial: true });
+  assert.equal(await topCard(captain).getByText(c.parcel, { exact: true }).count(), 0, 'A short waiting job leaves the service line to its Accept block');
+  await button(captain, c.sheetCollapse).click();
+  const held = fallbackOn(captain);
+  await held.columnRetry.waitFor();
+  await until(held.between, held.placed, 'The captain fallback column never settled between the top bar and the order sheet');
+  await held.wheel();
+  const heldClear = what => until(held.retryNow, state => state.clear && state.width >= 48 && state.height >= 48, what)
+    .catch(async error => assert.fail(`${error.message}: ${JSON.stringify(await held.retryNow())}`));
+  await heldClear('A captain on a short screen cannot reach Retry');
+  // The tightest case: a booked job, whose time stays in the closed sheet, at 200% text (SRS A11Y-03).
+  db.prepare('UPDATE orders SET scheduled_for = ? WHERE id = ?').run(Date.now() + 20 * 60_000, coveredId);
+  await captain.reload();
+  await button(captain, c.sheetCollapse).click();
+  await captain.getByText(new RegExp(`^${c.scheduledFor.split('{')[0]}`)).first().waitFor();
+  await doubleText(captain);
+  await until(held.between, held.placed, 'The doubled-text fallback column never settled between the top bar and the order sheet');
+  await held.wheel();
+  await heldClear('A captain with a booked job at 200% text cannot reach Retry');
+  // The same job at the shortest height that docks the money and Accept under the map.
+  await captain.setViewportSize({ width: 320, height: 640 });
+  await captain.reload();
+  await button(captain, c.accept).click({ trial: true });
+  assert.equal(await button(captain, c.sheetCollapse).count(), 0, 'A taller window docks Accept under a closed sheet');
+  await captain.getByText(new RegExp(`^${c.scheduledFor.split('{')[0]}`)).first().waitFor();
+  await doubleText(captain);
+  await until(held.between, held.placed, 'The docked fallback column never settled between the top bar and the order sheet');
+  await held.wheel();
+  await heldClear('A captain with a docked footer, a booked job and 200% text cannot reach Retry');
+  await captain.context().close();
+  await call(`/orders/${coveredId}/cancel`, { token: customerToken, body: {} });
+  await short.context().close();
+  pass('failed map on a short open order scrolls Retry clear of the sheet and recovers');
 
   stage = 'Android map bridge';
   const androidMap = await newPage('ar');
@@ -993,10 +1111,14 @@ try {
   await pricePage.getByText(c.dispatchExhausted, { exact: true }).waitFor();
   orderFixture = { ...orderFixture, scheduledFor: Date.now() + 60_000, dispatch: null };
   await pricePage.reload();
-  await pricePage.getByText(c.findingBody, { exact: true }).waitFor();
+  await pricePage.getByText(c.findingTitle, { exact: true }).waitFor();
+  assert.equal(await pricePage.getByText(c.dispatchExhausted, { exact: true }).count(), 0);
+  assert.equal(await pricePage.getByText(c.scheduledMissed, { exact: true }).count(), 0, 'no overdue warning before the pickup time');
   orderFixture = { ...orderFixture, scheduledFor: null };
   await pricePage.reload();
-  await pricePage.getByText(c.findingBody, { exact: true }).waitFor();
+  await pricePage.getByText(c.findingTitle, { exact: true }).waitFor();
+  assert.equal(await pricePage.getByText(c.dispatchExhausted, { exact: true }).count(), 0);
+  assert.equal(await pricePage.getByText(c.scheduledMissed, { exact: true }).count(), 0, 'no overdue warning on an order that was never scheduled');
   await pricePage.unroute(orderPath);
   pass('price refusals and missed scheduled pickups show the right guidance');
   assert.deepEqual(errors, [], 'Unhandled browser errors');

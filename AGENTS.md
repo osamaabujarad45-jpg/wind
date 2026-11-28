@@ -19,6 +19,10 @@ The owner authorizes automatic commits, normal pushes, pull requests, merges and
 - Start subagents through T3 Code (`delegate_task`). Set model and effort explicitly, use Standard speed by default, and keep the selected lead. Exchange only the brief, relevant files and evidence. For two required approvals, use two separate read-only review tasks with fresh briefs. Check for active writers before taking over a worktree. Follow the bounded failover process below and record the change.
 - Read [`docs/operations/model-routing.md`](docs/operations/model-routing.md) when deciding between plans, paid speed modes or provider fallbacks. Choose with completed and verified work per plan allowance and waiting time. Subscription purchases, extra credits and changes to metered providers require owner approval.
 
+## Design — any screen, flow or on-screen text
+
+Before adding or changing a screen, flow, component, on-screen string, status, notification text or map overlay, and when reviewing such a change, read and follow [`.agents/skills/wind-design/SKILL.md`](.agents/skills/wind-design/SKILL.md). `node scripts/design-check.mjs` (also `tests/design-budget.test.mjs`) must pass: the budget for explanatory text only goes down.
+
 ## Expo has changed — do not trust your training data
 
 Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:

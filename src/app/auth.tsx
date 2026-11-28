@@ -14,6 +14,7 @@ import { codeInput, gateOf, type Capabilities } from '../phone/flow';
 import { takeAuthNotice } from '../phone/notice';
 import { Appear, Button, Card, Check, Choices, ErrorText, Field, haptic, Loading, Logo, Press, Row, Screen, Txt, useCopy } from '../ui';
 import { useTheme } from '../theme-context';
+import { face } from '../theme';
 
 const HERO = FadeInUp.duration(400);
 const FORM = FadeInDown.duration(300).delay(120);
@@ -187,7 +188,7 @@ export default function Auth() {
       </Row>
       <Animated.View entering={still ? undefined : HERO} style={{ alignItems: 'center', marginTop: 8, marginBottom: 20, gap: 8 }}>
         <Logo size={60} />
-        <Txt variant="h1" center style={{ fontSize: 26, lineHeight: 34 }}>{c.brand}</Txt>
+        <Txt variant="h1" center style={{ fontSize: 26, lineHeight: 45 }}>{c.brand}</Txt>
         <Txt center>{c.tagline}</Txt>
       </Animated.View>
       <Animated.View entering={still ? undefined : FORM}>
@@ -209,10 +210,10 @@ export default function Auth() {
             <Button title={resetSent ? c.resetSave : c.resetSend} icon={resetSent ? 'key-outline' : 'mail-outline'} onPress={submit} loading={busy} />
             {resetSent && <Button title={c.emailResend} variant="ghost" disabled={busy} reason={c.wait_busy} onPress={() => { setResetSent(false); setCode(''); }} />}
             <Press accessibilityRole="link" accessibilityLabel={c.resetNoEmail} hitSlop={8} onPress={() => router.push({ pathname: '/help', params: { topic: 'password' } })}>
-              <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.resetNoEmail}</Txt>
+              <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontFamily: face.semibold }}>{c.resetNoEmail}</Txt>
             </Press>
             <Press accessibilityRole="link" accessibilityLabel={c.backToSignIn} hitSlop={8} onPress={() => { setMode('in'); setError(''); setPassword(''); setCode(''); setResetSent(false); }}>
-              <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.backToSignIn}</Txt>
+              <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontFamily: face.semibold }}>{c.backToSignIn}</Txt>
             </Press>
           </> : <>
           <Choices tabs label={c.authMode} items={[{ key: 'in', label: c.signIn }, { key: 'up', label: c.signUp }]} value={mode}
@@ -257,7 +258,7 @@ export default function Auth() {
               <Press accessibilityRole="link" accessibilityLabel={c.terms} style={{ minHeight: 44, justifyContent: 'center' }} onPress={() => Linking.openURL(TERMS_URL)}><Txt variant="caption" style={{ color: palette.olive }}>{c.terms}</Txt></Press>
             </Row>
           </Appear>}
-          {mode === 'in' && !!notice && <Txt variant="caption" center style={{ color: palette.olive, fontWeight: '700', marginBottom: 8 }}>{notice}</Txt>}
+          {mode === 'in' && !!notice && <Txt variant="caption" center style={{ color: palette.olive, fontFamily: face.semibold, marginBottom: 8 }}>{notice}</Txt>}
           <ErrorText>{error}</ErrorText>
           {blocked && !!error && SUPPORT_URL && <Button title={c.support} icon="mail-outline" variant="soft" onPress={() => Linking.openURL(SUPPORT_URL!)} />}
           <Button title={mode === 'in' ? c.signIn : c.createAccount} onPress={submit} loading={busy} disabled={!!upMissing} reason={upMissing ? err(upMissing) : undefined} />
@@ -266,10 +267,10 @@ export default function Auth() {
             onPress={entraPrepareFailed ? () => { setError(''); setEntraPrepareFailed(false); setEntraTry(n => n + 1); } : entraSignIn} />}
           {mode === 'in' && <Press accessibilityRole="link" accessibilityLabel={emailReset || emailResetLink ? c.forgotPasswordEmail : c.forgotPassword} hitSlop={8}
             onPress={() => { if (emailReset || emailResetLink) { setMode('reset'); setError(''); setPassword(''); } else router.push({ pathname: '/help', params: { topic: 'password' } }); }}>
-            <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{emailReset || emailResetLink ? c.forgotPasswordEmail : c.forgotPassword}</Txt>
+            <Txt variant="caption" center style={{ marginTop: 10, paddingVertical: 6, color: palette.olive, fontFamily: face.semibold }}>{emailReset || emailResetLink ? c.forgotPasswordEmail : c.forgotPassword}</Txt>
           </Press>}
           {mode === 'in' && phoneGate === 'ready' && <Press accessibilityRole="link" accessibilityLabel={c.phone_recovery_open} hitSlop={8} onPress={() => { setMode('phone'); setError(''); setPassword(''); }}>
-            <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontWeight: '700' }}>{c.phone_recovery_open}</Txt>
+            <Txt variant="caption" center style={{ paddingVertical: 6, color: palette.olive, fontFamily: face.semibold }}>{c.phone_recovery_open}</Txt>
           </Press>}
           {mode === 'in' && !!phoneNote && <Txt variant="caption" center style={{ paddingVertical: 6 }}>{phoneNote}</Txt>}
           {mode === 'in' && phoneGate === 'failed' && <Button title={c.retry} variant="ghost" disabled={busy} reason={c.wait_busy}

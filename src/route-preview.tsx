@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { Point } from './model';
 import { maxScale, useCopy } from './ui';
+import { face } from './theme';
 import { themedStyles } from './theme-context';
 
 /** What the app's own chrome covers at the map's edges, in points: the camera and the pin keep clear of it. */
@@ -39,42 +40,70 @@ export type PinMapProps = { center: Point; onChange: (point: Point) => void; onG
   forceBaseline?: boolean };
 
 // Diagram only: GPS is displayed by the native map, never placed at an invented point on this route.
-// `plain` draws the shapes without words: it is the placeholder behind a loading map, so it must not
-// announce the city names twice or repeat them on screen.
-export default function RoutePreview({ pickupTitle, dropoffTitle, plain = false }: RouteMapProps & { plain?: boolean }) {
+// In a card it draws shapes only: the card's screen names both stops below it (RouteLine). On a full-screen map those
+// names are in a sheet that may be closed, so the words show here too, with Retry, in one column that fills only what
+// the top bar and the sheet leave uncovered. Text scales to 200% (SRS A11Y-03); if the room is too small the column
+// scrolls, so nothing overlaps or hides under the sheet. A screen reader hears the route once: from a card's drawing,
+// or from the full screen's words.
+// `plain` is the placeholder behind a loading map, so it announces nothing.
+export default function RoutePreview({ pickupTitle, dropoffTitle, fill, insets, plain = false, onRetry }: RouteMapProps & { plain?: boolean; onRetry?: () => void }) {
   const styles = useStyles();
-  const { rtl, c, language } = useCopy();
-  const [w, setW] = useState(0);
-  const h = 156;
+  const { rtl, row, align, c, language } = useCopy();
+  const [{ w, h }, setBox] = useState({ w: 0, h: 0 });
   const a = { x: w * (rtl ? 0.8 : 0.2), y: h * 0.68 }, b = { x: w * (rtl ? 0.2 : 0.8), y: h * 0.34 };
   const len = Math.hypot(b.x - a.x, b.y - a.y), angle = Math.atan2(b.y - a.y, b.x - a.x);
   const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  return <View style={[styles.preview, plain && styles.fill]} onLayout={e => setW(e.nativeEvent.layout.width)} accessible={!plain}
-    accessibilityLabel={plain ? undefined : `${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}`}>
-    <View style={[styles.road, { top: h * 0.22, left: -20, right: -20, height: 10 }]} />
+  // What the app's chrome leaves uncovered of a full-screen map; the whole card otherwise.
+  const uncovered = { top: insets?.top ?? 0, bottom: insets?.bottom ?? 0, left: insets?.left ?? 0, right: insets?.right ?? 0 };
+  // One readable copy of the route: the drawing's label on a card, the words themselves on a full screen.
+  const labelled = !plain && !fill;
+  return <View style={styles.preview}>
+    <View style={[styles.road, { top: '22%', left: -20, right: -20, height: 10 }]} />
     <View style={[styles.road, { top: -20, bottom: -20, left: '36%', width: 8 }]} />
-    <View style={[styles.road, { top: h * 0.78, left: -20, right: -20, height: 6, opacity: 0.5 }]} />
+    <View style={[styles.road, { top: '78%', left: -20, right: -20, height: 6, opacity: 0.5 }]} />
     <View style={[styles.road, { top: -20, bottom: -20, left: '71%', width: 6, opacity: 0.5 }]} />
-    {!plain && <Text maxFontSizeMultiplier={maxScale} style={styles.diagram}>{c.routeDiagram}</Text>}
-    {w > 0 && <>
-      <View style={[styles.line, { left: mid.x - len / 2, top: mid.y - 2, width: len, transform: [{ rotate: `${angle}rad` }] }]} />
-      <View style={[styles.pickup, { left: a.x - 8, top: a.y - 8 }]} />
-      <View style={[styles.dropoff, { left: b.x - 8, top: b.y - 8 }]} />
-      {!plain && <>
-        <Text key={`pickup-${language}`} maxFontSizeMultiplier={1.3} /* map label in a fixed 120px slot */ numberOfLines={1} style={[styles.label, { top: a.y + 12, left: a.x - 60 }]}>{pickupTitle}</Text>
-        <Text key={`dropoff-${language}`} maxFontSizeMultiplier={1.3} /* map label in a fixed 120px slot */ numberOfLines={1} style={[styles.label, { top: b.y - 36, left: b.x - 60 }]}>{dropoffTitle}</Text>
+    {/* The route is drawn inside what the app's chrome leaves uncovered: on a full-screen map, between the top bar and the sheet. */}
+    <View style={[styles.drawing, uncovered]} onLayout={e => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+      accessible={labelled} accessibilityRole={labelled ? 'image' : undefined}
+      accessibilityLabel={labelled ? `${c.routeDiagram}: ${pickupTitle} ${rtl ? '←' : '→'} ${dropoffTitle}` : undefined}>
+      {w > 0 && h > 0 && <>
+        <View style={[styles.line, { left: mid.x - len / 2, top: mid.y - 2, width: len, transform: [{ rotate: `${angle}rad` }] }]} />
+        <View style={[styles.pickup, { left: a.x - 8, top: a.y - 8 }]} />
+        <View style={[styles.dropoff, { left: b.x - 8, top: b.y - 8 }]} />
       </>}
-    </>}
+    </View>
+    {!plain && fill && <ScrollView style={[styles.overlay, uncovered]} contentContainerStyle={styles.column} testID="route-preview-column">
+      <View style={styles.words}>
+        <Text key={`diagram-${language}`} maxFontSizeMultiplier={maxScale} style={[styles.diagram, { textAlign: align }]}>{c.routeDiagram}</Text>
+        {([[styles.pickupMark, pickupTitle], [styles.dropoffMark, dropoffTitle]] as const).map(([mark, title], stop) =>
+          <View key={`${stop}-${language}`} style={[styles.stop, { flexDirection: row }]}>
+            <View style={mark} />
+            <Text maxFontSizeMultiplier={maxScale} style={[styles.label, { textAlign: align }]}>{title}</Text>
+          </View>)}
+      </View>
+      {onRetry && <Pressable accessibilityRole="button" onPress={onRetry} style={styles.retry}>
+        <Text maxFontSizeMultiplier={maxScale} style={styles.retryText}>{c.retry}</Text>
+      </Pressable>}
+    </ScrollView>}
   </View>;
 }
 
 const useStyles = themedStyles(palette => StyleSheet.create({
-  preview: { height: 156, backgroundColor: palette.mapWash, overflow: 'hidden' },
-  fill: { height: '100%' },
+  // It fills whatever slot the map had (a card, a taller tracking map, the full screen), also inside a centring wrapper.
+  preview: { alignSelf: 'stretch', width: '100%', height: '100%', minHeight: 156, backgroundColor: palette.mapWash, overflow: 'hidden' },
+  drawing: { position: 'absolute' },
+  overlay: { position: 'absolute' },
+  column: { flexGrow: 1, justifyContent: 'space-between', gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  words: { backgroundColor: palette.card, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6, gap: 2 },
+  retry: { alignSelf: 'center', minHeight: 48, minWidth: 48, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: palette.card, borderRadius: 12 },
+  retryText: { fontSize: 14, lineHeight: 24, fontFamily: face.medium, color: palette.ink, textAlign: 'center' },
+  stop: { alignItems: 'center', gap: 8 },
+  pickupMark: { width: 10, height: 10, borderRadius: 5, backgroundColor: palette.olive },
+  dropoffMark: { width: 10, height: 10, borderRadius: 2, backgroundColor: palette.clay },
+  label: { flex: 1, fontSize: 13, lineHeight: 23, fontFamily: face.semibold, color: palette.ink },
+  diagram: { fontSize: 11, lineHeight: 19, fontFamily: face.medium, color: palette.secondary },
   road: { position: 'absolute', backgroundColor: palette.card, opacity: 0.75, borderRadius: 4 },
   line: { position: 'absolute', height: 4, borderRadius: 2, backgroundColor: palette.forest },
   pickup: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: palette.olive, borderWidth: 3, borderColor: palette.card },
   dropoff: { position: 'absolute', width: 16, height: 16, borderRadius: 4, backgroundColor: palette.clay, borderWidth: 3, borderColor: palette.card },
-  label: { position: 'absolute', width: 120, textAlign: 'center', fontSize: 12, fontWeight: '800', color: palette.ink },
-  diagram: { position: 'absolute', top: 8, left: 12, right: 12, textAlign: 'center', fontSize: 11, fontWeight: '600', color: palette.secondary },
 }));

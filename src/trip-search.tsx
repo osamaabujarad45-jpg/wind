@@ -12,6 +12,7 @@ import { parseSharedLocation, type SharedLocationError } from './shared-location
 import type { CopyKey } from './copy';
 import { Button, ErrorText, haptic, IconButton, iconSize, maxScale, Press, Txt, useCopy, type IconName } from './ui';
 import { themedStyles, useTheme } from './theme-context';
+import { face } from './theme';
 
 export type TripPlace = { city: CityId; point: Point | null; note: string };
 export type TripField = 'pickup' | 'dropoff';
@@ -169,7 +170,7 @@ const useStyles = themedStyles((palette, theme) => StyleSheet.create({
   dot: { width: 12, height: 12, borderRadius: 6, borderWidth: 3, borderColor: palette.olive, backgroundColor: palette.card },
   square: { width: 12, height: 12, borderRadius: 2, backgroundColor: palette.clay },
   service: { alignItems: 'center', gap: 8, marginBottom: 8, minHeight: 28 },
-  input: { flex: 1, minHeight: 48, borderRadius: 10, paddingHorizontal: 12, backgroundColor: palette.paper, fontSize: 16, fontWeight: '600', color: palette.ink },
+  input: { flex: 1, minHeight: 48, borderRadius: 10, paddingHorizontal: 12, backgroundColor: palette.paper, fontSize: 16, fontFamily: face.medium, color: palette.ink },
   inputOn: { backgroundColor: palette.muted },
   rowWrap: { alignItems: 'center', gap: 4, borderBottomWidth: 1, borderBottomColor: palette.hair },
   row: { alignItems: 'center', gap: 12, minHeight: 60, paddingVertical: 8 },

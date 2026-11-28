@@ -231,6 +231,7 @@
     "name": "Parcel · scheduled, changing its time",
     "route": "/order/4",
     "file": "src/app/order/[id].tsx",
+    "expand": true,
     "ar": [
       "ar/order-scheduled.png"
     ],
@@ -458,9 +459,9 @@
   {
     "id": "shop-on-hold",
     "group": "Customer",
-    "name": "Shop order · on hold after a failed delivery (the card names the hold)",
+    "name": "Shop order · on hold after a failed delivery (the order header names the hold)",
     "route": "/order/14",
-    "file": "src/shop-ui.tsx (ShopCustomerPanel)",
+    "file": "src/app/order/[id].tsx, src/shop-ui.tsx (ShopCustomerPanel)",
     "ar": [
       "ar/shop-on-hold.png"
     ],
@@ -911,6 +912,20 @@
     ],
     "en": [
       "en/admin-users.png"
+    ],
+    "session": "admin"
+  },
+  {
+    "id": "admin-more",
+    "group": "Admin",
+    "name": "More: the pages that leave the phone tab bar",
+    "route": "/admin/more",
+    "file": "src/app/admin/more.tsx",
+    "ar": [
+      "ar/admin-more.png"
+    ],
+    "en": [
+      "en/admin-more.png"
     ],
     "session": "admin"
   },

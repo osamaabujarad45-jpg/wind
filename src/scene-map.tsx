@@ -8,6 +8,7 @@ import { useReducedMotion } from './motion';
 import RoutePreview, { type MapInsets, type PinMapProps, type RouteMapProps, type UserDot } from './route-preview';
 import { maxScale, useCopy } from './ui';
 import { themedStyles, useTheme } from './theme-context';
+import { face } from './theme';
 
 export type SceneMapInsets = MapInsets;
 
@@ -46,7 +47,7 @@ export function SceneMap(props: SceneMapProps) {
       <Pressable onPress={() => { setFailed(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={[styles.retry, { transform: [
         { translateX: ((insets?.left ?? 0) - (insets?.right ?? 0)) / 2 },
         { translateY: ((insets?.top ?? 0) - (insets?.bottom ?? 0)) / 2 },
-      ] }]}><Text maxFontSizeMultiplier={maxScale}>{c.retry}</Text></Pressable>
+      ] }]}><Text maxFontSizeMultiplier={maxScale} style={{ fontFamily: face.medium }}>{c.retry}</Text></Pressable>
     </View>
   </View>;
   const liveDriver = driver ? { latitude: driver.latitude, longitude: driver.longitude, heading: driver.heading ?? null, accuracy: driver.accuracy ?? null } : null;
