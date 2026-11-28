@@ -769,7 +769,7 @@ export default function OrderScreen() {
     <MapSheet open={sheetOpen} onOpenChange={setSheetOpen} onPeek={setPeek} onRefresh={reload}
       header={<View style={{ paddingBottom: 10 }}>
     {/* In the header, not the body: a closed sheet hides its body, and a refused action must still say why. */}
-    <ErrorText>{(rideStep(order) === 'locked' || order.safetyHold) && actionError === c.err_wrong_boarding_code ? '' : actionError}</ErrorText>
+    <ErrorText>{(rideStep(order) === 'locked' || order.safetyHold) && actionError === c.err_wrong_boarding_code ? c.rideBoardingPinWrong : actionError}</ErrorText>
     {error && <ErrorText>{c.updatesPaused}</ErrorText>}
     {order.safetyHold && <View accessibilityLiveRegion={Platform.OS === 'web' && order.safetyReport?.status !== 'open' ? 'polite' : 'none'}>{/* native, and the web reporter's card, say it elsewhere */}
       <Row gap={6} style={{ marginBottom: 6 }}>

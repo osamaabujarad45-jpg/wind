@@ -8,7 +8,8 @@ started from, so none is a regression of the redesign.
 - Web: `AccessibilityInfo.announceForAccessibility` does nothing in react-native-web, and a live region that appears
   already holding its text may not be read (the safety receipt card, the header pause notice).
 - A safety report whose reply is lost: the order refreshes with the report, but no receipt is spoken.
-- Leaving the order, or opening Help, before the reply; signing out mid-send; a report resolved before returning.
+- Web only: leaving the order or opening Help before the reply (native speaks the receipt when the reply succeeds).
+- Signing out mid-send, or a report resolved before the sender returns, when the reply never reached the app.
 
 ## What was tried, and why it was removed
 
