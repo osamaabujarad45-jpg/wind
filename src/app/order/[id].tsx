@@ -116,11 +116,6 @@ export default function OrderScreen() {
   // WP-01: the cash taken at the door, typed by the driver; prefilled with what is due, so an exact payment is one tap.
   // A difference needs a reason the driver picks for this amount: never a default, and a new amount clears it.
   const [door, setDoor] = useState<{ context: string; text: string | null; reason: VarianceReason | null }>({ context: proofContext, text: null, reason: null });
-  if (polled?.safetyHold && (proofInput.value || door.text !== null || door.reason !== null)) {
-    // Nothing typed before a safety pause (code, PIN, door cash) may be sent after support lifts it.
-    setProofInput({ context: proofContext, value: '' });
-    setDoor({ context: proofContext, text: null, reason: null });
-  }
   const [advanceLocked, setAdvanceLocked] = useState<string | null>(null);
   const advanceAttempt = useRef<{ orderId: number; body: AdvanceRequest } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
