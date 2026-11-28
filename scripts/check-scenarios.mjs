@@ -131,6 +131,18 @@ function fallbackOn(page) {
   };
   return { column, columnRetry, between, placed, retryNow, wheel };
 }
+// 200% text as Android's font scale does it: every text element's size and line height double.
+const doubleText = async page => {
+  await page.evaluate(() => {
+    for (const element of document.querySelectorAll('body *')) {
+      if (![...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim())) continue;
+      const computed = getComputedStyle(element);
+      element.style.fontSize = `${parseFloat(computed.fontSize) * 2}px`;
+      if (computed.lineHeight !== 'normal') element.style.lineHeight = `${parseFloat(computed.lineHeight) * 2}px`;
+    }
+  });
+  await page.waitForTimeout(400);
+};
 async function signup(page, phone, name, driver = false) {
   await page.goto(base + '/auth');
   await page.getByRole('radio', { name: c.signUp, exact: true }).click();
@@ -774,8 +786,18 @@ try {
   await held.columnRetry.waitFor();
   await until(held.between, held.placed, 'The captain fallback column never settled between the top bar and the order sheet');
   await held.wheel();
-  await until(held.retryNow, state => state.clear, 'A captain on a short screen cannot reach Retry')
+  const heldClear = what => until(held.retryNow, state => state.clear, what)
     .catch(async error => assert.fail(`${error.message}: ${JSON.stringify(await held.retryNow())}`));
+  await heldClear('A captain on a short screen cannot reach Retry');
+  // The tightest case: a booked job, whose time stays in the closed sheet, at 200% text (SRS A11Y-03).
+  db.prepare('UPDATE orders SET scheduled_for = ? WHERE id = ?').run(Date.now() + 20 * 60_000, coveredId);
+  await captain.reload();
+  await button(captain, c.sheetCollapse).click();
+  await captain.getByText(new RegExp(`^${c.scheduledFor.split('{')[0]}`)).first().waitFor();
+  await doubleText(captain);
+  await until(held.between, held.placed, 'The doubled-text fallback column never settled between the top bar and the order sheet');
+  await held.wheel();
+  await heldClear('A captain with a booked job at 200% text cannot reach Retry');
   await captain.context().close();
   await call(`/orders/${coveredId}/cancel`, { token: customerToken, body: {} });
   await short.context().close();

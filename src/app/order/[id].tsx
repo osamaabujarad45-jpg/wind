@@ -390,7 +390,8 @@ export default function OrderScreen() {
     reason={busy ? c.wait_busy : !work.known ? c.accept_wait_status : offlineIdle ? c.accept_go_online : order.service === 'parcel' && work.orders.every(o => o.service === 'parcel') ? c.accept_blocked_parcels : c.accept_blocked_exclusive}
     onPress={() => act('accept', `/jobs/${order.id}/accept`)} />
   </View> : null;
-  const dockAccept = side || windowHeight >= 600;
+  const shortUpright = !side && windowHeight < 600; // split screen and small windows: the map keeps what room there is
+  const dockAccept = !shortUpright;
   const sheetShown = sheetOpen ?? (!!accept && !dockAccept);
   const body = <>
     {!dockAccept && accept}
@@ -781,7 +782,7 @@ export default function OrderScreen() {
         <IconButton icon={rtl ? 'arrow-forward' : 'arrow-back'} label={c.back} tone="muted" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} />
         <View style={{ flex: 1 }}>
           <Txt variant="title" numberOfLines={1}>{orderCode(order.id)}</Txt>
-          <Txt variant="micro" numberOfLines={1}>{`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`}</Txt>
+          {!shortUpright && <Txt variant="micro" numberOfLines={1}>{`${c[order.service]}${order.shared ? ` · ${c.shared}` : ''}`}</Txt>}{/* the details name the service too */}
         </View>
         {helpButton}{/* no state badge here: the sheet header names a booked time, and a badge left the order number no room at 280 */}
       </View>}
