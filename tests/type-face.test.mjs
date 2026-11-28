@@ -70,7 +70,8 @@ assert.ok(inputs.some(([, tag]) => /\smultiline=\{multiline\}/.test(tag)), 'the 
 // The route preview is a fixed 156: its heading must end above the drop-off label, and the pickup label inside it.
 const preview = read('src/route-preview.tsx');
 const stops = /y: h \* ([\d.]+) \}, b = \{[^}]*y: h \* ([\d.]+)/.exec(preview), height = Number(/const h = (\d+)/.exec(preview)?.[1]);
-const drop = Number(/top: b\.y - (\d+)/.exec(preview)?.[1]), under = Number(/top: a\.y \+ (\d+)/.exec(preview)?.[1]);
+// The labels' own offsets: the stop markers above them also read "top: b.y - …".
+const drop = Number(/styles\.label, \{ top: b\.y - (\d+)/.exec(preview)?.[1]), under = Number(/styles\.label, \{ top: a\.y \+ (\d+)/.exec(preview)?.[1]);
 const [labelLine, headLine] = ['label', 'diagram'].map(name => Number(new RegExp(`\\n  ${name}: \\{[^\\n]*lineHeight: (\\d+)`).exec(preview)?.[1]));
 const headTop = Number(/\n  diagram: \{[^\n]*?top: (\d+)/.exec(preview)?.[1]);
 assert.equal(preview.split('maxFontSizeMultiplier={1.3}').length - 1, 3, 'heading and both stop labels share the 1.3 cap');
