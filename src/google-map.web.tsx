@@ -206,6 +206,7 @@ export default function RouteMap(props: RouteMapProps) {
     // The moved-state effect performs exactly one camera operation.
   }
 
+  const retry = () => { setReady(false); setFailed(false); setMoved(false); movedRef.current = false; setAttempt(n => n + 1); };
   // Only the map surface is the labelled image: a labelled container would hide Retry and Recenter from screen readers.
   return <View style={props.fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
     {!ready && !failed && <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none"
@@ -214,14 +215,14 @@ export default function RouteMap(props: RouteMapProps) {
     </View>}
     <View ref={host} style={StyleSheet.absoluteFill} accessible accessibilityRole="image"
       accessibilityLabel={`${c.routeOnMap}: ${props.pickupTitle} → ${props.dropoffTitle}${driver ? ` · ${props.driverTitle ?? ''}` : ''}`} />
-    {failed && <View style={[StyleSheet.absoluteFill, styles.failure, props.fill && { justifyContent: 'flex-end', paddingBottom: (props.insets?.bottom ?? 0) + 12 }]}>
-      <View style={StyleSheet.absoluteFill}><RoutePreview {...props} /></View>
-      <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); movedRef.current = false; setAttempt(n => n + 1); }} accessibilityRole="button" style={[styles.retry, { transform: [
+    {failed && <View style={[StyleSheet.absoluteFill, styles.failure]}>
+      <View style={StyleSheet.absoluteFill}><RoutePreview {...props} onRetry={props.fill ? retry : undefined} /></View>
+      {!props.fill && <Pressable onPress={retry} accessibilityRole="button" style={[styles.retry, { transform: [
         { translateX: ((props.insets?.left ?? 0) - (props.insets?.right ?? 0)) / 2 },
-        { translateY: props.fill ? 0 : ((props.insets?.top ?? 0) - (props.insets?.bottom ?? 0)) / 2 },
+        { translateY: ((props.insets?.top ?? 0) - (props.insets?.bottom ?? 0)) / 2 },
       ] }]}>
         <Text maxFontSizeMultiplier={maxScale} style={{ fontFamily: face.medium }}>{c.retry}</Text>
-      </Pressable>
+      </Pressable>}
     </View>}
     {ready && !failed && moved && <Pressable onPress={recenter} accessibilityRole="button" accessibilityLabel={c.recenter}
       style={[styles.recenter, rtl ? { left: 10 } : { right: 10 }, shadow]}>

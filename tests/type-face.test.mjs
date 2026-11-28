@@ -72,10 +72,10 @@ assert.ok(inputs.some(([, tag]) => /\smultiline=\{multiline\}/.test(tag)), 'the 
 // SRS A11Y-03: the route fallback draws no words (they overlapped, sat under Retry and the sheet, or stopped at
 // 130%). That holds only while every screen that shows a route map names both stops in its own text.
 const previewSource = read('src/route-preview.tsx');
-assert.equal(previewSource.split('{!plain && fill && <View style={[styles.words, { top: (insets?.top ?? 0) + 8').length, 2, 'only the full-screen fallback shows words, under the top bar');
+assert.ok(previewSource.includes('{!plain && fill && <ScrollView style={[styles.overlay, uncovered]}'), 'only the full-screen fallback shows words, bounded by the bar and the sheet');
 assert.doesNotMatch(previewSource, /maxFontSizeMultiplier=\{[\d.]+\}|numberOfLines/, 'the fallback words scale to 200% and are never cut to a line');
 for (const wrapper of ['src/map-provider-boundary.tsx', 'src/google-map.web.tsx', 'src/route-map.native.tsx', 'src/google-map.native.tsx'])
-  assert.match(read(wrapper), /justifyContent: 'flex-end', paddingBottom: \(props\??\.insets\?\.bottom \?\? 0\) \+ 12/, `${wrapper} keeps Retry above the sheet, clear of the words`);
+  assert.match(read(wrapper), /<RoutePreview \{\.\.\.(props|route)\} onRetry=\{(props\.fill|column) \?/, `${wrapper} hands a full-screen Retry to the preview column`);
 assert.match(read('src/route-preview.tsx'), /top: insets\?\.top \?\? 0, bottom: insets\?\.bottom \?\? 0, left: insets\?\.left \?\? 0, right: insets\?\.right \?\? 0/, 'the drawing stays clear of the full-screen map chrome');
 const routeScreens = sources.filter(([file, text]) => file.startsWith('src/app/') && (/<RouteMap\b/.test(text) || /<SceneMap\b[^\n]*'route'/.test(text)));
 assert.ok(routeScreens.length >= 3, 'booking, order and tracking show route maps');

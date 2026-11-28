@@ -49,16 +49,17 @@ export function MapProviderBoundary({ platform, route, pin, google: Google, base
       onChange={point => { if (current()) callbacks.current?.onChange(point); }} />;
   }
   const props = route ?? pin;
+  const column = !!route && !!route.fill; // the full-screen route fallback carries Retry in its own column
   return <View style={[props?.fill ? StyleSheet.absoluteFill : { height: props?.height ?? 220, width: '100%' }, { backgroundColor: palette.mapWash }]}>
-    {route && <RoutePreview {...route} />}
-    <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }, props?.fill && { justifyContent: 'flex-end', paddingBottom: (props.insets?.bottom ?? 0) + 12 }]}>
+    {route && <RoutePreview {...route} onRetry={column ? () => retryMapProviders(choice.key) : undefined} />}
+    {!column && <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
       <Pressable accessibilityRole="button" onPress={() => retryMapProviders(choice.key)}
         style={{ minHeight: 48, minWidth: 48, padding: 12, backgroundColor: palette.card, borderRadius: 12, transform: [
           { translateX: ((props?.insets?.left ?? 0) - (props?.insets?.right ?? 0)) / 2 },
-          { translateY: props?.fill ? 0 : ((props?.insets?.top ?? 0) - (props?.insets?.bottom ?? 0)) / 2 },
+          { translateY: ((props?.insets?.top ?? 0) - (props?.insets?.bottom ?? 0)) / 2 },
         ] }}>
         <Text maxFontSizeMultiplier={maxScale} style={{ fontFamily: face.medium }}>{c.retry}</Text>
       </Pressable>
-    </View>
+    </View>}
   </View>;
 }

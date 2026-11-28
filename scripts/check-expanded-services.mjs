@@ -98,6 +98,7 @@ try {
   // Arrive steps back; back on the pickup the caption goes and Arrive leads again.
   await page.evaluate(() => { window.__windFix = { latitude: 31.90288, longitude: 35.19 }; });
   await page.getByText(fill(c.rideArrivalFar, { km: '0.3', m: 300 }), { exact: true }).waitFor({ timeout: 30_000 });
+  await page.getByText(c.rideArrivalHint, { exact: true }).waitFor(); // far or near, the captain reads what confirming starts
   await page.screenshot({ path: join(output, 'a53-arrive-far.png') });
   await page.evaluate(() => { window.__windFix = undefined; });
   await page.getByText(fill(c.rideArrivalFar, { km: '0.3', m: 300 }), { exact: true }).waitFor({ state: 'hidden', timeout: 30_000 });

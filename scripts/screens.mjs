@@ -667,7 +667,7 @@ if (!only || only.some(id => id.startsWith('driver-'))) {
   await page.getByText(copy.ar.driver_next_at_pickup, { exact: true }).waitFor();
   await page.getByRole('button', { name: copy.ar.advance_at_pickup, exact: true }).click();
   await page.getByText(copy.ar.driver_next_in_transit_customer, { exact: true }).waitFor(); // this parcel names no recipient
-  assert.equal(await page.getByText(copy.ar.handoverHint, { exact: true }).count(), 0); // the customer's code card is not the captain's
+  assert.equal(await page.getByText(copy.ar.shareHint, { exact: true }).count(), 0); // the customer's share card is not the captain's
   await page.getByRole('button', { name: 'رجوع', exact: true }).click();
   await page.getByRole('button', { name: copy.ar.activeOrder, exact: true }).waitFor();
   for (const button of await page.getByRole('button', { name: copy.ar.accept, exact: true }).all()) assert.equal(await button.isDisabled(), true);

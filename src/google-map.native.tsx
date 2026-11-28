@@ -66,13 +66,14 @@ export default function RouteMap(props: RouteMapProps) {
     return () => clearTimeout(timer);
   }, [ready, failed, attempt]);
   // A provider failure unmounts the map: its overlays go with it, and no Google content lingers anywhere.
+  const retry = () => { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); };
   if (failed) return <View style={props.fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
-    <RoutePreview {...props} />
-    <View style={[StyleSheet.absoluteFill, styles.cover, props.fill && { justifyContent: 'flex-end', paddingBottom: (props.insets?.bottom ?? 0) + 12 }]}>
-      <Pressable onPress={() => { setReady(false); setFailed(false); setMoved(false); setAttempt(n => n + 1); }} accessibilityRole="button" style={styles.retry}>
+    <RoutePreview {...props} onRetry={props.fill ? retry : undefined} />
+    {!props.fill && <View style={[StyleSheet.absoluteFill, styles.cover]}>
+      <Pressable onPress={retry} accessibilityRole="button" style={styles.retry}>
         <Text maxFontSizeMultiplier={maxScale} style={{ fontFamily: face.medium }}>{c.retry}</Text>
       </Pressable>
-    </View>
+    </View>}
   </View>;
   return <View style={props.fill ? StyleSheet.absoluteFill : { height, width: '100%' }}>
   <MapView key={attempt} ref={view} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE} initialRegion={region} pitchEnabled={false} rotateEnabled={false}
