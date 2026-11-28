@@ -25,7 +25,7 @@ export default function Trips() {
           {(active.length > 1 || group.stage === 'support') && <Txt variant="label" style={{ marginBottom: 8, color: palette.secondary }}>{fill(c[({ pickup: 'runPickup', deliver: 'runDeliver', return: 'runReturn', support: 'runSupport' } as const)[group.stage]],
             { city: city(group.city)[language], n: group.orders.length })}</Txt>}
           {group.orders.map(order => <OrderRow key={order.id} order={order} index={Math.min(active.indexOf(order), 8)}
-            status={active.length === 1 || !['assigned', 'in_transit', 'returning'].includes(order.status)} /* the group already says it; only at-pickup and on-hold stand out */ />)}
+            status={group.stage !== 'support' && (active.length === 1 || !['assigned', 'in_transit', 'returning'].includes(order.status))} /* the group already says it; only at-pickup and on-hold stand out */ />)}
         </View>)}
         {lastTrip && <>
           <Txt variant="h2" style={{ marginVertical: 12 }}>{c.lastTrip}</Txt>

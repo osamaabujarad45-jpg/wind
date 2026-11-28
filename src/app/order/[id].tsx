@@ -89,7 +89,7 @@ export default function OrderScreen() {
     : { driverLocation: shown }) }, [polled, shown, pushed.driverChanged]);
   // The server's attempt ceiling wins over the reason's suggestion (SHIP-08, Sol R2-M6): one recommendation, one primary action.
   const suggested = order?.reattemptAllowed === false ? 'return' : suggestedNextAction(order ? order.exceptionReason : null);
-  const announced = useRef<{ orderId: number; viewerId: number; status: Order['status']; proposalId?: string } | null>(null);
+  const announced = useRef<{ orderId: number; viewerId: number; status: string; proposalId?: string } | null>(null);
   useEffect(() => {
     if (!order || !me) return;
     const driver = me.user.role === 'driver' && order.driverId === me.user.id;
@@ -116,6 +116,11 @@ export default function OrderScreen() {
   // WP-01: the cash taken at the door, typed by the driver; prefilled with what is due, so an exact payment is one tap.
   // A difference needs a reason the driver picks for this amount: never a default, and a new amount clears it.
   const [door, setDoor] = useState<{ context: string; text: string | null; reason: VarianceReason | null }>({ context: proofContext, text: null, reason: null });
+  if (polled?.safetyHold && (proofInput.value || door.text !== null || door.reason !== null)) {
+    // Nothing typed before a safety pause (code, PIN, door cash) may be sent after support lifts it.
+    setProofInput({ context: proofContext, value: '' });
+    setDoor({ context: proofContext, text: null, reason: null });
+  }
   const [advanceLocked, setAdvanceLocked] = useState<string | null>(null);
   const advanceAttempt = useRef<{ orderId: number; body: AdvanceRequest } | null>(null);
   const [proofReset, setProofReset] = useState({ id, reason: '', done: false });
@@ -799,7 +804,9 @@ export default function OrderScreen() {
           <Row gap={8} style={{ marginBottom: 4 }}>
             {journeyState[order.status] === 'live' ? <Pulse color={statusTone[order.status].mark} size={8} />
               : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: statusTone[order.status].mark }} />}{/* the state's colour, as on its badge; only live states pulse */}
-            <Txt variant="h2" numberOfLines={2} style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
+            <View style={{ flex: 1 }} accessibilityLiveRegion={Platform.OS === 'web' ? 'polite' : 'none'}>
+              <Txt variant="h2" numberOfLines={2}>{statusText(c, order, mine)}</Txt>
+            </View>
             {eta && location && !location.stale && <Txt variant="display" numberOfLines={1} style={{ color: statusTone[order.status].mark, flexShrink: 0 }}>{etaChip(eta)}</Txt>}
           </Row>
           {isCustomer && boardingPin && !order.safetyHold && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
