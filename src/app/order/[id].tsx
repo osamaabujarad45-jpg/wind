@@ -853,6 +853,7 @@ export default function OrderScreen() {
           <Field label={codeLabel} icon="key-outline" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={4} placeholder="0000"
             disabled={!!busy || advanceLocked === proofContext} />}
         {needsCode && !busy && advanceLocked === proofContext && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
+        <SayWhenShown text={codeShort && code ? c.codeFourDigits : ''} />{/* the button's reason changes while focus stays in the field */}
         {order.status === 'returning' && order.supportHasGoods && <Txt variant="caption">{c.supportHasGoodsDriver}</Txt>}
         {rideAction === 'arrive' && !order.safetyHold && arrivalFar && <Txt variant="caption">{fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS })}</Txt>}
         {rideAction === 'arrive' && !order.safetyHold && <Txt variant="caption">{c.rideArrivalHint}</Txt>}
@@ -1244,6 +1245,13 @@ function BlockReviewCard({ order, review, me, now, onDone }: { order: Order; rev
 }
 
 /** A11Y-08 (Sol R2-M2): the waiting clock speaks when it crosses 2 min, 1 min and 30 s, at the end, and when an extension lands. */
+/** Speaks a line once, when it appears or changes: a live region on the web (mounted before the text), an announcement
+ * on the phone (announceForAccessibility does nothing on react-native-web). Empty text says nothing. */
+function SayWhenShown({ text }: { text: string }) {
+  useEffect(() => { if (text && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(text); }, [text]);
+  return Platform.OS === 'web' ? <View accessibilityLiveRegion="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}><Txt>{text}</Txt></View> : null;
+}
+
 function GraceClock({ left, extended }: { left: number; extended: boolean }) {
   const { c } = useCopy();
   const text = left > 0 ? fill(c.rideGrace, { n: left }) : c.rideGraceEnded;
