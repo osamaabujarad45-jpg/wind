@@ -971,7 +971,7 @@ const ar = {
   confirmReturnShop: 'تأكيد استلام المحل',
   confirmReturnTitle: 'تأكيد استلام المرتجع',
   confirmReturnHint: 'استخدمه فقط إذا تعذّر رمز الإرجاع وتحققت من المرسل أنه استلم الغرض.',
-  confirmReturnShopHint: 'استخدمه فقط إذا تعذّر رمز الإرجاع وتحققت من المحل أنه استلم البضاعة.',
+  confirmReturnShopHint: 'استخدمه فقط إذا تعذّر الحصول على رمز الإرجاع وأكّد لك المحل استلام البضاعة.',
   confirmOfficeReturnHint: 'أكّد فقط إذا سلّم الكابتن الأغراض للمكتب فعلاً، ثم سجّل تفاصيل الحفظ. يُحتسب للكابتن مشوار المكتب، إلا إذا استلم الدعم الأغراض منه أو حُظر وهي معه (فتقرّر مراجعة الحظر أجره).',
   confirmOfficeReturnCaptain: 'استلمه المكتب من الكابتن',
   confirmOfficeReturnStaff: 'استلمه المكتب من الموظفين بعد نقطة الإرجاع',
@@ -3887,12 +3887,14 @@ export function fill(template: string, values: Record<string, string | number>) 
 }
 
 // A status in the order's own words: rides end as a trip, not a delivery; the assigned driver reads it as their own move.
-export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'> & { scheduledFor?: number | null; shop?: { state: string | null } | null }, driver = false, now = Date.now()) => {
+export const statusText = (c: Copy, o: Pick<Order, 'service' | 'status'> & { scheduledFor?: number | null; shop?: { state: string | null } | null; ride?: { arrivedAt?: number | null } | null }, driver = false, now = Date.now()) => {
   if (bookedAhead(o, now)) return c.searching_booked;
   // A shop order stays `requested` while the shop works on it: the shop's own step is the honest status (DLV-09).
   const shopState = o.shop?.state;
   if (o.status === 'requested') return shopState ? (c as Record<string, string>)[`shop_${shopState}`] ?? c.shop_requested : c.shop_requested;
   if (o.status === 'returning' && o.service === 'shop') return c.returning_shop;
   const k = c as Record<string, string | undefined>, ride = o.service === 'ride' ? '_ride' : '';
-  return (driver && k[`driver_${o.status}${ride}`]) || (ride && k[`${o.status}${ride}`]) || c[o.status];
+  // A ride captain records arrival while the order is still `assigned`.
+  const status = ride && o.status === 'assigned' && o.ride?.arrivedAt != null ? 'at_pickup' : o.status;
+  return (driver && k[`driver_${status}${ride}`]) || (ride && k[`${status}${ride}`]) || c[status];
 };

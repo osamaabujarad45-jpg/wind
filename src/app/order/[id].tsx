@@ -323,7 +323,7 @@ export default function OrderScreen() {
   const booked = order.status === 'searching' && order.scheduledFor && now < order.scheduledFor ? order.scheduledFor : 0;
 
   const nextStop = ['assigned', 'at_pickup', 'returning'].includes(order.status) ? 'pickup' : 'dropoff';
-  const maneuver = navigating && navSteps && navLine && order.driverLocation && !location?.stale ? nextManeuver(navSteps, order.driverLocation, navLine, order.driverLocation.heading) : null;
+  const maneuver = navigating && !goodsWithSupport && navSteps && navLine && order.driverLocation && !location?.stale ? nextManeuver(navSteps, order.driverLocation, navLine, order.driverLocation.heading) : null;
   // Near the door the customer needs this at a glance, so it leaves the sheet's body for the header a closed sheet still shows.
   const codeAtDoor = live && ['in_transit', 'on_hold', 'returning'].includes(order.status);
   const codes = <>
@@ -578,14 +578,14 @@ export default function OrderScreen() {
       <Field label={c.proofResetReason} value={decisionReason} maxLength={500} disabled={!!busy}
         onChangeText={reason => setDecision({ id, reason })} />
       {suggested && <Txt variant="caption" style={{ marginBottom: 8 }}>
-        {fill(c.suggestedNext, { a: suggested === 'return' ? c.returnToSender : c.reattempt })}</Txt>}
+        {fill(c.suggestedNext, { a: suggested === 'return' ? (order.service === 'shop' ? c.returnToShop : c.returnToSender) : c.reattempt })}</Txt>}
       <View style={{ gap: 8 }}>
-        {(['reattempt', 'return'] as const).map(action => <Button key={action} title={action === 'reattempt' ? c.reattempt : c.returnToSender}
+        {(['reattempt', 'return'] as const).map(action => <Button key={action} title={action === 'reattempt' ? c.reattempt : order.service === 'shop' ? c.returnToShop : c.returnToSender}
           variant={action === (suggested ?? 'reattempt') ? 'primary' : 'outline'} icon={action === 'reattempt' ? 'refresh-outline' : 'return-up-back-outline'}
           loading={busy === action} disabled={!!busy || decisionReason.trim().length < 5 || (action === 'reattempt' && order.reattemptAllowed === false)}
           reason={action === 'reattempt' && order.reattemptAllowed === false ? c.err_reattempt_limit : busy ? c.wait_busy : c.reason_min5}
           onPress={() => confirm(c.resolveConfirm, () => act(action, `/admin/orders/${order.id}/resolve`,
-            { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), action === 'reattempt' ? c.reattempt : c.returnToSender, c.no)} />)}
+            { action, reason: decisionReason.trim() }, () => setDecision({ id, reason: '' })), action === 'reattempt' ? c.reattempt : order.service === 'shop' ? c.returnToShop : c.returnToSender, c.no)} />)}
       </View>
     </Card>}
 
@@ -641,7 +641,7 @@ export default function OrderScreen() {
 
       {isCustomer && boarding?.locked && ['assigned','at_pickup'].includes(order.status) && <ErrorText>{c.rideBoardingLocked}</ErrorText>}
       {/* The PIN itself is in the sheet header, visible with the sheet closed. */}
-      {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">{c.rideBoardingHint}</Txt>}
+      {isCustomer && boardingPin && !order.safetyHold && ['assigned', 'at_pickup'].includes(order.status) && <Txt variant="caption">{c.rideBoardingHint}</Txt>}
       {(isCustomer || mine) && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status)
         && <GraceClock left={secondsUntil(waitingEndsAt!, now, order.journey)} extended={!!order.ride?.graceExtended} />}
       {isCustomer && order.ride?.graceExtended && waitingEndsAt != null && ['assigned', 'at_pickup'].includes(order.status)
@@ -800,7 +800,7 @@ export default function OrderScreen() {
             <Txt variant="h2" numberOfLines={2} style={{ flex: 1 }}>{statusText(c, order, mine)}</Txt>
             {eta && location && !location.stale && <Txt variant="display" numberOfLines={1} style={{ color: statusTone[order.status].mark, flexShrink: 0 }}>{etaChip(eta)}</Txt>}
           </Row>
-          {isCustomer && boardingPin && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
+          {isCustomer && boardingPin && !order.safetyHold && ['assigned', 'at_pickup'].includes(order.status) && <Row gap={8} style={{ marginBottom: 6 }}>
             <Ionicons name="key-outline" size={16} color={palette.olive} />
             <Txt variant="caption" style={{ flex: 1 }}>{c.rideBoardingCode}</Txt>
             <Txt variant="h2" selectable accessibilityLabel={`${c.rideBoardingCode} ${boardingPin.split('').join(' ')}`}>{boardingPin}</Txt>

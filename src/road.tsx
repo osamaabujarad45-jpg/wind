@@ -50,7 +50,8 @@ export function useRoad(order: Order | undefined, stepsLanguage?: 'ar' | 'en' | 
   // Before collection (and when returning to the sender) the driver heads to pickup, otherwise to dropoff.
   const toPickup = !!order && ['assigned', 'at_pickup', 'returning'].includes(order.status);
   // A courier with other stops first is not heading straight here: no ETA or approach line (SPEC-courier-run-eta.md).
-  const driver = active && !order?.sharedRun ? order?.driverLocation : null;
+  // Nor after support took the goods from a returning captain: there is no stop left to head to.
+  const driver = active && !order?.sharedRun && !(order?.status === 'returning' && order.supportHasGoods) ? order?.driverLocation : null;
   const target = toPickup ? from : to;
   const fixKey = driver ? `${order?.id}:${order?.driverId}:${order?.recovery?.assignmentEpoch}:${driver.updatedAt}` : '';
   const [fixClock, setFixClock] = useState<{ key: string; clock?: ReturnType<typeof publicFixClock> }>({ key: '' });
