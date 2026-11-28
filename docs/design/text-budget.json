@@ -1,6 +1,6 @@
 {
   "catalogue": {
-    "copyWords": 15285,
+    "copyWords": 15380,
     "pushWords": 566,
     "workerWords": 406
   },
@@ -72,7 +72,7 @@
     },
     "src/app/book.tsx": {
       "explanations": 43,
-      "words": 910,
+      "words": 915,
       "reasons": 3
     },
     "src/app/driver/earnings.tsx": {
@@ -81,8 +81,8 @@
       "reasons": 2
     },
     "src/app/driver/index.tsx": {
-      "explanations": 26,
-      "words": 489,
+      "explanations": 27,
+      "words": 504,
       "reasons": 1
     },
     "src/app/driver/trips.tsx": {
@@ -111,8 +111,8 @@
       "reasons": 2
     },
     "src/app/order/[id].tsx": {
-      "explanations": 90,
-      "words": 1984,
+      "explanations": 92,
+      "words": 2015,
       "reasons": 16
     },
     "src/app/profile.tsx": {
@@ -207,7 +207,7 @@
     },
     "src/parts.tsx": {
       "explanations": 15,
-      "words": 273,
+      "words": 277,
       "reasons": 2
     },
     "src/phone-card.tsx": {

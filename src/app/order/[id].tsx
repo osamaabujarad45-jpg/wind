@@ -215,7 +215,7 @@ export default function OrderScreen() {
   // Same rule as the jobs board (H-02, Sol R2-M5): with presence on, an offline idle captain goes online first.
   const offlineIdle = me?.capabilities?.driverPresence !== false && !work.orders.length && work.presenceState !== 'online';
   const atPickup = order.status === 'at_pickup';
-  const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - order.updatedAt <= 7 * 86_400_000;
+  const canDispute = isCustomer && finishedStatuses.includes(order.status) && now - (order.completedAt ?? order.updatedAt) <= 7 * 86_400_000;
 
   async function act(key: string, path: string, body: object = {}, after?: () => void) {
     if (!order || busy || acting.current || key === 'accept' && (!work.known || !canTake(work.orders, order.service, order, me?.user.vehicle ?? null))) return;
@@ -423,7 +423,7 @@ export default function OrderScreen() {
           <Txt variant="caption" style={{ flex: 1 }}>{order.service === 'ride' ? c.sharedRideRun : c.courierRun}</Txt>
         </Row>}
         {/* The driver is close: get the parcel ready (Uber tells the rider when the car is around the corner). */}
-        {live && isCustomer && !mine && order.service === 'parcel' && order.status === 'assigned' && order.pickupPoint && order.driverLocation && !location?.stale
+        {live && isCustomer && !mine && (order.service === 'parcel' || order.service === 'freight') && order.status === 'assigned' && order.pickupPoint && order.driverLocation && !location?.stale
           && crowKm(order.pickupPoint, order.driverLocation) * 1000 <= 500 && <Row gap={8} style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
           <Ionicons name="walk-outline" size={16} color={palette.olive} />
           <Txt variant="caption" style={{ flex: 1, color: palette.olive }}>{fill(c.driverNearby, { m: 500 })}</Txt>
@@ -712,6 +712,7 @@ export default function OrderScreen() {
       {canDispute && !order.dispute && !reportOpen && !disputeReason && <Button title={c.disputeTitle} variant="ghost" size="sm" icon="flag-outline" onPress={() => setReport({ id, open: true })} />}
       {canDispute && !order.dispute && (reportOpen || !!disputeReason) && <Card>
         <Txt variant="title">{c.disputeTitle}</Txt>
+        <Txt variant="caption" style={{ marginTop: 4, marginBottom: 12 }}>{c.disputeHint}</Txt>
         <Field label={c.disputeReason} value={disputeReason} multiline maxLength={1000} disabled={!!busy}
           onChangeText={reason => setDispute({ id, reason })} />
         <Button title={c.disputeSend} variant="outline" icon="flag-outline" loading={busy === 'dispute'} disabled={!!busy || disputeReason.trim().length < 10} reason={busy ? c.wait_busy : c.reason_min10}
@@ -826,13 +827,13 @@ export default function OrderScreen() {
             disabled={!!busy || advanceLocked === order.status} />}
         {needsCode && !busy && advanceLocked === order.status && <Txt variant="caption">{c.codeHeldForRetry}</Txt>}
         {order.status === 'returning' && order.supportHasGoods && <Txt variant="caption">{c.supportHasGoodsDriver}</Txt>}
-        {rideAction === 'arrive' && arrivalFar && <Txt variant="caption">{fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS })}</Txt>}
+        {rideAction === 'arrive' && (arrivalFar || arrivalKm === null) && <Txt variant="caption">{arrivalFar ? fill(c.rideArrivalFar, { km: kmLabel(arrivalKm!), m: RIDE_ARRIVAL_RADIUS_METERS }) : c.rideArrivalHint}</Txt>}
         {parcelFarKm !== null && <Txt variant="caption">{farFill(c.parcelPickupFar, c.parcelPickupFarCity)}</Txt>}
-        {rideAction === 'locked' && order.safetyHold && <ErrorText>{c.rideBoardingLocked}</ErrorText>}{/* otherwise the locked button's reason says it */}
+        {rideAction === 'locked' && <ErrorText>{c.rideBoardingLocked}</ErrorText>}{/* announced when it appears; the locked button repeats nothing */}
         {order.status !== 'on_hold' && !order.safetyHold && !(order.service === 'shop' && atPickup) && !(order.status === 'returning' && order.supportHasGoods) && <Button title={rideAction === 'arrive' ? c.rideArrive : c[order.service === 'ride' && order.status === 'at_pickup' ? 'advance_at_pickup_ride'
           : order.service === 'ride' && order.status === 'in_transit' ? 'advance_in_transit_ride' : `advance_${order.status}` as 'advance_assigned']}
           icon="arrow-forward-circle-outline" variant={arrivalFar || parcelFarKm !== null ? 'outline' : 'primary'} loading={busy === 'advance' || busy === 'arrive'} disabled={!!busy || rideAction === 'locked' || rideAction === 'boarding' && !/^\d{4}$/.test(code) || doorStep && !doorReady || order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals)}
-          reason={order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals) ? c.shopSealsNeeded : doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? c.rideBoardingLocked : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
+          reason={order.service === 'shop' && order.status === 'in_transit' && !sealsReady(order, seals) ? c.shopSealsNeeded : doorStep && !doorValid ? c.doorInvalid : doorStep && !doorReady ? c.doorReasonHint : rideAction === 'locked' ? undefined : rideAction === 'boarding' && !/^\d{4}$/.test(code) ? c.rideEnterCode : c.wait_busy}
           onPress={() => rideAction === 'arrive' ? act('arrive', `/orders/${order.id}/arrive`)
             : parcelFarKm !== null ? confirm(farFill(c.parcelPickupFarConfirm, c.parcelPickupFarCityConfirm), () => act('advance', `/orders/${order.id}/advance`, { code }), c.continue, c.no)
             : act('advance', `/orders/${order.id}/advance`, { code })} />}

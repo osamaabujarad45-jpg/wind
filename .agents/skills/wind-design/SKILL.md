@@ -33,6 +33,9 @@ Visible text that carries any of these stays visible, in full, even over budget.
 | "Cash only" and "the captain may not carry change", before confirm | SRS BOOK-03, PAY-02 |
 | Who pays, when, how much and the breakdown, before confirm | FLOWS S12 |
 | A shop's rejection reason, shown to the customer | SRS DLV-07 |
+| The window for reporting a problem, which can end in account credit | SRS TRK-09 |
+| Who acts and what comes next ("Ask for the delivery code"), unless a button, a code card or a field on the same screen already says to do it in those words | FLOWS §6 rule 4 |
+| The exact-cash rule above the captain's job board, said once | design review, 17 November |
 | A switched-off capability inside a live service reads "not available in this stage"; a switched-off service line is not shown at all, never as a dead tile | SRS ONE-13 |
 | A running countdown, what happens when it ends, and the way to extend it | SRS A11Y-08 |
 | Why something cannot be done, when money, custody, proof, access or safety is at stake | FLOWS §6 rule 3 |
