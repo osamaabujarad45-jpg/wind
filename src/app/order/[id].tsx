@@ -41,10 +41,10 @@ import {
 import { themedStyles, useTheme } from '../../theme-context';
 
 const DONE = ZoomIn.duration(300);
-// A safety report's spoken receipt, once per report: the order screen (from the order) and a report form whose screen has
-// closed can both learn of it. The first to claim it speaks.
-const spokenReceipts = new Set<number>();
-const claimReceipt = (orderId: number) => !spokenReceipts.has(orderId) && !!spokenReceipts.add(orderId);
+// Spoken receipts this device still owes: added when a safety report is sent, removed by whichever first sees it saved
+// (the order screen, even on a first load after reopening, or the report form if its screen has closed). Per account.
+const owedReceipts = new Set<string>();
+const receiptKey = (viewerId: number | undefined, orderId: number) => `${viewerId}:${orderId}`;
 const steps = statusFlow.slice(1); // assigned → completed
 
 // Exact pins open turn-by-turn directions; without one, a search for the landmark is the best we can do.
@@ -105,17 +105,20 @@ export default function OrderScreen() {
     const held = !!order.safetyHold;
     const reported = order.safetyReport?.status === 'open'; // only the viewer's own report is sent to them
     announced.current = { orderId: order.id, viewerId: me.user.id, status: phase, held, reported, proposalId: proposal };
-    if (!before || before.orderId !== order.id || before.viewerId !== me.user.id) return;
+    // Take the receipt before the first-load return: after leaving and reopening, the first load may be the first sight of it.
+    const receipt = reported && owedReceipts.delete(receiptKey(me.user.id, order.id)) ? `${c.safetyReported}. ${c.safetyPaused}` : '';
+    const speak = (message: string) => { if (Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(message); else setHeard(message); };
+    if (!before || before.orderId !== order.id || before.viewerId !== me.user.id) { if (receipt) speak(receipt); return; }
     const status = before.status !== phase ? statusText(c, order, driver) : '';
     const destination = proposal && before.proposalId !== proposal ? driver ? c.destinationDriverRequest : c.destinationWaiting : '';
-    // The one announcement of a pause or of the viewer's own report, from the order itself, so it is spoken even when the
-    // report's reply was lost. A second reporter hears their receipt although the order was already paused.
-    const pause = reported && !before.reported ? claimReceipt(order.id) ? `${c.safetyReported}. ${c.safetyPaused}` : '' : held && !before.held ? c.safetyPaused : '';
-    if (before.reported && !reported) spokenReceipts.delete(order.id); // resolved: a later report is a new receipt
+    // One announcement per change, from the order itself: the sender's receipt (which says the order is paused), or the
+    // pause alone for everyone else, so it is spoken even when a report's reply was lost.
+    const pause = receipt || (held && !before.held ? c.safetyPaused : '');
     const message = [status, pause, destination].filter(Boolean).join(' ');
-    if (Platform.OS !== 'web') { if (message) AccessibilityInfo.announceForAccessibility(message); }
-    // A lifted pause, a resolved report or a withdrawn destination request empties it, so the same words later are new text.
-    else if (message || before.held && !held || before.reported && !reported || before.proposalId && !proposal) setHeard(message);
+    // On the web, a lifted pause, a resolved report or a withdrawn destination request also empties the region, so the
+    // same words later are new text.
+    if (message) speak(message);
+    else if (Platform.OS === 'web' && (before.held && !held || before.reported && !reported || before.proposalId && !proposal)) setHeard('');
   }, [order, me, c]);
   const [busy, setBusy] = useState<string | null>(null);
   const acting = useRef(false); // two taps before a re-render both saw busy === null; accept, cancel and arrive carry no request id
@@ -911,16 +914,21 @@ function Safety({ order, driver, onChange }: { order: Order; driver: boolean; on
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
   const report = order.safetyReport;
+  const { me } = useSession();
   const gone = useRef(false);
   useEffect(() => { gone.current = false; return () => { gone.current = true; }; }, []);
   async function send() {
     setBusy(true); setFailure('');
-    spokenReceipts.delete(order.id); // a new report
+    const owed = receiptKey(me?.user.id, order.id);
+    owedReceipts.add(owed);
     try {
       onChange(await api<Order>(`/orders/${order.id}/sos`, { kind, note: note.trim() })); haptic.success(); setNote('');
-      if (gone.current && Platform.OS !== 'web' && claimReceipt(order.id)) AccessibilityInfo.announceForAccessibility(`${c.safetyReported}. ${c.safetyPaused}`);
+      if (gone.current && Platform.OS !== 'web' && owedReceipts.delete(owed)) AccessibilityInfo.announceForAccessibility(`${c.safetyReported}. ${c.safetyPaused}`);
     }
-    catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
+    catch (e) {
+      if (e instanceof ApiError && e.status && e.status < 500) owedReceipts.delete(owed); // refused: nothing was filed
+      haptic.error(); setFailure(err(e));
+    } finally { setBusy(false); }
   }
   if (!open) return <Button title={c.safety} icon="shield-checkmark-outline" variant="outline" onPress={() => setOpen(true)} />;
   return <Card tone="warn">
