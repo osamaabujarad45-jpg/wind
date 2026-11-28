@@ -89,7 +89,7 @@ export default function OrderScreen() {
     : { driverLocation: shown }) }, [polled, shown, pushed.driverChanged]);
   // The server's attempt ceiling wins over the reason's suggestion (SHIP-08, Sol R2-M6): one recommendation, one primary action.
   const suggested = order?.reattemptAllowed === false ? 'return' : suggestedNextAction(order ? order.exceptionReason : null);
-  const announced = useRef<{ orderId: number; viewerId: number; status: string; held: boolean; proposalId?: string } | null>(null);
+  const announced = useRef<{ orderId: number; viewerId: number; status: string; held: boolean; reported: boolean; proposalId?: string } | null>(null);
   const [heard, setHeard] = useState(''); // the web's live region (announceForAccessibility does nothing there)
   useEffect(() => {
     if (!order || !me) return;
@@ -99,16 +99,18 @@ export default function OrderScreen() {
     // The words can change while the status does not: a recorded arrival, or support taking the goods (A11Y-04).
     const phase = `${order.status}${order.ride?.arrivedAt != null ? ':arrived' : ''}${order.supportHasGoods || order.driverTrackingEnded ? ':support' : ''}`;
     const held = !!order.safetyHold;
-    announced.current = { orderId: order.id, viewerId: me.user.id, status: phase, held, proposalId: proposal };
+    const reported = order.safetyReport?.status === 'open'; // only the viewer's own report is sent to them
+    announced.current = { orderId: order.id, viewerId: me.user.id, status: phase, held, reported, proposalId: proposal };
     if (!before || before.orderId !== order.id || before.viewerId !== me.user.id) return;
     const status = before.status !== phase ? statusText(c, order, driver) : '';
     const destination = proposal && before.proposalId !== proposal ? driver ? c.destinationDriverRequest : c.destinationWaiting : '';
-    // The one announcement of a pause, from the order itself, so it is spoken even when the report's reply was lost. The
-    // person who reported also hears that it arrived.
-    const pause = held && !before.held ? order.safetyReport?.status === 'open' ? `${c.safetyReported}. ${c.safetyPaused}` : c.safetyPaused : '';
+    // The one announcement of a pause or of the viewer's own report, from the order itself, so it is spoken even when the
+    // report's reply was lost. A second reporter hears their receipt although the order was already paused.
+    const pause = reported && !before.reported ? `${c.safetyReported}. ${c.safetyPaused}` : held && !before.held ? c.safetyPaused : '';
     const message = [status, pause, destination].filter(Boolean).join(' ');
     if (Platform.OS !== 'web') { if (message) AccessibilityInfo.announceForAccessibility(message); }
-    else if (message || before.held && !held) setHeard(message); // a lifted pause empties it, so the next one is new text
+    // A lifted pause or a withdrawn destination request empties it, so the same words later are new text.
+    else if (message || before.held && !held || before.proposalId && !proposal) setHeard(message);
   }, [order, me, c]);
   const [busy, setBusy] = useState<string | null>(null);
   const acting = useRef(false); // two taps before a re-render both saw busy === null; accept, cancel and arrive carry no request id
@@ -746,7 +748,7 @@ export default function OrderScreen() {
       <Button title={c.help} variant="ghost" icon="help-circle-outline" onPress={() => router.push({ pathname: '/help', params: { order: orderCode(order.id) } })} />
     </View>
   </>;
-  const announcer = Platform.OS === 'web' ? <View accessibilityLiveRegion="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}><Txt>{heard ? `${heard}\u200b` : ''}</Txt></View> : null;
+  const announcer = Platform.OS === 'web' ? <View accessibilityLiveRegion="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}><Txt>{heard ? `${heard}.` : ''}</Txt></View> : null;
   // Open work happens on the map: it fills the screen and the rest of the order sits on the sheet over it.
   if (live) return <>{announcer}<View style={{ flex: 1, backgroundColor: palette.paper }}>
     <RouteMap fill pickup={pickup} dropoff={dropoff} focus={nextStop} pickupTitle={from[language]} dropoffTitle={to[language]}
@@ -904,10 +906,13 @@ function Safety({ order, driver, onChange }: { order: Order; driver: boolean; on
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
   const report = order.safetyReport;
+  const gone = useRef(false);
+  useEffect(() => { gone.current = false; return () => { gone.current = true; }; }, []);
   async function send() {
     setBusy(true); setFailure('');
     try {
       onChange(await api<Order>(`/orders/${order.id}/sos`, { kind, note: note.trim() })); haptic.success(); setNote('');
+      if (gone.current && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(`${c.safetyReported}. ${c.safetyPaused}`);
     }
     catch (e) { haptic.error(); setFailure(err(e)); } finally { setBusy(false); }
   }
